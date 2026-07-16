@@ -1,6 +1,3 @@
-# Local execution briefs are intentionally not project source.
-/Plans/
-
 # Python validation artifacts.
 __pycache__/
 *.py[cod]
