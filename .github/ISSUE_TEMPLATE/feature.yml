@@ -1,0 +1,36 @@
+name: Feature proposal
+description: Propose bounded work for the current Prismdrake milestone
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: User need
+      description: Describe the workflow and affected PD requirements.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Proposed scope and non-goals
+      description: Identify the owning component and explicit exclusions.
+    validations:
+      required: true
+  - type: textarea
+    id: fallback
+    attributes:
+      label: Accessibility, security, and fallback behavior
+      description: Cover keyboard use, optional services, capabilities, and failure paths.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Boundary checks
+      options:
+        - label: This work fits the current milestone or explicitly requests a scope decision.
+          required: true
+        - label: This proposal does not move WM or compositor policy into Prismdrake.
+          required: true
+

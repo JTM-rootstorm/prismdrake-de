@@ -1,0 +1,36 @@
+name: Architecture decision
+description: Propose or revise a Prismdrake architecture decision
+title: "[Architecture]: "
+labels: [architecture]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Describe the problem, constraints, and affected PD requirements.
+    validations:
+      required: true
+  - type: textarea
+    id: ownership
+    attributes:
+      label: Ownership and boundaries
+      description: Identify authoritative state owners and Glasswyrm or external-service boundaries.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options and evidence
+      description: Compare realistic options, consequences, fallbacks, and validation.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Scope checks
+      options:
+        - label: I identified whether an ADR and specification update are required.
+          required: true
+        - label: I preserved canonical names and generic GW_* integration naming.
+          required: true
+
