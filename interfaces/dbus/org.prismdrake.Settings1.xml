@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Draft PD0 design contract. This file does not describe an implemented or
+  stable ABI. Inputs are untrusted. Implementations must bound work, return
+  typed org.prismdrake.Settings1.Error.* failures, and preserve the previous
+  valid generation on every failed request.
+-->
+<node name="/org/prismdrake/Settings1">
+  <interface name="org.prismdrake.Settings1">
+    <!-- Returns one complete authoritative profile/generation pair. -->
+    <method name="GetCurrentProfile">
+      <arg name="profile" type="s" direction="out"/>
+      <arg name="generation" type="t" direction="out"/>
+    </method>
+
+    <!--
+      Requests an atomic switch to lustre or forge. Invalid profiles return
+      org.prismdrake.Settings1.Error.InvalidProfile. Validation and consumer
+      acknowledgement are bounded by implementation-defined documented
+      timeouts; timeout keeps the prior generation.
+    -->
+    <method name="RequestProfileChange">
+      <arg name="profile" type="s" direction="in"/>
+      <arg name="generation" type="t" direction="out"/>
+    </method>
+
+    <!-- Reloads configured sources and publishes only a complete generation. -->
+    <method name="Reload">
+      <arg name="generation" type="t" direction="out"/>
+    </method>
+
+    <!--
+      Validates UTF-8 TOML bytes without applying them. Candidate size is
+      limited to 1 MiB. Diagnostics contain schema paths and messages, never
+      secret values. Work is bounded so the D-Bus dispatch thread is not
+      blocked by unbounded parsing or I/O.
+    -->
+    <method name="ValidateCandidate">
+      <arg name="candidate_toml" type="ay" direction="in"/>
+      <arg name="valid" type="b" direction="out"/>
+      <arg name="diagnostics" type="as" direction="out"/>
+    </method>
+
+    <!-- Emitted after one complete generation becomes authoritative. -->
+    <signal name="SettingsGenerationChanged">
+      <arg name="generation" type="t"/>
+      <arg name="changed_domains" type="as"/>
+      <arg name="active_profile" type="s"/>
+      <arg name="restart_required" type="b"/>
+      <arg name="validation_warnings" type="as"/>
+    </signal>
+  </interface>
+</node>
+

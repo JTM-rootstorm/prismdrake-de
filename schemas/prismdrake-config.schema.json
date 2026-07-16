@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/prismdrake-config.schema.json",
+  "title": "Prismdrake configuration version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile",
+    "appearance",
+    "panel",
+    "launcher",
+    "notifications",
+    "desktop",
+    "integration",
+    "accessibility",
+    "keyboard",
+    "developer"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "profile": { "enum": ["lustre", "forge"] },
+    "appearance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accent",
+        "transparency_enabled",
+        "blur_quality",
+        "reduced_motion",
+        "high_contrast",
+        "text_scale",
+        "cursor_theme",
+        "cursor_size_px",
+        "icon_theme"
+      ],
+      "properties": {
+        "accent": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "transparency_enabled": { "type": "boolean" },
+        "blur_quality": { "enum": ["off", "low", "balanced", "high"] },
+        "reduced_motion": { "type": "boolean" },
+        "high_contrast": { "type": "boolean" },
+        "text_scale": { "type": "number", "minimum": 0.75, "maximum": 3.0 },
+        "cursor_theme": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "cursor_size_px": { "type": "integer", "minimum": 16, "maximum": 256 },
+        "icon_theme": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "panel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edge", "size_px", "autohide", "grouping", "clock_format", "outputs"],
+      "properties": {
+        "edge": { "enum": ["top", "right", "bottom", "left"] },
+        "size_px": { "type": "integer", "minimum": 24, "maximum": 192 },
+        "autohide": { "enum": ["never", "always", "overlap"] },
+        "grouping": { "enum": ["always", "when_full", "never"] },
+        "clock_format": { "enum": ["locale", "12_hour", "24_hour"] },
+        "outputs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      }
+    },
+    "launcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "search_providers", "recent_items"],
+      "properties": {
+        "layout": { "enum": ["compact", "expanded"] },
+        "search_providers": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "enum": ["applications", "settings", "recent_files"] }
+        },
+        "recent_items": { "enum": ["disabled", "local_only"] }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "history", "default_timeout_ms", "do_not_disturb"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "history": { "enum": ["disabled", "session", "persistent"] },
+        "default_timeout_ms": { "type": "integer", "minimum": 0, "maximum": 120000 },
+        "do_not_disturb": { "type": "boolean" }
+      }
+    },
+    "desktop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wallpaper_mode", "icons_enabled"],
+      "properties": {
+        "wallpaper_mode": { "enum": ["solid", "center", "fit", "fill", "stretch", "tile"] },
+        "icons_enabled": { "type": "boolean" }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["export_gtk", "export_qt", "export_xsettings", "export_portal"],
+      "properties": {
+        "export_gtk": { "type": "boolean" },
+        "export_qt": { "type": "boolean" },
+        "export_xsettings": { "type": "boolean" },
+        "export_portal": { "type": "boolean" }
+      }
+    },
+    "accessibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["focus_emphasis", "animation_scale", "minimum_target_size_px"],
+      "properties": {
+        "focus_emphasis": { "enum": ["standard", "strong"] },
+        "animation_scale": { "type": "number", "minimum": 0.0, "maximum": 2.0 },
+        "minimum_target_size_px": { "type": "integer", "minimum": 24, "maximum": 96 }
+      }
+    },
+    "keyboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["menu_key_opens_launcher", "focus_wraps"],
+      "properties": {
+        "menu_key_opens_launcher": { "type": "boolean" },
+        "focus_wraps": { "type": "boolean" }
+      }
+    },
+    "developer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["diagnostics_enabled", "mock_capability_overrides"],
+      "properties": {
+        "diagnostics_enabled": { "type": "boolean", "default": false },
+        "mock_capability_overrides": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "description": "Non-production test overrides; production builds ignore this field unless an explicit developer mode is enabled."
+        }
+      }
+    }
+  }
+}
+

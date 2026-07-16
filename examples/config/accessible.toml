@@ -1,0 +1,56 @@
+schema_version = 1
+profile = "lustre"
+
+[appearance]
+accent = "#006BFF"
+transparency_enabled = false
+blur_quality = "off"
+reduced_motion = true
+high_contrast = true
+text_scale = 1.5
+cursor_theme = "default"
+cursor_size_px = 40
+icon_theme = "hicolor"
+
+[panel]
+edge = "bottom"
+size_px = 64
+autohide = "never"
+grouping = "never"
+clock_format = "locale"
+outputs = []
+
+[launcher]
+layout = "expanded"
+search_providers = ["applications", "settings"]
+recent_items = "disabled"
+
+[notifications]
+enabled = true
+history = "disabled"
+default_timeout_ms = 12000
+do_not_disturb = false
+
+[desktop]
+wallpaper_mode = "solid"
+icons_enabled = true
+
+[integration]
+export_gtk = true
+export_qt = true
+export_xsettings = true
+export_portal = true
+
+[accessibility]
+focus_emphasis = "strong"
+animation_scale = 0.0
+minimum_target_size_px = 48
+
+[keyboard]
+menu_key_opens_launcher = true
+focus_wraps = false
+
+[developer]
+diagnostics_enabled = false
+mock_capability_overrides = []
+
