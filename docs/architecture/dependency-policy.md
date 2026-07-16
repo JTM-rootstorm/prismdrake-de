@@ -1,6 +1,6 @@
 # Dependency policy
 
-This policy implements `PD-DEP-001` through `PD-DEP-010`. PD0 introduces no
+This policy implements `PD-DEP-001` through `PD-DEP-008`. PD0 introduces no
 production runtime dependency; Python 3.11 and GNU Make are development-only
 contract-validation tools.
 
