@@ -29,3 +29,4 @@ markers.
 | [0005](0005-standards-and-glasswyrm-integration.md) | Proposed with an Accepted naming constraint | Standards and Glasswyrm integration |
 | [0006](0006-theme-token-model.md) | Proposed | Theme tokens |
 | [0007](0007-licensing-and-original-assets.md) | Accepted | Licensing and original assets |
+| [0008](0008-build-language-and-testing-baseline.md) | Proposed | Build, language, and testing baseline |
