@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="680" viewBox="0 0 900 680" role="img" aria-labelledby="title desc">
+  <title id="title">Prismdrake Forge launcher low-fidelity mockup</title>
+  <desc id="desc">Opaque compact tactile launcher using the same hierarchy as Lustre with sharper geometry and stronger borders.</desc>
+  <rect width="900" height="680" fill="#2f2b26"/>
+  <text x="24" y="34" fill="#fff8ec" font-family="sans-serif" font-size="16">PRISMDRAKE FORGE · LOW-FIDELITY</text>
+  <g transform="translate(90 62)">
+    <rect width="720" height="552" rx="7" fill="#403a30" stroke="#ffb15d" stroke-width="3"/>
+    <rect x="22" y="22" width="676" height="48" rx="3" fill="#25221e" stroke="#817766" stroke-width="2"/>
+    <text x="40" y="52" fill="#fff8ec" font-family="sans-serif" font-size="16">Search applications and settings</text>
+    <rect x="22" y="88" width="200" height="420" rx="3" fill="#302c26" stroke="#756b5d" stroke-width="2"/>
+    <g fill="#fff8ec" font-family="sans-serif" font-size="15"><text x="42" y="124">All applications</text><text x="42" y="164">Creative</text><text x="42" y="204">System</text><text x="42" y="244">Utilities</text></g>
+    <path d="M28 136h188" stroke="#d14d72" stroke-width="4"/>
+    <g font-family="sans-serif" font-size="14" fill="#fff8ec">
+      <g transform="translate(244 88)"><rect width="210" height="92" rx="3" fill="#5a5143" stroke="#ffb15d" stroke-width="2"/><path d="M24 22l18 18-18 18-18-18z" fill="#ffb15d"/><text x="62" y="47">Notes</text><text x="62" y="68" fill="#d9cfbf">active task</text></g>
+      <g transform="translate(468 88)"><rect width="210" height="92" rx="3" fill="#4a4338" stroke="#817766" stroke-width="2"/><circle cx="34" cy="40" r="18" fill="#d14d72"/><text x="62" y="47">Gallery</text></g>
+      <g transform="translate(244 194)"><rect width="210" height="92" rx="3" fill="#4a4338" stroke="#817766" stroke-width="2"/><rect x="17" y="23" width="34" height="34" fill="#63c77e"/><text x="62" y="47">Monitor</text></g>
+      <g transform="translate(468 194)"><rect width="210" height="92" rx="3" fill="#4a4338" stroke="#817766" stroke-width="2"/><path d="M17 22h36l-7 36H24z" fill="#ffc04d"/><text x="62" y="47">Archive</text></g>
+    </g>
+    <rect x="244" y="312" width="434" height="196" rx="3" fill="#353027" stroke="#756b5d" stroke-width="2"/>
+    <text x="266" y="348" fill="#fff8ec" font-family="sans-serif" font-size="16">Recent</text>
+    <text x="266" y="386" fill="#d9cfbf" font-family="sans-serif" font-size="14">Generic document</text>
+    <text x="266" y="420" fill="#d9cfbf" font-family="sans-serif" font-size="14">Local project</text>
+  </g>
+  <text x="90" y="646" fill="#fff8ec" font-family="sans-serif" font-size="13">Same semantic component structure as Lustre; opaque materials, tighter spacing, stronger state borders, shorter motion.</text>
+</svg>
+

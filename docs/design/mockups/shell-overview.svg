@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Prismdrake shell overview low-fidelity mockup</title>
+  <desc id="desc">Annotated desktop layout with a bottom panel, launcher button, task buttons, status area, and generic windows.</desc>
+  <rect width="1280" height="720" fill="#27314a"/>
+  <path d="M0 0h1280v460L880 250 520 520 0 360z" fill="#354c6d"/>
+  <text x="24" y="36" fill="#fff" font-family="sans-serif" font-size="16">LOW-FIDELITY PD0 MOCKUP · original placeholder geometry</text>
+  <g transform="translate(118 92)">
+    <rect width="610" height="390" rx="12" fill="#edf1f8" stroke="#8bdde4" stroke-width="4"/>
+    <rect width="610" height="42" rx="9" fill="#34435e"/>
+    <path d="M20 12l10 9-10 9-10-9z" fill="#8bdde4"/>
+    <text x="44" y="27" fill="#fff" font-family="sans-serif" font-size="15">Notes</text>
+    <text x="26" y="80" fill="#263044" font-family="sans-serif" font-size="18">Active window</text>
+    <text x="26" y="112" fill="#5b6678" font-family="sans-serif" font-size="14">Window state remains authoritative in the WM.</text>
+  </g>
+  <g transform="translate(790 168)">
+    <rect width="350" height="250" rx="8" fill="#3d4653" stroke="#748096" stroke-width="2"/>
+    <rect width="350" height="36" rx="6" fill="#505866"/>
+    <text x="16" y="24" fill="#e7eaf0" font-family="sans-serif" font-size="14">Archive</text>
+    <text x="22" y="78" fill="#c4cad5" font-family="sans-serif" font-size="15">Inactive window</text>
+  </g>
+  <g transform="translate(0 658)">
+    <rect width="1280" height="62" fill="#172033" fill-opacity="0.96" stroke="#7fdbe4" stroke-width="2"/>
+    <path d="M24 31l16-16 16 16-16 16z" fill="#7fdbe4"/>
+    <text x="68" y="38" fill="#fff" font-family="sans-serif" font-size="15">Launcher</text>
+    <rect x="170" y="10" width="184" height="42" rx="7" fill="#40516d" stroke="#9fe7ef"/>
+    <text x="188" y="37" fill="#fff" font-family="sans-serif" font-size="14">Notes · active</text>
+    <rect x="364" y="10" width="150" height="42" rx="7" fill="#2d394f"/>
+    <text x="382" y="37" fill="#d8deea" font-family="sans-serif" font-size="14">Archive</text>
+    <text x="1012" y="37" fill="#fff" font-family="sans-serif" font-size="14">Network  Audio  10:24</text>
+  </g>
+  <g fill="#fff" font-family="sans-serif" font-size="13">
+    <text x="36" y="636">Panel reserves work area through standard X11 conventions.</text>
+    <text x="790" y="450">Focus, stacking, and geometry are not shell-owned.</text>
+  </g>
+</svg>
+

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="720" viewBox="0 0 1120 720" role="img" aria-labelledby="title desc">
+  <title id="title">Prismdrake window states low-fidelity mockup</title>
+  <desc id="desc">Active, inactive, maximized, and urgent decoration states with non-color labels and window-manager ownership annotation.</desc>
+  <rect width="1120" height="720" fill="#202735"/>
+  <text x="24" y="34" fill="#fff" font-family="sans-serif" font-size="16">WINDOW PRESENTATION STATES · LOW-FIDELITY</text>
+  <g font-family="sans-serif">
+    <g transform="translate(40 70)"><rect width="490" height="238" rx="10" fill="#eef1f6" stroke="#87dde8" stroke-width="4"/><rect width="490" height="42" rx="7" fill="#34425e"/><text x="18" y="27" fill="#fff" font-size="15">ACTIVE · Notes</text><text x="22" y="86" fill="#263044" font-size="14">Illuminated border plus explicit active state.</text></g>
+    <g transform="translate(590 70)"><rect width="490" height="238" rx="7" fill="#e7e7e7" stroke="#7d8799" stroke-width="2"/><rect width="490" height="42" rx="5" fill="#505967"/><text x="18" y="27" fill="#e5e8ed" font-size="15">INACTIVE · Archive</text><text x="22" y="86" fill="#3d4652" font-size="14">Lower emphasis remains readable.</text></g>
+    <g transform="translate(40 354)"><rect width="490" height="252" fill="#f1f3f8" stroke="#87dde8" stroke-width="3"/><rect width="490" height="40" fill="#34425e"/><text x="18" y="26" fill="#fff" font-size="15">MAXIMIZED · Monitor</text><text x="22" y="84" fill="#263044" font-size="14">Edge geometry changes; controls retain target size.</text></g>
+    <g transform="translate(590 354)"><rect width="490" height="252" rx="6" fill="#fff1ed" stroke="#ff6b82" stroke-width="5"/><rect width="490" height="40" rx="4" fill="#703947"/><text x="18" y="26" fill="#fff" font-size="15">URGENT · Messages</text><path d="M20 76h28v28H20z" fill="#ff6b82"/><text x="62" y="96" fill="#4a2630" font-size="14">Urgent label and shape supplement color.</text></g>
+  </g>
+  <text x="40" y="660" fill="#fff" font-family="sans-serif" font-size="13">Glasswyrm or the active WM owns state and geometry. prismdrake-decor only renders authoritative state and sends requests.</text>
+  <text x="40" y="684" fill="#c8d1df" font-family="sans-serif" font-size="13">Decorator failure must leave move, resize, focus, and close available through a WM or client fallback.</text>
+</svg>
+

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700" role="img" aria-labelledby="title desc">
+  <title id="title">Prismdrake notification surfaces low-fidelity mockup</title>
+  <desc id="desc">Notification cards, history, do-not-disturb, urgency, keyboard focus, and clearing controls.</desc>
+  <rect width="1000" height="700" fill="#28324a"/>
+  <text x="24" y="34" fill="#fff" font-family="sans-serif" font-size="16">NOTIFICATIONS · LOW-FIDELITY</text>
+  <g transform="translate(70 74)" font-family="sans-serif">
+    <rect width="410" height="164" rx="14" fill="#34435f" stroke="#8de2e9" stroke-width="2"/>
+    <path d="M26 28l18 18-18 18-18-18z" fill="#8de2e9"/>
+    <text x="62" y="42" fill="#fff" font-size="15">Notes</text><text x="62" y="65" fill="#cbd6e6" font-size="12">now</text>
+    <text x="24" y="100" fill="#fff" font-size="16">Document saved</text><text x="24" y="126" fill="#d7dfeb" font-size="14">Generic local content</text>
+    <rect x="294" y="118" width="90" height="30" rx="6" fill="#4d7fff"/><text x="319" y="139" fill="#fff" font-size="13">Open</text>
+  </g>
+  <g transform="translate(70 264)" font-family="sans-serif">
+    <rect width="410" height="164" rx="14" fill="#4c3440" stroke="#ff6b82" stroke-width="4"/>
+    <path d="M14 30h24v24H14z" fill="#ff6b82"/><text x="52" y="47" fill="#fff" font-size="15">Monitor · URGENT</text>
+    <text x="24" y="94" fill="#fff" font-size="16">Action required</text><text x="24" y="122" fill="#f2dce1" font-size="14">Urgency is text and shape, not color alone.</text>
+  </g>
+  <g transform="translate(544 74)" font-family="sans-serif">
+    <rect width="390" height="500" rx="16" fill="#242e44" stroke="#7f8da7" stroke-width="2"/>
+    <text x="24" y="42" fill="#fff" font-size="19">Notification history</text>
+    <rect x="240" y="17" width="126" height="38" rx="7" fill="#35425b" stroke="#f5d25b" stroke-width="3"/><text x="260" y="42" fill="#fff" font-size="13">Clear history</text>
+    <text x="24" y="92" fill="#cbd6e6" font-size="14">Do not disturb</text><rect x="310" y="70" width="56" height="28" rx="14" fill="#4d7fff"/><circle cx="351" cy="84" r="10" fill="#fff"/>
+    <path d="M24 118h342" stroke="#59647a"/>
+    <text x="24" y="158" fill="#fff" font-size="15">Notes</text><text x="24" y="184" fill="#cbd6e6" font-size="13">Document saved</text>
+    <path d="M24 212h342" stroke="#465168"/>
+    <text x="24" y="252" fill="#fff" font-size="15">Monitor</text><text x="24" y="278" fill="#cbd6e6" font-size="13">Action required · urgent</text>
+    <path d="M24 306h342" stroke="#465168"/>
+    <text x="24" y="346" fill="#fff" font-size="15">Archive</text><text x="24" y="372" fill="#cbd6e6" font-size="13">Task complete</text>
+  </g>
+  <text x="70" y="628" fill="#fff" font-family="sans-serif" font-size="13">Cards expose app, summary, urgency, actions, and focus. Bodies and images are untrusted; history has explicit retention and clearing.</text>
+  <text x="70" y="652" fill="#cbd6e6" font-family="sans-serif" font-size="13">Opaque materials replace blur without changing hierarchy. Entrance motion is optional and never delays actions.</text>
+</svg>
+

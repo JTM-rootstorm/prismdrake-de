@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="680" viewBox="0 0 900 680" role="img" aria-labelledby="title desc">
+  <title id="title">Prismdrake Lustre launcher low-fidelity mockup</title>
+  <desc id="desc">Translucent prismatic launcher with search, application tiles, categories, and an opaque fallback sample.</desc>
+  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#283658"/><stop offset="1" stop-color="#59466d"/></linearGradient></defs>
+  <rect width="900" height="680" fill="url(#bg)"/>
+  <text x="24" y="34" fill="#fff" font-family="sans-serif" font-size="16">PRISMDRAKE LUSTRE · LOW-FIDELITY</text>
+  <g transform="translate(70 68)">
+    <rect width="760" height="540" rx="22" fill="#26334d" fill-opacity="0.86" stroke="#8ce6ec" stroke-width="2"/>
+    <path d="M0 0h340L140 540H0z" fill="#77cdda" fill-opacity="0.08"/>
+    <rect x="28" y="28" width="704" height="52" rx="12" fill="#172238" fill-opacity="0.9" stroke="#a6f3f2"/>
+    <text x="50" y="61" fill="#dce7f4" font-family="sans-serif" font-size="17">Search applications and settings</text>
+    <text x="30" y="120" fill="#bfcde0" font-family="sans-serif" font-size="14">Applications</text>
+    <g font-family="sans-serif" font-size="14" fill="#fff">
+      <g transform="translate(30 140)"><rect width="155" height="112" rx="13" fill="#425273" stroke="#9de8ee"/><path d="M60 22l18 18-18 18-18-18z" fill="#8ce6ec"/><text x="42" y="88">Notes</text></g>
+      <g transform="translate(200 140)"><rect width="155" height="112" rx="13" fill="#34435f"/><circle cx="78" cy="40" r="19" fill="#9c8dea"/><text x="46" y="88">Gallery</text></g>
+      <g transform="translate(370 140)"><rect width="155" height="112" rx="13" fill="#34435f"/><path d="M58 24h40v34H58z" fill="#75d49a"/><text x="43" y="88">Monitor</text></g>
+      <g transform="translate(540 140)"><rect width="155" height="112" rx="13" fill="#34435f"/><path d="M56 22h44l-8 38H64z" fill="#f0bd67"/><text x="42" y="88">Archive</text></g>
+    </g>
+    <rect x="28" y="280" width="214" height="220" rx="12" fill="#1f2c46" fill-opacity="0.78"/>
+    <g fill="#d9e4f1" font-family="sans-serif" font-size="15"><text x="50" y="318">All applications</text><text x="50" y="356">Creative</text><text x="50" y="394">System</text><text x="50" y="432">Utilities</text></g>
+    <rect x="266" y="280" width="429" height="220" rx="12" fill="#2c3a56" fill-opacity="0.78"/>
+    <text x="292" y="316" fill="#fff" font-family="sans-serif" font-size="16">Recent</text>
+    <text x="292" y="352" fill="#cad5e5" font-family="sans-serif" font-size="14">Generic document</text>
+    <text x="292" y="386" fill="#cad5e5" font-family="sans-serif" font-size="14">Local project</text>
+  </g>
+  <text x="70" y="640" fill="#fff" font-family="sans-serif" font-size="13">Blur is compositor-provided. The same layout uses the token-declared opaque fallback when unavailable or disabled.</text>
+</svg>
+
