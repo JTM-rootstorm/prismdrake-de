@@ -66,4 +66,4 @@ on the weighted criteria.
 
 - [Toolkit evaluation](../research/toolkit-evaluation.md)
 - [Dependency policy](../architecture/dependency-policy.md)
-- [Project specification section 12](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#12-technology-and-dependency-policy)
+- [Project specification section 12](../PRISMDRAKE_PROJECT_SPECIFICATION.md#12-technology-and-dependency-policy)

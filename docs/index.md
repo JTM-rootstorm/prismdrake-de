@@ -5,7 +5,7 @@ implementation; they do not describe a usable desktop release.
 
 ## Governing material
 
-- [Project-wide product and technical specification](../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md)
+- [Project-wide product and technical specification](PRISMDRAKE_PROJECT_SPECIFICATION.md)
 - [Architecture Decision Records](adr/README.md)
 - [Milestones and PD0 exit gate](roadmap/milestones.md)
 - [PD1 candidate backlog](roadmap/pd1.md)

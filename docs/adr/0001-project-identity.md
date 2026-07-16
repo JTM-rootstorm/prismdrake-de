@@ -63,6 +63,6 @@ coordinated specification, migration, and compatibility decision.
 
 ## References
 
-- [`PD-ID-001` through `PD-ID-010`](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#4-canonical-identity)
+- [`PD-ID-001` through `PD-ID-010`](../PRISMDRAKE_PROJECT_SPECIFICATION.md#4-canonical-identity)
 - [Naming contract](../vision/naming.md)
 - [Product vision](../vision/product.md)

@@ -10,7 +10,7 @@ relevant Proposed decisions receive maintainer approval.
 Read, in order:
 
 1. [`AGENTS.md`](AGENTS.md) for repository-wide working rules.
-2. The [project specification](Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md).
+2. The [project specification](docs/PRISMDRAKE_PROJECT_SPECIFICATION.md).
 3. The [documentation index](docs/index.md).
 4. Relevant Accepted ADRs, contracts, and current milestone criteria.
 

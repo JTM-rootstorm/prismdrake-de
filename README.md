@@ -36,7 +36,7 @@ blurring the desktop itself.
 
 ## Project map
 
-- [Project-wide specification](Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md)
+- [Project-wide specification](docs/PRISMDRAKE_PROJECT_SPECIFICATION.md)
 - [Documentation index](docs/index.md)
 - [Architecture Decision Records](docs/adr/README.md)
 - [Roadmap](docs/roadmap/milestones.md)

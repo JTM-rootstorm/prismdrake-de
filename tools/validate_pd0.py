@@ -28,7 +28,7 @@ REQUIRED_FILES = (
     ".gitignore",
     "AGENTS.md",
     "CONTRIBUTING.md",
-    "Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md",
+    "docs/PRISMDRAKE_PROJECT_SPECIFICATION.md",
     "LICENSE",
     "Makefile",
     "README.md",

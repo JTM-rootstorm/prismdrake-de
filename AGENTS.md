@@ -36,7 +36,7 @@ Do not use “Aero,” “Luna,” “Windows,” or another Microsoft product n
 Before editing, inspect the latest repository state and read, when present:
 
 1. The nearest applicable `AGENTS.md`.
-2. `PRISMDRAKE_PROJECT_SPECIFICATION.md`.
+2. `docs/PRISMDRAKE_PROJECT_SPECIFICATION.md`.
 3. `README.md` and `docs/index.md`.
 4. Relevant Accepted ADRs under `docs/adr/`.
 5. Relevant architecture, security, design, schema, and interface documents.

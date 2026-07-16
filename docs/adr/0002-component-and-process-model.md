@@ -68,7 +68,7 @@ isolation.
 
 ## References
 
-- [Project specification sections 9 through 11](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#9-system-context-and-ownership)
+- [Project specification sections 9 through 11](../PRISMDRAKE_PROJECT_SPECIFICATION.md#9-system-context-and-ownership)
 - [Architecture overview](../architecture/overview.md)
 - [Process model](../architecture/process-model.md)
 - [Failure behavior and fallbacks](../architecture/failure-and-fallbacks.md)

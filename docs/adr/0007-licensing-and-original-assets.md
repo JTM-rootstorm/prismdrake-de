@@ -68,5 +68,5 @@ direction and a project-wide compatibility assessment.
 
 - [Contributing: asset provenance and originality](../../CONTRIBUTING.md#asset-provenance-and-originality)
 - [Visual language](../design/visual-language.md)
-- [`PD-ID-010`](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#4-canonical-identity)
-- [`PD-SCOPE-004`](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#62-core-10-non-goals)
+- [`PD-ID-010`](../PRISMDRAKE_PROJECT_SPECIFICATION.md#4-canonical-identity)
+- [`PD-SCOPE-004`](../PRISMDRAKE_PROJECT_SPECIFICATION.md#62-core-10-non-goals)

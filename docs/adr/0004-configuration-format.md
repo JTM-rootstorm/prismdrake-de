@@ -68,4 +68,4 @@ configuration.
 - [Configuration contract](../architecture/configuration.md)
 - [Configuration schema](../../schemas/prismdrake-config.schema.json)
 - [Draft Settings1 interface](../../interfaces/dbus/org.prismdrake.Settings1.xml)
-- [Project specification section 13](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#13-configuration-state-and-schemas)
+- [Project specification section 13](../PRISMDRAKE_PROJECT_SPECIFICATION.md#13-configuration-state-and-schemas)
