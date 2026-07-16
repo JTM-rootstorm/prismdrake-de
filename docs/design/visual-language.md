@@ -43,4 +43,3 @@ accessible label; animation may supplement but never carry the meaning.
 Mockups use abstract glyphs and generic application names. Production icons,
 wallpapers, sounds, and detailed brand art require provenance and intentional
 review. Code-generated geometry remains subject to the same originality rule.
-

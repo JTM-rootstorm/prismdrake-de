@@ -31,4 +31,3 @@ must communicate inspiration without implying replication or affiliation.
 
 This contract implements `PD-ID-001` through `PD-ID-010` and is governed by
 [ADR 0001](../adr/0001-project-identity.md).
-

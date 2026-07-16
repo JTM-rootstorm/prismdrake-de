@@ -72,4 +72,3 @@ isolation.
 - [Architecture overview](../architecture/overview.md)
 - [Process model](../architecture/process-model.md)
 - [Failure behavior and fallbacks](../architecture/failure-and-fallbacks.md)
-

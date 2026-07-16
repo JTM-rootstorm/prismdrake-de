@@ -36,4 +36,3 @@ PD0 mockups are visual hierarchy aids, not evidence of assistive-technology
 support. PD1 toolkit approval requires keyboard and AT-SPI prototype evidence.
 
 Relevant requirements: `PD-A11Y-001` through `PD-A11Y-010`.
-

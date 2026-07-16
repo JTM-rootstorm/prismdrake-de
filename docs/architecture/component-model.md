@@ -178,4 +178,3 @@ enters safe mode or leaves only the affected optional feature unavailable.
   package; GTK itself is not categorically forbidden.
 - **Crash/restart/security:** applications retain toolkit defaults; paths and
   serialized settings are validated and written atomically.
-

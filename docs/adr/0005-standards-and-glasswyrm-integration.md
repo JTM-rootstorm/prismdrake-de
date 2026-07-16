@@ -69,4 +69,3 @@ projects before any candidate becomes an implemented compatibility promise.
 - [Glasswyrm integration contract](../architecture/glasswyrm-integration.md)
 - [Capability schema](../../schemas/prismdrake-capabilities.schema.json)
 - [Project specification sections 17 and 18](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#17-gtk-qt-x11-and-freedesktop-integration)
-

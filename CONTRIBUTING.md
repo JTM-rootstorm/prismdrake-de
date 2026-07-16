@@ -73,4 +73,3 @@ Describe scope, requirements, decision status, dependency impact,
 accessibility, security and privacy, standards and Glasswyrm behavior,
 fallbacks, and exact validation results. Do not mix unrelated cleanup with a
 contract or feature change.
-

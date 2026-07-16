@@ -73,4 +73,3 @@ name reacquisition. Merging PD0 does not freeze its ABI.
 
 Relevant requirements: `PD-CONFIG-001` through `PD-CONFIG-010` and
 `PD-API-001` through `PD-API-005`.
-

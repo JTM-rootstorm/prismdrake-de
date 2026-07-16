@@ -105,4 +105,3 @@ demonstrates keyboard traversal, AT-SPI exposure, text scaling, reduced motion,
 disabled transparency, deterministic rendering, multiple outputs/scales,
 session restart, and package dependency capture. Re-score any criterion whose
 observed result differs materially from this qualitative review.
-

@@ -62,4 +62,3 @@ titles without weakening the session.
 
 Relevant requirements: `PD-PLAT-001` through `PD-PLAT-004` and `PD-GW-001`
 through `PD-GW-010`.
-

@@ -44,4 +44,3 @@ blur request, and a complete non-blur fallback. The request describes intent;
 the compositor chooses or rejects execution. Prismdrake never captures the
 desktop to simulate blur. Disabled transparency selects fallback materials
 without weakening focus, borders, text contrast, or state cues.
-

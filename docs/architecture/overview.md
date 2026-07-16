@@ -86,4 +86,3 @@ icons and titles.
 
 Relevant requirements: `PD-SCOPE-001`, `PD-PLAT-001` through `PD-PLAT-004`,
 `PD-COMP-001` through `PD-COMP-010`, and `PD-GW-001` through `PD-GW-010`.
-

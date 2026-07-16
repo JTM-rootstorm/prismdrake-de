@@ -64,4 +64,3 @@ desktop build.
 
 Prismdrake is licensed under the [GNU General Public License, version 3](LICENSE).
 Third-party assets require compatible licensing and recorded provenance.
-

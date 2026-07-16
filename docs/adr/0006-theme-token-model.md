@@ -66,4 +66,3 @@ format must retain the JSON source contract or provide an explicit migration.
 - [Visual language](../design/visual-language.md)
 - [Accessibility](../design/accessibility.md)
 - [Project specification section 14](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#14-visual-system-and-profiles)
-

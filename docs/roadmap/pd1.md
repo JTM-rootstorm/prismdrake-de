@@ -61,4 +61,3 @@ PD1 issues should name display-free unit tests first, then isolated D-Bus or
 X11 integration under Xvfb/Xephyr as appropriate. Toolkit acceptance evidence
 must cover keyboard, AT-SPI, contrast/fallback, motion, target size, multi-output
 and scaling, deterministic rendering, restart behavior, and dependency capture.
-

@@ -12,4 +12,3 @@
   <text x="40" y="660" fill="#fff" font-family="sans-serif" font-size="13">Glasswyrm or the active WM owns state and geometry. prismdrake-decor only renders authoritative state and sends requests.</text>
   <text x="40" y="684" fill="#c8d1df" font-family="sans-serif" font-size="13">Decorator failure must leave move, resize, focus, and close available through a WM or client fallback.</text>
 </svg>
-

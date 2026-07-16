@@ -26,4 +26,3 @@ fixing a crash loop.
 
 These rules address `PD-COMP-003`, `PD-COMP-004`, `PD-PLAT-002` through
 `PD-PLAT-004`, and `PD-REL-001` through `PD-REL-010`.
-

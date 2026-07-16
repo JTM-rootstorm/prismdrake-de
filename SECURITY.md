@@ -19,4 +19,3 @@ As executable code is introduced, supported versions, response expectations,
 and disclosure coordination will be documented here. No current file should be
 interpreted as a claim that secure session locking, authorization, capture, or
 public API stability has been implemented.
-

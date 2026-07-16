@@ -47,4 +47,3 @@ Coherence is the goal. Prismdrake does not destructively overwrite user toolkit
 configuration or promise pixel identity across application-owned interfaces.
 
 Relevant requirements: `PD-INT-001` through `PD-INT-008`.
-

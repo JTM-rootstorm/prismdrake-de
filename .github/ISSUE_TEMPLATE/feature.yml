@@ -33,4 +33,3 @@ body:
           required: true
         - label: This proposal does not move WM or compositor policy into Prismdrake.
           required: true
-

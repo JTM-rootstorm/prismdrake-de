@@ -71,4 +71,3 @@ destroy its authoritative window state.
 Logout, reboot, and power actions are requested through authoritative external
 services. Forced termination is reported and never silently discards known
 unsafe persistent work.
-

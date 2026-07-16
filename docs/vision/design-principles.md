@@ -42,4 +42,3 @@ their feature and must not prevent session startup.
 GTK and Qt applications should receive coherent fonts, icons, cursors,
 settings, and optional style adapters. Prismdrake does not promise pixel-level
 control over applications that intentionally own their presentation.
-

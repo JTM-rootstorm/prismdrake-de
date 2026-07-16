@@ -23,4 +23,3 @@
   <text x="60" y="626" fill="#fff" font-family="sans-serif" font-size="13">External audio, network, Bluetooth, and power services remain authoritative; controls use typed adapters and disable individually.</text>
   <text x="60" y="650" fill="#d5ddea" font-family="sans-serif" font-size="13">All controls expose name, role, value/checked state, availability, keyboard focus, and token-defined minimum target size.</text>
 </svg>
-

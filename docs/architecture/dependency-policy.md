@@ -74,4 +74,3 @@ machine-readable dependency manifest with this conceptual shape:
 The literal placeholder values above describe a future schema and are not a
 dependency claim. Validation will reject forbidden desktop-stack components in
 mandatory runtime scope when manifests exist.
-

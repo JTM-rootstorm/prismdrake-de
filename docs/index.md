@@ -42,4 +42,3 @@ implementation; they do not describe a usable desktop release.
 
 Run `make validate` from the repository root to check PD0 contracts and local
 links.
-

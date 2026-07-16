@@ -27,4 +27,3 @@ models require separate scope and accepted designs. They must not block the
 current milestone or appear as implemented features.
 
 Relevant requirements: `PD-SCOPE-001` through `PD-SCOPE-010`.
-

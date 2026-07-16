@@ -30,4 +30,3 @@
   <text x="70" y="628" fill="#fff" font-family="sans-serif" font-size="13">Cards expose app, summary, urgency, actions, and focus. Bodies and images are untrusted; history has explicit retention and clearing.</text>
   <text x="70" y="652" fill="#cbd6e6" font-family="sans-serif" font-size="13">Opaque materials replace blur without changing hierarchy. Entrance motion is optional and never delays actions.</text>
 </svg>
-

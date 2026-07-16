@@ -25,4 +25,3 @@
   </g>
   <text x="70" y="640" fill="#fff" font-family="sans-serif" font-size="13">Blur is compositor-provided. The same layout uses the token-declared opaque fallback when unavailable or disabled.</text>
 </svg>
-

@@ -10,4 +10,3 @@ Public Prismdrake interfaces use `org.prismdrake.*`. Methods must be typed,
 bounded, cancellable where applicable, and explicit about errors, timeouts,
 ownership, and versioning. Generic Glasswyrm-native `GW_*` proposals are owned
 and accepted separately by Glasswyrm and are not D-Bus interfaces in this tree.
-

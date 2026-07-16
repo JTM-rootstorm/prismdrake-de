@@ -33,4 +33,3 @@ body:
           required: true
         - label: I preserved canonical names and generic GW_* integration naming.
           required: true
-

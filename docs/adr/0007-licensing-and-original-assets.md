@@ -70,4 +70,3 @@ direction and a project-wide compatibility assessment.
 - [Visual language](../design/visual-language.md)
 - [`PD-ID-010`](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#4-canonical-identity)
 - [`PD-SCOPE-004`](../../Docs/PRISMDRAKE_PROJECT_SPECIFICATION.md#62-core-10-non-goals)
-

@@ -46,4 +46,3 @@ implemented in this milestone.
 
 Relevant requirements: `PD-PROD-001` through `PD-PROD-010`, `PD-SCOPE-001`
 through `PD-SCOPE-010`, and `PD-PLAT-001` through `PD-PLAT-005`.
-

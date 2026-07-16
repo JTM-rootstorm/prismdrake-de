@@ -57,7 +57,8 @@ current commitment.
   exists.
 - [ ] Maintainers have accepted the component/process, toolkit, configuration,
   and token ADRs required for PD1.
-- [ ] Canonical local validation and CI are green on the completed PD0 tree.
+- [x] Canonical local `make validate` passes on the completed PD0 tree.
+- [ ] Repository CI is green on the reviewed PD0 revision.
 - [ ] Maintainers have reviewed and approved the PD1 scope below.
 
 Unchecked items are explicit owner/validation gates, not implied future work.
@@ -77,4 +78,3 @@ Unchecked items are explicit owner/validation gates, not implied future work.
 
 Status changes require maintainer review; the existence of PD0 files or future
 implementation does not make a Proposed ADR Accepted.
-

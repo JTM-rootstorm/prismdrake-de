@@ -53,4 +53,3 @@ focus_wraps = false
 [developer]
 diagnostics_enabled = false
 mock_capability_overrides = []
-
