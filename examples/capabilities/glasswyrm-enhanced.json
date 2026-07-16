@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "session_type": "x11",
+  "window_system": {
+    "protocol": "x11",
+    "display_available": true
+  },
+  "compositor": {
+    "present": true,
+    "identity": "Glasswyrm",
+    "identity_source": "capability_query"
+  },
+  "standard_capabilities": {
+    "ewmh_window_list": true,
+    "ewmh_active_window": true,
+    "ewmh_workspaces": true,
+    "ewmh_dock_strut": true,
+    "xsettings": true,
+    "freedesktop_notifications": true,
+    "status_notifier_item": true,
+    "portals": true
+  },
+  "native_capabilities": [
+    { "name": "GW_SHELL_ROLE_V1", "version": 1, "status": "available" },
+    { "name": "GW_BACKDROP_V1", "version": 1, "status": "available" },
+    { "name": "GW_WINDOW_THUMBNAIL_V1", "version": 1, "status": "available" },
+    { "name": "GW_WORKSPACE_V1", "version": 1, "status": "available" },
+    { "name": "GW_DECORATION_V1", "version": 1, "status": "available" }
+  ],
+  "fallbacks": {
+    "blur": "opaque_material",
+    "thumbnails": "application_icon_title_state",
+    "workspaces": "ewmh_basic",
+    "decorations": "wm_or_client_operations"
+  },
+  "diagnostics": [
+    "Candidate native capabilities are available; each remains independently revocable."
+  ]
+}
+

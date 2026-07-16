@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "session_type": "x11",
+  "window_system": {
+    "protocol": "x11",
+    "display_available": true
+  },
+  "compositor": {
+    "present": true,
+    "identity": null,
+    "identity_source": "standard_selection"
+  },
+  "standard_capabilities": {
+    "ewmh_window_list": true,
+    "ewmh_active_window": true,
+    "ewmh_workspaces": true,
+    "ewmh_dock_strut": true,
+    "xsettings": true,
+    "freedesktop_notifications": true,
+    "status_notifier_item": true,
+    "portals": false
+  },
+  "native_capabilities": [],
+  "fallbacks": {
+    "blur": "opaque_material",
+    "thumbnails": "application_icon_title_state",
+    "workspaces": "ewmh_basic",
+    "decorations": "wm_or_client_operations"
+  },
+  "diagnostics": [
+    "No native capabilities were advertised; standards fallbacks are active."
+  ]
+}
+

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/prismdrake-capabilities.schema.json",
+  "title": "Prismdrake detected capability snapshot version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_type",
+    "window_system",
+    "compositor",
+    "standard_capabilities",
+    "native_capabilities",
+    "fallbacks",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "session_type": { "const": "x11" },
+    "window_system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "display_available"],
+      "properties": {
+        "protocol": { "const": "x11" },
+        "display_available": { "type": "boolean" }
+      }
+    },
+    "compositor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "identity", "identity_source"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "identity": { "type": ["string", "null"], "maxLength": 128 },
+        "identity_source": { "enum": ["standard_selection", "capability_query", "unavailable"] }
+      }
+    },
+    "standard_capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ewmh_window_list", "ewmh_active_window", "ewmh_workspaces", "ewmh_dock_strut", "xsettings", "freedesktop_notifications", "status_notifier_item", "portals"],
+      "properties": {
+        "ewmh_window_list": { "type": "boolean" },
+        "ewmh_active_window": { "type": "boolean" },
+        "ewmh_workspaces": { "type": "boolean" },
+        "ewmh_dock_strut": { "type": "boolean" },
+        "xsettings": { "type": "boolean" },
+        "freedesktop_notifications": { "type": "boolean" },
+        "status_notifier_item": { "type": "boolean" },
+        "portals": { "type": "boolean" }
+      }
+    },
+    "native_capabilities": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "version", "status"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^GW_[A-Z0-9_]+_V[1-9][0-9]*$" },
+          "version": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "status": { "enum": ["available", "unavailable", "unsupported_version", "denied"] }
+        }
+      }
+    },
+    "fallbacks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blur", "thumbnails", "workspaces", "decorations"],
+      "properties": {
+        "blur": { "enum": ["alpha_material", "opaque_material"] },
+        "thumbnails": { "const": "application_icon_title_state" },
+        "workspaces": { "enum": ["ewmh_basic", "hidden"] },
+        "decorations": { "const": "wm_or_client_operations" }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "type": "string", "maxLength": 512 }
+    }
+  }
+}
+
