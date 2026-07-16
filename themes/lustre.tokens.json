@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "layer": "profile",
+  "profile_id": "lustre",
+  "profile_display_name": "Prismdrake Lustre",
+  "generation_model": "immutable_snapshot",
+  "primitive": {
+    "colors": {
+      "ink": "#111827FF",
+      "paper": "#F8FBFFFF",
+      "accent": "#557FFFFF",
+      "prism": "#7EE7E2FF",
+      "danger": "#D94562FF"
+    },
+    "spacing_px": { "xs": 4, "sm": 8, "md": 12, "lg": 18, "xl": 26 },
+    "font_families": ["sans-serif"],
+    "font_size_px": { "small": 12, "body": 14, "title": 17 },
+    "duration_ms": { "instant": 0, "fast": 100, "normal": 180 },
+    "radius_px": { "small": 5, "medium": 10, "large": 14 },
+    "opacity": { "disabled": 0.48, "muted": 0.75, "glass": 0.82, "solid": 1.0 }
+  },
+  "semantic": {
+    "colors": {
+      "panel_surface": "#202A42DE",
+      "elevated_surface": "#293653EB",
+      "window_frame": "#34425EEB",
+      "border_active": "#87DDE8FF",
+      "border_inactive": "#7D8CA8FF",
+      "text_primary": "#FFFFFFFF",
+      "text_muted": "#D3DCEAFF",
+      "selection": "#557FFFFF",
+      "focus_ring": "#A5F3FCFF",
+      "danger": "#FF6B82FF",
+      "warning": "#F8C766FF",
+      "success": "#65DBA0FF"
+    },
+    "materials": {
+      "panel": { "tint": "#202A42FF", "opacity": 0.82, "blur_request": { "enabled": true, "radius_px": 28, "saturation": 1.12 }, "fallback": { "kind": "opaque", "color": "#202A42FF", "opacity": 1.0 } },
+      "launcher": { "tint": "#26324DFF", "opacity": 0.86, "blur_request": { "enabled": true, "radius_px": 34, "saturation": 1.1 }, "fallback": { "kind": "opaque", "color": "#26324DFF", "opacity": 1.0 } },
+      "notification": { "tint": "#2C3956FF", "opacity": 0.9, "blur_request": { "enabled": true, "radius_px": 24, "saturation": 1.08 }, "fallback": { "kind": "opaque", "color": "#2C3956FF", "opacity": 1.0 } },
+      "menu": { "tint": "#27334EFF", "opacity": 0.9, "blur_request": { "enabled": true, "radius_px": 22, "saturation": 1.06 }, "fallback": { "kind": "opaque", "color": "#27334EFF", "opacity": 1.0 } }
+    },
+    "border": { "thickness_px": 1, "minimum_contrast_ratio": 3.0 },
+    "shadow": { "offset_y_px": 6, "blur_radius_px": 26, "opacity": 0.35 },
+    "typography": { "body_family": "sans-serif", "body_size_px": 14, "title_size_px": 17, "weight_normal": 400, "weight_emphasis": 600 },
+    "spacing": { "unit_px": 4, "control_gap_px": 9, "content_margin_px": 14 },
+    "panel": { "height_px": 50, "icon_size_px": 24 },
+    "decoration": { "titlebar_height_px": 36, "border_width_px": 1 },
+    "icon": { "small_px": 16, "medium_px": 24, "large_px": 36 },
+    "focus": { "width_px": 2, "offset_px": 2 },
+    "motion": { "fast_ms": 100, "normal_ms": 180, "easing": "ease_out" },
+    "targets": { "minimum_px": 40 }
+  },
+  "component": {
+    "task_button": { "radius_px": 8, "padding_px": 8, "border_width_px": 1 },
+    "launcher_tile": { "radius_px": 11, "padding_px": 12, "border_width_px": 1 },
+    "titlebar_button": { "radius_px": 6, "padding_px": 7, "border_width_px": 1 },
+    "notification_card": { "radius_px": 12, "padding_px": 14, "border_width_px": 1 },
+    "quick_setting": { "radius_px": 10, "padding_px": 11, "border_width_px": 1 },
+    "tooltip": { "radius_px": 6, "padding_px": 7, "border_width_px": 1 },
+    "menu_item": { "radius_px": 6, "padding_px": 9, "border_width_px": 1 }
+  },
+  "accessibility_overrides": {
+    "reduced_motion": { "duration_scale": 0.0 },
+    "transparency_disabled": { "force_opaque": true },
+    "high_contrast": { "minimum_contrast_ratio": 7.0, "focus_width_px": 3 },
+    "minimum_target_size_px": 44
+  },
+  "capability_fallbacks": {
+    "blur": "Use the declared opaque fallback color and preserve borders.",
+    "thumbnails": "Use the application icon, title, and explicit state text."
+  }
+}
+

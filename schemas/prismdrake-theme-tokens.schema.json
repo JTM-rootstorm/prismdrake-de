@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/prismdrake-theme-tokens.schema.json",
+  "title": "Prismdrake theme token document version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "layer",
+    "profile_id",
+    "profile_display_name",
+    "generation_model",
+    "primitive",
+    "semantic",
+    "component",
+    "accessibility_overrides",
+    "capability_fallbacks"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "layer": { "enum": ["base", "profile", "accessibility"] },
+    "profile_id": { "type": ["string", "null"] },
+    "profile_display_name": { "type": ["string", "null"] },
+    "generation_model": { "const": "immutable_snapshot" },
+    "primitive": { "$ref": "#/$defs/primitive" },
+    "semantic": { "$ref": "#/$defs/semantic" },
+    "component": { "$ref": "#/$defs/components" },
+    "accessibility_overrides": { "$ref": "#/$defs/accessibility" },
+    "capability_fallbacks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blur", "thumbnails"],
+      "properties": {
+        "blur": { "type": "string", "minLength": 1 },
+        "thumbnails": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{8}$" },
+    "number_map": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "number", "minimum": 0 }
+    },
+    "primitive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["colors", "spacing_px", "font_families", "font_size_px", "duration_ms", "radius_px", "opacity"],
+      "properties": {
+        "colors": {
+          "type": "object",
+          "minProperties": 4,
+          "additionalProperties": { "$ref": "#/$defs/color" }
+        },
+        "spacing_px": { "$ref": "#/$defs/number_map" },
+        "font_families": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "font_size_px": { "$ref": "#/$defs/number_map" },
+        "duration_ms": { "$ref": "#/$defs/number_map" },
+        "radius_px": { "$ref": "#/$defs/number_map" },
+        "opacity": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tint", "opacity", "blur_request", "fallback"],
+      "properties": {
+        "tint": { "$ref": "#/$defs/color" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blur_request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "radius_px", "saturation"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "radius_px": { "type": "number", "minimum": 0, "maximum": 128 },
+            "saturation": { "type": "number", "minimum": 0, "maximum": 2 }
+          }
+        },
+        "fallback": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "color", "opacity"],
+          "properties": {
+            "kind": { "enum": ["alpha", "opaque"] },
+            "color": { "$ref": "#/$defs/color" },
+            "opacity": { "type": "number", "minimum": 0.75, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "semantic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["colors", "materials", "border", "shadow", "typography", "spacing", "panel", "decoration", "icon", "focus", "motion", "targets"],
+      "properties": {
+        "colors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["panel_surface", "elevated_surface", "window_frame", "border_active", "border_inactive", "text_primary", "text_muted", "selection", "focus_ring", "danger", "warning", "success"],
+          "properties": {
+            "panel_surface": { "$ref": "#/$defs/color" },
+            "elevated_surface": { "$ref": "#/$defs/color" },
+            "window_frame": { "$ref": "#/$defs/color" },
+            "border_active": { "$ref": "#/$defs/color" },
+            "border_inactive": { "$ref": "#/$defs/color" },
+            "text_primary": { "$ref": "#/$defs/color" },
+            "text_muted": { "$ref": "#/$defs/color" },
+            "selection": { "$ref": "#/$defs/color" },
+            "focus_ring": { "$ref": "#/$defs/color" },
+            "danger": { "$ref": "#/$defs/color" },
+            "warning": { "$ref": "#/$defs/color" },
+            "success": { "$ref": "#/$defs/color" }
+          }
+        },
+        "materials": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["panel", "launcher", "notification", "menu"],
+          "properties": {
+            "panel": { "$ref": "#/$defs/material" },
+            "launcher": { "$ref": "#/$defs/material" },
+            "notification": { "$ref": "#/$defs/material" },
+            "menu": { "$ref": "#/$defs/material" }
+          }
+        },
+        "border": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["thickness_px", "minimum_contrast_ratio"],
+          "properties": {
+            "thickness_px": { "type": "number", "minimum": 1, "maximum": 8 },
+            "minimum_contrast_ratio": { "type": "number", "minimum": 1, "maximum": 21 }
+          }
+        },
+        "shadow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["offset_y_px", "blur_radius_px", "opacity"],
+          "properties": {
+            "offset_y_px": { "type": "number", "minimum": 0, "maximum": 64 },
+            "blur_radius_px": { "type": "number", "minimum": 0, "maximum": 128 },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "typography": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["body_family", "body_size_px", "title_size_px", "weight_normal", "weight_emphasis"],
+          "properties": {
+            "body_family": { "type": "string", "minLength": 1 },
+            "body_size_px": { "type": "number", "minimum": 8, "maximum": 48 },
+            "title_size_px": { "type": "number", "minimum": 8, "maximum": 64 },
+            "weight_normal": { "type": "integer", "minimum": 100, "maximum": 900 },
+            "weight_emphasis": { "type": "integer", "minimum": 100, "maximum": 900 }
+          }
+        },
+        "spacing": { "$ref": "#/$defs/metric_group" },
+        "panel": { "$ref": "#/$defs/metric_group" },
+        "decoration": { "$ref": "#/$defs/metric_group" },
+        "icon": { "$ref": "#/$defs/metric_group" },
+        "focus": { "$ref": "#/$defs/metric_group" },
+        "motion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fast_ms", "normal_ms", "easing"],
+          "properties": {
+            "fast_ms": { "type": "integer", "minimum": 0, "maximum": 2000 },
+            "normal_ms": { "type": "integer", "minimum": 0, "maximum": 2000 },
+            "easing": { "enum": ["linear", "ease_out", "ease_in_out", "crisp"] }
+          }
+        },
+        "targets": { "$ref": "#/$defs/metric_group" }
+      }
+    },
+    "metric_group": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "number", "minimum": 0 }
+    },
+    "component_style": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["radius_px", "padding_px", "border_width_px"],
+      "properties": {
+        "radius_px": { "type": "number", "minimum": 0 },
+        "padding_px": { "type": "number", "minimum": 0 },
+        "border_width_px": { "type": "number", "minimum": 0 }
+      }
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_button", "launcher_tile", "titlebar_button", "notification_card", "quick_setting", "tooltip", "menu_item"],
+      "properties": {
+        "task_button": { "$ref": "#/$defs/component_style" },
+        "launcher_tile": { "$ref": "#/$defs/component_style" },
+        "titlebar_button": { "$ref": "#/$defs/component_style" },
+        "notification_card": { "$ref": "#/$defs/component_style" },
+        "quick_setting": { "$ref": "#/$defs/component_style" },
+        "tooltip": { "$ref": "#/$defs/component_style" },
+        "menu_item": { "$ref": "#/$defs/component_style" }
+      }
+    },
+    "accessibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reduced_motion", "transparency_disabled", "high_contrast", "minimum_target_size_px"],
+      "properties": {
+        "reduced_motion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["duration_scale"],
+          "properties": { "duration_scale": { "type": "number", "minimum": 0, "maximum": 1 } }
+        },
+        "transparency_disabled": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["force_opaque"],
+          "properties": { "force_opaque": { "type": "boolean" } }
+        },
+        "high_contrast": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum_contrast_ratio", "focus_width_px"],
+          "properties": {
+            "minimum_contrast_ratio": { "type": "number", "minimum": 1, "maximum": 21 },
+            "focus_width_px": { "type": "number", "minimum": 1, "maximum": 16 }
+          }
+        },
+        "minimum_target_size_px": { "type": "number", "minimum": 24, "maximum": 96 }
+      }
+    }
+  }
+}
+

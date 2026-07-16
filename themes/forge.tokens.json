@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "layer": "profile",
+  "profile_id": "forge",
+  "profile_display_name": "Prismdrake Forge",
+  "generation_model": "immutable_snapshot",
+  "primitive": {
+    "colors": {
+      "ink": "#17130FFF",
+      "paper": "#FFF8ECFF",
+      "accent": "#D14D72FF",
+      "ember": "#F29D49FF",
+      "danger": "#B72F45FF"
+    },
+    "spacing_px": { "xs": 3, "sm": 6, "md": 10, "lg": 14, "xl": 20 },
+    "font_families": ["sans-serif"],
+    "font_size_px": { "small": 12, "body": 14, "title": 16 },
+    "duration_ms": { "instant": 0, "fast": 60, "normal": 110 },
+    "radius_px": { "small": 2, "medium": 4, "large": 6 },
+    "opacity": { "disabled": 0.5, "muted": 0.76, "solid": 1.0 }
+  },
+  "semantic": {
+    "colors": {
+      "panel_surface": "#343028FF",
+      "elevated_surface": "#494237FF",
+      "window_frame": "#564D3FFF",
+      "border_active": "#FFB15DFF",
+      "border_inactive": "#8E8373FF",
+      "text_primary": "#FFF9EFFF",
+      "text_muted": "#D9CFBFFF",
+      "selection": "#D14D72FF",
+      "focus_ring": "#FFD35CFF",
+      "danger": "#F05A66FF",
+      "warning": "#FFC04DFF",
+      "success": "#63C77EFF"
+    },
+    "materials": {
+      "panel": { "tint": "#343028FF", "opacity": 1.0, "blur_request": { "enabled": false, "radius_px": 0, "saturation": 1.0 }, "fallback": { "kind": "opaque", "color": "#343028FF", "opacity": 1.0 } },
+      "launcher": { "tint": "#403A30FF", "opacity": 1.0, "blur_request": { "enabled": false, "radius_px": 0, "saturation": 1.0 }, "fallback": { "kind": "opaque", "color": "#403A30FF", "opacity": 1.0 } },
+      "notification": { "tint": "#494237FF", "opacity": 1.0, "blur_request": { "enabled": false, "radius_px": 0, "saturation": 1.0 }, "fallback": { "kind": "opaque", "color": "#494237FF", "opacity": 1.0 } },
+      "menu": { "tint": "#3D382FFF", "opacity": 1.0, "blur_request": { "enabled": false, "radius_px": 0, "saturation": 1.0 }, "fallback": { "kind": "opaque", "color": "#3D382FFF", "opacity": 1.0 } }
+    },
+    "border": { "thickness_px": 2, "minimum_contrast_ratio": 3.0 },
+    "shadow": { "offset_y_px": 3, "blur_radius_px": 9, "opacity": 0.45 },
+    "typography": { "body_family": "sans-serif", "body_size_px": 14, "title_size_px": 16, "weight_normal": 400, "weight_emphasis": 700 },
+    "spacing": { "unit_px": 3, "control_gap_px": 6, "content_margin_px": 10 },
+    "panel": { "height_px": 44, "icon_size_px": 24 },
+    "decoration": { "titlebar_height_px": 32, "border_width_px": 2 },
+    "icon": { "small_px": 16, "medium_px": 24, "large_px": 32 },
+    "focus": { "width_px": 3, "offset_px": 1 },
+    "motion": { "fast_ms": 60, "normal_ms": 110, "easing": "crisp" },
+    "targets": { "minimum_px": 40 }
+  },
+  "component": {
+    "task_button": { "radius_px": 3, "padding_px": 7, "border_width_px": 2 },
+    "launcher_tile": { "radius_px": 4, "padding_px": 9, "border_width_px": 2 },
+    "titlebar_button": { "radius_px": 2, "padding_px": 6, "border_width_px": 2 },
+    "notification_card": { "radius_px": 5, "padding_px": 10, "border_width_px": 2 },
+    "quick_setting": { "radius_px": 4, "padding_px": 9, "border_width_px": 2 },
+    "tooltip": { "radius_px": 2, "padding_px": 6, "border_width_px": 1 },
+    "menu_item": { "radius_px": 2, "padding_px": 7, "border_width_px": 1 }
+  },
+  "accessibility_overrides": {
+    "reduced_motion": { "duration_scale": 0.0 },
+    "transparency_disabled": { "force_opaque": true },
+    "high_contrast": { "minimum_contrast_ratio": 7.0, "focus_width_px": 4 },
+    "minimum_target_size_px": 44
+  },
+  "capability_fallbacks": {
+    "blur": "Forge is opaque by default; retain the declared material.",
+    "thumbnails": "Use the application icon, title, and explicit state text."
+  }
+}
+
