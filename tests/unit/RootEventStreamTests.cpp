@@ -27,12 +27,22 @@ template <typename T>
 concept ExposesWindowIdentifier = requires(const T &hint) { hint.window; };
 
 static_assert(!ExposesWindowIdentifier<ClientTopologyHint>);
+static_assert(!ExposesWindowIdentifier<OutputTopologyRefreshHint>);
 
 TEST(RootEventDecoderTest, UsesOnlyNotifyMasksAndNeverSelectsRedirectAuthority) {
     EXPECT_EQ(rootEventSelectionMask,
               structureNotifyEventMask | substructureNotifyEventMask | propertyChangeEventMask);
     EXPECT_EQ(rootEventSelectionMask & substructureRedirectEventMask, 0U);
     EXPECT_EQ(maximumRootEventsPerDrain, 256U);
+}
+
+TEST(RootEventDecoderTest, KeepsOutputTopologyRefreshDistinctAndRedacted) {
+    const RootEvent actual = OutputTopologyRefreshHint{false};
+    EXPECT_EQ(requireEvent<OutputTopologyRefreshHint>(actual), OutputTopologyRefreshHint{false});
+    EXPECT_EQ(std::get_if<RootGeometryHint>(&actual), nullptr);
+
+    const RootEvent syntheticHint = OutputTopologyRefreshHint{true};
+    EXPECT_TRUE(requireEvent<OutputTopologyRefreshHint>(syntheticHint).synthetic);
 }
 
 TEST(RootEventDecoderTest, DecodesActualAndSyntheticCreateAsRefreshHints) {

@@ -31,6 +31,7 @@ pkg_check_modules(PRISMDRAKE_TEST_XCB REQUIRED IMPORTED_TARGET xcb)
 add_executable(prismdrake-x11-integration-tests
     EwmhCapabilitiesTests.cpp
     PropertyReaderTests.cpp
+    RandrTopologyTests.cpp
     RootEventStreamTests.cpp
     X11ConnectionTests.cpp)
 target_link_libraries(prismdrake-x11-integration-tests
@@ -50,14 +51,32 @@ if(PRISMDRAKE_XVFB_EXECUTABLE)
         COMMAND
             "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_with_xvfb.py"
             "${PRISMDRAKE_XVFB_EXECUTABLE}"
-            "$<TARGET_FILE:prismdrake-x11-integration-tests>")
+            "$<TARGET_FILE:prismdrake-x11-integration-tests>"
+            --)
     set_tests_properties(X11ConnectionIntegrationTest PROPERTIES TIMEOUT 30)
+    add_test(
+        NAME X11RandrUnavailableIntegrationTest
+        COMMAND
+            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_with_xvfb.py"
+            --xvfb-disable-randr
+            "${PRISMDRAKE_XVFB_EXECUTABLE}"
+            "$<TARGET_FILE:prismdrake-x11-integration-tests>"
+            --
+            --gtest_filter=RandrTopologyIntegrationTest.UsesFreshCoreRootFallbackWithoutRandr)
+    set_tests_properties(X11RandrUnavailableIntegrationTest PROPERTIES TIMEOUT 30)
 else()
     add_test(
         NAME X11ConnectionIntegrationTest
         COMMAND "${CMAKE_COMMAND}" -E echo
             "SKIP: Xvfb is unavailable; X11 integration requires the VM or CI profile")
     set_tests_properties(X11ConnectionIntegrationTest PROPERTIES
+        SKIP_REGULAR_EXPRESSION "^SKIP:"
+        TIMEOUT 5)
+    add_test(
+        NAME X11RandrUnavailableIntegrationTest
+        COMMAND "${CMAKE_COMMAND}" -E echo
+            "SKIP: Xvfb is unavailable; RandR fallback integration requires the VM or CI profile")
+    set_tests_properties(X11RandrUnavailableIntegrationTest PROPERTIES
         SKIP_REGULAR_EXPRESSION "^SKIP:"
         TIMEOUT 5)
     message(STATUS

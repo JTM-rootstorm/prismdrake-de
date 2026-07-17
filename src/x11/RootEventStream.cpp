@@ -1,5 +1,6 @@
 #include "RootEventStream.hpp"
 
+#include "RandrTopology.hpp"
 #include "X11ConnectionPrivate.hpp"
 
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <xcb/randr.h>
 #include <xcb/xcb.h>
 
 namespace prismdrake::x11 {
@@ -50,6 +52,13 @@ static_assert(propertyNotifyEventType == XCB_PROPERTY_NOTIFY);
     return Result<RootEventStream>::failure(
         {ErrorCode::io_error, "The X11 root event subscription failed.",
          "Reconnect to the development X server and rebuild mirrored state."});
+}
+
+[[nodiscard]] Result<RootEventStream> provenanceFailure() {
+    return Result<RootEventStream>::failure(
+        {ErrorCode::invalid_argument,
+         "The RandR protocol and root event stream connection do not match.",
+         "Negotiate RandR and create the event stream on the same X11 connection."});
 }
 
 [[nodiscard]] Result<RootEventBatch> drainFailure() {
@@ -195,6 +204,13 @@ decodeProtocolError(const ProtocolErrorFields &fields) {
                                value.minor_code};
 }
 
+[[nodiscard]] RandrEventFields copyRandrEvent(const xcb_generic_event_t &event) noexcept {
+    std::uint8_t fields[2]{};
+    static_assert(sizeof(fields) <= sizeof(event));
+    std::memcpy(fields, &event, sizeof(fields));
+    return RandrEventFields{fields[0], fields[1]};
+}
+
 } // namespace
 
 Result<std::optional<RootEvent>> decodeRootEvent(const CoreRootEventFields &fields, WindowId root) {
@@ -259,9 +275,35 @@ Result<RootEventStream> RootEventStream::create(X11Connection &connection) {
     return Result<RootEventStream>::success(RootEventStream{std::move(implementation), addedMask});
 }
 
+Result<RootEventStream> RootEventStream::create(X11Connection &connection,
+                                                const RandrTopologyProtocol &randr) {
+    if (!randr.belongsTo(connection.identity())) {
+        return provenanceFailure();
+    }
+
+    auto stream = create(connection);
+    if (!stream) {
+        return Result<RootEventStream>::failure(stream.error());
+    }
+    auto selected = randr.selectTopologyEvents(connection);
+    if (!selected) {
+        return Result<RootEventStream>::failure(selected.error());
+    }
+    if (selected.value()) {
+        stream.value().randrFirstEvent_ = randr.first_event_;
+        stream.value().randrSupportsResourceChange_ =
+            randr.status_ == RandrTopologyStatus::randr_1_4;
+        stream.value().randrEventsSelected_ = true;
+    }
+    return stream;
+}
+
 RootEventStream::RootEventStream(RootEventStream &&other) noexcept
     : implementation_(std::move(other.implementation_)),
-      addedMask_(std::exchange(other.addedMask_, 0U)) {}
+      addedMask_(std::exchange(other.addedMask_, 0U)),
+      randrFirstEvent_(std::exchange(other.randrFirstEvent_, 0U)),
+      randrSupportsResourceChange_(std::exchange(other.randrSupportsResourceChange_, false)),
+      randrEventsSelected_(std::exchange(other.randrEventsSelected_, false)) {}
 
 RootEventStream::~RootEventStream() { releaseSubscription(); }
 
@@ -271,6 +313,12 @@ void RootEventStream::releaseSubscription() noexcept {
     }
 
     auto *native = implementation_->connection_.get();
+    if (native != nullptr && randrEventsSelected_ && xcb_connection_has_error(native) == 0) {
+        const auto cookie =
+            xcb_randr_select_input_checked(native, implementation_->screen_.rootWindow.value(), 0U);
+        ProtocolError error{xcb_request_check(native, cookie)};
+        (void)error;
+    }
     if (native != nullptr && addedMask_ != 0U && xcb_connection_has_error(native) == 0) {
         xcb_generic_error_t *attributesError = nullptr;
         const auto attributesCookie =
@@ -289,6 +337,9 @@ void RootEventStream::releaseSubscription() noexcept {
     implementation_->releaseRootEventStream();
     implementation_.reset();
     addedMask_ = 0U;
+    randrFirstEvent_ = 0U;
+    randrSupportsResourceChange_ = false;
+    randrEventsSelected_ = false;
 }
 
 Result<RootEventBatch> RootEventStream::drain(std::size_t examinationLimit) {
@@ -332,6 +383,13 @@ Result<RootEventBatch> RootEventStream::drain(std::size_t examinationLimit) {
             decoded = decodeRootEvent(copyProperty(*event), implementation_->screen_.rootWindow);
             break;
         default:
+            if (randrEventsSelected_ &&
+                randrEventRequiresFullRequery(randrFirstEvent_, copyRandrEvent(*event),
+                                              randrSupportsResourceChange_)) {
+                decoded = Result<std::optional<RootEvent>>::success(
+                    RootEvent{OutputTopologyRefreshHint{synthetic(event->response_type)}});
+                break;
+            }
             continue;
         }
 

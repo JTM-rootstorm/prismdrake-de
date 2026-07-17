@@ -54,10 +54,14 @@ carry a verified or observed version.
   [settings-service evidence](../research/pd1-settings-service-evidence.md);
   supported provider and broker minima remain unmeasured.
 - `prismdrake-x11` is an Experimental internal library. It directly links
-  system core XCB 1.17.0 for its checked connection and selected-screen probe;
-  Xvfb 21.1.24 supplies isolated real-server tests. These observed versions are
-  not supported minima. EWMH, RandR, dock, and event dependencies remain
-  unresolved until their implementation slices select and measure them.
+  system core XCB 1.17.0 for transport, atoms, properties, EWMH discovery, and
+  observational root events. A separate direct `xcb-randr` 1.17.0 link from
+  the same Gentoo `x11-libs/libxcb` package supplies bounded RandR negotiation,
+  output discovery, primary-output queries, and topology-change event
+  selection through `libxcb-randr.so.0`. Xvfb 21.1.24 supplies isolated
+  real-server tests. These observed versions are not supported minima. Standard
+  window-manager requests, dock and strut property publication, work-area
+  verification, and stale task-model records remain unresolved PD1 scope.
 - `prismdrake-session` and `prismdrake-shell` remain planned component
   manifests. The Qt and XCB versions come from the 2026-07-16 Gentoo reference
   VM evidence and remain observations rather than supported minima.

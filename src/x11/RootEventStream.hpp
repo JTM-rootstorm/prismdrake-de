@@ -15,6 +15,8 @@
 
 namespace prismdrake::x11 {
 
+class RandrTopologyProtocol;
+
 inline constexpr std::uint8_t syntheticEventBit = 0x80U;
 inline constexpr std::uint8_t coreEventTypeMask = 0x7fU;
 inline constexpr std::uint8_t createNotifyEventType = 16U;
@@ -111,11 +113,20 @@ struct RootPropertyHint final {
     friend bool operator==(const RootPropertyHint &, const RootPropertyHint &) = default;
 };
 
-/// Non-authoritative hint that root/output geometry should be queried again.
+/// Non-authoritative hint that core root geometry should be queried again.
 struct RootGeometryHint final {
     bool synthetic;
 
     friend bool operator==(const RootGeometryHint &, const RootGeometryHint &) = default;
+};
+
+/// Non-authoritative hint that the negotiated output topology should be
+/// queried again. Inline extension-event geometry is never retained.
+struct OutputTopologyRefreshHint final {
+    bool synthetic;
+
+    friend bool operator==(const OutputTopologyRefreshHint &,
+                           const OutputTopologyRefreshHint &) = default;
 };
 
 /// Recoverable hint that a checked state refresh should be attempted after one
@@ -124,8 +135,8 @@ struct ProtocolErrorHint final {
     friend bool operator==(const ProtocolErrorHint &, const ProtocolErrorHint &) = default;
 };
 
-using RootEvent =
-    std::variant<ClientTopologyHint, RootPropertyHint, RootGeometryHint, ProtocolErrorHint>;
+using RootEvent = std::variant<ClientTopologyHint, RootPropertyHint, RootGeometryHint,
+                               OutputTopologyRefreshHint, ProtocolErrorHint>;
 
 /// Validates one copied core event. Unrelated root traffic returns an empty
 /// optional; malformed relevant traffic returns a bounded redacted error.
@@ -139,13 +150,20 @@ struct RootEventBatch final {
     bool examinationLimitReached;
 };
 
-/// One event-driven core-XCB root subscription on an owned X11 connection.
+/// One event-driven core-XCB root subscription on an owned X11 connection,
+/// optionally combined with negotiated RandR topology events.
 ///
 /// Events are refresh hints only. This class never owns or mutates authoritative
 /// window-manager state and never selects SubstructureRedirect.
 class RootEventStream final {
   public:
+    /// Creates a core-only event stream without selecting extension events.
     [[nodiscard]] static foundation::Result<RootEventStream> create(X11Connection &connection);
+
+    /// Atomically owns the sole queue consumer and the negotiated RandR
+    /// subscription. The protocol must have been negotiated on connection.
+    [[nodiscard]] static foundation::Result<RootEventStream>
+    create(X11Connection &connection, const RandrTopologyProtocol &randr);
 
     RootEventStream(const RootEventStream &) = delete;
     RootEventStream &operator=(const RootEventStream &) = delete;
@@ -166,6 +184,9 @@ class RootEventStream final {
 
     std::shared_ptr<X11Connection::Implementation> implementation_;
     std::uint32_t addedMask_;
+    std::uint8_t randrFirstEvent_{0U};
+    bool randrSupportsResourceChange_{false};
+    bool randrEventsSelected_{false};
 };
 
 } // namespace prismdrake::x11

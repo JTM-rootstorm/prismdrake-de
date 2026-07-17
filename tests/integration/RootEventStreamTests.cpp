@@ -1,5 +1,6 @@
 #include "RootEventStream.hpp"
 
+#include "RandrTopology.hpp"
 #include "X11Connection.hpp"
 
 #include <gtest/gtest.h>
@@ -135,6 +136,42 @@ TEST(RootEventStreamIntegrationTest, ObservesControlledClientCreateAndDestroyAsH
     auto *screen = selectedScreen(*control, controlScreenIndex);
     ASSERT_NE(screen, nullptr);
     ASSERT_EQ(screen->root, observer.value().screen().rootWindow.value());
+
+    ControlledWindow window{*control, screen->root};
+    const auto created = waitForTopologyHint(stream.value(), ClientTopologyChange::created,
+                                             observer.value().eventFileDescriptor());
+    ASSERT_TRUE(created);
+    EXPECT_FALSE(created->synthetic);
+
+    window.destroy();
+    const auto destroyed = waitForTopologyHint(stream.value(), ClientTopologyChange::destroyed,
+                                               observer.value().eventFileDescriptor());
+    ASSERT_TRUE(destroyed);
+    EXPECT_FALSE(destroyed->synthetic);
+}
+
+TEST(RootEventStreamIntegrationTest, RandrAwareSoleDrainPreservesCoreLifecycleEvents) {
+    const char *display = std::getenv("DISPLAY");
+    ASSERT_NE(display, nullptr);
+    ASSERT_FALSE(std::string_view{display}.empty());
+
+    auto observer = X11Connection::connect(display);
+    ASSERT_TRUE(observer);
+    auto protocol = RandrTopologyProtocol::negotiate(observer.value());
+    ASSERT_TRUE(protocol);
+    if (protocol.value().status() == RandrTopologyStatus::unavailable) {
+        GTEST_SKIP() << "isolated X server has no RandR 1.2 support";
+    }
+    ASSERT_NE(protocol.value().status(), RandrTopologyStatus::malformed);
+    auto stream = RootEventStream::create(observer.value(), protocol.value());
+    ASSERT_TRUE(stream);
+
+    int controlScreenIndex = 0;
+    ControlConnection control{xcb_connect(display, &controlScreenIndex)};
+    ASSERT_TRUE(control);
+    ASSERT_EQ(xcb_connection_has_error(control.get()), 0);
+    auto *screen = selectedScreen(*control, controlScreenIndex);
+    ASSERT_NE(screen, nullptr);
 
     ControlledWindow window{*control, screen->root};
     const auto created = waitForTopologyHint(stream.value(), ClientTopologyChange::created,

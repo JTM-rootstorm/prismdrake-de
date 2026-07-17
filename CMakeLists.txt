@@ -106,8 +106,14 @@ prismdrake_add_format_check(
     src/x11/EwmhCapabilities.cpp
     src/x11/EwmhCapabilities.hpp
     src/x11/EwmhCapabilitiesInternal.hpp
+    src/x11/OutputTopology.cpp
+    src/x11/OutputTopology.hpp
+    src/x11/PanelStrutGeometry.cpp
+    src/x11/PanelStrutGeometry.hpp
     src/x11/PropertyReader.cpp
     src/x11/PropertyReader.hpp
+    src/x11/RandrTopology.cpp
+    src/x11/RandrTopology.hpp
     src/x11/RootEventStream.cpp
     src/x11/RootEventStream.hpp
     src/x11/X11Connection.cpp
@@ -144,6 +150,7 @@ prismdrake_add_format_check(
     src/session/SettingsReadiness.hpp
     tests/integration/EwmhCapabilitiesTests.cpp
     tests/integration/PropertyReaderTests.cpp
+    tests/integration/RandrTopologyTests.cpp
     tests/integration/RootEventStreamTests.cpp
     tests/integration/SettingsServiceTests.cpp
     tests/integration/X11ConnectionTests.cpp
@@ -158,7 +165,10 @@ prismdrake_add_format_check(
     tests/unit/ConfigurationLoaderTests.cpp
     tests/unit/DiagnosticsTests.cpp
     tests/unit/FoundationPrimitivesTests.cpp
+    tests/unit/OutputTopologyTests.cpp
+    tests/unit/PanelStrutGeometryTests.cpp
     tests/unit/PropertyReaderTests.cpp
+    tests/unit/RandrTopologyTests.cpp
     tests/unit/ResultTests.cpp
     tests/unit/RootEventStreamTests.cpp
     tests/unit/RestartPolicyTests.cpp

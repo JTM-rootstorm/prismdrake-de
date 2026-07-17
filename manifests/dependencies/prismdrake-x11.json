@@ -25,6 +25,24 @@
       "reason": "The toolkit-neutral X11 adapter directly uses system core XCB for checked connection setup, fixed atom interning, bounded property reads, verified EWMH discovery, and observational root events."
     },
     {
+      "name": "xcb-randr",
+      "gentoo_atom": "x11-libs/libxcb",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "randr_output_discovery",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.17.0",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "When the X server does not provide usable RandR state, the validated core-root rectangle supplies the reduced single-output PD1 topology.",
+      "reason": "The X11 adapter directly links libxcb-randr.so.0 from x11-libs/libxcb for bounded RandR version negotiation, output discovery, primary-output queries, and topology-change event selection."
+    },
+    {
       "name": "xorg-server",
       "gentoo_atom": "x11-base/xorg-server",
       "scope": "test",
@@ -46,11 +64,11 @@
   "unresolved": [
     {
       "area": "minimum_versions",
-      "reason": "Supported minimum libxcb and Xorg server versions remain unmeasured; the recorded versions are observations from the Gentoo reference VM."
+      "reason": "Supported minimum core libxcb, xcb-randr, and Xorg server versions remain unmeasured; the recorded versions are component observations rather than supported minima."
     },
     {
       "area": "remaining_adapter_scope",
-      "reason": "Standard window-manager requests, dock and strut properties, stale task-model records, and RandR output policy remain later PD1 work."
+      "reason": "Standard window-manager requests, dock and strut property publication, work-area verification, and stale task-model records remain later PD1 work."
     }
   ]
 }
