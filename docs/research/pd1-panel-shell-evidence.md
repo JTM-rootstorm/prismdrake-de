@@ -14,9 +14,12 @@ The implemented slice contains:
 - deterministic keyboard traversal, focus recovery, explicit active, inactive,
   minimized, urgent, and modal cues, and typed activation intents;
 - plain-text rendering of untrusted task metadata;
-- one Qt/X11 host for the documented bottom-edge primary-output policy; and
+- one Qt/X11 host for the documented bottom-edge primary-output policy;
 - checked standard `_NET_WM_WINDOW_TYPE_DOCK`, `_NET_WM_STRUT`, and
-  `_NET_WM_STRUT_PARTIAL` publication before the window is shown.
+  `_NET_WM_STRUT_PARTIAL` publication before the window is shown; and
+- one event-driven EWMH task controller that publishes complete observations
+  and sends checked activate, minimize, and close requests for the exact current
+  task lifetime and generation.
 
 The host reuses Prismdrake's existing X11 connection, RandR topology, output
 selection, dock-publication, and root-event boundaries. It does not take focus,
@@ -45,6 +48,7 @@ passed:
 - 9 launcher-presentation tests;
 - 9 panel Quick Test cases with no QML warnings;
 - 8 display-free panel-window controller tests;
+- 7 display-free task-controller tests plus one deterministic no-Xvfb skip;
 - panel and notification `qmllint` targets;
 - the repository C++ format target;
 - `make validate`, including 39 negative contract fixtures; and
@@ -110,12 +114,20 @@ commits only after the matching X11 state succeeds. A failed update attempts one
 bounded rollback to the previous applied placement; if coherence cannot be
 restored, the host hides the panel and clears its applied state.
 
+The task controller has one sole `RootEventStream` on its own X11 connection,
+coalesces each bounded event batch into at most one refresh, invalidates observed
+XID incarnations before rebuilding state, and disables cached request
+capabilities until a complete observation and fresh WM capability check both
+succeed. Pending requests are capped at 64, deduplicated by lifetime and action,
+expire after eight newer observations, and are confirmed or refused only from
+authoritative task snapshots. It never writes WM-owned state directly.
+
 ## Explicit remaining gaps
 
 - There is no installed `prismdrake-shell` executable or live settings-snapshot
   client yet.
-- Presentation adapters and the window host are not wired into one long-running
-  shell process yet.
+- Presentation adapters, the task controller, and the window host are not wired
+  into one long-running shell process yet.
 - X-server-loss handling is implemented as notifier disable, panel hide, and a
   queued shutdown callback, but an induced-loss test is deferred. Killing Qt's
   sole platform X server can abort `QGuiApplication` before callback dispatch;

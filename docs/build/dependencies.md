@@ -71,8 +71,9 @@ carry a verified or observed version.
   `prismdrake-shell` is Experimental. Its immutable settings/theme projection
   directly uses Qt Core and GUI; its passive launcher, task, and notification
   adapters use Qt Core; and its compiled panel and notification modules use QML,
-  Quick, and Quick Controls. The panel window host uses Qt GUI and the internal
-  standards-only X11 adapter; Quick Test is test-only. Ubuntu 24.04 CI verifies
+  Quick, and Quick Controls. The panel window host and event-driven task
+  controller use Qt GUI/Core and the internal standards-only X11 adapter; Quick
+  Test is test-only. Ubuntu 24.04 CI verifies
   Qt 6.4.2 as the oldest tested common-API component version, while Qt 6.11.1 is
   the currently observed host component version and Gentoo supplies
   qtdeclarative 6.11.1-r1. The shell executable, live settings-snapshot client,

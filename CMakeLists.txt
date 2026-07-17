@@ -190,6 +190,10 @@ prismdrake_add_format_check(
     src/shell/notifications/NotificationPresentationModel.hpp
     src/shell/tasks/TaskPresentationModel.cpp
     src/shell/tasks/TaskPresentationModel.hpp
+    src/shell/taskcontroller/TaskController.cpp
+    src/shell/taskcontroller/TaskController.hpp
+    src/shell/taskcontroller/TaskControllerCore.cpp
+    src/shell/taskcontroller/TaskControllerCore.hpp
     src/shell/window/PanelWindowController.cpp
     src/shell/window/PanelWindowController.hpp
     src/shell/window/PanelWindowHost.cpp
@@ -263,6 +267,8 @@ prismdrake_add_format_check(
     tests/qt/ShellThemeSnapshotAdapterTests.cpp
     tests/qt/LauncherPresentationModelTests.cpp
     tests/qt/TaskPresentationModelTests.cpp
+    tests/qt/taskcontroller/TaskControllerCoreTests.cpp
+    tests/qt/taskcontroller/TaskControllerX11Tests.cpp
     tests/qt/window/PanelWindowControllerTests.cpp
     tests/qt/window/PanelWindowHostIntegrationTests.cpp
     tests/unit/OutputTopologyTests.cpp

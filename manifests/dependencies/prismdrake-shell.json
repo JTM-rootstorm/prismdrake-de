@@ -58,13 +58,13 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental Qt panel host consumes the internal standards-only X11 adapter, which links system libxcb for the dedicated event connection, RandR topology, and checked EWMH dock publication. The complete shell runtime closure remains unmeasured."
+      "reason": "The Experimental Qt panel host and event-driven task controller consume the internal standards-only X11 adapter, which links system libxcb for dedicated event connections, RandR topology, EWMH task observation, and checked dock and window-manager requests. The complete shell runtime closure remains unmeasured."
     }
   ],
   "unresolved": [
     {
       "area": "runtime_closure",
-      "reason": "The typed theme, launcher, task, and notification adapters, panel and notification QML modules, and panel window host are implemented, but the complete shell executable, live settings-snapshot client, runtime wiring, and direct and transitive closure still require measurement."
+      "reason": "The typed theme, launcher, task, and notification adapters, panel and notification QML modules, panel window host, and EWMH task controller are implemented, but the complete shell executable, live settings-snapshot client, runtime wiring, and direct and transitive closure still require measurement."
     },
     {
       "area": "accessibility_runtime",

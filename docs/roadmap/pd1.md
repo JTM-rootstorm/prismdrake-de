@@ -41,8 +41,10 @@ fallback behavior.
 
 The Experimental tree now contains the shared Lustre/Forge theme projection,
 passive launcher/task/notification presentation adapters, one token-driven and
-keyboard-operable panel component, and a Qt/X11 window host that applies the
-documented primary-output bottom-dock policy through standard EWMH properties.
+keyboard-operable panel component, a Qt/X11 window host that applies the
+documented primary-output bottom-dock policy through standard EWMH properties,
+and an event-driven controller that mirrors authoritative EWMH task state and
+sends only checked standard WM requests.
 This is a development prototype, not a complete shell: the installed
 `prismdrake-shell` executable, live settings client, end-to-end model wiring,
 reviewed visual baselines, and live assistive-technology evidence remain open
