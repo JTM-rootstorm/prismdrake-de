@@ -14,5 +14,12 @@ standard `_NET_WM_WINDOW_TYPE_DOCK`, `_NET_WM_STRUT`, and
 mapped. It does not implement window-manager policy, Glasswyrm-native protocols,
 compositor blur, scene capture, or screenshot blur.
 
+`tests/inspect_atspi.py` queries the live AT-SPI tree through the system Python
+GI bindings. It verifies the expected control names, can assert the focused
+control after externally injected X11 input, and prints the observed roles,
+states, actions, interfaces, and descriptions as JSON. Run it only inside the
+same isolated D-Bus session as the spike; source metadata alone is not treated
+as accessibility evidence.
+
 See [`docs/research/pd1-toolkit-spike.md`](../../docs/research/pd1-toolkit-spike.md)
 for reproducible commands and observed-versus-pending evidence.
