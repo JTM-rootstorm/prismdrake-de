@@ -85,6 +85,8 @@ def main() -> int:
         "-screen",
         "0",
         "1024x768x24",
+        "-fp",
+        "built-ins",
         "-noreset",
         "-nolisten",
         "tcp",
