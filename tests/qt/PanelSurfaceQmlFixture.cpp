@@ -159,6 +159,14 @@ bool PanelSurfaceQmlFixture::publishRepresentativeTasks() {
     return publishTasks();
 }
 
+bool PanelSurfaceQmlFixture::swapFirstTwoTasks() {
+    if (tasks_.size() < 2U) {
+        return false;
+    }
+    std::swap(tasks_[0], tasks_[1]);
+    return publishTasks();
+}
+
 bool PanelSurfaceQmlFixture::removeTask(int row) {
     if (row < 0 || static_cast<std::size_t>(row) >= tasks_.size()) {
         return false;

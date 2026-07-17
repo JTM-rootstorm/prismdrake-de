@@ -26,8 +26,7 @@ Button {
     hoverEnabled: true
     text: presentationTitle
     implicitWidth: Math.max(tokens.minimumTargetSize,
-                            Math.max(taskTitle.implicitWidth, taskState.implicitWidth)
-                            + leftPadding + rightPadding)
+                            contentItem.implicitWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(tokens.minimumTargetSize, tokens.panelHeight)
     leftPadding: tokens.taskPadding
     rightPadding: tokens.taskPadding
@@ -60,11 +59,9 @@ Button {
     }
 
     contentItem: Column {
-        id: taskContents
         spacing: 1
 
         Text {
-            id: taskTitle
             objectName: "panelTaskTitle"
             width: parent.width
             color: root.tokens.textPrimaryColor
@@ -78,7 +75,6 @@ Button {
         }
 
         Text {
-            id: taskState
             objectName: "panelTaskStateLabel"
             width: parent.width
             color: root.presentationUrgent
@@ -113,7 +109,6 @@ Button {
                             : root.tokens.inactiveBorderColor))
 
         Rectangle {
-            id: urgentMarker
             objectName: "panelTaskUrgentMarker"
             visible: root.presentationUrgent
             width: Math.max(5, root.tokens.taskBorderWidth * 2)

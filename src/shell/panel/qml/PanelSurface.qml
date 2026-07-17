@@ -45,19 +45,16 @@ FocusScope {
     }
 
     function captureFocusRecovery() {
-        // Repeater.itemAt() is statically a QQuickItem; every delegate is a TaskButton.
-        // qmllint disable missing-property
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = taskRepeater.itemAt(index)
             if (candidate !== null && candidate.activeFocus) {
                 pendingFocusRecovery = {
                     "index": index,
-                    "presentation": candidate["presentation"]
+                    "item": candidate
                 }
                 return
             }
         }
-        // qmllint enable missing-property
         pendingFocusRecovery = null
     }
 
@@ -67,17 +64,13 @@ FocusScope {
         if (recovery === null)
             return
 
-        // Repeater.itemAt() is statically a QQuickItem; every delegate is a TaskButton.
-        // qmllint disable missing-property
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = taskRepeater.itemAt(index)
-            if (candidate !== null
-                    && candidate["presentation"] === recovery.presentation) {
+            if (candidate !== null && candidate === recovery.item) {
                 candidate.forceActiveFocus(Qt.OtherFocusReason)
                 return
             }
         }
-        // qmllint enable missing-property
 
         if (taskRepeater.count > 0) {
             const fallback = taskRepeater.itemAt(Math.min(recovery.index,

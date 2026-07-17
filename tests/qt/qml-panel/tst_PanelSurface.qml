@@ -160,6 +160,17 @@ TestCase {
         compare(panel.taskAt(0).presentation.title, "Editor")
     }
 
+    function test_focusedTaskSurvivesAuthoritativeReorder() {
+        const focusedTask = panel.taskAt(0)
+        focusedTask.forceActiveFocus(Qt.OtherFocusReason)
+        tryCompare(focusedTask, "activeFocus", true)
+
+        verify(panelFixture.swapFirstTwoTasks())
+        tryCompare(panel.taskAt(1), "activeFocus", true)
+        compare(panel.taskAt(1), focusedTask)
+        compare(panel.taskAt(1).presentation.title, "Editor")
+    }
+
     function test_accessibilityAndOpaqueFallbackComeFromOneRealGeneration() {
         verify(panelFixture.resetAccessible())
         verify(panelFixture.publishRepresentativeTasks())

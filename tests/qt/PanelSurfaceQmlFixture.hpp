@@ -48,6 +48,7 @@ class PanelSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool resetAccessible();
     Q_INVOKABLE bool publishForge();
     Q_INVOKABLE bool publishRepresentativeTasks();
+    Q_INVOKABLE bool swapFirstTwoTasks();
     Q_INVOKABLE bool removeTask(int row);
 
   signals:
