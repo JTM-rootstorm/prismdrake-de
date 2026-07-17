@@ -4,6 +4,9 @@ pkg_check_modules(PRISMDRAKE_XCB REQUIRED IMPORTED_TARGET xcb)
 add_library(prismdrake-x11 STATIC
     AtomCache.cpp
     AtomCache.hpp
+    EwmhCapabilities.cpp
+    EwmhCapabilities.hpp
+    EwmhCapabilitiesInternal.hpp
     PropertyReader.cpp
     PropertyReader.hpp
     X11Connection.cpp

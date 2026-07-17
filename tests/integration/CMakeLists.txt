@@ -29,6 +29,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(PRISMDRAKE_TEST_XCB REQUIRED IMPORTED_TARGET xcb)
 
 add_executable(prismdrake-x11-integration-tests
+    EwmhCapabilitiesTests.cpp
     PropertyReaderTests.cpp
     X11ConnectionTests.cpp)
 target_link_libraries(prismdrake-x11-integration-tests

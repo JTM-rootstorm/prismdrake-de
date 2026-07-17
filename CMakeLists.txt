@@ -103,6 +103,9 @@ prismdrake_add_format_check(
     src/theme/ThemeResolver.hpp
     src/x11/AtomCache.cpp
     src/x11/AtomCache.hpp
+    src/x11/EwmhCapabilities.cpp
+    src/x11/EwmhCapabilities.hpp
+    src/x11/EwmhCapabilitiesInternal.hpp
     src/x11/PropertyReader.cpp
     src/x11/PropertyReader.hpp
     src/x11/X11Connection.cpp
@@ -137,6 +140,7 @@ prismdrake_add_format_check(
     src/session/SessionRuntime.hpp
     src/session/SettingsReadiness.cpp
     src/session/SettingsReadiness.hpp
+    tests/integration/EwmhCapabilitiesTests.cpp
     tests/integration/PropertyReaderTests.cpp
     tests/integration/SettingsServiceTests.cpp
     tests/integration/X11ConnectionTests.cpp
