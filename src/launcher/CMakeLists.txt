@@ -1,6 +1,8 @@
 add_library(prismdrake-launcher-model STATIC
     ApplicationPaths.cpp
     ApplicationPaths.hpp
+    ApplicationSearch.cpp
+    ApplicationSearch.hpp
     DesktopEntry.hpp
     DesktopEntryDiscovery.cpp
     DesktopEntryDiscovery.hpp
