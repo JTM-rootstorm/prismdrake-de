@@ -11,7 +11,7 @@ Window {
     required property var presentationModel
 
     width: 960
-    height: 280
+    height: Math.max(280, 192 + root.presentationModel.minimumTargetPixels * 2)
     minimumWidth: 720
     minimumHeight: 220
     visible: false

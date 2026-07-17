@@ -25,6 +25,8 @@ EXPECTED_NAMES = {
     "Disable transparency",
 }
 
+EXPECTED_BUTTONS = EXPECTED_NAMES | {"Settings task"}
+
 
 def children(node: Atspi.Accessible) -> list[Atspi.Accessible]:
     return [node.get_child_at_index(index) for index in range(node.get_child_count())]
@@ -45,7 +47,7 @@ def action_names(node: Atspi.Accessible) -> list[str]:
     action = node.get_action_iface()
     if action is None:
         return []
-    return [action.get_action_name(index) for index in range(action.get_n_actions())]
+    return [action.get_name(index) for index in range(action.get_n_actions())]
 
 
 def snapshot(node: Atspi.Accessible) -> dict[str, Any]:
@@ -95,6 +97,37 @@ def main() -> int:
     missing = sorted(EXPECTED_NAMES - names)
     if missing:
         print(f"missing expected accessible names: {', '.join(missing)}", file=sys.stderr)
+        return 1
+
+    for name in sorted(EXPECTED_BUTTONS):
+        matches = [node for node in nodes if node.get_name() == name]
+        if len(matches) != 1:
+            print(f"expected exactly one accessible control named {name!r}", file=sys.stderr)
+            return 1
+        node = matches[0]
+        states = node.get_state_set()
+        if node.get_role() != Atspi.Role.PUSH_BUTTON:
+            print(f"control is not exposed as a button: {name}", file=sys.stderr)
+            return 1
+        if not node.get_description():
+            print(f"control has no accessible description: {name}", file=sys.stderr)
+            return 1
+        if "Press" not in action_names(node):
+            print(f"control has no Press action: {name}", file=sys.stderr)
+            return 1
+        for required_state in (Atspi.StateType.ENABLED, Atspi.StateType.FOCUSABLE):
+            if not states.contains(required_state):
+                print(f"control lacks required state {required_state.value_nick}: {name}", file=sys.stderr)
+                return 1
+
+    checked_tasks = [
+        node.get_name()
+        for node in nodes
+        if (node.get_name() or "").endswith(" task")
+        and node.get_state_set().contains(Atspi.StateType.CHECKED)
+    ]
+    if checked_tasks != ["Files task"]:
+        print(f"unexpected checked task state: {checked_tasks}", file=sys.stderr)
         return 1
 
     if args.expect_focused:

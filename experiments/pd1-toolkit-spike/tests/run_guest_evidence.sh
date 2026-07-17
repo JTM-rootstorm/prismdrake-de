@@ -9,10 +9,12 @@ readonly source_dir
 readonly build_dir="${1:-/var/tmp/prismdrake-pd1-toolkit-spike-build}"
 readonly output_root="${2:-/mnt/shared/pd1-toolkit-evidence}"
 readonly profile="${3:-lustre}"
+readonly requested_text_scale="${4:-}"
+readonly scenario="${5:-${profile}}"
 readonly display_number="${PRISMDRAKE_SPIKE_DISPLAY:-99}"
 readonly display=":${display_number}"
 readonly runtime_dir="/tmp/prismdrake-pd1-toolkit-runtime-${UID}-${display_number}"
-readonly output_dir="${output_root}/${profile}"
+readonly output_dir="${output_root}/${scenario}"
 readonly executable="${build_dir}/prismdrake-pd1-toolkit-spike"
 
 if [[ "${profile}" != "lustre" && "${profile}" != "forge" ]]; then
@@ -68,6 +70,7 @@ export PRISMDRAKE_SPIKE_BUILD_DIR="${build_dir}"
 export PRISMDRAKE_SPIKE_DISPLAY_VALUE="${display}"
 export PRISMDRAKE_SPIKE_OUTPUT_DIR="${output_dir}"
 export PRISMDRAKE_SPIKE_PROFILE_VALUE="${profile}"
+export PRISMDRAKE_SPIKE_TEXT_SCALE_VALUE="${requested_text_scale}"
 export PRISMDRAKE_SPIKE_SOURCE_DIR="${source_dir}"
 export XDG_RUNTIME_DIR="${runtime_dir}"
 
@@ -100,7 +103,10 @@ dbus-run-session -- bash -euo pipefail -c '
 
     extra_args=()
     if [[ "${PRISMDRAKE_SPIKE_PROFILE_VALUE}" == "lustre" ]]; then
-        extra_args+=(--disable-transparency --reduced-motion --text-scale 1.25)
+        extra_args+=(--disable-transparency --reduced-motion)
+    fi
+    if [[ -n "${PRISMDRAKE_SPIKE_TEXT_SCALE_VALUE}" ]]; then
+        extra_args+=(--text-scale "${PRISMDRAKE_SPIKE_TEXT_SCALE_VALUE}")
     fi
     "${PRISMDRAKE_SPIKE_BUILD_DIR}/prismdrake-pd1-toolkit-spike" \
         --profile "${PRISMDRAKE_SPIKE_PROFILE_VALUE}" \
@@ -140,6 +146,18 @@ dbus-run-session -- bash -euo pipefail -c '
     python3 "${PRISMDRAKE_SPIKE_SOURCE_DIR}/tests/inspect_atspi.py" \
         --expect-focused "Files task" \
         >"${PRISMDRAKE_SPIKE_OUTPUT_DIR}/atspi-after-tab.json"
+    xdotool key --window "${window_id}" shift+Tab
+    python3 "${PRISMDRAKE_SPIKE_SOURCE_DIR}/tests/inspect_atspi.py" \
+        --expect-focused "Open launcher" \
+        >"${PRISMDRAKE_SPIKE_OUTPUT_DIR}/atspi-after-backtab.json"
+    xdotool key --window "${window_id}" Return
+    python3 "${PRISMDRAKE_SPIKE_SOURCE_DIR}/tests/inspect_atspi.py" \
+        --expect-focused "Close launcher" \
+        >"${PRISMDRAKE_SPIKE_OUTPUT_DIR}/atspi-launcher-open.json"
+    xdotool key --window "${window_id}" Escape
+    python3 "${PRISMDRAKE_SPIKE_SOURCE_DIR}/tests/inspect_atspi.py" \
+        --expect-focused "Open launcher" \
+        >"${PRISMDRAKE_SPIKE_OUTPUT_DIR}/atspi-launcher-dismissed.json"
     xwd -silent -id "${window_id}" \
         -out "${PRISMDRAKE_SPIKE_OUTPUT_DIR}/window.xwd"
 
