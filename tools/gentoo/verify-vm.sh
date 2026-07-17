@@ -94,6 +94,10 @@ else
 	fail 'eselect is unavailable'
 fi
 
+printf 'Portage: %s\n' "$(emerge --version 2>/dev/null | sed -n '1p' || printf unavailable)"
+printf 'compiler: %s\n' "$(gcc --version 2>/dev/null | sed -n '1p' || printf unavailable)"
+printf 'init: %s\n' "$(readlink /proc/1/exe 2>/dev/null || printf unknown)"
+
 printf '\nResources\n'
 uname -r 2>/dev/null || true
 awk '/MemTotal:/ { printf "memory: %.1f GiB\n", $2 / 1048576 }' /proc/meminfo 2>/dev/null || true
@@ -202,17 +206,25 @@ if command -v portageq >/dev/null 2>&1; then
 else
 	fail 'portageq is unavailable'
 fi
+if command -v eselect >/dev/null 2>&1 &&
+	eselect repository list -i 2>/dev/null | grep -q 'prismdrake-local'; then
+	pass 'eselect reports prismdrake-local as installed'
+else
+	fail 'eselect does not report prismdrake-local as installed'
+fi
 
 printf '\nRepository QA\n'
 if command -v pkgcheck >/dev/null 2>&1; then
+	QA_REPO=$(mktemp -d /tmp/prismdrake-repository-qa.XXXXXX)
 	PKGCHECK_CACHE=$(mktemp -d /tmp/prismdrake-pkgcheck.XXXXXX)
-	trap 'rm -rf "$PKGCHECK_CACHE"' EXIT HUP INT TERM
-	if pkgcheck scan --cache-dir "$PKGCHECK_CACHE" "$PORTAGE_REPO"; then
+	trap 'rm -rf "$QA_REPO" "$PKGCHECK_CACHE"' EXIT HUP INT TERM
+	cp -a "$PORTAGE_REPO/." "$QA_REPO/"
+	if pkgcheck scan --cache-dir "$PKGCHECK_CACHE" "$QA_REPO"; then
 		pass 'pkgcheck scan passed'
 	else
 		fail 'pkgcheck scan reported repository findings'
 	fi
-	rm -rf "$PKGCHECK_CACHE"
+	rm -rf "$QA_REPO" "$PKGCHECK_CACHE"
 	trap - EXIT HUP INT TERM
 else
 	fail 'pkgcheck is unavailable; enable prismdrake-dev-env[portage-qa]'
@@ -223,13 +235,24 @@ for TOOL in gcc cmake ninja git gdb strace valgrind lsof Xvfb Xephyr openbox dbu
 	if command -v "$TOOL" >/dev/null 2>&1; then
 		printf 'PASS: %-18s available\n' "$TOOL"
 	else
-		printf 'WARN: %-18s unavailable\n' "$TOOL"
-		WARNINGS=$((WARNINGS + 1))
+		fail "$TOOL is unavailable"
 	fi
 done
 
 printf '\nPackage and USE resolution\n'
 if command -v emerge >/dev/null 2>&1 && [ -n "$REGISTERED_REPO" ]; then
+	if command -v qlist >/dev/null 2>&1 &&
+		qlist -IC dev-util/prismdrake-dev-env >/dev/null 2>&1; then
+		pass 'development metapackage is installed'
+	else
+		fail 'development metapackage is not installed'
+	fi
+	if command -v equery >/dev/null 2>&1; then
+		printf 'Installed development metapackage USE state:\n'
+		equery uses dev-util/prismdrake-dev-env || fail 'could not inspect installed metapackage USE state'
+	else
+		fail 'equery is unavailable for installed USE inspection'
+	fi
 	if emerge --pretend --verbose --tree dev-util/prismdrake-dev-env; then
 		pass 'default development metapackage resolves'
 	else

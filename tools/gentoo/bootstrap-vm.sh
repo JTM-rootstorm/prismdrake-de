@@ -103,6 +103,12 @@ fi
 MODE=$(stat -c '%a' "$SHARED_PATH")
 OTHER_DIGIT=$((MODE % 10))
 [ $((OTHER_DIGIT & 2)) -eq 0 ] || die 'refusing a world-writable shared path'
+for SAFE_PATH in "$WORKSPACE" "$PORTAGE_REPO"; do
+	SAFE_MODE=$(stat -c '%a' "$SAFE_PATH")
+	SAFE_OTHER_DIGIT=$((SAFE_MODE % 10))
+	[ $((SAFE_OTHER_DIGIT & 2)) -eq 0 ] ||
+		die "refusing world-writable source path: $SAFE_PATH"
+done
 WORKSPACE_OWNER=$(stat -c '%u' "$WORKSPACE")
 WORKSPACE_USER=$(getent passwd "$WORKSPACE_OWNER" 2>/dev/null | cut -d: -f1)
 [ -n "$WORKSPACE_USER" ] || die "workspace owner UID $WORKSPACE_OWNER has no guest account"
@@ -131,6 +137,11 @@ printf '  shared path: %s\n' "$SHARED_PATH"
 printf '  binary packages: %s\n' "$(if [ "$USE_BINPKGS" = true ]; then printf enabled; else printf disabled; fi)"
 printf '  root free space: %s GiB\n' "$(awk -v value="$AVAILABLE_KIB" 'BEGIN { printf "%.1f", value / 1048576 }')"
 printf '  guest memory: %s GiB\n' "$(awk -v value="$MEMORY_KIB" 'BEGIN { printf "%.1f", value / 1048576 }')"
+printf '  release: %s\n' "$(cat /etc/gentoo-release)"
+printf '  kernel: %s\n' "$(uname -r)"
+printf '  init: %s\n' "$(readlink /proc/1/exe 2>/dev/null || printf unknown)"
+printf '  Portage: %s\n' "$(emerge --version 2>/dev/null | sed -n '1p' || printf unavailable)"
+printf '  compiler: %s\n' "$(gcc --version 2>/dev/null | sed -n '1p' || printf unavailable)"
 
 if [ -e "$REPOS_FILE" ]; then
 	printf '  repository config: present; content will be reconciled\n'
@@ -239,6 +250,14 @@ dev-util/prismdrake-dev-env ~amd64"
 install_project_file "$REPOS_FILE" "$REPOS_CONTENT"
 install_project_file "$USE_FILE" "$USE_CONTENT"
 install_project_file "$KEYWORDS_FILE" "$KEYWORDS_CONTENT"
+
+REGISTERED_REPO=$(portageq get_repo_path / prismdrake-local 2>/dev/null || true)
+[ -n "$REGISTERED_REPO" ] || die 'Portage does not recognize prismdrake-local after registration'
+[ "$(readlink -f "$REGISTERED_REPO")" = "$(readlink -f "$PORTAGE_REPO")" ] ||
+	die 'Portage resolved prismdrake-local to a stale or unexpected path'
+eselect repository list -i | grep -q 'prismdrake-local' ||
+	die 'eselect does not report prismdrake-local as installed'
+printf 'Verified live repository path: %s\n' "$REGISTERED_REPO"
 
 QA_REPO=$(mktemp -d /tmp/prismdrake-repository-qa.XXXXXX)
 PKGCHECK_CACHE=$(mktemp -d /tmp/prismdrake-pkgcheck.XXXXXX)
