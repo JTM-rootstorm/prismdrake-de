@@ -30,6 +30,20 @@ prismdrake_enable_sanitizers(prismdrake-shell-theme-snapshot-tests)
 gtest_discover_tests(prismdrake-shell-theme-snapshot-tests
     DISCOVERY_MODE PRE_TEST)
 
+add_executable(prismdrake-shell-launcher-presentation-tests
+    LauncherPresentationModelTests.cpp)
+target_link_libraries(prismdrake-shell-launcher-presentation-tests
+    PRIVATE
+        GTest::gtest_main
+        Prismdrake::shell-launcher-presentation
+        Qt6::Test)
+
+prismdrake_configure_cpp_target(prismdrake-shell-launcher-presentation-tests)
+prismdrake_enable_warnings(prismdrake-shell-launcher-presentation-tests)
+prismdrake_enable_sanitizers(prismdrake-shell-launcher-presentation-tests)
+gtest_discover_tests(prismdrake-shell-launcher-presentation-tests
+    DISCOVERY_MODE PRE_TEST)
+
 add_executable(prismdrake-shell-task-presentation-tests
     TaskPresentationModelTests.cpp)
 target_link_libraries(prismdrake-shell-task-presentation-tests

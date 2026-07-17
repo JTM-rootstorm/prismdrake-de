@@ -211,6 +211,8 @@ prismdrake_add_format_check(
     src/session/SettingsReadiness.hpp
     src/shell/theme/ShellThemeSnapshotAdapter.cpp
     src/shell/theme/ShellThemeSnapshotAdapter.hpp
+    src/shell/launcher/LauncherPresentationModel.cpp
+    src/shell/launcher/LauncherPresentationModel.hpp
     tests/integration/DockPropertiesTests.cpp
     tests/integration/EwmhCapabilitiesTests.cpp
     tests/integration/EwmhTaskSourceTests.cpp
@@ -252,6 +254,7 @@ prismdrake_add_format_check(
     tests/qt/NotificationListQmlTestRunner.cpp
     tests/qt/NotificationPresentationModelTests.cpp
     tests/qt/ShellThemeSnapshotAdapterTests.cpp
+    tests/qt/LauncherPresentationModelTests.cpp
     tests/qt/TaskPresentationModelTests.cpp
     tests/unit/OutputTopologyTests.cpp
     tests/unit/PanelStrutGeometryTests.cpp
