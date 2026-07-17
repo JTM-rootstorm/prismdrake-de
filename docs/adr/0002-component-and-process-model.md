@@ -1,7 +1,7 @@
 # ADR 0002: Component and process model
 
-- **Status:** Proposed
-- **Date:** 2026-07-15
+- **Status:** Accepted
+- **Date:** 2026-07-16
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -33,7 +33,7 @@ authority without unnecessary process count.
 
 ## Decision
 
-Propose the component catalog in [the component model](../architecture/component-model.md).
+Use the component catalog in [the component model](../architecture/component-model.md).
 Use separate `prismdrake-session`, `prismdrake-settingsd`,
 `prismdrake-notifyd`, and `prismdrake-shell` processes. Keep panel, launcher,
 desktop, task, quick-settings, notification, and OSD surfaces as logical modules
@@ -61,7 +61,6 @@ be collected in PD1 and later milestones.
 
 ## Revisit conditions
 
-Revisit before PD1 scaffolding if maintainer review changes component ownership.
 Revisit a particular process boundary if prototypes demonstrate a startup
 cycle, unacceptable latency, an unsafe trust boundary, or materially simpler
 isolation.

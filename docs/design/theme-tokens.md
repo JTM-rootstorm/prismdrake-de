@@ -1,6 +1,7 @@
 # Theme token contract
 
-Theme data is Proposed by [ADR 0006](../adr/0006-theme-token-model.md). The
+Theme data is governed by Accepted
+[ADR 0006](../adr/0006-theme-token-model.md). The
 [version-1 schema](../../schemas/prismdrake-theme-tokens.schema.json) defines a
 common shape for base, profile, and accessibility layers.
 
@@ -26,8 +27,8 @@ The committed layers are:
 
 ## Resolution and generation
 
-The proposed resolver validates every source, merges base, one profile, and
-user accessibility overrides, resolves references, and emits an immutable
+The PD1 resolver must validate every source; merge base, one profile, and user
+accessibility overrides; resolve references; and emit an immutable
 snapshot containing schema version, profile identity, generation, source files,
 resolved primitive/semantic/component tokens, overrides, and capability
 fallbacks. Unsupported versions, missing keys, invalid values, or unresolved

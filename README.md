@@ -5,10 +5,10 @@ X11. It aims for a polished, expressive, accessible desktop with a
 standards-based baseline and optional, capability-negotiated enhancements when
 running with Glasswyrm.
 
-Prismdrake is currently in **PD0: identity, contracts, and repository
-foundation**. This repository does not yet contain a usable desktop shell. PD0
-defines the project boundaries, schemas, visual language, interface drafts, and
-validation needed before implementation begins.
+Prismdrake is currently in **PD1: X11 shell skeleton and settings foundation**.
+The PD0 architecture decisions and PD1 scope were approved on 2026-07-16, and
+prototype implementation is active. This repository does not yet contain a
+usable desktop shell or production-ready desktop environment.
 
 ## Profiles
 
@@ -49,7 +49,7 @@ Canonical names and namespaces are `Prismdrake Desktop Environment`,
 
 ## Validation
 
-PD0 contracts are validated with:
+Repository contracts are validated with:
 
 ```sh
 make validate
@@ -57,8 +57,9 @@ make validate
 
 The validator uses Python 3.11 or newer and the standard library. It validates
 schemas, examples, interface XML, theme parity, Architecture Decision Record
-structure, and repository-local links. This is contract validation, not a
-desktop build.
+structure, and repository-local links. This remains contract validation; PD1
+compiled targets use the separately documented CMake and CTest paths as they
+are introduced.
 
 ## License
 

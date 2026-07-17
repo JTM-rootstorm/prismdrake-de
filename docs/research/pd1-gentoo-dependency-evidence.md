@@ -1,12 +1,14 @@
 # PD1 Gentoo dependency evidence
 
-- **Status:** Observed Stage 0 evidence; no production dependency decision
+- **Status:** Observed Stage 0 evidence supporting the approved dependency boundary
 - **Observed:** 2026-07-16 in `prismdrake-vm`
 - **Scope:** `dev-util/prismdrake-dev-env-0.1` with the default USE policy
 
 This snapshot records the reviewed development and evidence environment. It is
-not runtime metadata for Prismdrake, and it does not accept Proposed ADR 0003
-or ADR 0008. The product ebuild remains intentionally deferred.
+not runtime metadata for Prismdrake. ADRs 0003 and 0008 and the development
+dependency boundary were accepted separately by the maintainer on 2026-07-16.
+The future live-ebuild scope is approved, but its implementation remains a
+separate PD1 work package.
 
 ## Resolver state
 
@@ -91,9 +93,11 @@ No `emerge --depclean`, profile switch, global keyword change, or global USE
 change was performed. After installation and evidence capture, the 30 GiB root
 filesystem had approximately 6.5 GiB free.
 
-## Remaining decision boundary
+## Remaining evidence boundary
 
-This evidence supports an informed dependency-boundary decision, but it does
-not establish a minimal production closure, installed-size budget, or final
-toolkit choice. The maintainer must still approve or revise the mandatory and
-optional dependency sets and Proposed ADRs before production scaffolding.
+The maintainer approved the reviewed mandatory and optional development layers
+and the future live-ebuild scope. This evidence does not establish a minimal
+production closure, installed-size budget, or dependency set for components
+that have not yet been implemented. Those values require measurement from the
+production targets and ebuild rather than inference from this development
+metapackage.

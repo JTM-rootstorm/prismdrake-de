@@ -1,14 +1,15 @@
 # Prismdrake documentation
 
-Prismdrake is in PD0. These documents define contracts and proposals for later
-implementation; they do not describe a usable desktop release.
+Prismdrake is in PD1. Prototype implementation is active under the Accepted
+architecture decisions and approved PD1 scope, but these documents do not
+describe a usable or production-ready desktop release.
 
 ## Governing material
 
 - [Project-wide product and technical specification](PRISMDRAKE_PROJECT_SPECIFICATION.md)
 - [Architecture Decision Records](adr/README.md)
-- [Milestones and PD0 exit gate](roadmap/milestones.md)
-- [PD1 candidate backlog](roadmap/pd1.md)
+- [Milestones and PD1 status](roadmap/milestones.md)
+- [Active PD1 milestone tracker](roadmap/pd1.md)
 
 ## Product and design
 
@@ -44,5 +45,5 @@ implementation; they do not describe a usable desktop release.
 - [JSON schemas](../schemas/prismdrake-config.schema.json)
 - [Theme token documents](../themes/base.tokens.json)
 
-Run `make validate` from the repository root to check PD0 contracts and local
-links.
+Run `make validate` from the repository root to check repository contracts and
+local links.

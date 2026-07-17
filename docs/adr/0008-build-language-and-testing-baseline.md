@@ -1,6 +1,6 @@
 # ADR 0008: Build, language, and testing baseline
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-16
 - **Owners:** Prismdrake maintainers
 
@@ -45,7 +45,7 @@ make feature detection, installation, and multi-compiler testing unnecessarily
 project-specific. Configure-time dependency downloads undermine reproducible
 and offline distribution builds.
 
-GoogleTest is proposed for PD1 because it provides mature assertions, fixtures,
+GoogleTest is selected for PD1 because it provides mature assertions, fixtures,
 parameterized tests, and direct CTest discovery. It must be supplied by the
 system package manager. A header-only or vendored framework would reduce one
 package dependency but would add source ownership, update, and license-tracking
@@ -53,7 +53,7 @@ work to the repository.
 
 ## Decision
 
-Propose CMake as the build generator and CTest as the canonical compiled-test
+Use CMake as the build generator and CTest as the canonical compiled-test
 runner. Retain `make validate` as the contract-validation entry point and expose
 an equivalent CMake/CTest path once compiled targets exist; neither path may
 silently omit the other's required checks.
@@ -118,7 +118,7 @@ revision metadata may augment developer diagnostics when available, but builds
 from release archives must remain valid without Git and reproducible builds must
 be able to omit non-deterministic metadata.
 
-C++ exceptions are permitted within an implementation target; this proposal
+C++ exceptions are permitted within an implementation target; this decision
 does not require `-fno-exceptions`. Expected operational failures should use
 explicit result types or other checked domain results where practical. No
 exception may cross a process entry point, C ABI, X11 callback, D-Bus handler,
@@ -141,12 +141,16 @@ version generation require focused CMake helpers rather than directory-global
 flags. Package and CI evidence must establish tested minimum tool versions; this
 ADR intentionally does not invent unmeasured compatibility claims.
 
-Accepting this ADR would not accept ADR 0003, make Qt a dependency, activate
-production PD1 scaffolding by itself, or stabilize a public C++ ABI.
+This ADR does not by itself select a visible-shell toolkit, make Qt a dependency
+of toolkit-neutral components, or stabilize a public C++ ABI. ADR 0003 governs
+the separately accepted Qt 6 Quick visible-shell direction.
 
 ## Validation or evidence
 
-Before acceptance, validate the proposal in the Gentoo reference VM by:
+The maintainer accepted this baseline on 2026-07-16 after review of the Gentoo
+development environment and isolated toolkit spike. The following remain
+required PD1 exit evidence for the production build rather than claims about
+the isolated spike:
 
 - configuring and compiling a representative C++20 target with GCC and Clang;
 - running GoogleTest through CTest from the system package;
@@ -162,7 +166,7 @@ or skipped path. Contract validation must remain green throughout.
 
 ## Revisit conditions
 
-Revisit if Gentoo package evidence shows that the proposed tools cannot satisfy
+Revisit if Gentoo package evidence shows that the selected tools cannot satisfy
 the required compiler, test, sanitizer, or offline-build behavior; if a second
 supported platform requires a different generator contract; or if measured
 maintenance cost materially favors another system-packaged test framework.
@@ -176,4 +180,4 @@ policy before installing public C++ headers or promising binary compatibility.
 - [Project specification testing requirements](../PRISMDRAKE_PROJECT_SPECIFICATION.md#25-testing-and-continuous-integration)
 - [Dependency policy](../architecture/dependency-policy.md)
 - [ADR 0003: Visible shell toolkit and language direction](0003-shell-toolkit.md)
-- [PD1 candidate backlog](../roadmap/pd1.md)
+- [PD1 milestone tracker](../roadmap/pd1.md)

@@ -1,7 +1,7 @@
 # PD1 Qt Quick and X11 evidence spike
 
-This directory is a removable, non-installed experiment supporting
-PD1-WP1 and Proposed ADR 0003. It is not production Prismdrake architecture.
+This directory is a removable, non-installed experiment that supplied evidence
+for PD1-WP1 and Accepted ADR 0003. It is not production Prismdrake architecture.
 The standalone CMake project does not participate in the repository root build
 and contains no `install()` rules.
 

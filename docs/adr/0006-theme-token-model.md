@@ -1,7 +1,7 @@
 # ADR 0006: Shared theme token model
 
-- **Status:** Proposed
-- **Date:** 2026-07-15
+- **Status:** Accepted
+- **Date:** 2026-07-16
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -31,7 +31,7 @@ security boundary and are excluded for 1.0.
 
 ## Decision
 
-Propose version-1 JSON token documents with shared primitive, semantic,
+Use version-1 JSON token documents with shared primitive, semantic,
 component, accessibility, and capability-fallback groups. Resolve base plus one
 profile and user overrides into one immutable, generation-tagged snapshot.
 Require semantic/component key parity between Lustre and Forge. Require every

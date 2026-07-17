@@ -4,11 +4,11 @@
 | Field | Value |
 |---|---|
 | Document ID | `PD-SPEC` |
-| Version | `0.1.0` |
+| Version | `0.2.0` |
 | Status | Project-wide baseline specification |
 | Date | 2026-07-16 |
 | Canonical repository | `https://github.com/JTM-rootstorm/prismdrake-de` |
-| Repository baseline inspected | `main` at `a61ed8e64df2eca4ca71f554944781f58246aa27` |
+| Repository baseline inspected | `main` at `73075e8be78233ea24ebdbd70c9b7fee42df890e` |
 | Repository license | GNU General Public License, Version 3 |
 | Intended readers | Maintainers, Codex, contributors, reviewers, designers, testers, and packagers |
 | Scope | The entire Prismdrake project, from foundation through 1.0 and subsequent maintenance |
@@ -293,7 +293,10 @@ Prismdrake consumes external system services for audio, networking, power, autho
 
 ## 10. Component model
 
-The names below are the project-wide working component model. They remain Proposed until accepted by an ADR, except for the canonical `prismdrake-*` prefix.
+The names below are the Accepted project-wide component model under
+[ADR 0002](adr/0002-component-and-process-model.md). The
+`prismdrake-*` prefix remains independently owner-locked by the identity
+decision.
 
 | Component | Responsibility | Key boundaries |
 |---|---|---|
@@ -393,23 +396,29 @@ Shutdown and logout MUST:
 
 ## 12. Technology and dependency policy
 
-### 12.1 Leading implementation architecture
+### 12.1 Accepted PD1 implementation architecture
 
-The following is **Proposed**, not owner-locked:
+The following direction is Accepted for PD1 through ADRs 0003, 0004, 0006, and
+0008. It does not make every dependency mandatory for every component or
+stabilize public implementation interfaces:
 
 - Visible shell surfaces: Qt 6 Quick.
 - Shell models and integration: modern C++.
 - Non-visual core services: modern C++ with D-Bus and X11/XCB interfaces as appropriate.
 - Build system: CMake.
 - User configuration: versioned TOML.
-- Theme and capability contracts: versioned JSON with schemas.
-- D-Bus interfaces: versioned XML definitions under `org.prismdrake.*`.
+- Theme contracts: versioned JSON with schemas.
+- Capability contracts: versioned JSON documents that remain subject to the
+  separately Proposed native-integration decisions.
+- D-Bus interfaces: versioned XML definitions under `org.prismdrake.*`; current
+  interface shapes remain explicitly draft until separately stabilized.
 
-Production implementation MUST NOT treat these choices as Accepted until the corresponding ADRs are approved.
+Production implementation MUST preserve the dependency isolation and interface
+stability limits recorded by the Accepted ADRs.
 
 ### 12.2 Toolkit expectations
 
-If Qt 6 Quick is accepted:
+For the Accepted Qt 6 Quick visible-shell direction:
 
 - QML SHOULD contain layout, visual state, and animation.
 - Persistent policy, parsing, D-Bus access, window models, and settings logic SHOULD remain in C++ or service interfaces.
@@ -448,7 +457,7 @@ GTK itself is not categorically forbidden. A GTK integration package may depend 
 
 ### 13.1 XDG locations
 
-The proposed default layout is:
+The Accepted default layout is:
 
 - User configuration: `$XDG_CONFIG_HOME/prismdrake/`
 - User state: `$XDG_STATE_HOME/prismdrake/`
@@ -1027,7 +1036,10 @@ The project SHOULD maintain:
 
 ### 25.3 Validation commands
 
-The repository MUST provide canonical commands through its build and validation documentation. During early phases, `make validate` MAY be the primary contract validator. Once production code exists, CMake and CTest are the expected leading candidates, subject to an Accepted build ADR.
+The repository MUST provide canonical commands through its build and validation
+documentation. `make validate` remains the contract validator. Under Accepted
+ADR 0008, production C++ targets use CMake and compiled tests use CTest; the two
+paths MUST NOT silently omit one another's required checks.
 
 Agents and contributors MUST inspect the repository rather than assume commands that are not yet present.
 
@@ -1373,7 +1385,7 @@ Prismdrake 1.0 is ready only when all applicable mandatory requirements have evi
 
 ## Appendix B. Initial decision register
 
-| Decision | Status at specification version 0.1.0 |
+| Decision | Status at specification version 0.2.0 |
 |---|---|
 | Product and profile names | Accepted |
 | `prismdrake-*` prefix | Accepted |
@@ -1381,12 +1393,13 @@ Prismdrake 1.0 is ready only when all applicable mandatory requirements have evi
 | Generic `GW_*` native naming | Accepted |
 | Canonical repository | Accepted |
 | GPL-3.0 repository license | Accepted |
-| Component and process model | Proposed |
-| Qt 6 Quick visible shell | Proposed |
-| Modern C++ core | Proposed |
-| CMake build system | Proposed |
-| TOML user configuration | Proposed |
-| JSON theme and capability schemas | Proposed |
+| Component and process model | Accepted |
+| Qt 6 Quick visible shell | Accepted for visible shell surfaces |
+| Modern C++ core | Accepted for PD1 models, services, and integration |
+| CMake, CTest, C++20, and system GoogleTest baseline | Accepted |
+| TOML user configuration and immutable snapshot model | Accepted |
+| JSON theme schemas and data-only token model | Accepted |
+| JSON capability schemas | Proposed pending native-integration decisions |
 | Public D-Bus interface shapes | Proposed |
 | General third-party plugin ABI | Deferred |
 | Wayland support | Deferred |

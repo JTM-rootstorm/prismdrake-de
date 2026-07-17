@@ -1,14 +1,17 @@
-# PD1 candidate backlog and Definition of Ready
+# PD1 active milestone tracker
 
 PD1 is an X11 shell skeleton and settings foundation, not a daily-use desktop.
-Work must stay behind accepted build, component, toolkit, configuration, and
-token decisions. Each issue should cite `PD-*` requirements and include
-testable acceptance criteria, fault behavior, and fallback behavior.
+The maintainer activated this milestone on 2026-07-16 after accepting the build,
+component, toolkit, configuration, and token decisions and approving the
+dependency boundary, scope, and non-goals. Each work package must cite `PD-*`
+requirements and include testable acceptance criteria, fault behavior, and
+fallback behavior.
 
-## Candidate workstreams
+## Active workstreams
 
-1. **Build and language scaffolding:** accept CMake and C++ standards, compiler
-   policy, dependency manifests, formatting, and display-free test entry points.
+1. **Build and language scaffolding:** implement the Accepted CMake, CTest, and
+   C++20 standards, compiler policy, dependency manifests, formatting, and
+   display-free test entry points.
 2. **Session environment prototype:** start and stop an init-neutral development
    session with bounded supervision and a safe exit path.
 3. **Settings loader:** parse untrusted TOML, validate version 1, write
@@ -34,26 +37,30 @@ testable acceptance criteria, fault behavior, and fallback behavior.
     candidate native `GW_*` protocols remain unimplemented until separately
     Accepted by Glasswyrm.
 
-## Definition of Ready
+## Activation gate
 
 PD1 may begin only when:
 
 - [x] ADR 0001 project identity is Accepted.
-- [ ] ADR 0002 component/process model has owner approval.
-- [ ] ADR 0003 visible shell toolkit and language direction has owner approval.
-- [ ] ADR 0004 configuration format and locations has owner approval.
-- [ ] ADR 0006 theme-token model has owner approval.
+- [x] ADR 0002 component/process model has owner approval.
+- [x] ADR 0003 visible shell toolkit and language direction has owner approval.
+- [x] ADR 0004 configuration format and locations has owner approval.
+- [x] ADR 0006 theme-token model has owner approval.
+- [x] ADR 0008 build, language, and testing baseline has owner approval.
 - [x] Theme-token schema, Lustre, Forge, and accessibility validation passes.
 - [x] Required low-fidelity mockups and compatibility matrix exist.
 - [x] Glasswyrm documents label native names and wire behavior as draft.
-- [ ] `make validate` and repository CI pass on the reviewed PD0 revision.
-- [ ] Maintainer review finds no unresolved contradiction among the specification,
+- [x] `make validate` and repository CI pass on the reviewed pre-activation
+  revision.
+- [x] Maintainer review finds no unresolved contradiction among the specification,
   README, ADRs, schemas, examples, and interface drafts.
-- [ ] PD1 workstreams are converted into bounded issues with testable acceptance
-  criteria and named requirement IDs.
+- [x] PD1 workstreams are converted into bounded work packages with testable
+  acceptance criteria and named requirement IDs in the maintainer-approved
+  execution plan.
 
-The unchecked decisions are real gates. Research spikes may be isolated and
-removable, but production scaffolding must not assume their outcome.
+The activation gate is complete. Completion of the gate authorizes prototype
+implementation; it does not satisfy the PD1 exit criteria or convert
+experimental evidence into production support.
 
 ## Required PD1 validation posture
 

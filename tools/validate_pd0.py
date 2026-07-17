@@ -509,10 +509,11 @@ def validate_identity_and_hygiene(validation: Validation) -> None:
             validation.require(expected in text, relative, f"missing canonical identity value {expected!r}")
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    normalized_readme = " ".join(readme.split())
     validation.require(
-        "does not yet contain a usable desktop shell" in readme,
+        "does not yet contain a usable desktop shell" in normalized_readme,
         "README.md",
-        "README must clearly state that PD0 is not a usable desktop",
+        "README must clearly state that Prismdrake is not yet a usable desktop",
     )
 
     import hashlib

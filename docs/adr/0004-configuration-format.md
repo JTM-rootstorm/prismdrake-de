@@ -1,7 +1,7 @@
 # ADR 0004: Configuration format and snapshot model
 
-- **Status:** Proposed
-- **Date:** 2026-07-15
+- **Status:** Accepted
+- **Date:** 2026-07-16
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -31,16 +31,17 @@ risks turning the interface into an unrestricted mutation API.
 
 ## Decision
 
-Propose `$XDG_CONFIG_HOME/prismdrake/config.toml` with explicit
+Use `$XDG_CONFIG_HOME/prismdrake/config.toml` with explicit
 `schema_version = 1`, strict documented domains, and profile identifiers
 `lustre` and `forge`. Use XDG state, cache, runtime, and data locations for their
 defined purposes. Validate all input and write atomically while preserving the
 last valid input and packaged defaults.
 
 Resolve settings and theme data into immutable snapshots with one monotonically
-increasing generation. Publish only complete generations. Propose the narrow,
-explicitly draft `org.prismdrake.Settings1` interface; do not expose generic
-arbitrary-key mutation.
+increasing generation. Publish only complete generations. Retain the narrow,
+explicitly draft `org.prismdrake.Settings1` interface as PD1 design input; this
+decision does not stabilize that interface. Do not expose generic arbitrary-key
+mutation.
 
 ## Consequences
 

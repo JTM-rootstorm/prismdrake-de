@@ -1,9 +1,9 @@
 # Contributing to Prismdrake
 
-Prismdrake is in PD0. Contributions should strengthen identity, architecture,
-schemas, interfaces, design contracts, validation, or bounded roadmap work.
-Production desktop implementation belongs to a later milestone after the
-relevant Proposed decisions receive maintainer approval.
+Prismdrake is in PD1. Contributions may implement bounded X11 shell skeleton,
+settings foundation, build, test, and packaging work under the Accepted ADRs
+and active milestone tracker. Prismdrake is not yet a usable desktop; changes
+must not claim production readiness or silently implement later milestones.
 
 ## Before making a change
 
@@ -31,7 +31,7 @@ update.
 
 ## Validation
 
-Run the complete PD0 contract suite before requesting review:
+Run the complete repository contract suite before requesting review:
 
 ```sh
 make validate

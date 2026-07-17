@@ -1,9 +1,9 @@
-# Proposed component model
+# Component model
 
 This catalog refines specification section 10. Names and process boundaries are
-Proposed until [ADR 0002](../adr/0002-component-and-process-model.md) is
-Accepted. “Restart” always means bounded retry with backoff; repeated failure
-enters safe mode or leaves only the affected optional feature unavailable.
+Accepted by [ADR 0002](../adr/0002-component-and-process-model.md). “Restart”
+always means bounded retry with backoff; repeated failure enters safe mode or
+leaves only the affected optional feature unavailable.
 
 ## `prismdrake-session`
 
@@ -18,7 +18,7 @@ enters safe mode or leaves only the affected optional feature unavailable.
 - **Forbidden responsibilities:** shell rendering, WM policy, privileged system
   operations, or editing settings behind `prismdrake-settingsd`.
 - **Dependencies/package:** toolkit-neutral process and D-Bus facilities in a
-  proposed core package; no mandatory systemd dependency.
+  core package; no mandatory systemd dependency.
 - **Crash/restart/security:** an external session entry point must retain a basic
   exit path; restart is environment-specific. Child arguments and environment
   are untrusted and logs exclude secrets.
@@ -33,8 +33,8 @@ enters safe mode or leaves only the affected optional feature unavailable.
 - **Owned state:** transient view state and caches only.
 - **Forbidden responsibilities:** authoritative focus, stacking, workspace,
   composition, capture, settings, notification-history, or privilege policy.
-- **Dependencies/package:** proposed Qt 6 Quick visible surfaces and C++ models
-  in `prismdrake-shell`; toolkit choice remains unapproved.
+- **Dependencies/package:** Accepted Qt 6 Quick visible surfaces and C++ models
+  in `prismdrake-shell`; Qt remains isolated from toolkit-neutral services.
 - **Crash/restart/security:** WM state survives; session restarts shell with its
   last validated generation. All external metadata and rich content are
   untrusted and work must not block UI or D-Bus dispatch threads.
@@ -95,8 +95,9 @@ enters safe mode or leaves only the affected optional feature unavailable.
 - **Owned state:** draft form state only.
 - **Forbidden responsibilities:** settings authority, privileged system policy,
   or direct mutation of another component's storage.
-- **Dependencies/package:** proposed shell UI toolkit in `prismdrake-control`;
-  may be separately installable from non-visual services.
+- **Dependencies/package:** an implementation-reviewed UI toolkit in
+  `prismdrake-control`; the control application remains separately installable
+  from non-visual services.
 - **Crash/restart/security:** losing a draft does not corrupt applied settings;
   risky requests use typed adapters and authorization where required.
 

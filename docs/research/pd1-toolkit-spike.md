@@ -1,10 +1,10 @@
 # PD1 Qt Quick and X11 evidence spike
 
-- **Status:** Observed single-output Gentoo VM evidence; maintainer decision pending
+- **Status:** Observed single-output Gentoo VM evidence used for an Accepted decision
 - **Date:** 2026-07-16
-- **Scope:** Experimental support for PD1-WP1 and Proposed ADR 0003
-- **Architecture status:** This experiment does not accept Qt, CMake, or a
-  production shell architecture.
+- **Scope:** Experimental support for PD1-WP1 and Accepted ADR 0003
+- **Architecture status:** The experiment remains removable and does not itself
+  constitute production shell architecture.
 
 ## Evidence boundary
 
@@ -228,13 +228,13 @@ Tab, with the launcher open, and after Escape dismissal.
 
 ## Recommendation and ADR 0003 impact
 
-The guest evidence supports retaining the Qt 6 Quick score and recommending
-that the maintainer accept or revise ADR 0003. The model/view split, profile
-tokens, accessibility metadata, opaque and reduced-motion fallbacks, standard
-X11 boundary, and isolated test harness all worked without a production target.
+The guest evidence supported the maintainer's 2026-07-16 acceptance of ADR
+0003. The model/view split, profile tokens, accessibility metadata, opaque and
+reduced-motion fallbacks, standard X11 boundary, and isolated test harness all
+worked without a production target.
 
 No qualitative score changed materially, so the toolkit matrix is not
-numerically re-scored. ADR 0003 remains Proposed pending explicit maintainer
-approval, especially because multi-output and mixed-DPI behavior are still
-unobserved. Production scaffolding remains prohibited until that decision and
-the other Stage 0 decisions are recorded.
+numerically re-scored. Acceptance authorizes the Qt 6 Quick visible-shell
+direction; it does not convert the spike into production code or establish the
+still-unobserved multi-output, mixed-DPI, real-GPU, alternate-WM, and complete
+screen-reader behavior. Those limitations remain PD1 validation work.

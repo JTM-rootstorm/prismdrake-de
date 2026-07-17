@@ -1,7 +1,7 @@
 # ADR 0003: Visible shell toolkit and language direction
 
-- **Status:** Proposed
-- **Date:** 2026-07-15
+- **Status:** Accepted
+- **Date:** 2026-07-16
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -31,14 +31,15 @@ accessibility and input ownership for the current scope.
 
 ## Decision
 
-Propose Qt 6 Quick for visible `prismdrake-shell` surfaces and modern C++ for
+Use Qt 6 Quick for visible `prismdrake-shell` surfaces and modern C++ for
 models, services, and integration. Keep persistent policy, parsing, system
 integration, and authoritative models outside QML. Use QML for layout, visual
 state, bindings, accessibility metadata, and brief interruptible animation.
 
-Keep non-visual services toolkit-neutral where practical. This proposal does
-not select Qt for every component, accept CMake, or make Qt and GTK jointly
-mandatory.
+Keep non-visual services toolkit-neutral where practical. This decision does
+not select Qt for every component or make Qt and GTK jointly mandatory. The
+build and language baseline is governed separately by
+[ADR 0008](0008-build-language-and-testing-baseline.md).
 
 ## Consequences
 
@@ -49,11 +50,12 @@ license and dependency review. Custom controls require accessibility tests.
 
 ## Validation or evidence
 
-Current evidence is documented in the research matrix and official toolkit
-references. Acceptance requires an isolated PD1 X11 spike covering keyboard
-navigation, AT-SPI, scaling, reduced motion, disabled transparency,
-deterministic rendering, restart behavior, and an actual Gentoo dependency
-manifest. No production toolkit dependency is added by PD0.
+The [PD1 toolkit spike](../research/pd1-toolkit-spike.md) and
+[Gentoo dependency evidence](../research/pd1-gentoo-dependency-evidence.md)
+cover the observed single-output X11, keyboard, AT-SPI, scaling, reduced-motion,
+disabled-transparency, restart, and dependency behavior used for this decision.
+Real multi-output, mixed-DPI, real-GPU, alternate-WM, and full screen-reader
+behavior remains PD1 validation work rather than established support.
 
 ## Revisit conditions
 

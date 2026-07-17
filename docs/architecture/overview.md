@@ -1,8 +1,8 @@
 # Architecture overview
 
 The Prismdrake architecture separates presentation, desktop policy, external
-system authority, and optional native effects. Component boundaries remain
-Proposed pending approval of [ADR 0002](../adr/0002-component-and-process-model.md).
+system authority, and optional native effects. Component boundaries are
+governed by Accepted [ADR 0002](../adr/0002-component-and-process-model.md).
 
 ## System context
 
@@ -21,7 +21,7 @@ flowchart TB
     Prism <--> System
 ```
 
-## Proposed component model
+## Accepted component model
 
 ```mermaid
 flowchart LR

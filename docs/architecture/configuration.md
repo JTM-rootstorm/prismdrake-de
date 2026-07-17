@@ -1,12 +1,13 @@
-# Proposed configuration and settings contract
+# Configuration and settings contract
 
-The version-1 format is Proposed by [ADR 0004](../adr/0004-configuration-format.md).
-PD0 validates examples and interface shape; it does not implement settings
-loading or D-Bus service behavior.
+The version-1 format is Accepted by
+[ADR 0004](../adr/0004-configuration-format.md). PD0 validated examples and the
+draft interface shape; settings loading and D-Bus service behavior remain PD1
+implementation work.
 
 ## Locations
 
-| Data | Proposed XDG location |
+| Data | Accepted XDG location |
 |---|---|
 | User configuration | `$XDG_CONFIG_HOME/prismdrake/config.toml` |
 | User state | `$XDG_STATE_HOME/prismdrake/` |
@@ -69,7 +70,7 @@ is a draft versioned interface for reading the active profile and generation,
 requesting a validated profile switch or reload, validating bounded candidate
 TOML, and observing complete generation changes. It has no generic “set key”
 method. Callers must handle typed errors, timeouts, service disappearance, and
-name reacquisition. Merging PD0 does not freeze its ABI.
+name reacquisition. Acceptance of ADR 0004 does not freeze its ABI.
 
 Relevant requirements: `PD-CONFIG-001` through `PD-CONFIG-010` and
 `PD-API-001` through `PD-API-005`.

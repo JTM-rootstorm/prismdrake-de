@@ -1,8 +1,9 @@
-# Proposed process and lifecycle model
+# Process and lifecycle model
 
-The process model is Proposed by [ADR 0002](../adr/0002-component-and-process-model.md).
-It is init-neutral: a portable `prismdrake-session` supervisor is the baseline,
-while systemd user units may be optional integration.
+The process model is Accepted by
+[ADR 0002](../adr/0002-component-and-process-model.md). It is init-neutral: a
+portable `prismdrake-session` supervisor is the baseline, while systemd user
+units may be optional integration.
 
 ## Process boundaries
 
@@ -40,7 +41,8 @@ form an acyclic graph; consumers wait with bounded timeouts and useful errors.
 | `prismdrake-notifyd` | `org.freedesktop.Notifications` | Standard service with replacement/reacquisition semantics |
 | Other components | Not assigned in PD0 | A named interface requires its own reviewed contract |
 
-PD0 does not freeze these interfaces or implement a service.
+Acceptance of the process model does not freeze these draft interfaces. Their
+implementation and stability remain separate PD1 work.
 
 ## Generation propagation
 

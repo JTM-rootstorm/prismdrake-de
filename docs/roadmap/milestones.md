@@ -1,10 +1,11 @@
-# Prismdrake milestones and PD0 exit review
+# Prismdrake milestones and PD1 status
 
 Milestone labels organize work; they are not release versions or promises of a
-date. The project is currently in **PD0: identity, contracts, and repository
-foundation**. This roadmap follows the project-wide specification's PD0–PD7
-sequence, which has precedence over the earlier compressed sequence in the PD0
-execution brief.
+date. The project is currently in **PD1: X11 shell skeleton and settings
+foundation**. PD1 was activated by maintainer approval on 2026-07-16 after the
+PD0 decisions, dependency boundary, milestone scope, and non-goals were
+reviewed. This roadmap follows the project-wide specification's PD0–PD7
+sequence.
 
 ## Milestone sequence
 
@@ -34,7 +35,8 @@ current commitment.
 - [x] Process startup, shutdown, crash recovery, safe mode, and fallbacks are
   specified without requiring systemd.
 - [x] Dependency policy excludes mandatory GNOME desktop-stack components.
-- [x] Toolkit research provides an evidence-based Proposed recommendation.
+- [x] Toolkit research and the isolated Gentoo VM spike provide evidence for
+  the Accepted Qt 6 Quick direction.
 
 ### Configuration, design, and integration
 
@@ -55,26 +57,34 @@ current commitment.
 - [x] README and documentation index expose current maturity and major contracts.
 - [x] Contribution, security, issue, pull-request, and asset provenance guidance
   exists.
-- [ ] Maintainers have accepted the component/process, toolkit, configuration,
+- [x] Maintainers have accepted the component/process, toolkit, configuration,
   and token ADRs required for PD1.
 - [x] Canonical local `make validate` passes on the completed PD0 tree.
-- [ ] Repository CI is green on the reviewed PD0 revision.
-- [ ] Maintainers have reviewed and approved the PD1 scope below.
+- [x] Repository CI is green on the reviewed pre-activation revision.
+- [x] Maintainers have reviewed and approved the PD1 scope and non-goals.
 
-Unchecked items are explicit owner/validation gates, not implied future work.
+## Activation record
 
-## Owner review checklist
+- [x] Component names and process boundaries in ADR 0002 were accepted.
+- [x] Qt 6 Quick and modern C++ direction in ADR 0003 was accepted.
+- [x] TOML, XDG locations, snapshot semantics, and the explicitly draft
+  D-Bus scope in ADR 0004 were accepted without stabilizing the interface.
+- [x] The shared JSON token model in ADR 0006 was accepted.
+- [x] The CMake, CTest, C++20, compiler, and testing baseline in ADR 0008 was
+  accepted.
+- [x] Mandatory and optional dependency boundaries, Gentoo development layers,
+  local repository, development metapackage, future live-ebuild scope, and PD1
+  scope/non-goals were approved.
 
-- [ ] Accept or revise component names and process boundaries in ADR 0002.
-- [ ] Accept or revise Qt 6 Quick and modern C++ direction in ADR 0003.
-- [ ] Accept or revise TOML, XDG locations, snapshot semantics, and the draft
-  D-Bus scope in ADR 0004.
-- [ ] Accept or revise the shared JSON token model in ADR 0006.
+The accepted decisions authorize prototype implementation; they do not make
+Prismdrake usable, stabilize draft interfaces, accept candidate Glasswyrm
+protocols, or waive PD1 validation requirements.
+
+## Continuing owner review
+
+These items remain reviewable during PD1 and do not block activation:
+
 - [ ] Review the visible distinction and accessibility defaults for Lustre and
   Forge.
 - [ ] Review candidate Glasswyrm capability placeholders while keeping their
   signatures and transport unapproved.
-- [ ] Confirm mandatory/optional dependency boundaries and the PD1 scope.
-
-Status changes require maintainer review; the existence of PD0 files or future
-implementation does not make a Proposed ADR Accepted.
