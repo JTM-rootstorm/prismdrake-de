@@ -131,13 +131,22 @@ def main() -> int:
         return 1
 
     if args.expect_focused:
-        matches = [node for node in nodes if node.get_name() == args.expect_focused]
-        if not matches:
-            print(f"focused target not found: {args.expect_focused}", file=sys.stderr)
-            return 1
-        if not any(node.get_state_set().contains(Atspi.StateType.FOCUSED) for node in matches):
-            print(f"target is not focused: {args.expect_focused}", file=sys.stderr)
-            return 1
+        focus_deadline = time.monotonic() + args.timeout
+        while True:
+            nodes = walk(application)
+            matches = [node for node in nodes if node.get_name() == args.expect_focused]
+            if any(
+                node.get_state_set().contains(Atspi.StateType.FOCUSED)
+                for node in matches
+            ):
+                break
+            if time.monotonic() >= focus_deadline:
+                if not matches:
+                    print(f"focused target not found: {args.expect_focused}", file=sys.stderr)
+                else:
+                    print(f"target is not focused: {args.expect_focused}", file=sys.stderr)
+                return 1
+            time.sleep(0.1)
 
     print(json.dumps(snapshot(application), indent=2, sort_keys=True))
     return 0
