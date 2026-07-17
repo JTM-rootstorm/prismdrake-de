@@ -20,7 +20,7 @@ if [[ "${profile}" != "lustre" && "${profile}" != "forge" ]]; then
     exit 2
 fi
 
-for command in Xvfb dbus-run-session gdbus magick openbox xdotool xprop xrandr xwd xwininfo; do
+for command in Xvfb dbus-run-session gdbus openbox xdotool xprop xrandr xwd xwininfo; do
     if ! command -v "${command}" >/dev/null 2>&1; then
         printf 'required command not found: %s\n' "${command}" >&2
         exit 2
@@ -140,8 +140,8 @@ dbus-run-session -- bash -euo pipefail -c '
     python3 "${PRISMDRAKE_SPIKE_SOURCE_DIR}/tests/inspect_atspi.py" \
         --expect-focused "Files task" \
         >"${PRISMDRAKE_SPIKE_OUTPUT_DIR}/atspi-after-tab.json"
-    xwd -silent -id "${window_id}" | \
-        magick xwd:- "${PRISMDRAKE_SPIKE_OUTPUT_DIR}/window.png"
+    xwd -silent -id "${window_id}" \
+        -out "${PRISMDRAKE_SPIKE_OUTPUT_DIR}/window.xwd"
 
     kill "${spike_pid}"
     wait "${spike_pid}" 2>/dev/null || true
