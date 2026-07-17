@@ -37,6 +37,7 @@ set_target_properties(prismdrake-cpp-policy PROPERTIES
     CXX_EXTENSIONS NO)
 
 add_subdirectory(src/foundation)
+add_subdirectory(src/launcher)
 
 find_package(tomlplusplus CONFIG QUIET)
 if(NOT tomlplusplus_FOUND)
@@ -145,6 +146,8 @@ prismdrake_add_format_check(
     src/settings/SettingsSnapshot.hpp
     src/ipc/SdBusApi.cpp
     src/ipc/SdBusApi.hpp
+    src/launcher/ApplicationPaths.cpp
+    src/launcher/ApplicationPaths.hpp
     src/settingsd/ServiceOptions.cpp
     src/settingsd/ServiceOptions.hpp
     src/settingsd/ServiceWorker.cpp
@@ -178,6 +181,7 @@ prismdrake_add_format_check(
     tests/unit/ServiceOptionsTests.cpp
     tests/unit/ServiceWorkerTests.cpp
     tests/unit/AtomicFileTests.cpp
+    tests/unit/ApplicationPathsTests.cpp
     tests/unit/BoundedFileTests.cpp
     tests/unit/BuildInfoTests.cpp
     tests/unit/ConfigurationParserTests.cpp

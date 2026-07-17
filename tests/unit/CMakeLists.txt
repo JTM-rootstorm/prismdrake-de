@@ -2,6 +2,7 @@ include(GoogleTest)
 find_package(Threads REQUIRED)
 
 add_executable(prismdrake-foundation-tests
+    ApplicationPathsTests.cpp
     AtomicFileTests.cpp
     BoundedFileTests.cpp
     BuildInfoTests.cpp
@@ -37,6 +38,7 @@ add_executable(prismdrake-foundation-tests
 target_link_libraries(prismdrake-foundation-tests
     PRIVATE
         Prismdrake::foundation
+        Prismdrake::launcher-model
         Prismdrake::session-core
         Prismdrake::settings-service
         Prismdrake::settings-core
