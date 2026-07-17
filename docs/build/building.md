@@ -6,9 +6,10 @@ or vendor third-party source. GCC and Clang are the supported Linux compiler
 families.
 
 The initial production build contains the internal `prismdrake-foundation`
-target. It exposes build diagnostics to other in-tree targets but is not an
-installed library or a stable C++ ABI. Qt, X11, and the isolated toolkit
-experiment are not part of this initial production target.
+target. It exposes build diagnostics and the documented
+[foundation utilities](foundation-utilities.md) to other in-tree targets but
+is not an installed library or a stable C++ ABI. Qt, X11, and the isolated
+toolkit experiment are not part of this initial production target.
 
 ## Canonical developer builds
 

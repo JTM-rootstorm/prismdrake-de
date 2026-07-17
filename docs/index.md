@@ -28,6 +28,7 @@ describe a usable or production-ready desktop release.
 - [Process model](architecture/process-model.md)
 - [Dependency policy](architecture/dependency-policy.md)
 - [Dependency manifests](build/dependencies.md)
+- [Foundation utilities](build/foundation-utilities.md)
 - [Configuration](architecture/configuration.md)
 - [Compatibility matrix](architecture/compatibility.md)
 - [Glasswyrm integration](architecture/glasswyrm-integration.md)
