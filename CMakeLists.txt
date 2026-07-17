@@ -222,6 +222,7 @@ prismdrake_add_format_check(
     tests/unit/EwmhTaskListTests.cpp
     tests/unit/EwmhWindowRequestsTests.cpp
     tests/unit/FoundationPrimitivesTests.cpp
+    tests/unit/LauncherPipelineTests.cpp
     tests/unit/OutputTopologyTests.cpp
     tests/unit/PanelStrutGeometryTests.cpp
     tests/unit/PropertyReaderTests.cpp

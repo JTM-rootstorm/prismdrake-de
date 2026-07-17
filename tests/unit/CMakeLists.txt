@@ -22,6 +22,7 @@ add_executable(prismdrake-foundation-tests
     EwmhTaskListTests.cpp
     EwmhWindowRequestsTests.cpp
     FoundationPrimitivesTests.cpp
+    LauncherPipelineTests.cpp
     OutputTopologyTests.cpp
     PanelStrutGeometryTests.cpp
     PropertyReaderTests.cpp
@@ -65,12 +66,15 @@ prismdrake_configure_cpp_target(prismdrake-foundation-tests)
 prismdrake_enable_warnings(prismdrake-foundation-tests)
 prismdrake_enable_sanitizers(prismdrake-foundation-tests)
 
-add_dependencies(prismdrake-foundation-tests prismdrake-session-child-fixture)
+add_dependencies(prismdrake-foundation-tests
+    prismdrake-application-launch-fixture
+    prismdrake-session-child-fixture)
 gtest_discover_tests(
     prismdrake-foundation-tests
     DISCOVERY_MODE PRE_TEST
     PROPERTIES
         ENVIRONMENT
+            "PRISMDRAKE_APPLICATION_LAUNCH_FIXTURE=$<TARGET_FILE:prismdrake-application-launch-fixture>"
             "PRISMDRAKE_SESSION_CHILD_FIXTURE=$<TARGET_FILE:prismdrake-session-child-fixture>")
 
 add_executable(prismdrake-detached-application-tests
