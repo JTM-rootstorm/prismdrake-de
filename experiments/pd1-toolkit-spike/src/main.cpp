@@ -5,11 +5,11 @@
 #include <QCommandLineParser>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
-#include <QQmlContext>
 #include <QQuickWindow>
 #include <QScreen>
 #include <QTextStream>
 #include <QTimer>
+#include <QVariant>
 
 #include <memory>
 
@@ -84,7 +84,9 @@ int main(int argc, char *argv[])
     model.setTransparencyDisabled(parser.isSet(QStringLiteral("disable-transparency")));
 
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("presentationModel"), &model);
+    engine.setInitialProperties({
+        {QStringLiteral("presentationModel"), QVariant::fromValue(&model)},
+    });
     engine.loadFromModule(
         QStringLiteral("org.prismdrake.experiments.toolkitspike"),
         QStringLiteral("Main"));

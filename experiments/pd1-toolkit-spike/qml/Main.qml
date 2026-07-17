@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -5,6 +7,8 @@ import QtQuick.Window
 
 Window {
     id: root
+
+    required property var presentationModel
 
     width: 960
     height: 280
@@ -20,10 +24,10 @@ Window {
     component SpikeButton: Button {
         id: control
 
-        implicitHeight: presentationModel.minimumTargetPixels
+        implicitHeight: root.presentationModel.minimumTargetPixels
         leftPadding: 14
         rightPadding: 14
-        font.pixelSize: presentationModel.bodyFontPixels
+        font.pixelSize: root.presentationModel.bodyFontPixels
         activeFocusOnTab: true
         Accessible.name: text
         Accessible.description: "Experimental Prismdrake shell control"
@@ -34,7 +38,7 @@ Window {
 
         contentItem: Text {
             text: control.text
-            color: presentationModel.textPrimaryColor
+            color: root.presentationModel.textPrimaryColor
             font: control.font
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -43,33 +47,33 @@ Window {
 
         background: Rectangle {
             color: control.checked || control.down
-                ? presentationModel.borderActiveColor
-                : presentationModel.elevatedColor
-            radius: presentationModel.taskRadiusPixels
+                ? root.presentationModel.borderActiveColor
+                : root.presentationModel.elevatedColor
+            radius: root.presentationModel.taskRadiusPixels
             border.width: control.activeFocus
-                ? presentationModel.focusWidthPixels
-                : presentationModel.borderWidthPixels
+                ? root.presentationModel.focusWidthPixels
+                : root.presentationModel.borderWidthPixels
             border.color: control.activeFocus
-                ? presentationModel.focusColor
-                : presentationModel.borderInactiveColor
+                ? root.presentationModel.focusColor
+                : root.presentationModel.borderInactiveColor
 
             Behavior on border.width {
-                NumberAnimation { duration: presentationModel.motionDurationMs }
+                NumberAnimation { duration: root.presentationModel.motionDurationMs }
             }
         }
     }
 
     Shortcut {
         sequence: "Escape"
-        enabled: presentationModel.launcherVisible
-        onActivated: presentationModel.dismissLauncher()
+        enabled: root.presentationModel.launcherVisible
+        onActivated: root.presentationModel.dismissLauncher()
     }
 
     Rectangle {
         anchors.fill: parent
-        color: presentationModel.panelColor
-        border.width: presentationModel.borderWidthPixels
-        border.color: presentationModel.borderInactiveColor
+        color: root.presentationModel.panelColor
+        border.width: root.presentationModel.borderWidthPixels
+        border.color: root.presentationModel.borderInactiveColor
 
         ColumnLayout {
             anchors.fill: parent
@@ -80,22 +84,22 @@ Window {
                 id: launcherSample
 
                 Layout.fillWidth: true
-                Layout.preferredHeight: presentationModel.launcherVisible ? 94 : 0
+                Layout.preferredHeight: root.presentationModel.launcherVisible ? 94 : 0
                 visible: opacity > 0
-                opacity: presentationModel.launcherVisible ? 1 : 0
-                color: presentationModel.elevatedColor
-                radius: presentationModel.taskRadiusPixels
-                border.width: presentationModel.borderWidthPixels
-                border.color: presentationModel.borderActiveColor
+                opacity: root.presentationModel.launcherVisible ? 1 : 0
+                color: root.presentationModel.elevatedColor
+                radius: root.presentationModel.taskRadiusPixels
+                border.width: root.presentationModel.borderWidthPixels
+                border.color: root.presentationModel.borderActiveColor
                 Accessible.name: "Launcher sample"
                 Accessible.description: "Dismiss with Escape or the close button"
                 Accessible.role: Accessible.Pane
 
                 Behavior on opacity {
-                    NumberAnimation { duration: presentationModel.motionDurationMs }
+                    NumberAnimation { duration: root.presentationModel.motionDurationMs }
                 }
                 Behavior on Layout.preferredHeight {
-                    NumberAnimation { duration: presentationModel.motionDurationMs }
+                    NumberAnimation { duration: root.presentationModel.motionDurationMs }
                 }
 
                 RowLayout {
@@ -107,14 +111,14 @@ Window {
 
                         Text {
                             text: "Launcher sample"
-                            color: presentationModel.textPrimaryColor
-                            font.pixelSize: presentationModel.titleFontPixels
+                            color: root.presentationModel.textPrimaryColor
+                            font.pixelSize: root.presentationModel.titleFontPixels
                             font.bold: true
                         }
                         Text {
                             text: "No applications are launched by this evidence-only surface."
-                            color: presentationModel.textMutedColor
-                            font.pixelSize: presentationModel.bodyFontPixels
+                            color: root.presentationModel.textMutedColor
+                            font.pixelSize: root.presentationModel.bodyFontPixels
                         }
                     }
 
@@ -124,7 +128,7 @@ Window {
                         Accessible.description: "Dismiss the launcher sample"
                         KeyNavigation.tab: launcherButton
                         KeyNavigation.backtab: transparencyButton
-                        onClicked: presentationModel.dismissLauncher()
+                        onClicked: root.presentationModel.dismissLauncher()
                     }
                 }
             }
@@ -139,12 +143,12 @@ Window {
                     Accessible.description: "Open the non-functional launcher sample"
                     KeyNavigation.tab: taskRepeater.itemAt(0)
                     KeyNavigation.backtab: transparencyButton
-                    onClicked: presentationModel.activateLauncher()
+                    onClicked: root.presentationModel.activateLauncher()
                 }
 
                 Repeater {
                     id: taskRepeater
-                    model: presentationModel.tasks
+                    model: root.presentationModel.tasks
 
                     delegate: SpikeButton {
                         required property int index
@@ -152,7 +156,7 @@ Window {
 
                         text: modelData
                         checkable: true
-                        checked: index === presentationModel.activeTask
+                        checked: index === root.presentationModel.activeTask
                         Accessible.name: modelData + " task"
                         Accessible.description: checked
                             ? "Selected task; checked"
@@ -163,7 +167,7 @@ Window {
                         KeyNavigation.backtab: index > 0
                             ? taskRepeater.itemAt(index - 1)
                             : launcherButton
-                        onClicked: presentationModel.activateTask(index)
+                        onClicked: root.presentationModel.activateTask(index)
                     }
                 }
 
@@ -171,8 +175,8 @@ Window {
 
                 Text {
                     text: "DPR " + Screen.devicePixelRatio.toFixed(2)
-                    color: presentationModel.textMutedColor
-                    font.pixelSize: presentationModel.bodyFontPixels
+                    color: root.presentationModel.textMutedColor
+                    font.pixelSize: root.presentationModel.bodyFontPixels
                     Accessible.name: "Device pixel ratio " + Screen.devicePixelRatio.toFixed(2)
                     Accessible.role: Accessible.StaticText
                 }
@@ -184,58 +188,58 @@ Window {
 
                 SpikeButton {
                     id: profileButton
-                    text: "Profile: " + presentationModel.profileDisplayName
+                    text: "Profile: " + root.presentationModel.profileDisplayName
                     checkable: true
-                    checked: presentationModel.profileId === "forge"
+                    checked: root.presentationModel.profileId === "forge"
                     Accessible.name: "Switch visual profile"
-                    Accessible.description: "Current profile " + presentationModel.profileDisplayName
+                    Accessible.description: "Current profile " + root.presentationModel.profileDisplayName
                     KeyNavigation.tab: textScaleButton
                     KeyNavigation.backtab: taskRepeater.itemAt(taskRepeater.count - 1)
-                    onClicked: presentationModel.toggleProfile()
+                    onClicked: root.presentationModel.toggleProfile()
                 }
 
                 SpikeButton {
                     id: textScaleButton
-                    text: "Text: " + Math.round(presentationModel.textScale * 100) + "%"
+                    text: "Text: " + Math.round(root.presentationModel.textScale * 100) + "%"
                     Accessible.name: "Cycle text scale"
                     Accessible.description: "Current text scale "
-                        + Math.round(presentationModel.textScale * 100) + " percent"
+                        + Math.round(root.presentationModel.textScale * 100) + " percent"
                     KeyNavigation.tab: motionButton
                     KeyNavigation.backtab: profileButton
-                    onClicked: presentationModel.cycleTextScale()
+                    onClicked: root.presentationModel.cycleTextScale()
                 }
 
                 SpikeButton {
                     id: motionButton
-                    text: presentationModel.reducedMotion
+                    text: root.presentationModel.reducedMotion
                         ? "Reduced motion: on"
                         : "Reduced motion: off"
                     checkable: true
-                    checked: presentationModel.reducedMotion
+                    checked: root.presentationModel.reducedMotion
                     Accessible.name: "Reduced motion"
                     Accessible.description: checked ? "Enabled" : "Disabled"
                     KeyNavigation.tab: transparencyButton
                     KeyNavigation.backtab: textScaleButton
-                    onClicked: presentationModel.setReducedMotion(!presentationModel.reducedMotion)
+                    onClicked: root.presentationModel.setReducedMotion(!root.presentationModel.reducedMotion)
                 }
 
                 SpikeButton {
                     id: transparencyButton
-                    text: presentationModel.transparencyDisabled
+                    text: root.presentationModel.transparencyDisabled
                         ? "Transparency: off"
                         : "Transparency: profile default"
                     checkable: true
-                    checked: presentationModel.transparencyDisabled
+                    checked: root.presentationModel.transparencyDisabled
                     Accessible.name: "Disable transparency"
                     Accessible.description: checked
                         ? "Opaque fallback material active"
                         : "Profile material active"
-                    KeyNavigation.tab: presentationModel.launcherVisible
+                    KeyNavigation.tab: root.presentationModel.launcherVisible
                         ? closeLauncherButton
                         : launcherButton
                     KeyNavigation.backtab: motionButton
-                    onClicked: presentationModel.setTransparencyDisabled(
-                        !presentationModel.transparencyDisabled)
+                    onClicked: root.presentationModel.setTransparencyDisabled(
+                        !root.presentationModel.transparencyDisabled)
                 }
 
                 Item { Layout.fillWidth: true }
@@ -243,20 +247,20 @@ Window {
 
             Text {
                 Layout.fillWidth: true
-                text: presentationModel.statusMessage
-                color: presentationModel.textMutedColor
-                font.pixelSize: presentationModel.bodyFontPixels
-                Accessible.name: "Status: " + presentationModel.statusMessage
+                text: root.presentationModel.statusMessage
+                color: root.presentationModel.textMutedColor
+                font.pixelSize: root.presentationModel.bodyFontPixels
+                Accessible.name: "Status: " + root.presentationModel.statusMessage
                 Accessible.role: Accessible.StaticText
             }
         }
     }
 
     Connections {
-        target: presentationModel
+        target: root.presentationModel
 
         function onPresentationChanged() {
-            if (presentationModel.launcherVisible) {
+            if (root.presentationModel.launcherVisible) {
                 closeLauncherButton.forceActiveFocus(Qt.TabFocusReason)
             } else if (closeLauncherButton.activeFocus) {
                 launcherButton.forceActiveFocus(Qt.BacktabFocusReason)
