@@ -47,7 +47,7 @@ def action_names(node: Atspi.Accessible) -> list[str]:
     action = node.get_action_iface()
     if action is None:
         return []
-    return [action.get_name(index) for index in range(action.get_n_actions())]
+    return [action.get_action_name(index) for index in range(action.get_n_actions())]
 
 
 def snapshot(node: Atspi.Accessible) -> dict[str, Any]:
