@@ -17,7 +17,7 @@ from gi.repository import Atspi  # noqa: E402
 
 EXPECTED_NAMES = {
     "Open launcher",
-    "Editor task",
+    "Files task",
     "Terminal task",
     "Switch visual profile",
     "Cycle text scale",
