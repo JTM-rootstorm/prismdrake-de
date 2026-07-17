@@ -46,6 +46,7 @@ RDEPEND="
 	)
 	x11? (
 		app-accessibility/at-spi2-core
+		gnome-base/gsettings-desktop-schemas
 		media-fonts/dejavu
 		media-libs/mesa
 		sys-apps/dbus

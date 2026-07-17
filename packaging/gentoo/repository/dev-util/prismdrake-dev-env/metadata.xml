@@ -16,7 +16,7 @@
     <flag name="implementation-deps">Install candidate parser, D-Bus, and C++ test libraries for approved implementation work.</flag>
     <flag name="portage-qa">Install tools for local repository QA and Portage inspection.</flag>
     <flag name="qt6">Install Qt 6 modules used by the isolated visible-shell evidence spike.</flag>
-    <flag name="visual-tests">Install the optional image-comparison tool used by deterministic visual tests.</flag>
+    <flag name="visual-tests">Install optional image capture, comparison, and X11 input-automation tools.</flag>
     <flag name="x11">Install the X11, D-Bus, accessibility, software-rendering, and deterministic display harness.</flag>
   </use>
   <upstream>

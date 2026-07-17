@@ -70,7 +70,9 @@ void PresentationModelTest::selectsOpaqueFallbackWhenTransparencyIsDisabled()
 
     model.setTransparencyDisabled(true);
     const QColor opaque(model.panelColor());
+    const QColor opaqueElevated(model.elevatedColor());
     QCOMPARE(opaque.alphaF(), 1.0);
+    QCOMPARE(opaqueElevated.alphaF(), 1.0);
     QCOMPARE(opaque, QColor(0x20, 0x2a, 0x42, 0xff));
 }
 

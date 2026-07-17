@@ -28,7 +28,7 @@ class PresentationModel final : public QObject {
     Q_PROPERTY(qreal textScale READ textScale NOTIFY presentationChanged)
     Q_PROPERTY(bool reducedMotion READ reducedMotion NOTIFY presentationChanged)
     Q_PROPERTY(bool transparencyDisabled READ transparencyDisabled NOTIFY presentationChanged)
-    Q_PROPERTY(bool launcherVisible READ launcherVisible NOTIFY presentationChanged)
+    Q_PROPERTY(bool launcherVisible READ launcherVisible NOTIFY launcherVisibleChanged)
     Q_PROPERTY(QStringList tasks READ tasks CONSTANT)
     Q_PROPERTY(int activeTask READ activeTask NOTIFY presentationChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY presentationChanged)
@@ -72,6 +72,7 @@ public:
 
 signals:
     void presentationChanged();
+    void launcherVisibleChanged();
 
 private:
     [[nodiscard]] QString colorName(QColor color) const;

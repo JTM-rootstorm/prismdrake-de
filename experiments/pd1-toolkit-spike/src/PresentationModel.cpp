@@ -45,7 +45,11 @@ QString PresentationModel::panelColor() const
 
 QString PresentationModel::elevatedColor() const
 {
-    return colorName(tokens_.elevatedSurface);
+    QColor color = tokens_.elevatedSurface;
+    if (transparencyDisabled_) {
+        color.setAlphaF(1.0F);
+    }
+    return colorName(color);
 }
 
 QString PresentationModel::borderActiveColor() const
@@ -205,9 +209,13 @@ void PresentationModel::setTransparencyDisabled(bool enabled)
 
 void PresentationModel::activateLauncher()
 {
+    if (launcherVisible_) {
+        return;
+    }
     launcherVisible_ = true;
     statusMessage_ = QStringLiteral("Launcher sample opened");
     emit presentationChanged();
+    emit launcherVisibleChanged();
 }
 
 void PresentationModel::dismissLauncher()
@@ -218,6 +226,7 @@ void PresentationModel::dismissLauncher()
     launcherVisible_ = false;
     statusMessage_ = QStringLiteral("Launcher sample dismissed");
     emit presentationChanged();
+    emit launcherVisibleChanged();
 }
 
 void PresentationModel::activateTask(int index)

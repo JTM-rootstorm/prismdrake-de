@@ -259,7 +259,7 @@ Window {
     Connections {
         target: root.presentationModel
 
-        function onPresentationChanged() {
+        function onLauncherVisibleChanged() {
             if (root.presentationModel.launcherVisible) {
                 closeLauncherButton.forceActiveFocus(Qt.TabFocusReason)
             } else if (closeLauncherButton.activeFocus) {
