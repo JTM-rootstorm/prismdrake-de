@@ -47,12 +47,15 @@ carry a verified or observed version.
 - `prismdrake-session`, `prismdrake-settingsd`, and `prismdrake-shell` remain
   planned component manifests. The implemented display-free configuration
   module records its direct system toml++ 3.4.0 dependency in the settingsd
-  boundary, while the service's complete runtime closure remains unmeasured.
+  boundary. The display-free theme parser records system nlohmann JSON
+  3.12.0-r1 as a direct header-only build dependency in the same boundary.
+  Neither observation establishes a verified minimum, and the service's
+  complete runtime closure remains unmeasured.
 - The Qt, XCB, and D-Bus versions come from the 2026-07-16 Gentoo reference VM
   evidence. They are observations, not supported minima.
-- The later theme-token JSON parser, production runtime closure, accessibility
-  linkage, and init-neutral supervisor support remain explicit unresolved areas
-  rather than invented package claims.
+- The production runtime closure, accessibility linkage, atomic-storage
+  dependency decision, and init-neutral supervisor support remain explicit
+  unresolved areas rather than invented package claims.
 
 Mandatory core runtime entries may not name GNOME Shell, Mutter,
 `gnome-settings-daemon`, `gnome-control-center`, or libadwaita. GTK itself is

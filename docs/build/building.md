@@ -9,12 +9,19 @@ The configuration target requires the system toml++ package discovered through
 its CMake package configuration. On Gentoo this is `dev-cpp/tomlplusplus`; the
 build never downloads or vendors a parser.
 
-The PD1 production build contains internal `prismdrake-foundation` and
-`prismdrake-config` targets. They expose build diagnostics, the documented
+The theme target requires system nlohmann JSON 3.11 or newer through its CMake
+package configuration. On Gentoo this is `dev-cpp/nlohmann_json`; on Ubuntu it
+is `nlohmann-json3-dev`. The dependency is header-only and is compiled into the
+internal theme target. The configured 3.11 constraint is declared but is not a
+verified lower bound.
+
+The PD1 production build contains internal `prismdrake-foundation`,
+`prismdrake-config`, and `prismdrake-theme` targets. They expose build
+diagnostics, the documented
 [foundation utilities](foundation-utilities.md), and strict version-1
-configuration loading to later in-tree components, but are not installed
-libraries or stable C++ ABIs. Qt, X11, and the isolated toolkit experiment are
-not part of these targets.
+configuration and theme resolution to later in-tree components, but are not
+installed libraries or stable C++ ABIs. Qt, X11, and the isolated toolkit
+experiment are not part of these targets.
 
 ## Canonical developer builds
 
@@ -53,9 +60,10 @@ Warnings-as-errors is enabled in controlled development and CI configurations,
 not forced on distribution packagers. Developer overrides must remain disabled
 in production builds.
 
-When tests are enabled, a missing system GoogleTest installation is a configure
-error with package guidance. Use `-DBUILD_TESTING=OFF` for a runtime-only build;
-Prismdrake never downloads GoogleTest during configuration.
+Missing toml++ or nlohmann JSON is always a configure error with package
+guidance. When tests are enabled, a missing system GoogleTest installation is
+also a configure error. Use `-DBUILD_TESTING=OFF` for a runtime-only build;
+Prismdrake never downloads dependencies during configuration.
 
 The Gentoo evidence environment has tested CMake 4.3.3-r1, GCC 15.3.0, and
 Clang 22.1.8 against the production foundation target. The configured CMake
