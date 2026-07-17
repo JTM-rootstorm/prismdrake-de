@@ -71,7 +71,9 @@ for it. Do not commit credentials, package caches, Portage temporary data, or
 private logs from the shared clone.
 
 On 2026-07-16, the active guest mount was healthy and read-write at
-`/mnt/shared`, owned by UID and GID `1000:1000` with mode `0755`. `findmnt`
+`/mnt/shared`, owned by UID and GID `1000:1000` with mode `0755`. The guest has
+a dedicated locked `prismdrake` account at that UID/GID for unprivileged source
+inspection and builds; SSH remains root-only. `findmnt`
 reported the source label `glasswyrm-shared`, which differs from the intended
 `prismdrake-shared` tag above. The helpers deliberately validate the mount path
 and `virtiofs` filesystem type instead of relying on that stale label. Host
@@ -154,15 +156,17 @@ before resolution. The apply path:
 
 1. verifies Gentoo, architecture, memory, disk, virtiofs, ownership mode, and
    local repository metadata;
-2. pretends and asks before installing the canonical Gentoo Layer A QA tools;
-3. backs up only project-owned Portage files that it needs to change;
-4. writes `prismdrake-local.conf`, `package.use/prismdrake-dev`, and the narrow
+2. requires the shared checkout owner to map to an ordinary guest account and
+   runs repository QA as that account;
+3. pretends and asks before installing the canonical Gentoo Layer A QA tools;
+4. backs up only project-owned Portage files that it needs to change;
+5. writes `prismdrake-local.conf`, `package.use/prismdrake-dev`, and the narrow
    `package.accept_keywords/prismdrake-dev` exception atomically;
-5. runs `pkgdev manifest` and `pkgcheck scan` before local package resolution;
-6. pretends the default, `-qt6`, `clang`, `implementation-deps`, and
+6. runs `pkgdev manifest` and `pkgcheck scan` before local package resolution;
+7. pretends the default, `-qt6`, `clang`, `implementation-deps`, and
    `visual-tests` development metapackage combinations;
-7. stops if Portage reports a mask, keyword, license, or USE conflict; and
-8. uses `emerge --ask` before installing the development metapackage.
+8. stops if Portage reports a mask, keyword, license, or USE conflict; and
+9. uses `emerge --ask` before installing the development metapackage.
 
 Both helpers accept `PRISMDRAKE_WORKSPACE` and `PRISMDRAKE_SHARED_PATH` as
 environment alternatives to command-line overrides. The default workspace is

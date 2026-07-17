@@ -93,6 +93,15 @@ fi
 MODE=$(stat -c '%a' "$SHARED_PATH")
 OTHER_DIGIT=$((MODE % 10))
 [ $((OTHER_DIGIT & 2)) -eq 0 ] || die 'refusing a world-writable shared path'
+WORKSPACE_OWNER=$(stat -c '%u' "$WORKSPACE")
+WORKSPACE_USER=$(getent passwd "$WORKSPACE_OWNER" 2>/dev/null | cut -d: -f1)
+[ -n "$WORKSPACE_USER" ] || die "workspace owner UID $WORKSPACE_OWNER has no guest account"
+[ "$WORKSPACE_OWNER" -ne 0 ] || die 'workspace must be owned by an ordinary guest user'
+command -v runuser >/dev/null 2>&1 || die 'runuser is required for unprivileged repository QA'
+runuser -u "$WORKSPACE_USER" -- test -r "$PORTAGE_REPO" ||
+	die "workspace owner $WORKSPACE_USER cannot read the local repository"
+runuser -u "$WORKSPACE_USER" -- test -w "$PORTAGE_REPO" ||
+	die "workspace owner $WORKSPACE_USER cannot write the local repository"
 
 AVAILABLE_KIB=$(df -Pk / | awk 'NR == 2 { print $4 }')
 [ "$AVAILABLE_KIB" -ge 5242880 ] || die 'less than 5 GiB is free on the guest root filesystem'
@@ -107,6 +116,7 @@ LAYER_A_PACKAGES='app-eselect/eselect-repository dev-util/pkgcheck dev-util/pkgd
 printf 'Prismdrake Gentoo bootstrap\n'
 printf '  mode: %s\n' "$(if [ "$APPLY" = true ]; then printf apply; else printf plan-only; fi)"
 printf '  workspace: %s\n' "$WORKSPACE"
+printf '  workspace owner: %s (UID %s)\n' "$WORKSPACE_USER" "$WORKSPACE_OWNER"
 printf '  shared path: %s\n' "$SHARED_PATH"
 printf '  root free space: %s GiB\n' "$(awk -v value="$AVAILABLE_KIB" 'BEGIN { printf "%.1f", value / 1048576 }')"
 printf '  guest memory: %s GiB\n' "$(awk -v value="$MEMORY_KIB" 'BEGIN { printf "%.1f", value / 1048576 }')"
@@ -133,9 +143,12 @@ printf '  2. write %s\n' "$REPOS_FILE"
 printf '  3. write %s\n' "$USE_FILE"
 printf '  4. write %s\n' "$KEYWORDS_FILE"
 [ "$SYNC" = false ] || printf '  5. synchronize only the canonical gentoo repository\n'
-printf '  6. generate manifests and run pkgcheck before package resolution\n'
-printf '  7. pretend the default, -qt6, clang, implementation-deps, and visual-tests combinations\n'
-printf '  8. ask before emerging dev-util/prismdrake-dev-env\n'
+printf '  %s. generate manifests and run pkgcheck before package resolution\n' \
+	"$(if [ "$SYNC" = true ]; then printf 6; else printf 5; fi)"
+printf '  %s. pretend the default, -qt6, clang, implementation-deps, and visual-tests combinations\n' \
+	"$(if [ "$SYNC" = true ]; then printf 7; else printf 6; fi)"
+printf '  %s. ask before emerging dev-util/prismdrake-dev-env\n' \
+	"$(if [ "$SYNC" = true ]; then printf 8; else printf 7; fi)"
 printf 'No make.conf, profile, global keyword, depclean, or host virtualization change is made.\n'
 
 if [ "$APPLY" = false ]; then
@@ -211,8 +224,8 @@ install_project_file "$REPOS_FILE" "$REPOS_CONTENT"
 install_project_file "$USE_FILE" "$USE_CONTENT"
 install_project_file "$KEYWORDS_FILE" "$KEYWORDS_CONTENT"
 
-pkgdev manifest "$PORTAGE_REPO"
-pkgcheck scan "$PORTAGE_REPO"
+runuser -u "$WORKSPACE_USER" -- pkgdev manifest "$PORTAGE_REPO"
+runuser -u "$WORKSPACE_USER" -- pkgcheck scan "$PORTAGE_REPO"
 
 pretend_combination() {
 	LABEL=$1
