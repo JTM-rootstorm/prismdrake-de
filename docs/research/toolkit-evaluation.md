@@ -1,8 +1,8 @@
 # Visible shell toolkit evaluation
 
 - **Status:** Research supporting a Proposed decision
-- **Reviewed:** 2026-07-15
-- **Scope:** PD0 qualitative comparison; no toolkit was built or packaged
+- **Reviewed:** 2026-07-16
+- **Scope:** PD0 comparison plus isolated Qt Quick Gentoo VM evidence
 
 This evaluation supports [ADR 0003](../adr/0003-shell-toolkit.md). Scores use a
 1–5 scale, where 5 best satisfies the criterion. Weighted points equal
@@ -24,7 +24,16 @@ a PD1 spike.
 The close middle scores are intentional: each candidate has credible strengths.
 Qt 6 Quick leads because the shell requires declarative, animated,
 composited surfaces and a strong C++ model boundary. Approval still depends on
-an accessible X11 prototype and a verified Gentoo dependency manifest.
+an explicit maintainer decision and review of the remaining multi-output risk.
+
+The isolated [PD1 toolkit spike](pd1-toolkit-spike.md) subsequently built and
+ran with Qt 6.11.1 under Xvfb/Openbox. Live AT-SPI, keyboard focus, 100%, 125%,
+and 150% layouts, opaque and reduced-motion fallbacks, software rendering,
+standard dock properties, restart, and the
+[Gentoo dependency evidence](pd1-gentoo-dependency-evidence.md) were observed.
+Those results support the existing Qt Quick scores; none differed enough to
+justify numerical re-scoring. Real multi-output and mixed-DPI evidence remains
+open, so ADR 0003 still requires an explicit maintainer decision.
 
 ## Candidate evidence
 

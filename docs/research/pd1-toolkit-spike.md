@@ -1,6 +1,6 @@
 # PD1 Qt Quick and X11 evidence spike
 
-- **Status:** Partial evidence; Gentoo VM runtime observations pending
+- **Status:** Observed single-output Gentoo VM evidence; maintainer decision pending
 - **Date:** 2026-07-16
 - **Scope:** Experimental support for PD1-WP1 and Proposed ADR 0003
 - **Architecture status:** This experiment does not accept Qt, CMake, or a
@@ -24,9 +24,8 @@ implements no `GW_*` protocol, window-manager policy, compositor blur, scene
 capture, or screenshot blur. Lustre uses ordinary alpha and its committed
 opaque fallback when transparency is disabled.
 
-This document distinguishes host build observations from the required Gentoo
-VM observations. Rows marked **Pending guest observation** are commands or test
-intent, not claimed results.
+This document distinguishes host build observations from live Gentoo VM
+results. Multi-output behavior remains explicitly unproven.
 
 ## Environment
 
@@ -51,9 +50,11 @@ maintainer's active desktop; X11 runtime claims remain reserved for the VM.
 
 An SSH inspection observed `prismdrake-vm` running Linux
 `6.18.38-gentoo-m10` on x86-64 and `/mnt/shared` mounted read/write using
-virtiofs. At that inspection point, Qt, Xvfb, Xephyr, and X11 inspection tools
-were not installed. Their eventual versions and USE configuration are
-**Pending guest observation** after the reviewed PD1 package set is installed.
+virtiofs. The completed evidence environment used Qt 6.11.1, Xorg 21.1.24,
+GCC 15.3.0, CMake 4.3.3-r1, Ninja 1.13.2-r1, Xvfb, Openbox, D-Bus, and
+AT-SPI. The final VM verifier reported zero failures and zero warnings. The
+package closure is recorded in
+[PD1 Gentoo dependency evidence](pd1-gentoo-dependency-evidence.md).
 
 ## Build and test commands
 
@@ -78,15 +79,13 @@ Observed results:
   forward and reverse focus links, Escape handling, accessibility metadata,
   standard dock atoms, and the absence of `GW_*` and capture APIs.
 - `git diff --check` reported no whitespace errors for the experiment.
-- `qmllint` was not installed on the host, so a standalone lint result is
-  **not observed**. QML ahead-of-time cache generation did complete as part of
-  the build, but that is not a substitute for runtime validation.
+- Qt 6 `qmllint` completed without findings after the model was exposed through
+  an engine initial property and every QML model reference was qualified.
 
-### Planned in `prismdrake-vm`
+### Observed in `prismdrake-vm`
 
-These commands are a reproducible starting point. Every result in this section
-is **Pending guest observation**; update paths if the synchronized source root
-differs.
+The committed source was configured, compiled, and tested as the ordinary
+`prismdrake` guest user:
 
 ```bash
 cmake -S /mnt/shared/prismdrake-de/experiments/pd1-toolkit-spike \
@@ -99,32 +98,32 @@ ctest --test-dir /var/tmp/prismdrake-pd1-toolkit-spike-build \
   --output-on-failure
 ```
 
-Before recording a visible result, start the isolated X11 and D-Bus harness
-documented by the PD1 VM plan, including Xvfb or Xephyr and the test window
-manager. Then run the spike with the xcb QPA and software Qt Quick backend:
+Configuration, compilation, the six-case model test, and `qmllint` all passed.
+The reusable harness then started disposable Xvfb, Openbox, D-Bus, and AT-SPI
+sessions with the xcb QPA and software Qt Quick backend:
 
 ```bash
-export DISPLAY=:99
-export QT_QPA_PLATFORM=xcb
-export QT_QUICK_BACKEND=software
-/var/tmp/prismdrake-pd1-toolkit-spike-build/prismdrake-pd1-toolkit-spike \
-  --profile lustre \
-  --disable-transparency \
-  --reduced-motion \
-  --text-scale 1.25 \
-  --exit-after-ms 3000
+experiments/pd1-toolkit-spike/tests/run_guest_evidence.sh \
+  /var/tmp/prismdrake-pd1-toolkit-spike-build \
+  /mnt/shared/pd1-toolkit-evidence forge 1.0 forge-100
+PRISMDRAKE_SPIKE_DISPLAY=100 \
+  experiments/pd1-toolkit-spike/tests/run_guest_evidence.sh \
+  /var/tmp/prismdrake-pd1-toolkit-spike-build \
+  /mnt/shared/pd1-toolkit-evidence lustre 1.25 lustre-125
+PRISMDRAKE_SPIKE_DISPLAY=101 \
+  experiments/pd1-toolkit-spike/tests/run_guest_evidence.sh \
+  /var/tmp/prismdrake-pd1-toolkit-spike-build \
+  /mnt/shared/pd1-toolkit-evidence forge 1.5 forge-150
 ```
 
-The application prints `PRISMDRAKE_SPIKE_WINDOW_ID` and
-`PRISMDRAKE_SPIKE_DPR` for inspection. Use the reported ID rather than a
-process-name heuristic:
+All three scenarios passed. The harness resolves the exact titled window,
+records its X11 ID, and inspects the live window before shutdown. The observed
+properties used the scenario's actual height of 280, 302, or 324 pixels:
 
 ```bash
-xprop -id "$PRISMDRAKE_SPIKE_WINDOW_ID" \
-  _NET_WM_WINDOW_TYPE _NET_WM_STRUT _NET_WM_STRUT_PARTIAL
-xwininfo -id "$PRISMDRAKE_SPIKE_WINDOW_ID"
-xdpyinfo -display "$DISPLAY"
-xrandr --display "$DISPLAY" --query
+_NET_WM_WINDOW_TYPE(ATOM) = _NET_WM_WINDOW_TYPE_DOCK
+_NET_WM_STRUT(CARDINAL) = 0, 0, 0, <height>
+_NET_WM_STRUT_PARTIAL(CARDINAL) = 0, 0, 0, <height>, 0, 0, 0, 0, 0, 0, 0, 959
 ```
 
 ## Linked modules and libraries
@@ -157,8 +156,9 @@ libstdc++.so.6
 libxcb.so.1
 ```
 
-`ldd` resolved 59 unique runtime objects on that host, including the dynamic
-loader and vDSO. The complete observed set was:
+The VM target had the same 14 direct entries. Its `ldd` output contained 46
+resolved lines. The host resolved 59 unique runtime objects, including the
+dynamic loader and vDSO; its complete observed set was:
 
 ```text
 /lib64/ld-linux-x86-64.so.2 libEGL.so.1 libGLX.so.0 libGLdispatch.so.0
@@ -178,77 +178,63 @@ libsystemd.so.0 libxcb.so.1 libxkbcommon.so.0 libz.so.1 libzstd.so.1
 linux-vdso.so.1
 ```
 
-This host list is not a minimum runtime set and must not be substituted for the
-Gentoo package graph. Direct and transitive guest libraries, package atoms,
-licenses, USE flags, installed sizes, and optionality are all **Pending guest
-observation**. No dependency size is claimed here.
+This host list is not a minimum runtime set and is not substituted for the
+observed Gentoo package graph.
 
 ## Functional evidence matrix
 
-| Area | Current result | Guest evidence still required |
+| Area | Observed result | Remaining boundary |
 |---|---|---|
-| Lustre and Forge tokens | **Observed in model tests:** both committed profiles load; required evidence fields are decoded from `#RRGGBBAA` explicitly. | Visually inspect both profiles under X11. |
-| Profile switch | **Observed in model tests:** profile changes while text scale, reduced motion, and disabled transparency remain independent. | Exercise control with pointer and keyboard. |
-| Keyboard order | **Implemented, not runtime-observed:** explicit Tab and reverse-Tab links cover launcher, tasks, profile, scale, motion, transparency, and launcher close controls. | Record the actual focus sequence and visible focus at each step. |
-| Enter and Space | **Implemented through Qt Quick Button controls, not runtime-observed.** | Activate every control using both keys where applicable. |
-| Escape | **Implemented, not runtime-observed:** enabled while the launcher sample is open. | Confirm dismissal and focus return. |
-| Accessible metadata | **Implemented, not AT-SPI-observed:** controls expose name, description, role, focus, checked state, and text status. | Inspect the actual AT-SPI tree and record any missing role, state, or action. |
-| Text scaling | **Observed in model tests:** bounded from 1.0 to 2.0 and independent of profile. | Inspect 100%, 125%, and 150% for clipping and focus geometry. |
-| Device pixel ratio | **Implemented, not runtime-observed:** the QML view and stdout expose the Qt-reported DPR. | Record X11 output geometry, Qt DPR, and at least one scale variation feasible in the harness. |
-| Reduced motion | **Observed in model tests:** presentation duration resolves to zero. | Confirm transitions are immediate and input remains responsive. |
-| Disabled transparency | **Observed in model tests:** Lustre resolves to its committed opaque `#202A42` fallback with full alpha. | Confirm the rendered window is opaque without blur or capture. |
-| Deterministic rendering | **Build support only:** runtime can select `QT_QUICK_BACKEND=software`. | Record backend diagnostics and an own-window screenshot made by an external test tool. |
-| X11 dock properties | **Compiled, not runtime-observed:** isolated XCB adapter completes checked writes for `_NET_WM_WINDOW_TYPE_DOCK`, `_NET_WM_STRUT`, and `_NET_WM_STRUT_PARTIAL` before C++ maps the window. | Verify exact values and initial Openbox classification with `xprop` under Xvfb or Xephyr. |
-| Process restart | **Bounded-exit option implemented, not runtime-observed.** | Run at least two clean start/exit cycles and record exit status and logs. |
+| Lustre and Forge | Both profiles rendered under Xvfb and were visually inspected from own-window captures. | Production visual approval is not implied. |
+| Profile state | Unit tests confirmed profile switching preserves text scale, reduced motion, and transparency overrides. | Live profile-button and pointer activation remain manual-review items. |
+| Keyboard and launcher | Forward Tab, reverse Tab, Space activation, Escape dismissal, and focus return passed in all scenarios. Focus rings were visible. | Enter activation and the complete control cycle remain manual-review items. |
+| Accessible metadata | Live AT-SPI asserted unique names, button roles, descriptions, Press actions, focusable/enabled state, exactly one checked task, and focus transitions. | A production screen-reader workflow is broader than this smoke test. |
+| Text scaling | 100%, 125%, and 150% rendered at 960x280, 960x302, and 960x324. The expanded 150% launcher capture showed no clipping. | Mixed toolkit scale and multiple outputs remain untested. |
+| Reduced motion | The 125% Lustre scenario forced duration zero; input and focus checks passed. | No frame-timing claim is made. |
+| Disabled transparency | Unit tests require both panel and elevated materials to be fully opaque; the Lustre capture showed the opaque fallback. | This is ordinary alpha, not compositor blur evidence. |
+| Deterministic rendering | All runs forced the software Qt Quick backend and captured only the known X11 window with `xwd`. | Font/rendering stability across guest updates still needs baseline policy. |
+| X11 dock properties | Openbox observed the initial map as `_NET_WM_WINDOW_TYPE_DOCK`; strut and partial-strut values matched exact window geometry. | Other WMs and real multi-output RandR topologies remain untested. |
+| Process restart | More than two independent start, inspect, input, capture, and clean-stop cycles passed. | Supervisor/backoff behavior is outside this isolated experiment. |
 
 ## Rendering and screenshots
 
-No screenshot result is currently claimed. The experiment contains no capture
-API. Guest evidence may use an external test tool to capture only the spike
-window after its X11 ID is known. Record output size, profile, text scale,
-transparency state, motion state, DPR, Qt version, renderer, and test font with
-each artifact. Do not use screenshots to implement or simulate blur.
+The experiment contains no capture API. The external harness captured only the
+known spike X11 window as raw XWD, then the host converted local copies to PNG
+for visual inspection. Forge 100%, Lustre 125% opaque/reduced-motion, Forge
+150%, and Forge 150% with the launcher expanded were reviewed. The artifacts
+remain in the untracked shared evidence directory and are not visual baselines.
 
-## Accessibility procedure still required
+## Accessibility procedure
 
-The guest run must inspect the live AT-SPI tree rather than infer accessibility
-from QML properties. Record the isolated D-Bus session setup, AT-SPI inspection
-tool and version, exposed application/window/control roles, names, checked or
-selected state, focus changes, and actions. If the surface is absent or any
-required property is missing, record that as a failure rather than converting
-the implementation intent into a pass.
-
-Keyboard review must additionally confirm deterministic forward and reverse
-focus order, visible focus in both profiles, Enter and Space activation,
-Escape dismissal, no keyboard trap, minimum target geometry, and no clipping at
-the tested scales.
+`inspect_atspi.py` performs the live assertions inside the same isolated D-Bus
+session as the application. It fails when the application, a required control,
+role, description, action, checked task state, or expected focus state is
+missing. The harness records JSON trees before input, after Tab, after reverse
+Tab, with the launcher open, and after Escape dismissal.
 
 ## Known failures and limitations
 
-- Required guest runtime, X11, screenshot, scale, restart, and AT-SPI evidence
-  is not yet observed.
-- Host `qmllint` was unavailable.
 - The spike uses one bottom-edge, primary-screen demonstration and does not
   establish a production multi-output policy.
 - The X11 adapter demonstrates standard property publication only. It neither
   owns work-area policy nor proves behavior across window managers.
 - The token reader is intentionally narrow and does not implement merging,
   immutable generations, general schemas, migrations, or production parsing.
-- Standard Qt Quick controls still require live AT-SPI verification; metadata
-  in source is necessary evidence, not sufficient evidence.
-- The host dependency closure is environment-specific and says nothing yet
-  about the reviewed Gentoo guest graph, licenses, USE flags, or installed size.
+- The token reader remains experimental. It needs hostile-input size, numeric
+  range, and non-finite-value hardening before reuse in production.
+- The VM result does not cover a real GPU, multiple RandR outputs, mixed DPI,
+  another window manager, a complete screen-reader workflow, or Enter on every
+  control.
 
 ## Recommendation and ADR 0003 impact
 
-The source and host build evidence support continuing the Qt Quick candidate to
-the required VM run: the model/view split, shared profile tokens, fallback
-states, focused tests, and isolated X11 boundary are feasible without touching
-production targets. The evidence is not sufficient to accept or reject
-ADR 0003 because its decisive X11, AT-SPI, scaling, deterministic rendering,
-restart, and Gentoo dependency questions remain unobserved.
+The guest evidence supports retaining the Qt 6 Quick score and recommending
+that the maintainer accept or revise ADR 0003. The model/view split, profile
+tokens, accessibility metadata, opaque and reduced-motion fallbacks, standard
+X11 boundary, and isolated test harness all worked without a production target.
 
-Do not change ADR 0003 from Proposed and do not re-score the toolkit matrix yet.
-After the guest matrix is filled from observed results, re-score only criteria
-whose evidence materially differs from the PD0 qualitative evaluation, then
-request an explicit maintainer decision.
+No qualitative score changed materially, so the toolkit matrix is not
+numerically re-scored. ADR 0003 remains Proposed pending explicit maintainer
+approval, especially because multi-output and mixed-DPI behavior are still
+unobserved. Production scaffolding remains prohibited until that decision and
+the other Stage 0 decisions are recorded.
