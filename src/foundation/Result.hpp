@@ -15,6 +15,7 @@ enum class ErrorCode : std::uint8_t {
     permission_denied,
     too_large,
     io_error,
+    durability_uncertain,
     unsupported,
     cancelled,
 };

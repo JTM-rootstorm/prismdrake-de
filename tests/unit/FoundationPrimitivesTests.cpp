@@ -90,6 +90,7 @@ TEST(ExitStatusTest, MapsEveryFoundationErrorToAStableProcessStatus) {
     EXPECT_EQ(exitStatusFor(ErrorCode::permission_denied), ExitStatus::permission_denied);
     EXPECT_EQ(exitStatusFor(ErrorCode::too_large), ExitStatus::resource_limit);
     EXPECT_EQ(exitStatusFor(ErrorCode::io_error), ExitStatus::io_failure);
+    EXPECT_EQ(exitStatusFor(ErrorCode::durability_uncertain), ExitStatus::io_failure);
     EXPECT_EQ(exitStatusFor(ErrorCode::unsupported), ExitStatus::unavailable);
     EXPECT_EQ(exitStatusFor(ErrorCode::cancelled), ExitStatus::cancelled);
 

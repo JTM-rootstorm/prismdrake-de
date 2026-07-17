@@ -49,8 +49,8 @@ rejects symbolic-link destinations and redirected parent paths, preserves the
 ordinary permission bits of an existing current-user-owned regular file, and
 uses explicit permissions for a new file. A failure before rename removes the
 temporary and leaves the previous destination authoritative. A directory-sync
-failure after rename is reported explicitly because replacement has already
-occurred but durability is not confirmed.
+failure after rename returns the distinct `durability_uncertain` category
+because replacement has already occurred but durability is not confirmed.
 
 ## Diagnostics and process primitives
 

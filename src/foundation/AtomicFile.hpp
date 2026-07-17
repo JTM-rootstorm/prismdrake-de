@@ -18,7 +18,9 @@ struct AtomicWriteOptions {
 ///
 /// The payload is binary-safe. Symbolic-link destinations and non-regular
 /// destinations are rejected. Failures before the atomic rename leave the
-/// prior destination untouched and remove the temporary file.
+/// prior destination untouched and remove the temporary file. A
+/// durability_uncertain error means rename committed the replacement but the
+/// final directory sync failed.
 [[nodiscard]] Result<void> writeFileAtomically(const std::filesystem::path &destination,
                                                std::string_view payload,
                                                AtomicWriteOptions options = {});

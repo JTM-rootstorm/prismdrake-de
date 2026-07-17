@@ -35,6 +35,7 @@ enum class ExitStatus : int {
     case ErrorCode::too_large:
         return ExitStatus::resource_limit;
     case ErrorCode::io_error:
+    case ErrorCode::durability_uncertain:
         return ExitStatus::io_failure;
     case ErrorCode::cancelled:
         return ExitStatus::cancelled;

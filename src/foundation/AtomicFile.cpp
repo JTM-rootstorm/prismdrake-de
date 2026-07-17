@@ -358,7 +358,9 @@ Result<void> writeFileAtomically(const std::filesystem::path &destination, std::
 
     if (!syncDescriptor(directory.get())) {
         return Result<void>::failure(
-            filesystemError(errno, "The replacement succeeded but directory sync failed"));
+            {ErrorCode::durability_uncertain,
+             "The replacement succeeded but its directory sync failed",
+             "Treat the destination as committed, report reduced durability, and verify it"});
     }
 
     return Result<void>::success();
