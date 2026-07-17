@@ -6,7 +6,7 @@ CTEST ?= ctest
 BUILD_DIR ?= build/developer
 
 validate:
-	$(PYTHON) tools/validate_pd0.py
+	$(PYTHON) tools/validate.py
 
 configure:
 	$(CMAKE) -S . -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Debug

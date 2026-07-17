@@ -50,7 +50,7 @@ REQUIRED_FILES = (
     ".github/ISSUE_TEMPLATE/bug.yml",
     ".github/ISSUE_TEMPLATE/feature.yml",
     ".github/pull_request_template.md",
-    ".github/workflows/pd0-validate.yml",
+    ".github/workflows/validate.yml",
     "docs/index.md",
     "docs/vision/product.md",
     "docs/vision/naming.md",
@@ -104,7 +104,7 @@ REQUIRED_FILES = (
     "themes/lustre.tokens.json",
     "themes/forge.tokens.json",
     "themes/accessibility.tokens.json",
-    "tools/validate_pd0.py",
+    "tools/validate.py",
 )
 
 ADR_SECTIONS = (
@@ -782,7 +782,7 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
 
 def main() -> int:
     if sys.version_info < (3, 11):
-        print("error: Prismdrake PD0 validation requires Python 3.11 or newer", file=sys.stderr)
+        print("error: Prismdrake validation requires Python 3.11 or newer", file=sys.stderr)
         return 2
 
     validation = Validation()
@@ -795,12 +795,12 @@ def main() -> int:
     validate_negative_self_tests(schemas, validation)
 
     if validation.errors:
-        print(f"PD0 validation failed with {len(validation.errors)} error(s):", file=sys.stderr)
+        print(f"Prismdrake validation failed with {len(validation.errors)} error(s):", file=sys.stderr)
         for error in validation.errors:
             print(f"  - {error}", file=sys.stderr)
         return 1
 
-    print("PD0 validation passed")
+    print("Prismdrake validation passed")
     print("  required files: present")
     print("  JSON/TOML/XML/SVG: parsed and structurally validated")
     print("  profiles/themes/fallbacks: consistent")
