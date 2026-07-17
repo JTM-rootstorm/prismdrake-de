@@ -1,47 +1,73 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Draft PD0 design contract. This file does not describe an implemented or
-  stable ABI. Inputs are untrusted. Implementations must bound work, return
-  typed org.prismdrake.Settings1.Error.* failures, and preserve the previous
-  valid generation on every failed request.
+  Experimental PD1 implementation contract. This interface has no stable ABI
+  or wire-compatibility guarantee. Inputs are untrusted and work is bounded.
+
+  Domain failures use fixed org.prismdrake.Settings1.Error.* names:
+    InvalidProfile, ValidationFailed, TooLarge,
+    UnsupportedSnapshotVersion, NoSnapshot, Busy, TimedOut,
+    NotAuthorized, ServiceStopping, and Internal.
+
+  Error messages are fixed and bounded. They never include candidate bytes,
+  rejected values, parser excerpts, secrets, or filesystem paths.
 -->
 <node name="/org/prismdrake/Settings1">
   <interface name="org.prismdrake.Settings1">
-    <!-- Returns one complete authoritative profile/generation pair. -->
+    <annotation name="org.prismdrake.Experimental" value="true"/>
+
+    <!--
+      Returns the current authoritative profile and generation. NoSnapshot,
+      TimedOut, ServiceStopping, NotAuthorized, and Internal may be returned.
+    -->
     <method name="GetCurrentProfile">
       <arg name="profile" type="s" direction="out"/>
       <arg name="generation" type="t" direction="out"/>
     </method>
 
     <!--
-      Requests an atomic switch to lustre or forge. Invalid profiles return
-      org.prismdrake.Settings1.Error.InvalidProfile. Validation and consumer
-      acknowledgement are bounded by implementation-defined documented
-      timeouts; timeout keeps the prior generation.
+      Requests a nonpersistent runtime switch to exactly lustre or forge.
+      Reload or service restart restores the configured profile. A same-profile
+      request is a successful no-op and emits no signal. InvalidProfile,
+      ValidationFailed, Busy, TimedOut, NotAuthorized, ServiceStopping, and
+      Internal may be returned. A timeout guarantees no late publication.
     -->
     <method name="RequestProfileChange">
       <arg name="profile" type="s" direction="in"/>
       <arg name="generation" type="t" direction="out"/>
     </method>
 
-    <!-- Reloads configured sources and publishes only a complete generation. -->
+    <!--
+      Reloads fixed configured sources. A byte-for-byte-equivalent resolved
+      candidate is a successful no-op and emits no signal. ValidationFailed,
+      TooLarge, Busy, TimedOut, NotAuthorized, ServiceStopping, and Internal
+      may be returned. Failure retains the prior complete generation.
+    -->
     <method name="Reload">
       <arg name="generation" type="t" direction="out"/>
     </method>
 
     <!--
-      Validates UTF-8 TOML bytes without applying them. Candidate size is
-      limited to 1 MiB. Diagnostics contain schema paths and messages, never
-      secret values. Work is bounded so the D-Bus dispatch thread is not
-      blocked by unbounded parsing or I/O.
+      Validates at most 1 MiB of UTF-8 TOML without applying it. Ordinary
+      syntax, schema, or semantic rejection returns valid=false plus at most 64
+      ordered diagnostic tuples:
+        (logical_source_id, field_path, diagnostic_code,
+         expected_id, recovery_id)
+      Tuple fields are closed or bounded identifiers and never echo input.
+      TooLarge, Busy, TimedOut, NotAuthorized, ServiceStopping, and Internal
+      are transport/operational failures rather than invalid-candidate results.
     -->
     <method name="ValidateCandidate">
       <arg name="candidate_toml" type="ay" direction="in"/>
       <arg name="valid" type="b" direction="out"/>
-      <arg name="diagnostics" type="as" direction="out"/>
+      <arg name="diagnostics" type="a(sssss)" direction="out"/>
     </method>
 
-    <!-- Emitted after one complete generation becomes authoritative. -->
+    <!--
+      Emitted exactly once after each real authoritative pointer swap and never
+      for no-ops or failures. changed_domains is a unique deterministic subset
+      of the 11 documented domain IDs. validation_warnings is a unique ordered
+      subset of the closed warning IDs. PD1 restart_required is always false.
+    -->
     <signal name="SettingsGenerationChanged">
       <arg name="generation" type="t"/>
       <arg name="changed_domains" type="as"/>
@@ -49,5 +75,24 @@
       <arg name="restart_required" type="b"/>
       <arg name="validation_warnings" type="as"/>
     </signal>
+  </interface>
+
+  <!-- Internal complete-snapshot transport for Prismdrake components only. -->
+  <interface name="org.prismdrake.SettingsSnapshot1">
+    <annotation name="org.prismdrake.Experimental" value="true"/>
+    <annotation name="org.prismdrake.Audience" value="PrismdrakeInternal"/>
+
+    <!--
+      Accepts only snapshot_schema_version=1. Returns one caller-owned immutable
+      copy of the complete canonical UTF-8 JSON snapshot, limited to 1 MiB. The
+      outer generation equals the embedded generation. Unknown versions return
+      UnsupportedSnapshotVersion. NoSnapshot, TimedOut, NotAuthorized,
+      ServiceStopping, and Internal may also be returned.
+    -->
+    <method name="GetCurrentSnapshot">
+      <arg name="snapshot_schema_version" type="u" direction="in"/>
+      <arg name="generation" type="t" direction="out"/>
+      <arg name="snapshot_json" type="ay" direction="out"/>
+    </method>
   </interface>
 </node>

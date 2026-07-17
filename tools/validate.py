@@ -22,6 +22,51 @@ PROFILE_NAMES = {
     "forge": "Prismdrake Forge",
 }
 ALLOWED_DBUS_BASES = ("org.prismdrake", "org.freedesktop")
+SETTINGS_DBUS_PATH = "/org/prismdrake/Settings1"
+SETTINGS_DBUS_INTERFACES = {
+    "org.prismdrake.Settings1": {
+        "annotations": {"org.prismdrake.Experimental": "true"},
+        "methods": {
+            "GetCurrentProfile": (
+                ("profile", "s", "out"),
+                ("generation", "t", "out"),
+            ),
+            "RequestProfileChange": (
+                ("profile", "s", "in"),
+                ("generation", "t", "out"),
+            ),
+            "Reload": (("generation", "t", "out"),),
+            "ValidateCandidate": (
+                ("candidate_toml", "ay", "in"),
+                ("valid", "b", "out"),
+                ("diagnostics", "a(sssss)", "out"),
+            ),
+        },
+        "signals": {
+            "SettingsGenerationChanged": (
+                ("generation", "t", None),
+                ("changed_domains", "as", None),
+                ("active_profile", "s", None),
+                ("restart_required", "b", None),
+                ("validation_warnings", "as", None),
+            ),
+        },
+    },
+    "org.prismdrake.SettingsSnapshot1": {
+        "annotations": {
+            "org.prismdrake.Experimental": "true",
+            "org.prismdrake.Audience": "PrismdrakeInternal",
+        },
+        "methods": {
+            "GetCurrentSnapshot": (
+                ("snapshot_schema_version", "u", "in"),
+                ("generation", "t", "out"),
+                ("snapshot_json", "ay", "out"),
+            ),
+        },
+        "signals": {},
+    },
+}
 LICENSE_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
 DEPENDENCY_MANIFEST_COMPONENTS = {
     "prismdrake-foundation": "internal_library",
@@ -612,6 +657,107 @@ def invalid_dbus_interface_names(root: ET.Element) -> list[str]:
     ]
 
 
+def dbus_members(
+    element: ET.Element, member_name: str
+) -> dict[str, ET.Element] | None:
+    members = element.findall(member_name)
+    names = [member.get("name", "") for member in members]
+    if len(names) != len(set(names)):
+        return None
+    return dict(zip(names, members, strict=True))
+
+
+def dbus_annotations(element: ET.Element) -> dict[str, str] | None:
+    annotations = element.findall("annotation")
+    names = [annotation.get("name", "") for annotation in annotations]
+    if len(names) != len(set(names)):
+        return None
+    return {
+        annotation.get("name", ""): annotation.get("value", "")
+        for annotation in annotations
+    }
+
+
+def dbus_arguments(element: ET.Element) -> tuple[tuple[str, str, str | None], ...]:
+    return tuple(
+        (argument.get("name", ""), argument.get("type", ""), argument.get("direction"))
+        for argument in element.findall("arg")
+    )
+
+
+def settings_dbus_contract_errors(root: ET.Element, location: str) -> list[str]:
+    errors: list[str] = []
+    if root.tag != "node" or root.get("name") != SETTINGS_DBUS_PATH:
+        errors.append(f"{location}: root node must be exactly {SETTINGS_DBUS_PATH!r}")
+
+    interfaces = dbus_members(root, "interface")
+    if interfaces is None:
+        errors.append(f"{location}: D-Bus interface names must be unique")
+        interfaces = {}
+    expected_interfaces = set(SETTINGS_DBUS_INTERFACES)
+    if set(interfaces) != expected_interfaces:
+        errors.append(
+            f"{location}: interfaces must be exactly {sorted(expected_interfaces)!r}"
+        )
+
+    for interface_name, expected in SETTINGS_DBUS_INTERFACES.items():
+        interface = interfaces.get(interface_name)
+        if interface is None:
+            continue
+
+        annotations = dbus_annotations(interface)
+        if annotations is None:
+            errors.append(f"{location}: {interface_name} annotation names must be unique")
+        elif annotations != expected["annotations"]:
+            errors.append(
+                f"{location}: {interface_name} annotations must be exactly "
+                f"{expected['annotations']!r}"
+            )
+
+        methods = dbus_members(interface, "method")
+        if methods is None:
+            errors.append(f"{location}: {interface_name} method names must be unique")
+            methods = {}
+        expected_methods = expected["methods"]
+        if set(methods) != set(expected_methods):
+            errors.append(
+                f"{location}: {interface_name} methods must be exactly "
+                f"{sorted(expected_methods)!r}"
+            )
+        for method_name, expected_arguments in expected_methods.items():
+            method = methods.get(method_name)
+            if method is not None and dbus_arguments(method) != expected_arguments:
+                errors.append(
+                    f"{location}: {interface_name}.{method_name} signature must be exactly "
+                    f"{expected_arguments!r}"
+                )
+
+        signals = dbus_members(interface, "signal")
+        if signals is None:
+            errors.append(f"{location}: {interface_name} signal names must be unique")
+            signals = {}
+        expected_signals = expected["signals"]
+        if set(signals) != set(expected_signals):
+            errors.append(
+                f"{location}: {interface_name} signals must be exactly "
+                f"{sorted(expected_signals)!r}"
+            )
+        for signal_name, expected_arguments in expected_signals.items():
+            signal = signals.get(signal_name)
+            if signal is not None and dbus_arguments(signal) != expected_arguments:
+                errors.append(
+                    f"{location}: {interface_name}.{signal_name} signature must be exactly "
+                    f"{expected_arguments!r}"
+                )
+
+    for argument in root.findall(".//arg"):
+        argument_type = argument.get("type", "")
+        if "a{sv}" in argument_type:
+            errors.append(f"{location}: D-Bus contract must not use untyped a{{sv}} payloads")
+
+    return errors
+
+
 def validate_xml(validation: Validation) -> None:
     for path in sorted((ROOT / "interfaces").rglob("*.xml")):
         location = path.relative_to(ROOT).as_posix()
@@ -624,6 +770,8 @@ def validate_xml(validation: Validation) -> None:
         validation.require(bool(interfaces), location, "D-Bus XML must contain an interface")
         for name in invalid_dbus_interface_names(tree.getroot()):
             validation.error(location, f"D-Bus interface {name!r} must begin with 'org.prismdrake.'")
+        if location == "interfaces/dbus/org.prismdrake.Settings1.xml":
+            validation.errors.extend(settings_dbus_contract_errors(tree.getroot(), location))
 
     mockups = sorted((ROOT / "docs/design/mockups").glob("*.svg"))
     validation.require(len(mockups) == 6, "docs/design/mockups", "exactly six required PD0 mockups must exist")
@@ -752,7 +900,7 @@ def validate_identity_and_hygiene(validation: Validation) -> None:
     validation.require(not font_files, "repository", "font binaries require explicit license review and must not be committed in PD0")
 
 
-def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation) -> None:
+def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation) -> int:
     required = {
         "config",
         "theme-tokens",
@@ -762,7 +910,7 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
     }
     if set(schemas) != required:
         validation.error("self-test", "cannot run negative tests because a schema failed to load")
-        return
+        return 0
 
     config = load_toml(ROOT / "examples/config/lustre.toml", validation)
     theme = load_json(ROOT / "themes/lustre.tokens.json", validation)
@@ -777,7 +925,7 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
         or not isinstance(shell_manifest, dict)
     ):
         validation.error("self-test", "cannot run negative tests because fixtures failed to load")
-        return
+        return 0
 
     cases: list[tuple[str, Any, dict[str, Any], str]] = []
     invalid_profile = copy.deepcopy(config)
@@ -1154,6 +1302,50 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
             "wrong D-Bus namespace fixture was not rejected",
         )
 
+    dbus_contract = ET.parse(ROOT / "interfaces/dbus/org.prismdrake.Settings1.xml").getroot()
+    dbus_cases: list[tuple[str, ET.Element, str]] = []
+
+    wrong_node = copy.deepcopy(dbus_contract)
+    wrong_node.set("name", "/org/prismdrake/Wrong")
+    dbus_cases.append(("wrong D-Bus object path", wrong_node, "root node"))
+
+    missing_interface = copy.deepcopy(dbus_contract)
+    missing_interface.remove(missing_interface.findall("interface")[1])
+    dbus_cases.append(("missing D-Bus interface", missing_interface, "interfaces must be exactly"))
+
+    changed_method_signature = copy.deepcopy(dbus_contract)
+    changed_method_signature.find("./interface/method[@name='Reload']/arg").set("type", "u")
+    dbus_cases.append(("changed D-Bus method signature", changed_method_signature, "signature"))
+
+    changed_signal_signature = copy.deepcopy(dbus_contract)
+    changed_signal_signature.find(
+        "./interface/signal[@name='SettingsGenerationChanged']/arg[@name='generation']"
+    ).set("type", "u")
+    dbus_cases.append(("changed D-Bus signal signature", changed_signal_signature, "signature"))
+
+    missing_experimental = copy.deepcopy(dbus_contract)
+    settings_interface = missing_experimental.find(
+        "./interface[@name='org.prismdrake.Settings1']"
+    )
+    settings_interface.remove(
+        settings_interface.find("./annotation[@name='org.prismdrake.Experimental']")
+    )
+    dbus_cases.append(("missing Experimental annotation", missing_experimental, "annotations"))
+
+    untyped_payload = copy.deepcopy(dbus_contract)
+    untyped_payload.find(
+        "./interface/method[@name='ValidateCandidate']/arg[@name='candidate_toml']"
+    ).set("type", "a{sv}")
+    dbus_cases.append(("untyped D-Bus payload", untyped_payload, "a{sv}"))
+
+    for name, document, expected_fragment in dbus_cases:
+        errors = settings_dbus_contract_errors(document, f"self-test.{name}")
+        validation.require(
+            bool(errors) and any(expected_fragment in error for error in errors),
+            "self-test",
+            f"D-Bus contract case {name!r} was not rejected with an actionable field",
+        )
+
     strict_json_cases = (
         '{"schema_version": 1, "schema_version": 1}',
         '{"value": NaN}',
@@ -1171,6 +1363,14 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
             continue
         validation.error("self-test", "strict JSON loader accepted an invalid document")
 
+    return (
+        len(cases)
+        + len(dependency_policy_cases)
+        + 1
+        + len(dbus_cases)
+        + len(strict_json_cases)
+    )
+
 
 def main() -> int:
     if sys.version_info < (3, 11):
@@ -1184,7 +1384,7 @@ def main() -> int:
     validate_markdown_links(validation)
     validate_adrs(validation)
     validate_identity_and_hygiene(validation)
-    validate_negative_self_tests(schemas, validation)
+    negative_self_test_count = validate_negative_self_tests(schemas, validation)
 
     if validation.errors:
         print(f"Prismdrake validation failed with {len(validation.errors)} error(s):", file=sys.stderr)
@@ -1197,7 +1397,7 @@ def main() -> int:
     print("  JSON/TOML/XML/SVG: parsed and structurally validated")
     print("  profiles/themes/fallbacks: consistent")
     print("  ADRs/namespaces/local links/assets: consistent")
-    print("  negative self-tests: 33 rejection paths passed")
+    print(f"  negative self-tests: {negative_self_test_count} rejection paths passed")
     return 0
 
 

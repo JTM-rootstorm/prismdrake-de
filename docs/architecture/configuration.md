@@ -2,10 +2,11 @@
 
 The version-1 format is Accepted by
 [ADR 0004](../adr/0004-configuration-format.md). PD0 validated examples and the
-draft interface shape. The display-free version-1 parser, recovery loader, and
+initial interface shape. The display-free version-1 parser, recovery loader, and
 narrow whole-document writer are implemented in PD1. The combined settings and
 theme publication core and its bounded runtime serialization are also
-implemented; D-Bus service behavior remains later PD1 work.
+implemented. The narrow settings and complete-snapshot D-Bus transport has an
+implemented Experimental PD1 contract without a stability guarantee.
 
 ## Locations
 
@@ -142,14 +143,25 @@ identity, duplicate identifiers, and out-of-bound collections or values are
 rejected. Original TOML, rejected values, parser excerpts, and user or packaged
 filesystem paths are never serialized.
 
-## Draft D-Bus boundary
+## Experimental D-Bus boundary
 
 [`org.prismdrake.Settings1`](../../interfaces/dbus/org.prismdrake.Settings1.xml)
-is a draft versioned interface for reading the active profile and generation,
-requesting a validated profile switch or reload, validating bounded candidate
-TOML, and observing complete generation changes. It has no generic “set key”
-method. Callers must handle typed errors, timeouts, service disappearance, and
-name reacquisition. Acceptance of ADR 0004 does not freeze its ABI.
+is an Experimental versioned interface for reading the active profile and
+generation, requesting a validated runtime profile switch or reload, validating
+bounded candidate TOML, and observing complete generation changes. The same
+object exports the internal `org.prismdrake.SettingsSnapshot1` interface so
+Prismdrake consumers can fetch one complete immutable, schema-versioned runtime
+snapshot rather than reconstructing state from per-key events. Neither
+interface has a generic “set key” method or caller-selected path.
+
+Generation identity includes the D-Bus well-known-name ownership epoch. Clients
+invalidate cached state on owner changes or disconnects, then fetch the current
+complete snapshot after reacquisition. A signal and subsequent fetch may race;
+the later complete generation wins. There is no acknowledgement or rollback
+method. Callers must handle fixed typed errors, bounded timeouts, service
+disappearance, and name reacquisition. Acceptance of ADR 0004 and implementation
+of the PD1 prototype do not stabilize either interface or guarantee wire
+compatibility.
 
 Relevant requirements: `PD-CONFIG-001` through `PD-CONFIG-010` and
 `PD-API-001` through `PD-API-005`.

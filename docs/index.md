@@ -47,7 +47,7 @@ describe a usable or production-ready desktop release.
 
 - [Configuration examples](../examples/config/lustre.toml)
 - [Capability examples](../examples/capabilities/x11-standard.json)
-- [Draft interfaces](../interfaces/README.md)
+- [Experimental interfaces](../interfaces/README.md)
 - [JSON schemas](../schemas/prismdrake-config.schema.json)
 - [Experimental runtime snapshot schema](../schemas/prismdrake-runtime-snapshot.schema.json)
 - [Dependency-manifest schema](../schemas/prismdrake-dependency-manifest.schema.json)

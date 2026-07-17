@@ -38,24 +38,35 @@ defined purposes. Validate all input and write atomically while preserving the
 last valid input and packaged defaults.
 
 Resolve settings and theme data into immutable snapshots with one monotonically
-increasing generation. Publish only complete generations. Retain the narrow,
-explicitly draft `org.prismdrake.Settings1` interface as PD1 design input; this
-decision does not stabilize that interface. Do not expose generic arbitrary-key
-mutation.
+increasing generation per D-Bus owner epoch. Publish only complete generations.
+Implement the narrow `org.prismdrake.Settings1` interface and internal
+`org.prismdrake.SettingsSnapshot1` complete-snapshot transport as explicitly
+Experimental PD1 contracts; this decision does not stabilize either interface.
+Do not expose generic arbitrary-key mutation, consumer acknowledgement, or a
+two-phase rollback protocol.
 
 ## Consequences
 
 Implementations need a TOML parser, strict semantic validation, migration,
-atomic filesystem utilities, and bounded D-Bus behavior. JSON Schema documents
-the normalized shape, but PD1 must decide how TOML-to-schema validation is
-implemented without hidden coercion. Unknown versions intentionally fail.
+atomic filesystem utilities, bounded D-Bus behavior, and a bounded complete
+runtime serialization. JSON Schema documents the normalized source and runtime
+shapes, while the implementation validates TOML kinds explicitly without
+hidden coercion. Unknown source or snapshot versions intentionally fail.
+
+Once a complete generation is published, it remains authoritative regardless
+of signal delivery or consumer state. Failed candidates do not consume a
+generation. Consumers fetch and atomically replace complete snapshots; owner
+changes invalidate cached generation assumptions and begin a new epoch.
 
 ## Validation or evidence
 
-PD0 parses all TOML examples, checks their normalized domains and constraints,
-parses D-Bus XML, rejects invalid profiles and unsupported versions in negative
-self-tests, and verifies the canonical namespace. Runtime transaction behavior
-requires PD1 tests.
+PD0 parsed the TOML examples, checked their normalized domains and constraints,
+parsed the initial D-Bus XML, rejected invalid profiles and unsupported versions
+in negative self-tests, and verified the canonical namespace. PD1 implements
+the display-free loader, recovery and atomic-write boundaries, combined
+settings/theme publication, pre-publication bounded runtime serialization, and
+Experimental settings and complete-snapshot interface contracts with focused
+transaction and negative validation tests.
 
 ## Revisit conditions
 
@@ -68,5 +79,5 @@ configuration.
 
 - [Configuration contract](../architecture/configuration.md)
 - [Configuration schema](../../schemas/prismdrake-config.schema.json)
-- [Draft Settings1 interface](../../interfaces/dbus/org.prismdrake.Settings1.xml)
+- [Experimental settings interfaces](../../interfaces/dbus/org.prismdrake.Settings1.xml)
 - [Project specification section 13](../PRISMDRAKE_PROJECT_SPECIFICATION.md#13-configuration-state-and-schemas)

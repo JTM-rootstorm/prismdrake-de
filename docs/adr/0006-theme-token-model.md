@@ -42,15 +42,21 @@ invalid values reject a candidate without replacing the prior valid generation.
 
 ## Consequences
 
-The implementation needs a strict parser, resolver, generation publisher, and
-negative tests. Profile values remain independently tunable while schema and
-validator parity prevent structural forks. JSON is authoring-oriented rather
-than a public runtime ABI.
+The implementation needs a strict parser, resolver, generation publisher,
+bounded complete runtime serialization, and negative tests. Profile values
+remain independently tunable while schema and validator parity prevent
+structural forks. Source JSON remains authoring-oriented rather than a public
+runtime ABI; the separate complete runtime snapshot is an explicitly
+Experimental internal transport.
 
 ## Validation or evidence
 
-PD0 checks JSON parsing, supported versions, exact profile identity, semantic
-and component parity, focus/contrast accessibility keys, and material fallbacks.
+PD0 checked JSON parsing, supported versions, exact profile identity, semantic
+and component parity, focus/contrast accessibility keys, and material
+fallbacks. PD1 implements the display-free layered resolver, accessibility and
+capability fallback derivation, warning propagation, immutable combined
+settings/theme publication, and pre-publication bounded serialization. Focused
+tests reject invalid candidates without replacing the prior valid generation.
 Static mockups demonstrate the intended relationship without claiming
 production rendering.
 

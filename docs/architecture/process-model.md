@@ -33,25 +33,39 @@ dependency, or measured performance justification.
 Readiness uses explicit process or D-Bus signals rather than sleeps. Dependencies
 form an acyclic graph; consumers wait with bounded timeouts and useful errors.
 
-## Proposed D-Bus ownership
+## Experimental D-Bus ownership
 
-| Process | Proposed name | Notes |
-|---|---|---|
-| `prismdrake-settingsd` | `org.prismdrake.Settings1` | Draft narrow settings interface |
-| `prismdrake-notifyd` | `org.freedesktop.Notifications` | Standard service with replacement/reacquisition semantics |
-| Other components | Not assigned in PD0 | A named interface requires its own reviewed contract |
+| Process | Owned name | Exported interfaces | PD1 status |
+|---|---|---|---|
+| `prismdrake-settingsd` | `org.prismdrake.Settings1` | `org.prismdrake.Settings1`, `org.prismdrake.SettingsSnapshot1` | Experimental PD1 contract and implementation work |
+| `prismdrake-notifyd` | `org.freedesktop.Notifications` | Standard notification interface | Planned with replacement/reacquisition semantics |
+| Other components | Not assigned | A named interface requires its own reviewed contract | Deferred |
 
-Acceptance of the process model does not freeze these draft interfaces. Their
-implementation and stability remain separate PD1 work.
+Both settings interfaces are exported at `/org/prismdrake/Settings1` and are
+explicitly Experimental. `SettingsSnapshot1` is the internal complete-snapshot
+transport for Prismdrake consumers. Implementing these interfaces does not
+freeze their wire contract or provide an ABI compatibility guarantee; stability
+requires a separate Accepted decision.
 
 ## Generation propagation
 
 Settings and theme inputs are validated together into immutable snapshots with
-a monotonically increasing generation. A change notification names the new
-generation and affected domains. Each consumer swaps to that complete
-generation atomically; it never combines old and new domains. If a component
-restarts mid-switch, it requests the current complete generation. On validation
-or application failure, the previous valid generation remains authoritative.
+a monotonically increasing generation inside one D-Bus owner epoch. A change
+notification names the new generation and affected domains, but it does not
+carry replacement state. Each consumer fetches the complete immutable snapshot
+and swaps to it atomically; it never combines old and new domains. If a
+component restarts or observes a D-Bus ownership transition, it discards cached
+generation assumptions and fetches the current complete snapshot.
+
+Generation identity is the pair `(well-known-name ownership epoch,
+generation)`. A new owner epoch restarts numbering at generation one only after
+a complete snapshot is available. Validation, resolution, serialization, and
+no-op operations consume no generation. Publication is one-way: PD1 has no
+consumer acknowledgement or two-phase rollback protocol. A failed candidate
+leaves the service's previous valid generation authoritative; a consumer that
+cannot apply an already published generation retains its local prior snapshot
+and recovers by fetching complete authoritative state rather than asking the
+service to roll back.
 
 ## Supervision and safe mode
 
