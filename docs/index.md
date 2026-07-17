@@ -46,6 +46,7 @@ describe a usable or production-ready desktop release.
 - [PD1 X11 output topology evidence](research/pd1-x11-output-topology-evidence.md)
 - [PD1 X11 dock and window-manager request evidence](research/pd1-x11-dock-request-evidence.md)
 - [PD1 X11 task-model evidence](research/pd1-x11-task-model-evidence.md)
+- [PD1 launcher-model evidence](research/pd1-launcher-model-evidence.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
 
