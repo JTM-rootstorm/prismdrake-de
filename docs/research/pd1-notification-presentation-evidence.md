@@ -4,7 +4,8 @@
 
 **Reference environments:** host plus `prismdrake-vm`
 
-**Evidence checkpoint:** pending final WP12 revision and validation record
+**Evidence checkpoint:** functional WP12 implementation through `70aaf34`, with
+the exact Gentoo source artifact and Ubuntu lower-bound CI recorded below
 
 ## Scope and status
 
@@ -178,9 +179,10 @@ presentation adapter links Qt Core, while the separate compiled QML module uses
 system Qt QML, Qt Quick, and Qt Quick Controls. Qt Quick Test is test-only.
 GoogleTest remains test-only, and no dependency is downloaded or vendored.
 
-The root build currently declares Qt 6.4 as a common-API configure constraint,
-but that value is not a verified supported minimum until the lower-bound CI lane
-is recorded. The shell dependency manifest remains
+The root build declares Qt 6.4 as a common-API configure constraint. Ubuntu
+24.04 CI verifies Qt 6.4.2 as the oldest tested component version, while the
+Gentoo reference environment supplies Qt 6.11.1. The shell dependency manifest
+remains
 `planned_unmeasured`: the complete shell executable, production theme adapter,
 AT-SPI runtime linkage, installation shape, and direct and transitive runtime
 closure have not been measured. The slice adds no GTK, GNOME Shell, Mutter,
@@ -204,10 +206,9 @@ inputs arrive as one validated generation rather than mixed individual values.
 
 ## Implemented test inventory
 
-This section records source-level coverage present in the repository. It is not
-a claim that the final revision, host matrix, VM matrix, or CI run passed; those
-outcomes belong in the validation table below after they are personally
-observed.
+This section records source-level coverage present in the repository. The
+personally observed host, VM, and CI outcomes are recorded separately in the
+validation table below.
 
 ### Display-free model tests
 
@@ -262,24 +263,23 @@ deterministic enough for functional tests; it is not a visual-baseline result.
 
 ## Final validation record
 
-The finalizer must replace the em dashes only with commands and outcomes
-observed against the final evidence revision. Exact-source archives must record
-their checksum and extraction directory. A skipped lane must name the precise
-environmental reason rather than being reported as a pass.
+The table records the functional WP12 implementation and compatibility fixes
+through `70aaf34`. The exact staged artifact was extracted and tested in the
+Gentoo VM at `/var/tmp/prismdrake-wp12-qt-final`.
 
 | Layer | Exact command or artifact | Result | Revision, environment, or run |
 |---|---|---|---|
-| Contract validation | — | — | — |
-| Host GCC warning-as-error build and complete CTest suite | — | — | — |
-| Host Qt QML lint, card Quick Test, and real-model list Quick Test | — | — | — |
-| Host Clang build and focused notification tests | — | — | — |
-| Host ASan plus UBSan notification tests | — | — | — |
-| Exact staged/source archive and SHA-256 | — | — | — |
-| Gentoo VM GCC complete suite, including Xvfb and isolated D-Bus lanes | — | — | — |
-| Gentoo VM Clang focused notification tests | — | — | — |
-| Gentoo VM ASan plus UBSan focused notification tests | — | — | — |
-| Ubuntu lower-bound Qt lane | — | — | — |
-| GitHub Actions | — | — | — |
+| Contract validation | `make validate` | Passed all 39 rejection fixtures. | Host, `70aaf34` |
+| Host GCC warning-as-error build and complete CTest suite | `ctest --test-dir build/wp12-review --output-on-failure` | Passed 440 of 440 tests; the foreign-owner permission test and three X11 integration tests reported their expected host-environment skips because host Xvfb was unavailable. | GCC 15.3.0, `70aaf34` |
+| Host Qt QML lint, card Quick Test, and real-model list Quick Test | `cmake --build build/wp12-review --target prismdrake-shell-notification-qml_qmllint`; `ctest --test-dir build/wp12-review -R 'Notification(Card\|List)QmlTest' -V` | QML lint passed; the card runner passed 6 of 6 and the real-model list runner passed 8 of 8. | Qt 6.11.1, offscreen/software/Basic, `70aaf34` |
+| Host Clang build and focused notification tests | `ctest --test-dir build/wp12-clang-review -R 'Notification' --output-on-failure` | Passed all 25 focused registrations. | Clang 22.1.8, `70aaf34` |
+| Host ASan plus UBSan notification tests | `ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build/wp12-sanitizers-review -R 'Notification' --output-on-failure` | Passed all 25 focused registrations; host leak detection was disabled because the sandboxed host runtime does not provide a reliable LeakSanitizer environment. | GCC 15.3.0 ASan plus UBSan, `70aaf34` |
+| Exact staged/source archive and SHA-256 | `/mnt/shared/prismdrake-wp12-qt-staged.tar.gz`; SHA-256 `c8b10cdb1abad59428bc227ec7cf229e5e7d44eafb2fd1f99ebea90f54c328de` | Exact implementation tree `2c01cdcb2d6a69251d44c5ce258b98afc6f9165b` extracted successfully. | Implementation commit `89576e3`; the later commits through `70aaf34` are Qt 6.4 compatibility and CI-environment fixes |
+| Gentoo VM GCC complete suite, including Xvfb and isolated D-Bus lanes | `ctest --test-dir /var/tmp/prismdrake-wp12-qt-final/build-gcc --output-on-failure` | Passed 440 of 440 tests; only the root-inapplicable `BoundedFileTest.DistinguishesPermissionDenied` fixture skipped. Card and real-model list verbose runners passed 6 of 6 and 8 of 8. | GCC 15.3.0, Qt 6.11.1, `prismdrake-vm` |
+| Gentoo VM Clang focused notification tests | `ctest --test-dir /var/tmp/prismdrake-wp12-qt-final/build-clang -R 'Notification' --output-on-failure` | Passed all 25 focused registrations. | Clang 22.1.8, `prismdrake-vm` |
+| Gentoo VM ASan plus UBSan focused notification tests | `ASAN_OPTIONS=detect_leaks=1 ctest --test-dir /var/tmp/prismdrake-wp12-qt-final/build-sanitizers -R 'Notification' --output-on-failure` | Passed all 25 focused registrations with LeakSanitizer enabled. | GCC 15.3.0 ASan plus UBSan, `prismdrake-vm` |
+| Ubuntu lower-bound Qt lane | `pkg-config --modversion Qt6Core Qt6Qml Qt6Quick Qt6QuickControls2`; complete GCC and Clang CI jobs | All four components reported 6.4.2; GCC and Clang each passed all 440 tests, and the QML lint target passed. | Ubuntu 24.04, GitHub Actions run `29616932095` |
+| GitHub Actions | Run `29616932095` | All four jobs passed: GCC build/test, Clang build/test, contract validation, and C++ format plus QML lint. | `70aaf34` |
 
 ## Explicitly unresolved evidence
 
@@ -301,6 +301,7 @@ to PD1-WP13 or later integration:
 - the separately owned `prismdrake-notifyd` freedesktop service, persistence,
   privacy, do-not-disturb, restart-continuity, and lock-surface policy.
 
-Until the final validation table and WP13 evidence are complete, this document
-supports review of the `PD1-014` implementation boundary but does not claim the
-PD1 notification exit gate or the complete PD1 milestone is closed.
+This record closes the functional implementation and validation portion of
+`PD1-014`. WP13 still owns reviewed visual baselines and live accessibility
+evidence, so this document does not claim the complete PD1 notification visual
+gate or the complete PD1 milestone is closed.

@@ -70,10 +70,10 @@ carry a verified or observed version.
 - `prismdrake-session` remains a planned component manifest.
   `prismdrake-shell` is Experimental because its passive notification adapter
   and compiled card/list module now directly use Qt Core, QML, Quick, and Quick
-  Controls; Quick Test is test-only. Qt 6.4 is a declared common-API build
-  constraint, while Qt 6.11.1 is the currently observed host component version
-  and Gentoo supplies qtdeclarative 6.11.1-r1. No supported minimum is claimed
-  until the lower-bound CI lane passes. The shell executable, resolved
+  Controls; Quick Test is test-only. Ubuntu 24.04 CI verifies Qt 6.4.2 as the
+  oldest tested common-API component version, while Qt 6.11.1 is the currently
+  observed host component version and Gentoo supplies qtdeclarative 6.11.1-r1.
+  The shell executable, resolved
   production theme adapter, X11 surface integration, accessibility runtime
   closure, and complete dynamic dependency graph remain explicitly unresolved.
 - The settings service uses a mutex-protected immutable snapshot pointer and a

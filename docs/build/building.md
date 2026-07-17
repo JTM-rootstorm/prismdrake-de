@@ -27,9 +27,8 @@ targets.
 
 The notification presentation requires system Qt Core, QML, Quick, and Quick
 Controls 6.4 or newer through the Qt CMake packages; tests also require Quick
-Test. The 6.4 constraint selects the API subset intended for Ubuntu 24.04 and
-Gentoo validation; it is a declared, not yet verified, supported minimum.
-Current host and Gentoo component evidence use Qt 6.11.1. The complete shell
+Test. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested component version;
+current host and Gentoo component evidence use Qt 6.11.1. The complete shell
 executable and resolved production theme adapter remain later PD1 integration.
 
 ## Canonical developer builds

@@ -15,14 +15,14 @@
       "requirement_status": "implemented",
       "version": {
         "declared_minimum": "6.4",
-        "verified_minimum": null,
+        "verified_minimum": "6.4.2",
         "observed": "6.11.1",
         "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental notification presentation adapter directly uses system Qt Core. Qt 6.4 is a declared build constraint for the common API subset, not yet a verified supported minimum; Gentoo 6.11.1 supplies current component evidence."
+      "reason": "The Experimental notification presentation adapter directly uses system Qt Core. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1 supplies current reference evidence."
     },
     {
       "name": "qtdeclarative",
@@ -33,14 +33,14 @@
       "requirement_status": "implemented",
       "version": {
         "declared_minimum": "6.4",
-        "verified_minimum": null,
+        "verified_minimum": "6.4.2",
         "observed": "6.11.1-r1",
         "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental notification card and list module directly use system QML, Qt Quick, and Quick Controls. Qt 6.4 is a declared common-API build constraint, not yet a verified supported minimum; Gentoo 6.11.1-r1 supplies current component evidence."
+      "reason": "The Experimental notification card and list module directly use system QML, Qt Quick, and Quick Controls. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1-r1 supplies current reference evidence."
     },
     {
       "name": "libxcb",
@@ -64,7 +64,7 @@
   "unresolved": [
     {
       "area": "runtime_closure",
-      "reason": "The Qt adapter and visible synthetic-card QML module are implemented, but the complete shell executable, resolved production theme adapter, direct and transitive runtime closure, and supported minimum versions still require measurement."
+      "reason": "The Qt adapter and visible synthetic-card QML module are implemented, but the complete shell executable, resolved production theme adapter, and direct and transitive runtime closure still require measurement."
     },
     {
       "area": "accessibility_runtime",
