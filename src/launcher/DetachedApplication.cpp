@@ -537,7 +537,7 @@ void resetSignalsOrExit(int errorDescriptor) noexcept {
         writeRecordAndExit(errorDescriptor, LaunchStage::resetSignalMask, errorNumber);
     }
 
-    struct sigaction defaultAction{};
+    struct sigaction defaultAction = {};
     defaultAction.sa_handler = SIG_DFL;
     (void)::sigemptyset(&defaultAction.sa_mask);
     defaultAction.sa_flags = 0;
