@@ -54,6 +54,7 @@ if(NOT nlohmann_json_FOUND)
         "Prismdrake does not download or vendor JSON parsers.")
 endif()
 add_subdirectory(src/theme)
+add_subdirectory(src/settings)
 
 if(BUILD_TESTING)
     find_package(GTest QUIET)
@@ -89,10 +90,16 @@ prismdrake_add_format_check(
     src/foundation/XdgPaths.cpp
     src/foundation/XdgPaths.hpp
     src/theme/Theme.hpp
+    src/theme/ThemeBundle.cpp
+    src/theme/ThemeBundle.hpp
     src/theme/ThemeParser.cpp
     src/theme/ThemeParser.hpp
     src/theme/ThemeResolver.cpp
     src/theme/ThemeResolver.hpp
+    src/settings/SettingsEngine.cpp
+    src/settings/SettingsEngine.hpp
+    src/settings/SettingsSnapshot.cpp
+    src/settings/SettingsSnapshot.hpp
     tests/unit/AtomicFileTests.cpp
     tests/unit/BoundedFileTests.cpp
     tests/unit/BuildInfoTests.cpp
@@ -101,6 +108,7 @@ prismdrake_add_format_check(
     tests/unit/DiagnosticsTests.cpp
     tests/unit/FoundationPrimitivesTests.cpp
     tests/unit/ResultTests.cpp
+    tests/unit/SettingsEngineTests.cpp
     tests/unit/ThemeParserTests.cpp
     tests/unit/ThemeResolverTests.cpp
     tests/unit/XdgPathsTests.cpp)

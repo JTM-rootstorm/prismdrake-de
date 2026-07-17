@@ -15,6 +15,8 @@ class Generation final {
 
     static constexpr Value unpublishedValue = 0;
 
+    [[nodiscard]] static Generation firstPublished() noexcept { return Generation(1U); }
+
     [[nodiscard]] static Result<Generation> fromPublished(Value value) {
         if (value == unpublishedValue) {
             return Result<Generation>::failure(

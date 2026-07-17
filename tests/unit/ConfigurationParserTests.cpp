@@ -93,6 +93,18 @@ TEST(ConfigurationParserTest, NormalizesEveryDomainIntoTypedValues) {
     EXPECT_TRUE(config.developer.mockCapabilityOverrides.empty());
 }
 
+TEST(ConfigurationParserTest, RebuildsOnlyTheRequestedProfile) {
+    const auto parsed = parseConfigurationToml(validConfiguration());
+    ASSERT_TRUE(parsed);
+
+    const auto forge = withProfile(parsed.value(), Profile::forge);
+    EXPECT_EQ(forge.profile, Profile::forge);
+    EXPECT_EQ(forge.appearance, parsed.value().appearance);
+    EXPECT_EQ(forge.panel, parsed.value().panel);
+    EXPECT_EQ(forge.accessibility, parsed.value().accessibility);
+    EXPECT_EQ(forge.developer, parsed.value().developer);
+}
+
 TEST(ConfigurationParserTest, KeepsSyntaxAndSemanticValidationSeparate) {
     const auto incomplete = replaceOnce(validConfiguration(), "schema_version = 1\n", "");
 

@@ -19,6 +19,8 @@ namespace {
 using namespace std::chrono_literals;
 
 TEST(GenerationTest, RejectsZeroAndAdvancesMonotonically) {
+    EXPECT_EQ(Generation::firstPublished().value(), 1U);
+
     const auto unpublished = Generation::fromPublished(Generation::unpublishedValue);
     ASSERT_FALSE(unpublished);
     EXPECT_EQ(unpublished.error().code, ErrorCode::invalid_argument);

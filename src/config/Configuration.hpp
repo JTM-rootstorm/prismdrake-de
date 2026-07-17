@@ -119,4 +119,16 @@ struct Configuration final {
     friend bool operator==(const Configuration &, const Configuration &) = default;
 };
 
+/// Rebuilds a complete normalized configuration with only its profile changed.
+/// Accessibility and every other user-controlled domain are preserved.
+[[nodiscard]] inline Configuration withProfile(const Configuration &configuration,
+                                               Profile profile) {
+    return {configuration.schemaVersion, profile,
+            configuration.appearance,    configuration.panel,
+            configuration.launcher,      configuration.notifications,
+            configuration.desktop,       configuration.integration,
+            configuration.accessibility, configuration.keyboard,
+            configuration.developer};
+}
+
 } // namespace prismdrake::config

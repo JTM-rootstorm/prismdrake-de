@@ -1,5 +1,7 @@
 add_library(prismdrake-theme STATIC
     Theme.hpp
+    ThemeBundle.cpp
+    ThemeBundle.hpp
     ThemeParser.cpp
     ThemeParser.hpp
     ThemeResolver.cpp
