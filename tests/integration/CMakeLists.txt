@@ -6,6 +6,8 @@ target_link_libraries(prismdrake-settingsd-integration-tests
     PRIVATE
         GTest::gtest_main
         Prismdrake::sd-bus)
+target_compile_definitions(prismdrake-settingsd-integration-tests PRIVATE
+    PRISMDRAKE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 prismdrake_configure_cpp_target(prismdrake-settingsd-integration-tests)
 prismdrake_enable_warnings(prismdrake-settingsd-integration-tests)

@@ -281,6 +281,31 @@ class SettingsServiceFixture : public ::testing::Test {
         return error.value.name == nullptr ? std::string{} : std::string{error.value.name};
     }
 
+    [[nodiscard]] std::string callNoArgumentErrorName(const char *interface, const char *member) {
+        ErrorCapture error;
+        Message reply;
+        const int result = sd_bus_call_method(bus_.get(), serviceName, objectPath, interface,
+                                              member, &error.value, reply.put(), "");
+        EXPECT_LT(result, 0);
+        return error.value.name == nullptr ? std::string{} : std::string{error.value.name};
+    }
+
+    [[nodiscard]] static std::string defaultConfiguration() {
+        std::ifstream stream(std::filesystem::path{PRISMDRAKE_SOURCE_DIR} /
+                             "data/defaults/config.toml");
+        EXPECT_TRUE(stream);
+        return {std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
+    }
+
+    void writeUserConfiguration(std::string_view document) {
+        const auto directory = root_ / "config/prismdrake";
+        std::filesystem::create_directories(directory);
+        std::ofstream stream(directory / "config.toml", std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(stream);
+        stream.write(document.data(), static_cast<std::streamsize>(document.size()));
+        ASSERT_TRUE(stream);
+    }
+
     [[nodiscard]] std::pair<bool, std::string> validateCandidate(std::string_view candidate,
                                                                  std::string *errorName = nullptr) {
         Message call;
@@ -379,6 +404,10 @@ TEST_F(SettingsServiceFixture, ProfileRequestsAreAtomicAndTyped) {
 
 TEST_F(SettingsServiceFixture, CandidateValidationIsBoundedAndRedacted) {
     constexpr std::string_view sentinel = "prismdrake-secret-sentinel";
+    const auto valid = validateCandidate(defaultConfiguration());
+    EXPECT_TRUE(valid.first);
+    EXPECT_TRUE(valid.second.empty());
+
     const auto invalid =
         validateCandidate("schema_version = 1\nunknown = \"" + std::string{sentinel} + "\"\n");
     EXPECT_FALSE(invalid.first);
@@ -399,6 +428,29 @@ TEST_F(SettingsServiceFixture, CandidateValidationIsBoundedAndRedacted) {
     const auto profile = currentProfile();
     ASSERT_TRUE(profile.has_value());
     EXPECT_EQ(requireOptional(profile).generation, 1U);
+}
+
+TEST_F(SettingsServiceFixture, ReloadPublishesValidInputAndRetainsItAfterFailure) {
+    auto forgeConfiguration = defaultConfiguration();
+    const auto profile = forgeConfiguration.find("profile = \"lustre\"");
+    ASSERT_NE(profile, std::string::npos);
+    forgeConfiguration.replace(profile, std::string_view{"profile = \"lustre\""}.size(),
+                               "profile = \"forge\"");
+    writeUserConfiguration(forgeConfiguration);
+
+    EXPECT_EQ(reload(), 2U);
+    auto current = currentProfile();
+    ASSERT_TRUE(current);
+    EXPECT_EQ(requireOptional(current).profile, "forge");
+
+    writeUserConfiguration("schema_version = 1\nprivate_secret = \"reload-sentinel\"\n");
+    EXPECT_EQ(callNoArgumentErrorName(settingsInterface, "Reload"),
+              "org.prismdrake.Settings1.Error.ValidationFailed");
+    current = currentProfile();
+    ASSERT_TRUE(current);
+    const auto retained = requireOptional(current);
+    EXPECT_EQ(retained.profile, "forge");
+    EXPECT_EQ(retained.generation, 2U);
 }
 
 TEST_F(SettingsServiceFixture, EmitsOneStructuredSignalOnlyForARealPublication) {
