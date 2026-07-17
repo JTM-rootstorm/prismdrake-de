@@ -65,11 +65,11 @@ about the future Prismdrake runtime package.
 |---|---:|---|
 | `portage-qa` | on | Local repository QA and Portage inspection tools |
 | `debug-tools` | on | GDB, strace, Valgrind, and lsof |
-| `x11` | on | Xvfb, Xephyr, Openbox, X11 tools, D-Bus, AT-SPI, Mesa, and DejaVu fonts |
+| `x11` | on | Xvfb, Xephyr, Openbox, X11 tools, D-Bus, AT-SPI and its schema data, Mesa, and DejaVu fonts |
 | `qt6` | on | Qt 6 modules for the isolated visible-shell evidence spike |
 | `clang` | off | Optional compiler-matrix coverage |
 | `implementation-deps` | off | Candidate parser, D-Bus, and test libraries after decision approval |
-| `visual-tests` | off | Optional ImageMagick capture and `xdotool` X11 input tooling |
+| `visual-tests` | off | Optional ImageMagick comparison, `xdotool` input, and XWD own-window capture tooling |
 
 Enabling `qt6` gathers evidence for Proposed ADR 0003. It does not Accept Qt 6
 Quick, CMake, or another architecture decision. Likewise,

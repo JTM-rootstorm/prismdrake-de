@@ -31,6 +31,10 @@ implementation; they do not describe a usable desktop release.
 - [Glasswyrm integration](architecture/glasswyrm-integration.md)
 - [Failure behavior and fallbacks](architecture/failure-and-fallbacks.md)
 - [Toolkit evaluation](research/toolkit-evaluation.md)
+- [PD1 toolkit spike](research/pd1-toolkit-spike.md)
+- [PD1 Gentoo dependency evidence](research/pd1-gentoo-dependency-evidence.md)
+- [Gentoo reference VM](development/gentoo-vm.md)
+- [Gentoo local repository](packaging/gentoo-local-repository.md)
 
 ## Machine-readable contracts
 

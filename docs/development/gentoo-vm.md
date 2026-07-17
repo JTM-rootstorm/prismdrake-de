@@ -95,7 +95,7 @@ new package run:
   2026-07-16 23:15 UTC (`8c90283afaae26f11d8ec5ba786f2b5f3c323af8`).
 - GCC 15.3.0, CMake 4.3.3-r1, Ninja 1.13.2-r1, and Python 3.14.6.
 - Six virtual CPUs, approximately 7.7 GiB memory, no swap, and 7.3 GiB free on
-  the 30 GiB root filesystem.
+  the 30 GiB root filesystem before the PD1 evidence layers were installed.
 - `VIDEO_CARDS="virgl"` and `MAKEOPTS="-j4 -l4"`.
 - A configured official Gentoo binary package repository.
 - A global USE policy that omits `X` and explicitly disables `qt6`.
@@ -168,15 +168,38 @@ Omit the option when source-only evidence is required. The apply path:
 4. backs up only project-owned Portage files that it needs to change;
 5. writes `prismdrake-local.conf`, `package.use/prismdrake-dev`, and the narrow
    `package.accept_keywords/prismdrake-dev` exception atomically;
-6. runs `pkgdev manifest` and `pkgcheck scan` before local package resolution;
-7. pretends the default, `-qt6`, `clang`, `implementation-deps`, and
+6. confirms with both `portageq` and `eselect` that Portage resolves the live
+   shared overlay rather than a stale copy;
+7. runs `pkgdev manifest` and `pkgcheck scan` before local package resolution;
+8. pretends the default, `-qt6`, `clang`, `implementation-deps`, and
    `visual-tests` development metapackage combinations;
-8. stops if Portage reports a mask, keyword, license, or USE conflict; and
-9. uses `emerge --ask` before installing the development metapackage.
+9. stops if Portage reports a mask, keyword, license, or USE conflict; and
+10. uses `emerge --ask` before installing the development metapackage.
 
 Both helpers accept `PRISMDRAKE_WORKSPACE` and `PRISMDRAKE_SHARED_PATH` as
 environment alternatives to command-line overrides. The default workspace is
 derived from the script's checkout, so it never assumes a user's home path.
+
+## Observed Stage 0 result
+
+The default X11, accessibility, debug, Portage-QA, and Qt evidence layers were
+installed on 2026-07-16. Xorg 21.1.24, Qt 6.11.1, Xvfb, Xephyr, Openbox,
+AT-SPI, QML tooling, and the optional X11 interaction/capture tools are now
+available. The required X and Qt selections remain package-local; the guest's
+global `make.conf` still disables Qt and does not globally enable X.
+
+The strengthened verifier checked the live virtiofs path, ordinary-user
+ownership, repository registration, isolated `pkgcheck`, required commands,
+installed metapackage USE state, and all five Portage resolution matrices. It
+finished with zero failures and zero warnings. The root filesystem had about
+6.5 GiB free after installation, so future package additions require another
+capacity review. The exact package closure and license review are recorded in
+[PD1 Gentoo dependency evidence](../research/pd1-gentoo-dependency-evidence.md).
+
+The reusable toolkit harness runs entirely as the locked, unprivileged
+`prismdrake` build user inside disposable Xvfb, Openbox, D-Bus, and AT-SPI
+sessions. Its raw own-window XWD captures and logs pass through `/mnt/shared`;
+no active host desktop is touched.
 
 ## Snapshot and artifact boundary
 
