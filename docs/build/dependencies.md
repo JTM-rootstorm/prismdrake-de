@@ -68,14 +68,15 @@ carry a verified or observed version.
   request confirmation are also implemented without another link dependency.
   The production task-strip UI remains unresolved PD1 scope.
 - `prismdrake-session` remains a planned component manifest.
-  `prismdrake-shell` is Experimental because its passive notification adapter
-  and compiled card/list module now directly use Qt Core, QML, Quick, and Quick
-  Controls; Quick Test is test-only. Ubuntu 24.04 CI verifies Qt 6.4.2 as the
-  oldest tested common-API component version, while Qt 6.11.1 is the currently
-  observed host component version and Gentoo supplies qtdeclarative 6.11.1-r1.
-  The shell executable, resolved
-  production theme adapter, X11 surface integration, accessibility runtime
-  closure, and complete dynamic dependency graph remain explicitly unresolved.
+  `prismdrake-shell` is Experimental. Its immutable settings/theme projection
+  directly uses Qt Core and GUI, its passive task and notification adapters use
+  Qt Core, and its compiled card/list module uses QML, Quick, and Quick Controls;
+  Quick Test is test-only. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested
+  common-API component version, while Qt 6.11.1 is the currently observed host
+  component version and Gentoo supplies qtdeclarative 6.11.1-r1. The shell
+  executable, live settings-snapshot client, panel surface, X11 window
+  integration, accessibility runtime closure, and complete dynamic dependency
+  graph remain explicitly unresolved.
 - The settings service uses a mutex-protected immutable snapshot pointer and a
   single bounded worker; it introduced no atomic-storage dependency. Production
   runtime-closure evidence, accessibility linkage, and the supervisor

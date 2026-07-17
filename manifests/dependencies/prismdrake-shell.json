@@ -22,7 +22,7 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental notification presentation adapter directly uses system Qt Core. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1 supplies current reference evidence."
+      "reason": "The Experimental immutable settings/theme projection directly uses system Qt Core and GUI, while the passive task and notification presentation adapters use Qt Core. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1 supplies current reference evidence."
     },
     {
       "name": "qtdeclarative",
@@ -64,7 +64,7 @@
   "unresolved": [
     {
       "area": "runtime_closure",
-      "reason": "The Qt adapter and visible synthetic-card QML module are implemented, but the complete shell executable, resolved production theme adapter, and direct and transitive runtime closure still require measurement."
+      "reason": "The typed theme, task, and notification adapters and visible synthetic-card QML module are implemented, but the complete shell executable, live settings-snapshot client, panel surface, and direct and transitive runtime closure still require measurement."
     },
     {
       "area": "accessibility_runtime",

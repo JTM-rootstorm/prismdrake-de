@@ -40,21 +40,19 @@ add_subdirectory(src/foundation)
 add_subdirectory(src/launcher)
 add_subdirectory(src/notifications)
 
-set(prismdrake_qt_components Core Qml Quick QuickControls2)
+set(prismdrake_qt_components Core Gui Qml Quick QuickControls2)
 if(BUILD_TESTING)
     list(APPEND prismdrake_qt_components QuickTest)
 endif()
 find_package(Qt6 6.4 CONFIG QUIET COMPONENTS ${prismdrake_qt_components})
 if(NOT Qt6_FOUND)
     message(FATAL_ERROR
-        "Prismdrake shell presentation requires system-packaged Qt Core, QML, Quick, "
+        "Prismdrake shell presentation requires system-packaged Qt Core, GUI, QML, Quick, "
         "and Quick Controls 6.4 or newer; tests also require Quick Test. Install "
         "dev-qt/qtbase:6 and dev-qt/qtdeclarative:6 on Gentoo, or qt6-base-dev, "
         "qt6-declarative-dev, and the required qml6-module-* packages on Ubuntu. "
         "Prismdrake does not download or vendor Qt.")
 endif()
-add_subdirectory(src/shell)
-
 find_package(tomlplusplus CONFIG QUIET)
 if(NOT tomlplusplus_FOUND)
     message(FATAL_ERROR
@@ -75,6 +73,7 @@ add_subdirectory(src/theme)
 add_subdirectory(src/settings)
 add_subdirectory(src/ipc)
 add_subdirectory(src/x11)
+add_subdirectory(src/shell)
 add_subdirectory(src/settingsd)
 add_subdirectory(src/session)
 
@@ -189,6 +188,8 @@ prismdrake_add_format_check(
     src/notifications/NotificationModel.hpp
     src/shell/notifications/NotificationPresentationModel.cpp
     src/shell/notifications/NotificationPresentationModel.hpp
+    src/shell/tasks/TaskPresentationModel.cpp
+    src/shell/tasks/TaskPresentationModel.hpp
     src/settingsd/ServiceOptions.cpp
     src/settingsd/ServiceOptions.hpp
     src/settingsd/ServiceWorker.cpp
@@ -208,6 +209,8 @@ prismdrake_add_format_check(
     src/session/SessionRuntime.hpp
     src/session/SettingsReadiness.cpp
     src/session/SettingsReadiness.hpp
+    src/shell/theme/ShellThemeSnapshotAdapter.cpp
+    src/shell/theme/ShellThemeSnapshotAdapter.hpp
     tests/integration/DockPropertiesTests.cpp
     tests/integration/EwmhCapabilitiesTests.cpp
     tests/integration/EwmhTaskSourceTests.cpp
@@ -248,6 +251,8 @@ prismdrake_add_format_check(
     tests/qt/NotificationListQmlFixture.hpp
     tests/qt/NotificationListQmlTestRunner.cpp
     tests/qt/NotificationPresentationModelTests.cpp
+    tests/qt/ShellThemeSnapshotAdapterTests.cpp
+    tests/qt/TaskPresentationModelTests.cpp
     tests/unit/OutputTopologyTests.cpp
     tests/unit/PanelStrutGeometryTests.cpp
     tests/unit/PropertyReaderTests.cpp

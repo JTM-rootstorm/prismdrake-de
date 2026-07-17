@@ -14,6 +14,35 @@ include(GoogleTest)
 gtest_discover_tests(prismdrake-shell-notification-presentation-tests
     DISCOVERY_MODE PRE_TEST)
 
+add_executable(prismdrake-shell-theme-snapshot-tests
+    ShellThemeSnapshotAdapterTests.cpp)
+target_compile_definitions(prismdrake-shell-theme-snapshot-tests PRIVATE
+    PRISMDRAKE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(prismdrake-shell-theme-snapshot-tests
+    PRIVATE
+        GTest::gtest_main
+        Prismdrake::settings-core
+        Prismdrake::shell-theme)
+
+prismdrake_configure_cpp_target(prismdrake-shell-theme-snapshot-tests)
+prismdrake_enable_warnings(prismdrake-shell-theme-snapshot-tests)
+prismdrake_enable_sanitizers(prismdrake-shell-theme-snapshot-tests)
+gtest_discover_tests(prismdrake-shell-theme-snapshot-tests
+    DISCOVERY_MODE PRE_TEST)
+
+add_executable(prismdrake-shell-task-presentation-tests
+    TaskPresentationModelTests.cpp)
+target_link_libraries(prismdrake-shell-task-presentation-tests
+    PRIVATE
+        GTest::gtest_main
+        Prismdrake::shell-task-presentation)
+
+prismdrake_configure_cpp_target(prismdrake-shell-task-presentation-tests)
+prismdrake_enable_warnings(prismdrake-shell-task-presentation-tests)
+prismdrake_enable_sanitizers(prismdrake-shell-task-presentation-tests)
+gtest_discover_tests(prismdrake-shell-task-presentation-tests
+    DISCOVERY_MODE PRE_TEST)
+
 add_test(NAME NotificationCardQmlTest
     COMMAND $<TARGET_FILE:Qt6::qmltestrunner>
         -input "${CMAKE_CURRENT_SOURCE_DIR}/qml")

@@ -16,20 +16,23 @@ internal theme target. The configured 3.11 constraint is declared but is not a
 verified lower bound.
 
 The PD1 production build contains internal foundation, configuration, theme,
-settings, launcher, notification, X11, and session targets. The Experimental
-notification presentation consists of a passive Qt Core bridge over immutable
-synthetic snapshots and one compiled QML module containing the card, list, and
-typed token input. The bridge emits typed presentation intents; neither layer
-mutates the synthetic authority or implements a notification service. These
+settings, launcher, notification, X11, shell-presentation, and session targets.
+The Experimental shell presentation now includes an immutable Qt Core and GUI
+projection of one complete settings/theme generation, a passive Qt Core task
+bridge over authoritative task snapshots, a passive notification bridge over
+synthetic notification snapshots, and one compiled QML notification module.
+The adapters emit typed presentation intents; none mutates its authoritative
+model or implements window-manager or notification-service policy. These
 targets are not installed libraries or stable C++ ABIs. The isolated toolkit
 experiment remains a separate CMake project and is not linked into production
 targets.
 
-The notification presentation requires system Qt Core, QML, Quick, and Quick
-Controls 6.4 or newer through the Qt CMake packages; tests also require Quick
-Test. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested component version;
+Shell presentation requires system Qt Core, GUI, QML, Quick, and Quick Controls
+6.4 or newer through the Qt CMake packages; tests also require Quick Test.
+Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested component version;
 current host and Gentoo component evidence use Qt 6.11.1. The complete shell
-executable and resolved production theme adapter remain later PD1 integration.
+executable, live settings-snapshot client, and panel QML remain later PD1
+integration.
 
 ## Canonical developer builds
 
