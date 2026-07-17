@@ -11,7 +11,10 @@ import time
 from pathlib import Path
 
 
-STARTUP_TIMEOUT_SECONDS = 3
+# A cold CI runner can take several seconds to initialize fonts and publish the
+# display number even though the server is healthy. Keep startup bounded while
+# leaving enough of CTest's 30-second envelope for the test and cleanup.
+STARTUP_TIMEOUT_SECONDS = 8
 TEST_TIMEOUT_SECONDS = 16
 OPENBOX_READY_TIMEOUT_SECONDS = 2
 OPENBOX_TEST_TIMEOUT_SECONDS = 12
