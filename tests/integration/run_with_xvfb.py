@@ -25,7 +25,17 @@ def main() -> int:
         return fail("executable paths must be absolute")
 
     server = subprocess.Popen(
-        [str(xvfb), "-displayfd", "1", "-screen", "0", "1024x768x24", "-nolisten", "tcp"],
+        [
+            str(xvfb),
+            "-displayfd",
+            "1",
+            "-screen",
+            "0",
+            "1024x768x24",
+            "-noreset",
+            "-nolisten",
+            "tcp",
+        ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
