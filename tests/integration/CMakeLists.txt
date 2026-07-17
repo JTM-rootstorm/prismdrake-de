@@ -31,6 +31,7 @@ pkg_check_modules(PRISMDRAKE_TEST_XCB REQUIRED IMPORTED_TARGET xcb)
 add_executable(prismdrake-x11-integration-tests
     DockPropertiesTests.cpp
     EwmhCapabilitiesTests.cpp
+    EwmhTaskSourceTests.cpp
     EwmhWindowRequestsTests.cpp
     PropertyReaderTests.cpp
     RandrTopologyTests.cpp

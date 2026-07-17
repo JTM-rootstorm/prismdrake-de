@@ -42,6 +42,7 @@ class X11Connection final {
     friend class AtomCache;
     friend class DockProperties;
     friend class EwmhWindowRequests;
+    friend class EwmhTaskSource;
     friend class PropertyReader;
     friend class RandrTopologyProtocol;
     friend class RootEventStream;

@@ -111,6 +111,8 @@ prismdrake_add_format_check(
     src/x11/EwmhCapabilitiesInternal.hpp
     src/x11/EwmhTaskList.cpp
     src/x11/EwmhTaskList.hpp
+    src/x11/EwmhTaskSource.cpp
+    src/x11/EwmhTaskSource.hpp
     src/x11/EwmhWindowRequests.cpp
     src/x11/EwmhWindowRequests.hpp
     src/x11/EwmhWindowRequestsInternal.hpp
@@ -126,6 +128,8 @@ prismdrake_add_format_check(
     src/x11/RootEventStream.hpp
     src/x11/TaskModel.cpp
     src/x11/TaskModel.hpp
+    src/x11/TaskRequestState.cpp
+    src/x11/TaskRequestState.hpp
     src/x11/WindowMetadata.cpp
     src/x11/WindowMetadata.hpp
     src/x11/X11Connection.cpp
@@ -162,6 +166,7 @@ prismdrake_add_format_check(
     src/session/SettingsReadiness.hpp
     tests/integration/DockPropertiesTests.cpp
     tests/integration/EwmhCapabilitiesTests.cpp
+    tests/integration/EwmhTaskSourceTests.cpp
     tests/integration/EwmhWindowRequestsTests.cpp
     tests/integration/PropertyReaderTests.cpp
     tests/integration/RandrTopologyTests.cpp
@@ -195,6 +200,7 @@ prismdrake_add_format_check(
     tests/unit/SettingsReadinessTests.cpp
     tests/unit/SettingsEngineTests.cpp
     tests/unit/TaskModelTests.cpp
+    tests/unit/TaskRequestStateTests.cpp
     tests/unit/ThemeParserTests.cpp
     tests/unit/ThemeResolverTests.cpp
     tests/unit/WindowMetadataTests.cpp

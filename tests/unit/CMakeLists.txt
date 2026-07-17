@@ -28,6 +28,7 @@ add_executable(prismdrake-foundation-tests
     ServiceWorkerTests.cpp
     SettingsEngineTests.cpp
     TaskModelTests.cpp
+    TaskRequestStateTests.cpp
     ThemeParserTests.cpp
     ThemeResolverTests.cpp
     WindowMetadataTests.cpp
