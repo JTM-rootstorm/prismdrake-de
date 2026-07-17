@@ -22,6 +22,7 @@ add_executable(prismdrake-foundation-tests
     EwmhTaskListTests.cpp
     EwmhWindowRequestsTests.cpp
     FoundationPrimitivesTests.cpp
+    NotificationModelTests.cpp
     OutputTopologyTests.cpp
     PanelStrutGeometryTests.cpp
     PropertyReaderTests.cpp
@@ -48,6 +49,7 @@ target_link_libraries(prismdrake-foundation-tests
     PRIVATE
         Prismdrake::foundation
         Prismdrake::launcher-model
+        Prismdrake::notification-model
         Prismdrake::session-core
         Prismdrake::settings-service
         Prismdrake::settings-core

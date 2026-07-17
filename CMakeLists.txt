@@ -38,6 +38,7 @@ set_target_properties(prismdrake-cpp-policy PROPERTIES
 
 add_subdirectory(src/foundation)
 add_subdirectory(src/launcher)
+add_subdirectory(src/notifications)
 
 find_package(tomlplusplus CONFIG QUIET)
 if(NOT tomlplusplus_FOUND)
@@ -169,6 +170,8 @@ prismdrake_add_format_check(
     src/launcher/DesktopFileId.hpp
     src/launcher/ProcessLaunch.cpp
     src/launcher/ProcessLaunch.hpp
+    src/notifications/NotificationModel.cpp
+    src/notifications/NotificationModel.hpp
     src/settingsd/ServiceOptions.cpp
     src/settingsd/ServiceOptions.hpp
     src/settingsd/ServiceWorker.cpp
@@ -223,6 +226,7 @@ prismdrake_add_format_check(
     tests/unit/EwmhWindowRequestsTests.cpp
     tests/unit/FoundationPrimitivesTests.cpp
     tests/unit/LauncherPipelineTests.cpp
+    tests/unit/NotificationModelTests.cpp
     tests/unit/OutputTopologyTests.cpp
     tests/unit/PanelStrutGeometryTests.cpp
     tests/unit/PropertyReaderTests.cpp
