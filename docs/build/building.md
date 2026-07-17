@@ -5,11 +5,16 @@ and system-packaged dependencies. Configure and build operations do not fetch
 or vendor third-party source. GCC and Clang are the supported Linux compiler
 families.
 
-The initial production build contains the internal `prismdrake-foundation`
-target. It exposes build diagnostics and the documented
-[foundation utilities](foundation-utilities.md) to other in-tree targets but
-is not an installed library or a stable C++ ABI. Qt, X11, and the isolated
-toolkit experiment are not part of this initial production target.
+The configuration target requires the system toml++ package discovered through
+its CMake package configuration. On Gentoo this is `dev-cpp/tomlplusplus`; the
+build never downloads or vendors a parser.
+
+The PD1 production build contains internal `prismdrake-foundation` and
+`prismdrake-config` targets. They expose build diagnostics, the documented
+[foundation utilities](foundation-utilities.md), and strict version-1
+configuration loading to later in-tree components, but are not installed
+libraries or stable C++ ABIs. Qt, X11, and the isolated toolkit experiment are
+not part of these targets.
 
 ## Canonical developer builds
 
@@ -41,7 +46,7 @@ All optional behavior is disabled unless selected explicitly:
 | `PRISMDRAKE_ENABLE_LTO` | `OFF` | Enable checked interprocedural optimization |
 | `PRISMDRAKE_ENABLE_CLANG_TIDY` | `OFF` | Run Clang-Tidy on project-owned targets |
 | `PRISMDRAKE_WARNINGS_AS_ERRORS` | `OFF` | Promote project-owned warnings to errors |
-| `PRISMDRAKE_ENABLE_DEVELOPER_OVERRIDES` | `OFF` | Compile non-production developer override support into diagnostic metadata |
+| `PRISMDRAKE_ENABLE_DEVELOPER_OVERRIDES` | `OFF` | Compile non-production diagnostics and mock-capability override support; callers must also request developer policy |
 
 Warnings, sanitizers, LTO, and Clang-Tidy apply only to project-owned targets.
 Warnings-as-errors is enabled in controlled development and CI configurations,

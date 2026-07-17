@@ -44,13 +44,15 @@ carry a verified or observed version.
   records repository and build/test tooling, including system GoogleTest 1.17.0
   used by the foundation tests and the observed GCC 15.3.0 and Clang 22.1.8
   compiler packages. These entries are not installed runtime dependencies.
-- `prismdrake-session`, `prismdrake-settingsd`, and `prismdrake-shell` are
-  planned component manifests. Their runtime states remain unmeasured.
+- `prismdrake-session`, `prismdrake-settingsd`, and `prismdrake-shell` remain
+  planned component manifests. The implemented display-free configuration
+  module records its direct system toml++ 3.4.0 dependency in the settingsd
+  boundary, while the service's complete runtime closure remains unmeasured.
 - The Qt, XCB, and D-Bus versions come from the 2026-07-16 Gentoo reference VM
   evidence. They are observations, not supported minima.
-- Unselected configuration parsers, production runtime closure, accessibility
-  linkage, and init-neutral supervisor support remain explicit unresolved
-  areas rather than invented package claims.
+- The later theme-token JSON parser, production runtime closure, accessibility
+  linkage, and init-neutral supervisor support remain explicit unresolved areas
+  rather than invented package claims.
 
 Mandatory core runtime entries may not name GNOME Shell, Mutter,
 `gnome-settings-daemon`, `gnome-control-center`, or libadwaita. GTK itself is
