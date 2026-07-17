@@ -148,6 +148,9 @@ prismdrake_add_format_check(
     src/ipc/SdBusApi.hpp
     src/launcher/ApplicationPaths.cpp
     src/launcher/ApplicationPaths.hpp
+    src/launcher/DesktopEntry.hpp
+    src/launcher/DesktopEntryParser.cpp
+    src/launcher/DesktopEntryParser.hpp
     src/settingsd/ServiceOptions.cpp
     src/settingsd/ServiceOptions.hpp
     src/settingsd/ServiceWorker.cpp
@@ -187,6 +190,7 @@ prismdrake_add_format_check(
     tests/unit/ConfigurationParserTests.cpp
     tests/unit/ConfigurationLoaderTests.cpp
     tests/unit/DiagnosticsTests.cpp
+    tests/unit/DesktopEntryParserTests.cpp
     tests/unit/DockPropertiesTests.cpp
     tests/unit/EwmhTaskListTests.cpp
     tests/unit/EwmhWindowRequestsTests.cpp

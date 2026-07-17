@@ -10,6 +10,7 @@ add_executable(prismdrake-foundation-tests
     ConfigurationLoaderTests.cpp
     ConfigurationParserTests.cpp
     DiagnosticsTests.cpp
+    DesktopEntryParserTests.cpp
     DockPropertiesTests.cpp
     EwmhTaskListTests.cpp
     EwmhWindowRequestsTests.cpp
