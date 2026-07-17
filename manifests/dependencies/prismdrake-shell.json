@@ -43,6 +43,60 @@
       "reason": "The Experimental panel and notification modules directly use system QML, Qt Quick, and Quick Controls. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1-r1 supplies current reference evidence."
     },
     {
+      "name": "nlohmann-json",
+      "gentoo_atom": "dev-cpp/nlohmann_json",
+      "scope": "build",
+      "relationship": "direct",
+      "feature": "settings_snapshot_validation",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": "3.11",
+        "verified_minimum": null,
+        "observed": "3.12.0-r1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The shell's strict complete-snapshot parser includes the system nlohmann JSON header and recompiles canonical typed state; it is not an installed runtime library."
+    },
+    {
+      "name": "basu",
+      "gentoo_atom": "sys-libs/basu",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "settings_snapshot_transport",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "0.2.1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "Ubuntu and compatible hosts may use the selected API-compatible libsystemd sd-bus provider; one build links exactly one provider.",
+      "reason": "The event-driven shell settings client directly uses Prismdrake's selected sd-bus provider for the Experimental complete-snapshot contract."
+    },
+    {
+      "name": "dbus",
+      "gentoo_atom": "sys-apps/dbus",
+      "scope": "mandatory_runtime",
+      "relationship": "tool",
+      "feature": "settings_snapshot_transport",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.16.2",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The shell consumes settings over the user session message bus; isolated tests use dbus-run-session while project code links the selected sd-bus provider rather than libdbus."
+    },
+    {
       "name": "libxcb",
       "gentoo_atom": "x11-libs/libxcb",
       "scope": "mandatory_runtime",
@@ -64,7 +118,7 @@
   "unresolved": [
     {
       "area": "runtime_closure",
-      "reason": "The typed theme, launcher, task, and notification adapters, panel and notification QML modules, panel window host, and EWMH task controller are implemented, but the complete shell executable, live settings-snapshot client, runtime wiring, and direct and transitive closure still require measurement."
+      "reason": "The typed theme, launcher, task, and notification adapters, live settings-snapshot client, panel and notification QML modules, panel window host, and EWMH task controller are implemented, but the complete shell executable, runtime wiring, and direct and transitive closure still require measurement."
     },
     {
       "area": "accessibility_runtime",

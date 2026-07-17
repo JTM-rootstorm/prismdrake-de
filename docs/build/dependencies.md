@@ -73,11 +73,13 @@ carry a verified or observed version.
   adapters use Qt Core; and its compiled panel and notification modules use QML,
   Quick, and Quick Controls. The panel window host and event-driven task
   controller use Qt GUI/Core and the internal standards-only X11 adapter; Quick
-  Test is test-only. Ubuntu 24.04 CI verifies
+  Test is test-only. The live snapshot client directly uses the selected sd-bus
+  provider and session D-Bus, while its canonical inverse parser includes the
+  system nlohmann JSON header. Ubuntu 24.04 CI verifies
   Qt 6.4.2 as the oldest tested common-API component version, while Qt 6.11.1 is
   the currently observed host component version and Gentoo supplies
-  qtdeclarative 6.11.1-r1. The shell executable, live settings-snapshot client,
-  accessibility runtime closure, and complete dynamic dependency graph remain
+  qtdeclarative 6.11.1-r1. The shell executable, accessibility runtime closure,
+  and complete dynamic dependency graph remain
   explicitly unresolved. Exact host and VM coverage is recorded in the
   [panel-shell evidence](../research/pd1-panel-shell-evidence.md).
 - The settings service uses a mutex-protected immutable snapshot pointer and a

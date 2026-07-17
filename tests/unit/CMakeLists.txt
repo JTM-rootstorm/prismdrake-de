@@ -112,3 +112,18 @@ gtest_discover_tests(
     PROPERTIES
         ENVIRONMENT
             "PRISMDRAKE_APPLICATION_LAUNCH_FIXTURE=$<TARGET_FILE:prismdrake-application-launch-fixture>")
+
+add_executable(prismdrake-runtime-snapshot-parser-tests
+    RuntimeSnapshotParserTests.cpp)
+target_compile_definitions(prismdrake-runtime-snapshot-parser-tests PRIVATE
+    PRISMDRAKE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(prismdrake-runtime-snapshot-parser-tests
+    PRIVATE
+        GTest::gtest_main
+        Prismdrake::runtime-snapshot-parser)
+
+prismdrake_configure_cpp_target(prismdrake-runtime-snapshot-parser-tests)
+prismdrake_enable_warnings(prismdrake-runtime-snapshot-parser-tests)
+prismdrake_enable_sanitizers(prismdrake-runtime-snapshot-parser-tests)
+gtest_discover_tests(prismdrake-runtime-snapshot-parser-tests
+    DISCOVERY_MODE PRE_TEST)

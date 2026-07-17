@@ -1,5 +1,6 @@
 add_subdirectory(theme)
 add_subdirectory(notifications)
+add_subdirectory(settings)
 add_subdirectory(launcher)
 add_subdirectory(tasks)
 add_subdirectory(taskcontroller)

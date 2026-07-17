@@ -163,5 +163,13 @@ disappearance, and name reacquisition. Acceptance of ADR 0004 and implementation
 of the PD1 prototype do not stabilize either interface or guarantee wire
 compatibility.
 
+The Experimental shell client implements this boundary without Qt D-Bus or a
+polling timer. It installs owner and generation matches before its initial
+owner query, drives the selected sd-bus provider from Qt socket notifiers and
+the provider's monotonic deadline, and treats every generation signal as a hint
+to fetch one newer complete snapshot. Received JSON remains private to a strict
+bounded inverse parser; only an immutable typed snapshot crosses into shell
+theme and presentation adapters.
+
 Relevant requirements: `PD-CONFIG-001` through `PD-CONFIG-010` and
 `PD-API-001` through `PD-API-005`.

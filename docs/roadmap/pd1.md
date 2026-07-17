@@ -44,9 +44,11 @@ passive launcher/task/notification presentation adapters, one token-driven and
 keyboard-operable panel component, a Qt/X11 window host that applies the
 documented primary-output bottom-dock policy through standard EWMH properties,
 and an event-driven controller that mirrors authoritative EWMH task state and
-sends only checked standard WM requests.
+sends only checked standard WM requests. A live asynchronous settings client
+now consumes complete owner-epoch-scoped snapshots through the Experimental
+internal D-Bus contract and publishes only canonical typed state.
 This is a development prototype, not a complete shell: the installed
-`prismdrake-shell` executable, live settings client, end-to-end model wiring,
+`prismdrake-shell` executable, end-to-end model wiring,
 reviewed visual baselines, and live assistive-technology evidence remain open
 PD1 work.
 

@@ -188,6 +188,10 @@ prismdrake_add_format_check(
     src/notifications/NotificationModel.hpp
     src/shell/notifications/NotificationPresentationModel.cpp
     src/shell/notifications/NotificationPresentationModel.hpp
+    src/shell/settings/RuntimeSnapshotParser.cpp
+    src/shell/settings/RuntimeSnapshotParser.hpp
+    src/shell/settings/SettingsSnapshotClient.cpp
+    src/shell/settings/SettingsSnapshotClient.hpp
     src/shell/tasks/TaskPresentationModel.cpp
     src/shell/tasks/TaskPresentationModel.hpp
     src/shell/taskcontroller/TaskController.cpp
@@ -264,6 +268,7 @@ prismdrake_add_format_check(
     tests/qt/PanelSurfaceQmlFixture.cpp
     tests/qt/PanelSurfaceQmlFixture.hpp
     tests/qt/PanelSurfaceQmlTestRunner.cpp
+    tests/qt/settings/SettingsSnapshotClientTests.cpp
     tests/qt/ShellThemeSnapshotAdapterTests.cpp
     tests/qt/LauncherPresentationModelTests.cpp
     tests/qt/TaskPresentationModelTests.cpp
@@ -279,6 +284,7 @@ prismdrake_add_format_check(
     tests/unit/ResultTests.cpp
     tests/unit/RootEventStreamTests.cpp
     tests/unit/RestartPolicyTests.cpp
+    tests/unit/RuntimeSnapshotParserTests.cpp
     tests/unit/SessionEnvironmentTests.cpp
     tests/unit/SessionOptionsTests.cpp
     tests/unit/SessionRuntimeTests.cpp

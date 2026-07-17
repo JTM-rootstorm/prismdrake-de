@@ -30,13 +30,21 @@ notification state. These targets are not installed libraries or stable C++
 ABIs. The isolated toolkit experiment remains a separate CMake project and is
 not linked into production targets.
 
+The shell settings client integrates the selected sd-bus provider with Qt's
+socket and monotonic-timeout event sources. It treats generation signals as
+refetch hints, clears state on every well-known-name ownership gap, and parses
+only complete canonical version-1 snapshots into immutable typed C++ state.
+The inverse parser uses the system nlohmann JSON headers, applies explicit
+depth, node, container, string, and 1 MiB limits, rejects duplicate or unknown
+shape, and verifies an exact canonical serializer round trip before publication.
+
 Shell presentation requires system Qt Core, GUI, QML, Quick, and Quick Controls
 6.4 or newer through the Qt CMake packages; tests also require Quick Test.
 Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested component version;
 current host and Gentoo component evidence use Qt 6.11.1. The complete shell
-executable, live settings-snapshot client, and runtime wiring among the panel,
-launcher, task controller, notification fixture, and session remain later PD1
-integration. See the [panel-shell evidence](../research/pd1-panel-shell-evidence.md).
+executable and runtime wiring among the settings client, panel, launcher, task
+controller, notification fixture, and session remain later PD1 integration. See
+the [panel-shell evidence](../research/pd1-panel-shell-evidence.md).
 
 ## Canonical developer builds
 
