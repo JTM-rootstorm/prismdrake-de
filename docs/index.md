@@ -40,6 +40,7 @@ describe a usable or production-ready desktop release.
 - [PD1 foundation-utilities evidence](research/pd1-foundation-utilities-evidence.md)
 - [PD1 configuration-loader evidence](research/pd1-configuration-loader-evidence.md)
 - [PD1 theme-resolver evidence](research/pd1-theme-resolver-evidence.md)
+- [PD1 settings-service evidence](research/pd1-settings-service-evidence.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
 

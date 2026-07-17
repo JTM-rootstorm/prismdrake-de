@@ -50,8 +50,9 @@ carry a verified or observed version.
   Gentoo prefers and directly links basu 0.2.1; Ubuntu CI uses libsystemd as the
   API-compatible provider, and CMake selects exactly one. The D-Bus broker is a
   mandatory runtime service/tool rather than a directly linked libdbus client.
-  The complete Gentoo dynamic closure and supported provider minimum remain to
-  be measured in the VM.
+  The complete Gentoo dynamic closure is measured in the
+  [settings-service evidence](../research/pd1-settings-service-evidence.md);
+  supported provider and broker minima remain unmeasured.
 - `prismdrake-session` and `prismdrake-shell` remain planned component
   manifests. The Qt and XCB versions come from the 2026-07-16 Gentoo reference
   VM evidence and remain observations rather than supported minima.

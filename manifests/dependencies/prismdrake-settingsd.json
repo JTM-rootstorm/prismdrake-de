@@ -4,7 +4,7 @@
   "component_kind": "core_service",
   "implementation_status": "experimental",
   "mandatory_core_startup": true,
-  "runtime_dependency_state": "planned_unmeasured",
+  "runtime_dependency_state": "measured",
   "dependencies": [
     {
       "name": "tomlplusplus",
@@ -53,7 +53,7 @@
         "declared_minimum": null,
         "verified_minimum": null,
         "observed": "0.2.1",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
@@ -71,7 +71,7 @@
         "declared_minimum": null,
         "verified_minimum": null,
         "observed": "1.16.2",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
@@ -100,7 +100,7 @@
   "unresolved": [
     {
       "area": "runtime_closure",
-      "reason": "Record and review the complete prismdrake-settingsd dynamic closure after the Gentoo basu build; supported minimum provider and broker versions remain unmeasured."
+      "reason": "The complete Gentoo basu dynamic closure is recorded, but supported minimum provider and broker versions remain unmeasured."
     }
   ]
 }
