@@ -35,5 +35,15 @@ TEST(X11ConnectionTest, RejectsZeroWindowIdentifiers) {
     EXPECT_EQ(valid.value().value(), 42U);
 }
 
+TEST(X11ConnectionTest, RejectsNoneAsAnAtomIdentifier) {
+    const auto none = AtomId::fromProtocol(0U);
+    ASSERT_FALSE(none);
+    EXPECT_EQ(none.error().code, ErrorCode::invalid_argument);
+
+    const auto valid = AtomId::fromProtocol(42U);
+    ASSERT_TRUE(valid);
+    EXPECT_EQ(valid.value().value(), 42U);
+}
+
 } // namespace
 } // namespace prismdrake::x11

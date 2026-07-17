@@ -101,8 +101,13 @@ prismdrake_add_format_check(
     src/theme/ThemeParser.hpp
     src/theme/ThemeResolver.cpp
     src/theme/ThemeResolver.hpp
+    src/x11/AtomCache.cpp
+    src/x11/AtomCache.hpp
+    src/x11/PropertyReader.cpp
+    src/x11/PropertyReader.hpp
     src/x11/X11Connection.cpp
     src/x11/X11Connection.hpp
+    src/x11/X11ConnectionPrivate.hpp
     src/x11/X11Types.cpp
     src/x11/X11Types.hpp
     src/settings/SettingsEngine.cpp
@@ -132,6 +137,7 @@ prismdrake_add_format_check(
     src/session/SessionRuntime.hpp
     src/session/SettingsReadiness.cpp
     src/session/SettingsReadiness.hpp
+    tests/integration/PropertyReaderTests.cpp
     tests/integration/SettingsServiceTests.cpp
     tests/integration/X11ConnectionTests.cpp
     tests/fixtures/SessionChildFixture.cpp
@@ -145,6 +151,7 @@ prismdrake_add_format_check(
     tests/unit/ConfigurationLoaderTests.cpp
     tests/unit/DiagnosticsTests.cpp
     tests/unit/FoundationPrimitivesTests.cpp
+    tests/unit/PropertyReaderTests.cpp
     tests/unit/ResultTests.cpp
     tests/unit/RestartPolicyTests.cpp
     tests/unit/SessionEnvironmentTests.cpp

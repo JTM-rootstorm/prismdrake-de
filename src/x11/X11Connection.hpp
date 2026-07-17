@@ -4,10 +4,14 @@
 #include "X11Types.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string_view>
 
 namespace prismdrake::x11 {
+
+class AtomCache;
+class PropertyReader;
 
 inline constexpr std::size_t maximumDisplayNameBytes = 255U;
 
@@ -31,11 +35,17 @@ class X11Connection final {
     [[nodiscard]] bool healthy() const noexcept;
 
   private:
+    friend class AtomCache;
+    friend class PropertyReader;
+
     class Implementation;
+    using Identity = std::uint64_t;
 
-    explicit X11Connection(std::unique_ptr<Implementation> implementation) noexcept;
+    explicit X11Connection(std::shared_ptr<Implementation> implementation) noexcept;
+    [[nodiscard]] void *nativeConnection() const noexcept;
+    [[nodiscard]] Identity identity() const noexcept;
 
-    std::unique_ptr<Implementation> implementation_;
+    std::shared_ptr<Implementation> implementation_;
 };
 
 /// Opens, verifies, and closes one connection to prove that DISPLAY names a

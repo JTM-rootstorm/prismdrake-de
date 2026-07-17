@@ -1,5 +1,7 @@
 #include "X11Connection.hpp"
+#include "X11ConnectionPrivate.hpp"
 
+#include <atomic>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -13,21 +15,21 @@ namespace {
 using foundation::ErrorCode;
 using foundation::Result;
 
-struct ConnectionDeleter final {
-    void operator()(xcb_connection_t *connection) const noexcept {
-        if (connection != nullptr) {
-            xcb_disconnect(connection);
-        }
-    }
-};
-
 struct ReplyDeleter final {
     void operator()(void *reply) const noexcept { std::free(reply); }
 };
 
-using ConnectionHandle = std::unique_ptr<xcb_connection_t, ConnectionDeleter>;
 using GeometryReply = std::unique_ptr<xcb_get_geometry_reply_t, ReplyDeleter>;
 using ProtocolError = std::unique_ptr<xcb_generic_error_t, ReplyDeleter>;
+
+[[nodiscard]] std::uint64_t nextConnectionIdentity() noexcept {
+    static std::atomic_uint64_t next{1U};
+    std::uint64_t identity = next.fetch_add(1U);
+    while (identity == 0U) {
+        identity = next.fetch_add(1U);
+    }
+    return identity;
+}
 
 [[nodiscard]] bool validDisplayName(std::string_view display) noexcept {
     if (display.empty() || display.size() > maximumDisplayNameBytes ||
@@ -50,15 +52,6 @@ using ProtocolError = std::unique_ptr<xcb_generic_error_t, ReplyDeleter>;
 
 } // namespace
 
-class X11Connection::Implementation final {
-  public:
-    Implementation(ConnectionHandle connection, ScreenInfo screen) noexcept
-        : connection_(std::move(connection)), screen_(screen) {}
-
-    ConnectionHandle connection_;
-    ScreenInfo screen_;
-};
-
 Result<X11Connection> X11Connection::connect(std::string_view display) {
     if (!validDisplayName(display)) {
         return unavailable();
@@ -66,7 +59,7 @@ Result<X11Connection> X11Connection::connect(std::string_view display) {
 
     int screenIndex = 0;
     const std::string displayName{display};
-    ConnectionHandle connection{xcb_connect(displayName.c_str(), &screenIndex)};
+    detail::ConnectionHandle connection{xcb_connect(displayName.c_str(), &screenIndex)};
     if (!connection || screenIndex < 0 || xcb_connection_has_error(connection.get()) != 0) {
         return unavailable();
     }
@@ -99,11 +92,11 @@ Result<X11Connection> X11Connection::connect(std::string_view display) {
 
     const ScreenInfo screen{static_cast<std::uint32_t>(screenIndex), root.value(), geometry->width,
                             geometry->height};
-    return Result<X11Connection>::success(
-        X11Connection{std::make_unique<Implementation>(std::move(connection), screen)});
+    return Result<X11Connection>::success(X11Connection{
+        std::make_shared<Implementation>(std::move(connection), screen, nextConnectionIdentity())});
 }
 
-X11Connection::X11Connection(std::unique_ptr<Implementation> implementation) noexcept
+X11Connection::X11Connection(std::shared_ptr<Implementation> implementation) noexcept
     : implementation_(std::move(implementation)) {}
 
 X11Connection::~X11Connection() = default;
@@ -119,6 +112,14 @@ int X11Connection::eventFileDescriptor() const noexcept {
 bool X11Connection::healthy() const noexcept {
     return implementation_ && implementation_->connection_ &&
            xcb_connection_has_error(implementation_->connection_.get()) == 0;
+}
+
+void *X11Connection::nativeConnection() const noexcept {
+    return implementation_ != nullptr ? implementation_->connection_.get() : nullptr;
+}
+
+X11Connection::Identity X11Connection::identity() const noexcept {
+    return implementation_ != nullptr ? implementation_->identity_ : 0U;
 }
 
 Result<ScreenInfo> probeUsableDisplay(std::string_view display) {

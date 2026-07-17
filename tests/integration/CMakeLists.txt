@@ -25,11 +25,17 @@ set_tests_properties(SettingsServiceIntegrationTest PROPERTIES
     RUN_SERIAL TRUE
     TIMEOUT 60)
 
-add_executable(prismdrake-x11-integration-tests X11ConnectionTests.cpp)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PRISMDRAKE_TEST_XCB REQUIRED IMPORTED_TARGET xcb)
+
+add_executable(prismdrake-x11-integration-tests
+    PropertyReaderTests.cpp
+    X11ConnectionTests.cpp)
 target_link_libraries(prismdrake-x11-integration-tests
     PRIVATE
         GTest::gtest_main
-        Prismdrake::x11)
+        Prismdrake::x11
+        PkgConfig::PRISMDRAKE_TEST_XCB)
 
 prismdrake_configure_cpp_target(prismdrake-x11-integration-tests)
 prismdrake_enable_warnings(prismdrake-x11-integration-tests)
@@ -45,6 +51,13 @@ if(PRISMDRAKE_XVFB_EXECUTABLE)
             "$<TARGET_FILE:prismdrake-x11-integration-tests>")
     set_tests_properties(X11ConnectionIntegrationTest PROPERTIES TIMEOUT 30)
 else()
+    add_test(
+        NAME X11ConnectionIntegrationTest
+        COMMAND "${CMAKE_COMMAND}" -E echo
+            "SKIP: Xvfb is unavailable; X11 integration requires the VM or CI profile")
+    set_tests_properties(X11ConnectionIntegrationTest PROPERTIES
+        SKIP_REGULAR_EXPRESSION "^SKIP:"
+        TIMEOUT 5)
     message(STATUS
-        "Xvfb is unavailable; the X11 connection integration test is not registered")
+        "Xvfb is unavailable; the X11 integration test is registered as skipped")
 endif()

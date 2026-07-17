@@ -6,6 +6,23 @@
 
 namespace prismdrake::x11 {
 
+/// Explicit non-owning X11 atom identifier. Zero denotes None and is never a valid atom.
+class AtomId final {
+  public:
+    using Value = std::uint32_t;
+
+    [[nodiscard]] static foundation::Result<AtomId> fromProtocol(Value value);
+
+    [[nodiscard]] Value value() const noexcept { return value_; }
+
+    friend bool operator==(const AtomId &, const AtomId &) = default;
+
+  private:
+    explicit AtomId(Value value) noexcept : value_(value) {}
+
+    Value value_;
+};
+
 /// Explicit non-owning X11 window identifier. Zero is never a valid live window.
 class WindowId final {
   public:
