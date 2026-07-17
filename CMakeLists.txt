@@ -49,7 +49,26 @@ if(BUILD_TESTING)
 endif()
 
 prismdrake_add_format_check(
+    src/foundation/AtomicFile.cpp
+    src/foundation/AtomicFile.hpp
+    src/foundation/BoundedFile.cpp
+    src/foundation/BoundedFile.hpp
     src/foundation/BuildInfo.cpp
     src/foundation/BuildInfo.hpp
     src/foundation/BuildInfoConfig.hpp.in
-    tests/unit/BuildInfoTests.cpp)
+    src/foundation/Cancellation.hpp
+    src/foundation/Diagnostics.cpp
+    src/foundation/Diagnostics.hpp
+    src/foundation/ExitStatus.hpp
+    src/foundation/Generation.hpp
+    src/foundation/MonotonicClock.hpp
+    src/foundation/Result.hpp
+    src/foundation/XdgPaths.cpp
+    src/foundation/XdgPaths.hpp
+    tests/unit/AtomicFileTests.cpp
+    tests/unit/BoundedFileTests.cpp
+    tests/unit/BuildInfoTests.cpp
+    tests/unit/DiagnosticsTests.cpp
+    tests/unit/FoundationPrimitivesTests.cpp
+    tests/unit/ResultTests.cpp
+    tests/unit/XdgPathsTests.cpp)

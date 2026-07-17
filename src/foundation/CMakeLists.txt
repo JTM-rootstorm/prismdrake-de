@@ -7,8 +7,21 @@ configure_file(
     @ONLY)
 
 add_library(prismdrake-foundation STATIC
+    AtomicFile.cpp
+    AtomicFile.hpp
+    BoundedFile.cpp
+    BoundedFile.hpp
     BuildInfo.cpp
     BuildInfo.hpp
+    Cancellation.hpp
+    Diagnostics.cpp
+    Diagnostics.hpp
+    ExitStatus.hpp
+    Generation.hpp
+    MonotonicClock.hpp
+    Result.hpp
+    XdgPaths.cpp
+    XdgPaths.hpp
     "${prismdrake_foundation_generated_dir}/BuildInfoConfig.hpp")
 add_library(Prismdrake::foundation ALIAS prismdrake-foundation)
 
