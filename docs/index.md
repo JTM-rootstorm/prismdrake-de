@@ -42,6 +42,7 @@ describe a usable or production-ready desktop release.
 - [PD1 theme-resolver evidence](research/pd1-theme-resolver-evidence.md)
 - [PD1 settings-service evidence](research/pd1-settings-service-evidence.md)
 - [PD1 X11 connection evidence](research/pd1-x11-connection-evidence.md)
+- [PD1 X11 capability and event evidence](research/pd1-x11-capability-event-evidence.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
 

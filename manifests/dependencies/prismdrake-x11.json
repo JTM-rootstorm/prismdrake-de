@@ -22,7 +22,7 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The toolkit-neutral X11 connection directly uses system core XCB to select a screen and complete one checked server round trip."
+      "reason": "The toolkit-neutral X11 adapter directly uses system core XCB for checked connection setup, fixed atom interning, bounded property reads, verified EWMH discovery, and observational root events."
     },
     {
       "name": "xorg-server",
@@ -40,7 +40,7 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": "A separately controlled X server may run the same transport integration binary.",
-      "reason": "The deterministic integration harness starts Xvfb through its displayfd interface and performs the real connection test without requiring a window manager."
+      "reason": "The deterministic integration harness starts Xvfb through its displayfd interface with server reset disabled and exercises transport, property, EWMH, and root-event behavior without requiring a window manager."
     }
   ],
   "unresolved": [
@@ -50,7 +50,7 @@
     },
     {
       "area": "remaining_adapter_scope",
-      "reason": "EWMH capabilities, bounded property reads, event decoding, dock properties, and output policy remain later PD1 work."
+      "reason": "Standard window-manager requests, dock and strut properties, stale task-model records, and RandR output policy remain later PD1 work."
     }
   ]
 }
