@@ -51,7 +51,8 @@ When tests are enabled, a missing system GoogleTest installation is a configure
 error with package guidance. Use `-DBUILD_TESTING=OFF` for a runtime-only build;
 Prismdrake never downloads GoogleTest during configuration.
 
-The Gentoo evidence environment has tested CMake 4.3.3-r1 and GCC 15.3.0.
-Clang and CI results are recorded separately as those configurations run. The
-minimum CMake version is 3.24; minimum compiler versions will not be claimed
-until the compiler matrix supplies measured evidence.
+The Gentoo evidence environment has tested CMake 4.3.3-r1, GCC 15.3.0, and
+Clang 22.1.8 against the production foundation target. The configured CMake
+constraint is 3.24, but that exact lower bound and minimum compiler versions
+will not be claimed as verified until lower-bound testing supplies measured
+evidence. See the [toolchain evidence report](../research/pd1-build-toolchain-evidence.md).

@@ -35,6 +35,7 @@ describe a usable or production-ready desktop release.
 - [Toolkit evaluation](research/toolkit-evaluation.md)
 - [PD1 toolkit spike](research/pd1-toolkit-spike.md)
 - [PD1 Gentoo dependency evidence](research/pd1-gentoo-dependency-evidence.md)
+- [PD1 build and toolchain evidence](research/pd1-build-toolchain-evidence.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
 

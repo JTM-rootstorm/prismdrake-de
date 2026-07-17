@@ -148,9 +148,13 @@ the separately accepted Qt 6 Quick visible-shell direction.
 ## Validation or evidence
 
 The maintainer accepted this baseline on 2026-07-16 after review of the Gentoo
-development environment and isolated toolkit spike. The following remain
-required PD1 exit evidence for the production build rather than claims about
-the isolated spike:
+development environment and isolated toolkit spike. The first GCC, Clang,
+GoogleTest, sanitizer, formatting, analysis, LTO,
+missing-dependency, and archive results are recorded in the
+[PD1 build and toolchain evidence](../research/pd1-build-toolchain-evidence.md).
+The following remain the continuing PD1 exit contract for every applicable
+production target and for packaging rather than claims about the isolated
+spike:
 
 - configuring and compiling a representative C++20 target with GCC and Clang;
 - running GoogleTest through CTest from the system package;

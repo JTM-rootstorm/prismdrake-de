@@ -17,7 +17,7 @@
         "declared_minimum": "3.11",
         "verified_minimum": null,
         "observed": "3.14.6",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "pending",
@@ -35,7 +35,7 @@
         "declared_minimum": "3.24",
         "verified_minimum": null,
         "observed": "4.3.3-r1",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "pending",
@@ -48,12 +48,12 @@
       "scope": "build",
       "relationship": "tool",
       "feature": "reference_build",
-      "requirement_status": "observed",
+      "requirement_status": "implemented",
       "version": {
         "declared_minimum": null,
         "verified_minimum": null,
         "observed": "1.13.2-r1",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
@@ -84,12 +84,12 @@
       "scope": "build",
       "relationship": "tool",
       "feature": "cpp20_compilation",
-      "requirement_status": "observed",
+      "requirement_status": "implemented",
       "version": {
         "declared_minimum": null,
         "verified_minimum": null,
         "observed": "15.3.0",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
@@ -102,12 +102,12 @@
       "scope": "build",
       "relationship": "tool",
       "feature": "cpp20_compilation",
-      "requirement_status": "observed",
+      "requirement_status": "implemented",
       "version": {
         "declared_minimum": null,
         "verified_minimum": null,
         "observed": "22.1.8",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "pending",
