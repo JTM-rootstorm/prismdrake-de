@@ -146,6 +146,8 @@ prismdrake_add_format_check(
     src/settings/SettingsSnapshot.hpp
     src/ipc/SdBusApi.cpp
     src/ipc/SdBusApi.hpp
+    src/launcher/ApplicationCatalog.cpp
+    src/launcher/ApplicationCatalog.hpp
     src/launcher/ApplicationPaths.cpp
     src/launcher/ApplicationPaths.hpp
     src/launcher/ApplicationSearch.cpp
@@ -196,6 +198,7 @@ prismdrake_add_format_check(
     tests/unit/ServiceOptionsTests.cpp
     tests/unit/ServiceWorkerTests.cpp
     tests/unit/AtomicFileTests.cpp
+    tests/unit/ApplicationCatalogTests.cpp
     tests/unit/ApplicationPathsTests.cpp
     tests/unit/ApplicationSearchTests.cpp
     tests/unit/BoundedFileTests.cpp

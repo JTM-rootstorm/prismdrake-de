@@ -2,6 +2,7 @@ include(GoogleTest)
 find_package(Threads REQUIRED)
 
 add_executable(prismdrake-foundation-tests
+    ApplicationCatalogTests.cpp
     ApplicationPathsTests.cpp
     ApplicationSearchTests.cpp
     AtomicFileTests.cpp
