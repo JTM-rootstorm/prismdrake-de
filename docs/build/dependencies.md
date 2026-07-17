@@ -59,9 +59,12 @@ carry a verified or observed version.
   the same Gentoo `x11-libs/libxcb` package supplies bounded RandR negotiation,
   output discovery, primary-output queries, and topology-change event
   selection through `libxcb-randr.so.0`. Xvfb 21.1.24 supplies isolated
-  real-server tests. These observed versions are not supported minima. Standard
-  window-manager requests, dock and strut property publication, work-area
-  verification, and stale task-model records remain unresolved PD1 scope.
+  real-server tests. Optional test-only Openbox 3.6.1-r11 and xprop 1.2.8 add a
+  bounded isolated-WM lane for protocol readiness and WM-applied work-area
+  verification; neither is a runtime dependency. These observed versions are
+  not supported minima. Checked standard window-manager requests and dock/strut
+  publication are implemented. The bounded EWMH task mirror and stale-record
+  removal remain unresolved PD1 scope.
 - `prismdrake-session` and `prismdrake-shell` remain planned component
   manifests. The Qt and XCB versions come from the 2026-07-16 Gentoo reference
   VM evidence and remain observations rather than supported minima.

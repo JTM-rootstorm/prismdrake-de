@@ -168,9 +168,11 @@ classification, but no physical hotplug event was generated. This evidence
 does not establish real-GPU hotplug, physical multi-monitor,
 mixed-DPI, or supported-minimum-version behavior.
 
-## Remaining work
+## Subsequent work
 
-WP8 still requires standard window-manager request encoding, dock and strut
-property publication, work-area verification, and stale task-record removal.
-Proposed ADR 0005 remains Proposed; this evidence does not accept it or claim
-any candidate `GW_*` protocol.
+Checked standard window-manager requests, dock and strut publication, and
+WM-applied work-area verification are recorded in the
+[dock and request evidence](pd1-x11-dock-request-evidence.md). The bounded task
+mirror and stale task-record removal remain open. Proposed ADR 0005 remains
+Proposed; neither evidence report accepts it or claims a candidate `GW_*`
+protocol.

@@ -58,17 +58,53 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": "A separately controlled X server may run the same transport integration binary.",
-      "reason": "The deterministic integration harness starts Xvfb through its displayfd interface with server reset disabled and exercises transport, property, EWMH, and root-event behavior without requiring a window manager."
+      "reason": "The deterministic integration harness starts Xvfb through its displayfd interface with server reset disabled and exercises transport, property, EWMH, root-event, and standard window-manager request behavior."
+    },
+    {
+      "name": "openbox",
+      "gentoo_atom": "x11-wm/openbox",
+      "scope": "test",
+      "relationship": "tool",
+      "feature": "wm_workarea_integration",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "3.6.1-r11",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "The Openbox-specific lane is registered as skipped; exact dock properties remain testable under plain Xvfb.",
+      "reason": "The optional isolated-WM test lane verifies that a protocol-identified EWMH window manager applies Prismdrake's dock strut to the current desktop work area."
+    },
+    {
+      "name": "xprop",
+      "gentoo_atom": "x11-apps/xprop",
+      "scope": "test",
+      "relationship": "tool",
+      "feature": "wm_readiness_probe",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.2.8",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "The Openbox-specific lane is registered as skipped rather than using an unbounded startup delay.",
+      "reason": "The isolated-WM harness uses xprop only for a bounded _NET_SUPPORTING_WM_CHECK readiness probe before the XCB integration binary performs independent protocol validation."
     }
   ],
   "unresolved": [
     {
       "area": "minimum_versions",
-      "reason": "Supported minimum core libxcb, xcb-randr, and Xorg server versions remain unmeasured; the recorded versions are component observations rather than supported minima."
+      "reason": "Supported minimum core libxcb, xcb-randr, Xorg server, Openbox, and xprop versions remain unmeasured; the recorded versions are component observations rather than supported minima."
     },
     {
       "area": "remaining_adapter_scope",
-      "reason": "Standard window-manager requests, dock and strut property publication, work-area verification, and stale task-model records remain later PD1 work."
+      "reason": "The bounded EWMH task mirror and its stale-record removal remain later PD1 work; this slice supplies only the checked request and dock-property boundaries it will consume."
     }
   ]
 }
