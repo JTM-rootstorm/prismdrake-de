@@ -26,7 +26,8 @@ template <typename T> [[nodiscard]] const T &requireEvent(const RootEvent &event
 template <typename T>
 concept ExposesWindowIdentifier = requires(const T &hint) { hint.window; };
 
-static_assert(!ExposesWindowIdentifier<ClientTopologyHint>);
+static_assert(ExposesWindowIdentifier<ClientTopologyHint>);
+static_assert(ExposesWindowIdentifier<ClientPropertyHint>);
 static_assert(!ExposesWindowIdentifier<OutputTopologyRefreshHint>);
 
 TEST(RootEventDecoderTest, UsesOnlyNotifyMasksAndNeverSelectsRedirectAuthority) {
@@ -51,6 +52,7 @@ TEST(RootEventDecoderTest, DecodesActualAndSyntheticCreateAsRefreshHints) {
     ASSERT_TRUE(decoded);
     ASSERT_TRUE(decoded.value());
     const auto &actualHint = requireEvent<ClientTopologyHint>(*decoded.value());
+    EXPECT_EQ(actualHint.window, WindowId::fromProtocol(200U).value());
     EXPECT_EQ(actualHint.change, ClientTopologyChange::created);
     EXPECT_FALSE(actualHint.synthetic);
 
@@ -68,6 +70,7 @@ TEST(RootEventDecoderTest, DecodesActualAndSyntheticDestroyAsRefreshHints) {
     ASSERT_TRUE(decoded);
     ASSERT_TRUE(decoded.value());
     const auto &actualHint = requireEvent<ClientTopologyHint>(*decoded.value());
+    EXPECT_EQ(actualHint.window, WindowId::fromProtocol(200U).value());
     EXPECT_EQ(actualHint.change, ClientTopologyChange::destroyed);
     EXPECT_FALSE(actualHint.synthetic);
 
@@ -94,6 +97,15 @@ TEST(RootEventDecoderTest, IgnoresUnrelatedChildrenAndRejectsMalformedRelevantLi
 
     const DestroyNotifyFields destroysRoot{destroyNotifyEventType, 100U, 100U};
     EXPECT_FALSE(decodeRootEvent(destroysRoot, rootWindow()));
+
+    const CreateNotifyFields createsRoot{
+        createNotifyEventType, 100U, 100U, 0, 0, 1U, 1U, 0U, false};
+    EXPECT_FALSE(decodeRootEvent(createsRoot, rootWindow()));
+
+    const DestroyNotifyFields unrelatedDestroy{destroyNotifyEventType, 101U, 200U};
+    const auto ignoredDestroy = decodeRootEvent(unrelatedDestroy, rootWindow());
+    ASSERT_TRUE(ignoredDestroy);
+    EXPECT_FALSE(ignoredDestroy.value());
 }
 
 TEST(RootEventDecoderTest, DecodesRootPropertyStateAndPreservesSyntheticFlag) {
@@ -114,16 +126,39 @@ TEST(RootEventDecoderTest, DecodesRootPropertyStateAndPreservesSyntheticFlag) {
               (RootPropertyHint{atomId(55U), RootPropertyState::deleted, true}));
 }
 
-TEST(RootEventDecoderTest, IgnoresNonRootPropertiesAndRejectsMalformedRelevantProperties) {
-    const PropertyNotifyFields unrelated{propertyNotifyEventType, 200U, atomId(55U), 0U};
-    const auto ignored = decodeRootEvent(unrelated, rootWindow());
-    ASSERT_TRUE(ignored);
-    EXPECT_FALSE(ignored.value());
+TEST(RootEventDecoderTest, DecodesBoundedClientPropertyRefreshHints) {
+    const PropertyNotifyFields changed{propertyNotifyEventType, 200U, atomId(55U), 0U};
+    auto decoded = decodeRootEvent(changed, rootWindow());
+    ASSERT_TRUE(decoded);
+    ASSERT_TRUE(decoded.value());
+    EXPECT_EQ(requireEvent<ClientPropertyHint>(*decoded.value()),
+              (ClientPropertyHint{WindowId::fromProtocol(200U).value(), atomId(55U),
+                                  RootPropertyState::newValue, false}));
+
+    const PropertyNotifyFields deleted{
+        static_cast<std::uint8_t>(propertyNotifyEventType | syntheticEventBit), 200U, atomId(55U),
+        1U};
+    decoded = decodeRootEvent(deleted, rootWindow());
+    ASSERT_TRUE(decoded);
+    ASSERT_TRUE(decoded.value());
+    EXPECT_EQ(requireEvent<ClientPropertyHint>(*decoded.value()),
+              (ClientPropertyHint{WindowId::fromProtocol(200U).value(), atomId(55U),
+                                  RootPropertyState::deleted, true}));
+}
+
+TEST(RootEventDecoderTest, RejectsMalformedRootAndClientProperties) {
+    const PropertyNotifyFields zeroWindow{propertyNotifyEventType, 0U, atomId(55U), 0U};
+    EXPECT_FALSE(decodeRootEvent(zeroWindow, rootWindow()));
 
     const PropertyNotifyFields noAtom{propertyNotifyEventType, 100U, std::nullopt, 0U};
     EXPECT_FALSE(decodeRootEvent(noAtom, rootWindow()));
     const PropertyNotifyFields badState{propertyNotifyEventType, 100U, atomId(55U), 2U};
     EXPECT_FALSE(decodeRootEvent(badState, rootWindow()));
+
+    const PropertyNotifyFields clientNoAtom{propertyNotifyEventType, 200U, std::nullopt, 0U};
+    EXPECT_FALSE(decodeRootEvent(clientNoAtom, rootWindow()));
+    const PropertyNotifyFields clientBadState{propertyNotifyEventType, 200U, atomId(55U), 2U};
+    EXPECT_FALSE(decodeRootEvent(clientBadState, rootWindow()));
 }
 
 TEST(RootEventDecoderTest, DecodesOnlyValidRootConfigureAsGeometryRefreshHint) {

@@ -103,9 +103,17 @@ prismdrake_add_format_check(
     src/theme/ThemeResolver.hpp
     src/x11/AtomCache.cpp
     src/x11/AtomCache.hpp
+    src/x11/DockProperties.cpp
+    src/x11/DockProperties.hpp
+    src/x11/DockPropertiesInternal.hpp
     src/x11/EwmhCapabilities.cpp
     src/x11/EwmhCapabilities.hpp
     src/x11/EwmhCapabilitiesInternal.hpp
+    src/x11/EwmhTaskList.cpp
+    src/x11/EwmhTaskList.hpp
+    src/x11/EwmhWindowRequests.cpp
+    src/x11/EwmhWindowRequests.hpp
+    src/x11/EwmhWindowRequestsInternal.hpp
     src/x11/OutputTopology.cpp
     src/x11/OutputTopology.hpp
     src/x11/PanelStrutGeometry.cpp
@@ -116,6 +124,10 @@ prismdrake_add_format_check(
     src/x11/RandrTopology.hpp
     src/x11/RootEventStream.cpp
     src/x11/RootEventStream.hpp
+    src/x11/TaskModel.cpp
+    src/x11/TaskModel.hpp
+    src/x11/WindowMetadata.cpp
+    src/x11/WindowMetadata.hpp
     src/x11/X11Connection.cpp
     src/x11/X11Connection.hpp
     src/x11/X11ConnectionPrivate.hpp
@@ -148,7 +160,9 @@ prismdrake_add_format_check(
     src/session/SessionRuntime.hpp
     src/session/SettingsReadiness.cpp
     src/session/SettingsReadiness.hpp
+    tests/integration/DockPropertiesTests.cpp
     tests/integration/EwmhCapabilitiesTests.cpp
+    tests/integration/EwmhWindowRequestsTests.cpp
     tests/integration/PropertyReaderTests.cpp
     tests/integration/RandrTopologyTests.cpp
     tests/integration/RootEventStreamTests.cpp
@@ -164,6 +178,9 @@ prismdrake_add_format_check(
     tests/unit/ConfigurationParserTests.cpp
     tests/unit/ConfigurationLoaderTests.cpp
     tests/unit/DiagnosticsTests.cpp
+    tests/unit/DockPropertiesTests.cpp
+    tests/unit/EwmhTaskListTests.cpp
+    tests/unit/EwmhWindowRequestsTests.cpp
     tests/unit/FoundationPrimitivesTests.cpp
     tests/unit/OutputTopologyTests.cpp
     tests/unit/PanelStrutGeometryTests.cpp
@@ -177,7 +194,9 @@ prismdrake_add_format_check(
     tests/unit/SessionRuntimeTests.cpp
     tests/unit/SettingsReadinessTests.cpp
     tests/unit/SettingsEngineTests.cpp
+    tests/unit/TaskModelTests.cpp
     tests/unit/ThemeParserTests.cpp
     tests/unit/ThemeResolverTests.cpp
+    tests/unit/WindowMetadataTests.cpp
     tests/unit/X11ConnectionTests.cpp
     tests/unit/XdgPathsTests.cpp)

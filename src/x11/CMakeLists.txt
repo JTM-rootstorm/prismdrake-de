@@ -11,6 +11,8 @@ add_library(prismdrake-x11 STATIC
     EwmhCapabilities.cpp
     EwmhCapabilities.hpp
     EwmhCapabilitiesInternal.hpp
+    EwmhTaskList.cpp
+    EwmhTaskList.hpp
     EwmhWindowRequests.cpp
     EwmhWindowRequests.hpp
     EwmhWindowRequestsInternal.hpp
@@ -24,6 +26,10 @@ add_library(prismdrake-x11 STATIC
     RandrTopology.hpp
     RootEventStream.cpp
     RootEventStream.hpp
+    TaskModel.cpp
+    TaskModel.hpp
+    WindowMetadata.cpp
+    WindowMetadata.hpp
     X11Connection.cpp
     X11Connection.hpp
     X11ConnectionPrivate.hpp

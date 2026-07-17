@@ -10,6 +10,7 @@ add_executable(prismdrake-foundation-tests
     ConfigurationParserTests.cpp
     DiagnosticsTests.cpp
     DockPropertiesTests.cpp
+    EwmhTaskListTests.cpp
     EwmhWindowRequestsTests.cpp
     FoundationPrimitivesTests.cpp
     OutputTopologyTests.cpp
@@ -26,8 +27,10 @@ add_executable(prismdrake-foundation-tests
     ServiceOptionsTests.cpp
     ServiceWorkerTests.cpp
     SettingsEngineTests.cpp
+    TaskModelTests.cpp
     ThemeParserTests.cpp
     ThemeResolverTests.cpp
+    WindowMetadataTests.cpp
     X11ConnectionTests.cpp
     XdgPathsTests.cpp)
 target_link_libraries(prismdrake-foundation-tests

@@ -93,6 +93,7 @@ enum class ClientTopologyChange : std::uint8_t {
 
 /// Non-authoritative hint that the WM-owned client snapshot may need refreshing.
 struct ClientTopologyHint final {
+    WindowId window;
     ClientTopologyChange change;
     bool synthetic;
 
@@ -111,6 +112,18 @@ struct RootPropertyHint final {
     bool synthetic;
 
     friend bool operator==(const RootPropertyHint &, const RootPropertyHint &) = default;
+};
+
+/// Non-authoritative hint that one property on a tracked client should be
+/// read again. The client must have PropertyChange selected on this stream's
+/// connection; property payloads are never retained in the event queue.
+struct ClientPropertyHint final {
+    WindowId window;
+    AtomId atom;
+    RootPropertyState state;
+    bool synthetic;
+
+    friend bool operator==(const ClientPropertyHint &, const ClientPropertyHint &) = default;
 };
 
 /// Non-authoritative hint that core root geometry should be queried again.
@@ -135,8 +148,8 @@ struct ProtocolErrorHint final {
     friend bool operator==(const ProtocolErrorHint &, const ProtocolErrorHint &) = default;
 };
 
-using RootEvent = std::variant<ClientTopologyHint, RootPropertyHint, RootGeometryHint,
-                               OutputTopologyRefreshHint, ProtocolErrorHint>;
+using RootEvent = std::variant<ClientTopologyHint, RootPropertyHint, ClientPropertyHint,
+                               RootGeometryHint, OutputTopologyRefreshHint, ProtocolErrorHint>;
 
 /// Validates one copied core event. Unrelated root traffic returns an empty
 /// optional; malformed relevant traffic returns a bounded redacted error.

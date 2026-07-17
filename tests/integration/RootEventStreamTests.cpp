@@ -90,7 +90,7 @@ class ControlledWindow final {
 
 [[nodiscard]] std::optional<ClientTopologyHint>
 waitForTopologyHint(RootEventStream &stream, ClientTopologyChange expectedChange,
-                    int eventFileDescriptor) {
+                    WindowId::Value expectedWindow, int eventFileDescriptor) {
     const auto deadline = std::chrono::steady_clock::now() + 3s;
     while (std::chrono::steady_clock::now() < deadline) {
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -109,7 +109,8 @@ waitForTopologyHint(RootEventStream &stream, ClientTopologyChange expectedChange
         }
         for (const auto &event : batch.value().events) {
             if (const auto *hint = std::get_if<ClientTopologyHint>(&event);
-                hint != nullptr && hint->change == expectedChange) {
+                hint != nullptr && hint->change == expectedChange &&
+                hint->window.value() == expectedWindow) {
                 return *hint;
             }
         }
@@ -139,14 +140,18 @@ TEST(RootEventStreamIntegrationTest, ObservesControlledClientCreateAndDestroyAsH
 
     ControlledWindow window{*control, screen->root};
     const auto created = waitForTopologyHint(stream.value(), ClientTopologyChange::created,
-                                             observer.value().eventFileDescriptor());
+                                             window.id(), observer.value().eventFileDescriptor());
     ASSERT_TRUE(created);
+    EXPECT_EQ(created->window.value(), window.id());
     EXPECT_FALSE(created->synthetic);
 
+    const auto destroyedWindow = window.id();
     window.destroy();
-    const auto destroyed = waitForTopologyHint(stream.value(), ClientTopologyChange::destroyed,
-                                               observer.value().eventFileDescriptor());
+    const auto destroyed =
+        waitForTopologyHint(stream.value(), ClientTopologyChange::destroyed, destroyedWindow,
+                            observer.value().eventFileDescriptor());
     ASSERT_TRUE(destroyed);
+    EXPECT_EQ(destroyed->window.value(), destroyedWindow);
     EXPECT_FALSE(destroyed->synthetic);
 }
 
@@ -175,14 +180,18 @@ TEST(RootEventStreamIntegrationTest, RandrAwareSoleDrainPreservesCoreLifecycleEv
 
     ControlledWindow window{*control, screen->root};
     const auto created = waitForTopologyHint(stream.value(), ClientTopologyChange::created,
-                                             observer.value().eventFileDescriptor());
+                                             window.id(), observer.value().eventFileDescriptor());
     ASSERT_TRUE(created);
+    EXPECT_EQ(created->window.value(), window.id());
     EXPECT_FALSE(created->synthetic);
 
+    const auto destroyedWindow = window.id();
     window.destroy();
-    const auto destroyed = waitForTopologyHint(stream.value(), ClientTopologyChange::destroyed,
-                                               observer.value().eventFileDescriptor());
+    const auto destroyed =
+        waitForTopologyHint(stream.value(), ClientTopologyChange::destroyed, destroyedWindow,
+                            observer.value().eventFileDescriptor());
     ASSERT_TRUE(destroyed);
+    EXPECT_EQ(destroyed->window.value(), destroyedWindow);
     EXPECT_FALSE(destroyed->synthetic);
 }
 
@@ -228,13 +237,16 @@ TEST(RootEventStreamIntegrationTest, ConnectionDestructionDoesNotInvalidateActiv
     ASSERT_EQ(screen->root, root);
 
     ControlledWindow window{*control, screen->root};
-    const auto created =
-        waitForTopologyHint(*retainedStream, ClientTopologyChange::created, observerFileDescriptor);
+    const auto created = waitForTopologyHint(*retainedStream, ClientTopologyChange::created,
+                                             window.id(), observerFileDescriptor);
     ASSERT_TRUE(created);
+    EXPECT_EQ(created->window.value(), window.id());
+    const auto destroyedWindow = window.id();
     window.destroy();
     const auto destroyed = waitForTopologyHint(*retainedStream, ClientTopologyChange::destroyed,
-                                               observerFileDescriptor);
+                                               destroyedWindow, observerFileDescriptor);
     ASSERT_TRUE(destroyed);
+    EXPECT_EQ(destroyed->window.value(), destroyedWindow);
 }
 
 TEST(RootEventStreamIntegrationTest, ReleaseDoesNotQueueTopologyHintsWhileInactive) {

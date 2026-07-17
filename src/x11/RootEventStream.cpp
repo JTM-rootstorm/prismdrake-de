@@ -87,11 +87,12 @@ static_assert(propertyNotifyEventType == XCB_PROPERTY_NOTIFY);
         fields.height == 0U) {
         return malformedEvent();
     }
-    if (!WindowId::fromProtocol(fields.window)) {
+    auto window = WindowId::fromProtocol(fields.window);
+    if (!window) {
         return malformedEvent();
     }
-    return Result<std::optional<RootEvent>>::success(RootEvent{
-        ClientTopologyHint{ClientTopologyChange::created, synthetic(fields.responseType)}});
+    return Result<std::optional<RootEvent>>::success(RootEvent{ClientTopologyHint{
+        window.value(), ClientTopologyChange::created, synthetic(fields.responseType)}});
 }
 
 [[nodiscard]] Result<std::optional<RootEvent>> decodeDestroy(const DestroyNotifyFields &fields,
@@ -105,11 +106,12 @@ static_assert(propertyNotifyEventType == XCB_PROPERTY_NOTIFY);
     if (fields.window == 0U || fields.window == root.value()) {
         return malformedEvent();
     }
-    if (!WindowId::fromProtocol(fields.window)) {
+    auto window = WindowId::fromProtocol(fields.window);
+    if (!window) {
         return malformedEvent();
     }
-    return Result<std::optional<RootEvent>>::success(RootEvent{
-        ClientTopologyHint{ClientTopologyChange::destroyed, synthetic(fields.responseType)}});
+    return Result<std::optional<RootEvent>>::success(RootEvent{ClientTopologyHint{
+        window.value(), ClientTopologyChange::destroyed, synthetic(fields.responseType)}});
 }
 
 [[nodiscard]] Result<std::optional<RootEvent>> decodeConfigure(const ConfigureNotifyFields &fields,
@@ -132,17 +134,22 @@ static_assert(propertyNotifyEventType == XCB_PROPERTY_NOTIFY);
     if (!expectedResponseType(fields.responseType, propertyNotifyEventType)) {
         return malformedEvent();
     }
-    if (fields.window != root.value()) {
-        return ignoredEvent();
-    }
     if (!fields.atom ||
         (fields.state != XCB_PROPERTY_NEW_VALUE && fields.state != XCB_PROPERTY_DELETE)) {
         return malformedEvent();
     }
     const auto state = fields.state == XCB_PROPERTY_NEW_VALUE ? RootPropertyState::newValue
                                                               : RootPropertyState::deleted;
-    return Result<std::optional<RootEvent>>::success(
-        RootEvent{RootPropertyHint{fields.atom.value(), state, synthetic(fields.responseType)}});
+    if (fields.window == root.value()) {
+        return Result<std::optional<RootEvent>>::success(RootEvent{
+            RootPropertyHint{fields.atom.value(), state, synthetic(fields.responseType)}});
+    }
+    auto window = WindowId::fromProtocol(fields.window);
+    if (!window) {
+        return malformedEvent();
+    }
+    return Result<std::optional<RootEvent>>::success(RootEvent{ClientPropertyHint{
+        window.value(), fields.atom.value(), state, synthetic(fields.responseType)}});
 }
 
 [[nodiscard]] Result<std::optional<RootEvent>>
