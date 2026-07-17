@@ -3,7 +3,11 @@ add_library(prismdrake-launcher-model STATIC
     ApplicationPaths.hpp
     DesktopEntry.hpp
     DesktopEntryParser.cpp
-    DesktopEntryParser.hpp)
+    DesktopEntryParser.hpp
+    DesktopEntryVisibility.cpp
+    DesktopEntryVisibility.hpp
+    DesktopFileId.cpp
+    DesktopFileId.hpp)
 add_library(Prismdrake::launcher-model ALIAS prismdrake-launcher-model)
 
 target_include_directories(prismdrake-launcher-model
