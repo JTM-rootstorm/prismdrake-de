@@ -40,7 +40,10 @@ RDEPEND="
 		dev-qt/qtsvg:6
 		dev-qt/qttools:6
 	)
-	visual-tests? ( media-gfx/imagemagick )
+	visual-tests? (
+		media-gfx/imagemagick
+		x11-misc/xdotool
+	)
 	x11? (
 		app-accessibility/at-spi2-core
 		media-fonts/dejavu

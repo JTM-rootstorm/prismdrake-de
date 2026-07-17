@@ -69,7 +69,7 @@ about the future Prismdrake runtime package.
 | `qt6` | on | Qt 6 modules for the isolated visible-shell evidence spike |
 | `clang` | off | Optional compiler-matrix coverage |
 | `implementation-deps` | off | Candidate parser, D-Bus, and test libraries after decision approval |
-| `visual-tests` | off | Optional ImageMagick visual comparison tooling |
+| `visual-tests` | off | Optional ImageMagick capture and `xdotool` X11 input tooling |
 
 Enabling `qt6` gathers evidence for Proposed ADR 0003. It does not Accept Qt 6
 Quick, CMake, or another architecture decision. Likewise,
