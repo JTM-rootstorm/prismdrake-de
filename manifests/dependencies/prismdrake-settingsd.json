@@ -2,7 +2,7 @@
   "schema_version": 1,
   "component": "prismdrake-settingsd",
   "component_kind": "core_service",
-  "implementation_status": "planned",
+  "implementation_status": "experimental",
   "mandatory_core_startup": true,
   "runtime_dependency_state": "planned_unmeasured",
   "dependencies": [
@@ -43,12 +43,30 @@
       "reason": "The display-free PD1 theme parser directly includes the system nlohmann JSON header; the header-only dependency is compiled into the internal theme target and is not an installed runtime library."
     },
     {
-      "name": "dbus",
-      "gentoo_atom": "sys-apps/dbus",
+      "name": "basu",
+      "gentoo_atom": "sys-libs/basu",
       "scope": "mandatory_runtime",
       "relationship": "direct",
       "feature": "settings_ipc",
-      "requirement_status": "planned",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "0.2.1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "Ubuntu CI uses the API-compatible libsystemd sd-bus provider; one build links exactly one provider.",
+      "reason": "The Experimental settings service directly uses the system sd-bus API. Gentoo builds prefer and link basu; the provider boundary does not download, vendor, or link a second D-Bus client library."
+    },
+    {
+      "name": "dbus",
+      "gentoo_atom": "sys-apps/dbus",
+      "scope": "mandatory_runtime",
+      "relationship": "tool",
+      "feature": "settings_ipc",
+      "requirement_status": "implemented",
       "version": {
         "declared_minimum": null,
         "verified_minimum": null,
@@ -58,7 +76,7 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Accepted component model publishes typed settings snapshots over D-Bus; the interface and target remain unstabilized."
+      "reason": "The Experimental service requires a user session message bus and its isolated tests use dbus-run-session and dbus-daemon. Project code links the selected sd-bus provider, not libdbus."
     },
     {
       "name": "libxcb",
@@ -81,8 +99,8 @@
   ],
   "unresolved": [
     {
-      "area": "atomic_storage",
-      "reason": "The implementation must establish whether standard-library facilities are sufficient before declaring another dependency."
+      "area": "runtime_closure",
+      "reason": "Record and review the complete prismdrake-settingsd dynamic closure after the Gentoo basu build; supported minimum provider and broker versions remain unmeasured."
     }
   ]
 }

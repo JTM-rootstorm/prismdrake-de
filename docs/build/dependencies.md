@@ -44,18 +44,21 @@ carry a verified or observed version.
   records repository and build/test tooling, including system GoogleTest 1.17.0
   used by the foundation tests and the observed GCC 15.3.0 and Clang 22.1.8
   compiler packages. These entries are not installed runtime dependencies.
-- `prismdrake-session`, `prismdrake-settingsd`, and `prismdrake-shell` remain
-  planned component manifests. The implemented display-free configuration
-  module records its direct system toml++ 3.4.0 dependency in the settingsd
-  boundary. The display-free theme parser records system nlohmann JSON
-  3.12.0-r1 as a direct header-only build dependency in the same boundary.
-  Neither observation establishes a verified minimum, and the service's
-  complete runtime closure remains unmeasured.
-- The Qt, XCB, and D-Bus versions come from the 2026-07-16 Gentoo reference VM
-  evidence. They are observations, not supported minima.
-- The production runtime closure, accessibility linkage, atomic-storage
-  dependency decision, and init-neutral supervisor support remain explicit
-  unresolved areas rather than invented package claims.
+- `prismdrake-settingsd` is an Experimental implemented service. Its boundary
+  records direct system toml++ 3.4.0 configuration parsing, header-only
+  nlohmann JSON 3.12.0-r1 theme/runtime serialization, and the sd-bus provider.
+  Gentoo prefers and directly links basu 0.2.1; Ubuntu CI uses libsystemd as the
+  API-compatible provider, and CMake selects exactly one. The D-Bus broker is a
+  mandatory runtime service/tool rather than a directly linked libdbus client.
+  The complete Gentoo dynamic closure and supported provider minimum remain to
+  be measured in the VM.
+- `prismdrake-session` and `prismdrake-shell` remain planned component
+  manifests. The Qt and XCB versions come from the 2026-07-16 Gentoo reference
+  VM evidence and remain observations rather than supported minima.
+- The settings service uses a mutex-protected immutable snapshot pointer and a
+  single bounded worker; it introduced no atomic-storage dependency. Production
+  runtime-closure evidence, accessibility linkage, and init-neutral supervisor
+  support remain explicit unresolved areas rather than invented package claims.
 
 Mandatory core runtime entries may not name GNOME Shell, Mutter,
 `gnome-settings-daemon`, `gnome-control-center`, or libadwaita. GTK itself is
