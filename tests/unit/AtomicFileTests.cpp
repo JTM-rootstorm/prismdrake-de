@@ -43,7 +43,7 @@ class ScopedFileSizeLimit final {
             throw std::runtime_error("getrlimit failed");
         }
 
-        struct sigaction ignoredAction{};
+        struct sigaction ignoredAction = {};
         ignoredAction.sa_handler = SIG_IGN;
         if (::sigemptyset(&ignoredAction.sa_mask) != 0 ||
             ::sigaction(SIGXFSZ, &ignoredAction, &previousAction_) != 0) {
@@ -70,8 +70,8 @@ class ScopedFileSizeLimit final {
     ScopedFileSizeLimit &operator=(const ScopedFileSizeLimit &) = delete;
 
   private:
-    struct rlimit previousLimit_{};
-    struct sigaction previousAction_{};
+    struct rlimit previousLimit_ = {};
+    struct sigaction previousAction_ = {};
     bool active_ = false;
 };
 
@@ -88,7 +88,7 @@ void writeFixture(const std::filesystem::path &path, std::string_view payload) {
 }
 
 [[nodiscard]] mode_t permissionsOf(const std::filesystem::path &path) {
-    struct stat metadata{};
+    struct stat metadata = {};
     EXPECT_EQ(::stat(path.c_str(), &metadata), 0);
     return metadata.st_mode & 0777;
 }

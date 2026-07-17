@@ -105,7 +105,7 @@ resolveRuntimeDirectory(const std::optional<std::string> &runtimeDirectory) {
 [[nodiscard]] Result<void> validatePrivateRuntimeDirectory(const std::filesystem::path &directory,
                                                            std::string_view description,
                                                            std::uintmax_t expectedUserId) {
-    struct stat status{};
+    struct stat status = {};
     if (::lstat(directory.c_str(), &status) != 0) {
         if (errno == ENOENT || errno == ENOTDIR) {
             return Result<void>::failure(Error{

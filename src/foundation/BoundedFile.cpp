@@ -90,7 +90,7 @@ Result<std::string> readBoundedFile(const std::filesystem::path &path, std::size
     }
     FileDescriptor descriptor(rawDescriptor);
 
-    struct stat metadata{};
+    struct stat metadata = {};
     if (::fstat(descriptor.get(), &metadata) != 0) {
         return Result<std::string>::failure(readError(errno));
     }

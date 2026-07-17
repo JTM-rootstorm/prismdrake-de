@@ -108,7 +108,7 @@ struct CreatedTemporaryFile {
                                          "Use a normalized path without '..' components"});
         }
 
-        struct stat metadata{};
+        struct stat metadata = {};
         if (::fstatat(current.get(), component.c_str(), &metadata, AT_SYMLINK_NOFOLLOW) != 0) {
             return Result<int>::failure(
                 filesystemError(errno, "Unable to inspect a destination-directory component"));
@@ -143,7 +143,7 @@ struct CreatedTemporaryFile {
 
 [[nodiscard]] Result<void> verifyDestinationUnchanged(int directory, const std::string &name,
                                                       bool existed, const struct stat &original) {
-    struct stat current{};
+    struct stat current = {};
     if (::fstatat(directory, name.c_str(), &current, AT_SYMLINK_NOFOLLOW) == 0) {
         if (S_ISLNK(current.st_mode)) {
             return Result<void>::failure({ErrorCode::invalid_argument,
@@ -275,7 +275,7 @@ Result<void> writeFileAtomically(const std::filesystem::path &destination, std::
     const std::string destinationName = destination.filename().string();
 
     bool destinationExisted = false;
-    struct stat originalMetadata{};
+    struct stat originalMetadata = {};
     if (::fstatat(directory.get(), destinationName.c_str(), &originalMetadata,
                   AT_SYMLINK_NOFOLLOW) == 0) {
         destinationExisted = true;
