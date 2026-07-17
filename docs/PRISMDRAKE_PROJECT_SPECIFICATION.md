@@ -491,7 +491,7 @@ A resolved settings snapshot SHOULD contain:
 schema_version
 profile_id
 generation
-source_files
+logical_source_ids
 resolved_values
 capability_overrides
 validation_warnings
@@ -506,8 +506,15 @@ Profile switching SHOULD follow this transaction:
 4. Build immutable settings and theme snapshots.
 5. Assign a monotonically increasing generation.
 6. Publish the generation atomically.
-7. Retain the previous valid generation until all critical consumers acknowledge or time out.
-8. Roll back on validation failure.
+7. Retain the current and immediately previous complete generations in memory.
+8. On validation or serialization failure before publication, keep the prior generation
+   authoritative and do not consume a generation number.
+
+PD1 does not define a consumer-acknowledgement transaction. Once the complete
+typed and transport snapshots are swapped atomically, that generation is
+authoritative. A later content rollback, if separately designed, publishes the
+prior content as a new monotonically increasing generation rather than reusing
+an observed generation number.
 
 ### 13.4 Configuration requirements
 

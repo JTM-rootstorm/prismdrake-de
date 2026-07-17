@@ -1,4 +1,6 @@
 add_library(prismdrake-settings-core STATIC
+    RuntimeSnapshot.cpp
+    RuntimeSnapshot.hpp
     SettingsEngine.cpp
     SettingsEngine.hpp
     SettingsSnapshot.cpp
@@ -17,6 +19,7 @@ target_link_libraries(prismdrake-settings-core
         Prismdrake::config
         Prismdrake::foundation
         Prismdrake::theme)
+target_link_libraries(prismdrake-settings-core PRIVATE nlohmann_json::nlohmann_json)
 
 prismdrake_configure_cpp_target(prismdrake-settings-core)
 prismdrake_enable_warnings(prismdrake-settings-core)

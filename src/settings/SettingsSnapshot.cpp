@@ -1,5 +1,7 @@
 #include "SettingsSnapshot.hpp"
 
+#include "RuntimeSnapshot.hpp"
+
 #include <array>
 #include <memory>
 #include <utility>
@@ -102,8 +104,13 @@ Result<PublicationOutcome> SettingsPublicationState::publish(SettingsCandidate c
     }
 
     auto domains = current_ ? changedDomains(current_->candidate, candidate) : allDomains();
+    auto serialized = serializeRuntimeSnapshot(generation.value(), candidate);
+    if (!serialized) {
+        return Result<PublicationOutcome>::failure(std::move(serialized).error());
+    }
     auto next = std::make_shared<const SettingsSnapshot>(
-        SettingsSnapshot{runtimeSnapshotSchemaVersion, generation.value(), std::move(candidate)});
+        SettingsSnapshot{runtimeSnapshotSchemaVersion, generation.value(), std::move(candidate),
+                         std::move(serialized).value().json});
     previous_ = current_;
     current_ = std::move(next);
     return Result<PublicationOutcome>::success(

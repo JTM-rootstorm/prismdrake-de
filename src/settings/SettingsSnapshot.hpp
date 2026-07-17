@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -57,6 +58,7 @@ struct SettingsSnapshot final {
     const std::uint32_t snapshotSchemaVersion;
     const foundation::Generation generation;
     const SettingsCandidate candidate;
+    const std::string serializedJson;
 };
 
 struct PublicationOutcome final {

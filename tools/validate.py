@@ -94,6 +94,7 @@ REQUIRED_FILES = (
     "interfaces/dbus/org.prismdrake.Settings1.xml",
     "schemas/prismdrake-config.schema.json",
     "schemas/prismdrake-theme-tokens.schema.json",
+    "schemas/prismdrake-runtime-snapshot.schema.json",
     "schemas/prismdrake-capabilities.schema.json",
     "schemas/prismdrake-dependency-manifest.schema.json",
     "manifests/dependencies/prismdrake-foundation.json",
@@ -440,7 +441,13 @@ def dependency_manifest_policy_errors(document: dict[str, Any], location: str) -
 
 def validate_contracts(validation: Validation) -> dict[str, Any]:
     schemas: dict[str, Any] = {}
-    for name in ("config", "theme-tokens", "capabilities", "dependency-manifest"):
+    for name in (
+        "config",
+        "theme-tokens",
+        "runtime-snapshot",
+        "capabilities",
+        "dependency-manifest",
+    ):
         path = ROOT / "schemas" / f"prismdrake-{name}.schema.json"
         document = load_json(path, validation)
         if isinstance(document, dict):
@@ -746,7 +753,13 @@ def validate_identity_and_hygiene(validation: Validation) -> None:
 
 
 def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation) -> None:
-    required = {"config", "theme-tokens", "capabilities", "dependency-manifest"}
+    required = {
+        "config",
+        "theme-tokens",
+        "runtime-snapshot",
+        "capabilities",
+        "dependency-manifest",
+    }
     if set(schemas) != required:
         validation.error("self-test", "cannot run negative tests because a schema failed to load")
         return
@@ -943,6 +956,145 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
         )
     )
 
+    runtime_theme = {
+        "schema_version": theme["schema_version"],
+        "profile_id": theme["profile_id"],
+        "profile_display_name": theme["profile_display_name"],
+        "logical_source_ids": ["packaged_base", "packaged_lustre"],
+        "primitive": copy.deepcopy(theme["primitive"]),
+        "semantic": copy.deepcopy(theme["semantic"]),
+        "component": copy.deepcopy(theme["component"]),
+        "effective_accessibility": {
+            "high_contrast": config["appearance"]["high_contrast"],
+            "reduced_motion": config["appearance"]["reduced_motion"],
+            "transparency_disabled": not config["appearance"]["transparency_enabled"],
+            "text_scale": config["appearance"]["text_scale"],
+            "animation_scale": config["accessibility"]["animation_scale"],
+            "focus_width_px": theme["semantic"]["focus"]["width_px"],
+            "minimum_target_size_px": theme["semantic"]["targets"]["minimum_px"],
+            "minimum_contrast_ratio": theme["semantic"]["border"][
+                "minimum_contrast_ratio"
+            ],
+        },
+        "capability_fallbacks": copy.deepcopy(theme["capability_fallbacks"]),
+        "resolved_materials": {},
+        "thumbnail_presentation": "application_icon_title_state",
+        "warnings": ["blur_fallback_active", "thumbnail_fallback_active"],
+    }
+    for material_name, material in theme["semantic"]["materials"].items():
+        runtime_theme["resolved_materials"][material_name] = {
+            "color": material["fallback"]["color"],
+            "opacity": material["fallback"]["opacity"],
+            "blur_requested": False,
+            "blur_radius_px": 0,
+            "saturation": 1,
+            "used_fallback": True,
+        }
+    runtime_settings = copy.deepcopy(config)
+    del runtime_settings["profile"]
+    runtime_snapshot = {
+        "schema_version": 1,
+        "generation": 1,
+        "profile_id": "lustre",
+        "configuration_source_id": "packaged_default",
+        "runtime_profile_override": False,
+        "settings": runtime_settings,
+        "theme": runtime_theme,
+        "validation_warning_ids": [],
+        "restart_required_domains": [],
+    }
+    runtime_errors = validate_schema(
+        runtime_snapshot,
+        schemas["runtime-snapshot"],
+        schemas["runtime-snapshot"],
+        "self-test.valid runtime snapshot",
+    )
+    validation.require(
+        not runtime_errors,
+        "self-test",
+        "valid runtime snapshot fixture failed schema validation: "
+        + "; ".join(runtime_errors),
+    )
+
+    missing_runtime_generation = copy.deepcopy(runtime_snapshot)
+    del missing_runtime_generation["generation"]
+    cases.append(
+        (
+            "missing runtime generation",
+            missing_runtime_generation,
+            schemas["runtime-snapshot"],
+            "missing required",
+        )
+    )
+
+    unknown_runtime_key = copy.deepcopy(runtime_snapshot)
+    unknown_runtime_key["private_path"] = "/not/published"
+    cases.append(
+        (
+            "unknown runtime key",
+            unknown_runtime_key,
+            schemas["runtime-snapshot"],
+            "unknown key",
+        )
+    )
+
+    unpublished_runtime_generation = copy.deepcopy(runtime_snapshot)
+    unpublished_runtime_generation["generation"] = 0
+    cases.append(
+        (
+            "unpublished runtime generation",
+            unpublished_runtime_generation,
+            schemas["runtime-snapshot"],
+            "below minimum",
+        )
+    )
+
+    invalid_runtime_source = copy.deepcopy(runtime_snapshot)
+    invalid_runtime_source["configuration_source_id"] = "/private/config.toml"
+    cases.append(
+        (
+            "invalid runtime source",
+            invalid_runtime_source,
+            schemas["runtime-snapshot"],
+            "expected one of",
+        )
+    )
+
+    mismatched_runtime_profile = copy.deepcopy(runtime_snapshot)
+    mismatched_runtime_profile["profile_id"] = "forge"
+    cases.append(
+        (
+            "mismatched runtime profile",
+            mismatched_runtime_profile,
+            schemas["runtime-snapshot"],
+            "exactly one documented schema alternative",
+        )
+    )
+
+    oversized_restart_domains = copy.deepcopy(runtime_snapshot)
+    oversized_restart_domains["restart_required_domains"] = [
+        "profile",
+        "appearance",
+        "panel",
+        "launcher",
+        "notifications",
+        "desktop",
+        "integration",
+        "accessibility",
+        "keyboard",
+        "developer",
+        "theme",
+        "profile",
+    ]
+    cases.append(
+        (
+            "oversized restart domains",
+            oversized_restart_domains,
+            schemas["runtime-snapshot"],
+            "exceeds maximum",
+        )
+    )
+
     unknown_manifest_key = copy.deepcopy(foundation_manifest)
     unknown_manifest_key["implicit_dependencies"] = []
     cases.append(
@@ -1045,7 +1197,7 @@ def main() -> int:
     print("  JSON/TOML/XML/SVG: parsed and structurally validated")
     print("  profiles/themes/fallbacks: consistent")
     print("  ADRs/namespaces/local links/assets: consistent")
-    print("  negative self-tests: 27 rejection paths passed")
+    print("  negative self-tests: 33 rejection paths passed")
     return 0
 
 

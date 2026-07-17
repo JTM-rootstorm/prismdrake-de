@@ -98,6 +98,8 @@ prismdrake_add_format_check(
     src/theme/ThemeResolver.hpp
     src/settings/SettingsEngine.cpp
     src/settings/SettingsEngine.hpp
+    src/settings/RuntimeSnapshot.cpp
+    src/settings/RuntimeSnapshot.hpp
     src/settings/SettingsSnapshot.cpp
     src/settings/SettingsSnapshot.hpp
     tests/unit/AtomicFileTests.cpp

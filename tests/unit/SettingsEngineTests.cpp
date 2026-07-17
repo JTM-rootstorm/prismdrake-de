@@ -1,10 +1,13 @@
+#include "RuntimeSnapshot.hpp"
 #include "SettingsEngine.hpp"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <string>
 
 namespace prismdrake::settings {
@@ -49,6 +52,14 @@ void writeText(const std::filesystem::path &path, std::string_view text) {
     std::ifstream stream(std::filesystem::path(PRISMDRAKE_SOURCE_DIR) /
                          "data/defaults/config.toml");
     return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+}
+
+[[nodiscard]] std::set<std::string> objectKeys(const nlohmann::json &object) {
+    std::set<std::string> keys;
+    for (auto iterator = object.begin(); iterator != object.end(); ++iterator) {
+        keys.insert(iterator.key());
+    }
+    return keys;
 }
 
 TEST(SettingsEngineTest, PublishesOneCompleteInitialGeneration) {
@@ -158,6 +169,83 @@ TEST(SettingsSnapshotTest, StableIdentifiersCoverClosedWireValues) {
               "packaged_default");
     EXPECT_EQ(profileId(config::Profile::forge), "forge");
     EXPECT_EQ(themeWarningId(theme::ThemeWarning::safe_mode_active), "safe_mode_active");
+}
+
+TEST(SettingsSnapshotTest, SerializesOneBoundedCompleteGenerationWithoutFilesystemPaths) {
+    TemporaryDirectory temporary;
+    constexpr std::string_view privateValue = "runtime-snapshot-private-value";
+    writeText(optionsFor(temporary).configurationLocations.user,
+              "schema_version = 1\nprivate_secret = \"runtime-snapshot-private-value\"\n");
+    auto engine = SettingsEngine::start(optionsFor(temporary));
+    ASSERT_TRUE(engine);
+
+    const auto &serialized = engine.value()->current()->serializedJson;
+
+    EXPECT_LE(serialized.size(), maximumRuntimeSnapshotBytes);
+    const auto document = nlohmann::json::parse(serialized);
+    EXPECT_EQ(document.at("schema_version"), runtimeSnapshotSchemaVersion);
+    EXPECT_EQ(document.at("generation"), engine.value()->current()->generation.value());
+    EXPECT_EQ(document.at("profile_id"), "lustre");
+    EXPECT_EQ(
+        objectKeys(document),
+        (std::set<std::string>{"configuration_source_id", "generation", "profile_id",
+                               "restart_required_domains", "runtime_profile_override",
+                               "schema_version", "settings", "theme", "validation_warning_ids"}));
+    EXPECT_EQ(objectKeys(document.at("settings")),
+              (std::set<std::string>{"accessibility", "appearance", "desktop", "developer",
+                                     "integration", "keyboard", "launcher", "notifications",
+                                     "panel", "schema_version"}));
+    EXPECT_FALSE(document.at("settings").contains("profile"));
+    EXPECT_EQ(document.at("settings").at("appearance").at("accent"), "#4D7FFF");
+    EXPECT_EQ(document.at("theme").at("profile_id"), "lustre");
+    EXPECT_EQ(document.at("theme").at("profile_display_name"), "Prismdrake Lustre");
+    EXPECT_EQ(document.at("theme").at("logical_source_ids"),
+              nlohmann::json::array({"packaged_base", "packaged_lustre"}));
+    EXPECT_TRUE(document.at("theme").contains("primitive"));
+    EXPECT_TRUE(document.at("theme").contains("semantic"));
+    EXPECT_TRUE(document.at("theme").contains("component"));
+    EXPECT_EQ(serialized.find(temporary.path().string()), std::string::npos);
+    EXPECT_EQ(serialized.find(privateValue), std::string::npos);
+    EXPECT_EQ(serialized.find("private_secret"), std::string::npos);
+    EXPECT_EQ(document.at("validation_warning_ids"),
+              nlohmann::json::array({"invalid_user_configuration"}));
+}
+
+TEST(SettingsSnapshotTest, SerializationFailureDoesNotPublishOrConsumeAGeneration) {
+    TemporaryDirectory temporary;
+    auto engine = SettingsEngine::start(optionsFor(temporary));
+    ASSERT_TRUE(engine);
+
+    SettingsPublicationState state;
+    const auto initial = state.publish(engine.value()->current()->candidate);
+    ASSERT_TRUE(initial);
+    ASSERT_TRUE(state.current());
+    EXPECT_EQ(state.current()->generation.value(), 1U);
+
+    const auto &configuration = engine.value()->current()->candidate.configuration;
+    const config::Configuration oversizedConfiguration{
+        configuration.schemaVersion,
+        configuration.profile,
+        configuration.appearance,
+        configuration.panel,
+        configuration.launcher,
+        configuration.notifications,
+        configuration.desktop,
+        configuration.integration,
+        configuration.accessibility,
+        configuration.keyboard,
+        config::Developer{false, {std::string(maximumRuntimeSnapshotBytes + 1U, 'x')}}};
+    SettingsCandidate oversizedCandidate{
+        oversizedConfiguration, engine.value()->current()->candidate.provenance,
+        engine.value()->current()->candidate.theme, engine.value()->current()->candidate.warnings};
+
+    const auto rejected = state.publish(std::move(oversizedCandidate));
+
+    ASSERT_FALSE(rejected);
+    EXPECT_EQ(rejected.error().code, foundation::ErrorCode::too_large);
+    ASSERT_TRUE(state.current());
+    EXPECT_EQ(state.current()->generation.value(), 1U);
+    EXPECT_FALSE(state.previous());
 }
 
 } // namespace

@@ -49,6 +49,7 @@ describe a usable or production-ready desktop release.
 - [Capability examples](../examples/capabilities/x11-standard.json)
 - [Draft interfaces](../interfaces/README.md)
 - [JSON schemas](../schemas/prismdrake-config.schema.json)
+- [Experimental runtime snapshot schema](../schemas/prismdrake-runtime-snapshot.schema.json)
 - [Dependency-manifest schema](../schemas/prismdrake-dependency-manifest.schema.json)
 - [Foundation dependency manifest](../manifests/dependencies/prismdrake-foundation.json)
 - [Theme token documents](../themes/base.tokens.json)

@@ -3,8 +3,9 @@
 The version-1 format is Accepted by
 [ADR 0004](../adr/0004-configuration-format.md). PD0 validated examples and the
 draft interface shape. The display-free version-1 parser, recovery loader, and
-narrow whole-document writer are implemented in PD1; settings publication and
-D-Bus service behavior remain later PD1 work.
+narrow whole-document writer are implemented in PD1. The combined settings and
+theme publication core and its bounded runtime serialization are also
+implemented; D-Bus service behavior remains later PD1 work.
 
 ## Locations
 
@@ -100,13 +101,46 @@ old file.
 3. Resolve packaged defaults and user overrides.
 4. Construct immutable settings and theme snapshots.
 5. Assign one monotonically increasing generation.
-6. Publish a notification naming the complete generation and changed domains.
-7. Consumers atomically replace their previous complete generation.
-8. Retain the prior generation until critical consumers acknowledge or time
-   out; on failure, roll back and report diagnostics.
+6. Serialize the complete Experimental runtime payload within its fixed bound.
+7. Atomically swap the typed snapshot and its immutable serialized payload.
+8. Publish a notification naming the complete generation and changed domains.
+9. Consumers fetch and atomically replace their previous complete generation.
+
+Validation, resolution, generation-allocation, or serialization failure before
+the swap leaves the prior generation authoritative and consumes no generation
+number. Once the swap succeeds, the new generation is authoritative. Signal
+delivery or last-known-valid persistence failure is reported but does not
+restore an older generation number. PD1 has no consumer-acknowledgement or
+two-phase rollback method. The service retains only the current and immediately
+previous snapshots internally; a captured immutable snapshot may outlive that
+retention through shared ownership.
 
 A restarted component fetches the latest complete generation. It never rebuilds
 authority from a sequence of per-key events.
+
+## Experimental runtime snapshot
+
+The strict
+[`prismdrake-runtime-snapshot` schema](../../schemas/prismdrake-runtime-snapshot.schema.json)
+defines version 1 of the internal complete-snapshot payload. It is an
+Experimental PD1 transport contract, not a stable ABI. The canonical UTF-8 JSON
+payload is limited to 1 MiB and contains:
+
+- one nonzero generation and the authoritative top-level profile identifier;
+- a closed `settings` object containing every normalized configuration domain
+  except the deliberately non-duplicated top-level profile;
+- the complete resolved theme candidate, effective accessibility values,
+  resolved materials, fallback presentation, and stable warnings;
+- configuration and theme provenance as closed logical source identifiers,
+  never filesystem paths; and
+- closed validation-warning and restart-domain identifiers.
+
+The serialized payload is built before publication and retained with the typed
+snapshot. Its generation is identical to the typed generation and later D-Bus
+reply. Unknown schema versions, unknown properties, inconsistent profile/theme
+identity, duplicate identifiers, and out-of-bound collections or values are
+rejected. Original TOML, rejected values, parser excerpts, and user or packaged
+filesystem paths are never serialized.
 
 ## Draft D-Bus boundary
 

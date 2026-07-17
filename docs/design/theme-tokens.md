@@ -99,8 +99,10 @@ profile identity, logical packaged sources, resolved primitive, semantic, and
 component tokens, effective accessibility state, capability fallbacks,
 resolved material presentation, thumbnail policy, and stable warnings. The
 combined settings/theme publisher assigns one generation only after both
-candidates validate; failed resolution neither mutates a prior candidate nor
-advances publication.
+candidates validate and the complete bounded runtime payload serializes;
+failed resolution or serialization neither mutates a prior candidate nor
+advances publication. The runtime payload preserves every typed resolved theme
+field and uses logical source identifiers rather than paths.
 
 Logical source provenance includes the packaged accessibility layer whenever
 high contrast, reduced motion, disabled transparency, or strong focus consumes

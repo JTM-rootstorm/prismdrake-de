@@ -1,0 +1,604 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/prismdrake-runtime-snapshot.schema.json",
+  "title": "Prismdrake Experimental runtime snapshot version 1",
+  "description": "Internal Experimental transport contract. This schema is not a stable ABI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generation",
+    "profile_id",
+    "configuration_source_id",
+    "runtime_profile_override",
+    "settings",
+    "theme",
+    "validation_warning_ids",
+    "restart_required_domains"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 },
+    "profile_id": { "enum": ["lustre", "forge"] },
+    "configuration_source_id": { "enum": ["user", "last_known_valid", "packaged_default"] },
+    "runtime_profile_override": { "type": "boolean" },
+    "settings": { "$ref": "#/$defs/settings" },
+    "theme": { "$ref": "#/$defs/theme" },
+    "validation_warning_ids": {
+      "type": "array",
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "invalid_user_configuration",
+          "invalid_last_known_valid_configuration",
+          "last_known_valid_persistence_failed"
+        ]
+      }
+    },
+    "restart_required_domains": {
+      "type": "array",
+      "maxItems": 11,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/domain_id" }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "profile_id": { "const": "lustre" },
+        "theme": {
+          "properties": {
+            "profile_id": { "const": "lustre" },
+            "profile_display_name": { "const": "Prismdrake Lustre" },
+            "logical_source_ids": {
+              "oneOf": [
+                { "const": ["packaged_base", "packaged_lustre"] },
+                { "const": ["packaged_base", "packaged_lustre", "packaged_accessibility"] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "profile_id": { "const": "forge" },
+        "theme": {
+          "properties": {
+            "profile_id": { "const": "forge" },
+            "profile_display_name": { "const": "Prismdrake Forge" },
+            "logical_source_ids": {
+              "oneOf": [
+                { "const": ["packaged_base", "packaged_forge"] },
+                { "const": ["packaged_base", "packaged_forge", "packaged_accessibility"] }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "domain_id": {
+      "enum": [
+        "profile",
+        "appearance",
+        "panel",
+        "launcher",
+        "notifications",
+        "desktop",
+        "integration",
+        "accessibility",
+        "keyboard",
+        "developer",
+        "theme"
+      ]
+    },
+    "bounded_identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "appearance",
+        "panel",
+        "launcher",
+        "notifications",
+        "desktop",
+        "integration",
+        "accessibility",
+        "keyboard",
+        "developer"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "appearance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "accent",
+            "transparency_enabled",
+            "blur_quality",
+            "reduced_motion",
+            "high_contrast",
+            "text_scale",
+            "cursor_theme",
+            "cursor_size_px",
+            "icon_theme"
+          ],
+          "properties": {
+            "accent": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+            "transparency_enabled": { "type": "boolean" },
+            "blur_quality": { "enum": ["off", "low", "balanced", "high"] },
+            "reduced_motion": { "type": "boolean" },
+            "high_contrast": { "type": "boolean" },
+            "text_scale": { "type": "number", "minimum": 0.75, "maximum": 3 },
+            "cursor_theme": { "$ref": "#/$defs/bounded_identifier" },
+            "cursor_size_px": { "type": "integer", "minimum": 16, "maximum": 256 },
+            "icon_theme": { "$ref": "#/$defs/bounded_identifier" }
+          }
+        },
+        "panel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["edge", "size_px", "autohide", "grouping", "clock_format", "outputs"],
+          "properties": {
+            "edge": { "enum": ["top", "right", "bottom", "left"] },
+            "size_px": { "type": "integer", "minimum": 24, "maximum": 192 },
+            "autohide": { "enum": ["never", "always", "overlap"] },
+            "grouping": { "enum": ["always", "when_full", "never"] },
+            "clock_format": { "enum": ["locale", "12_hour", "24_hour"] },
+            "outputs": {
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/bounded_identifier" }
+            }
+          }
+        },
+        "launcher": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["layout", "search_providers", "recent_items"],
+          "properties": {
+            "layout": { "enum": ["compact", "expanded"] },
+            "search_providers": {
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": { "enum": ["applications", "settings", "recent_files"] }
+            },
+            "recent_items": { "enum": ["disabled", "local_only"] }
+          }
+        },
+        "notifications": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "history", "default_timeout_ms", "do_not_disturb"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "history": { "enum": ["disabled", "session", "persistent"] },
+            "default_timeout_ms": { "type": "integer", "minimum": 0, "maximum": 120000 },
+            "do_not_disturb": { "type": "boolean" }
+          }
+        },
+        "desktop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["wallpaper_mode", "icons_enabled"],
+          "properties": {
+            "wallpaper_mode": { "enum": ["solid", "center", "fit", "fill", "stretch", "tile"] },
+            "icons_enabled": { "type": "boolean" }
+          }
+        },
+        "integration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["export_gtk", "export_qt", "export_xsettings", "export_portal"],
+          "properties": {
+            "export_gtk": { "type": "boolean" },
+            "export_qt": { "type": "boolean" },
+            "export_xsettings": { "type": "boolean" },
+            "export_portal": { "type": "boolean" }
+          }
+        },
+        "accessibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["focus_emphasis", "animation_scale", "minimum_target_size_px"],
+          "properties": {
+            "focus_emphasis": { "enum": ["standard", "strong"] },
+            "animation_scale": { "type": "number", "minimum": 0, "maximum": 2 },
+            "minimum_target_size_px": { "type": "integer", "minimum": 24, "maximum": 96 }
+          }
+        },
+        "keyboard": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["menu_key_opens_launcher", "focus_wraps"],
+          "properties": {
+            "menu_key_opens_launcher": { "type": "boolean" },
+            "focus_wraps": { "type": "boolean" }
+          }
+        },
+        "developer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["diagnostics_enabled", "mock_capability_overrides"],
+          "properties": {
+            "diagnostics_enabled": { "type": "boolean" },
+            "mock_capability_overrides": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/bounded_identifier" }
+            }
+          }
+        }
+      }
+    },
+    "color": { "type": "string", "pattern": "^#[0-9A-F]{8}$" },
+    "resolved_number_map": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 512,
+      "propertyNames": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 65535 }
+    },
+    "resolved_font_size_map": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 512,
+      "propertyNames": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 196605 }
+    },
+    "resolved_duration_map": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 512,
+      "propertyNames": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 131070 }
+    },
+    "resolved_opacity_map": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 512,
+      "propertyNames": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+    },
+    "primitive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["colors", "spacing_px", "font_families", "font_size_px", "duration_ms", "radius_px", "opacity"],
+      "properties": {
+        "colors": {
+          "type": "object",
+          "minProperties": 4,
+          "maxProperties": 512,
+          "propertyNames": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+          "additionalProperties": { "$ref": "#/$defs/color" }
+        },
+        "spacing_px": { "$ref": "#/$defs/resolved_number_map" },
+        "font_families": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "font_size_px": { "$ref": "#/$defs/resolved_font_size_map" },
+        "duration_ms": { "$ref": "#/$defs/resolved_duration_map" },
+        "radius_px": { "$ref": "#/$defs/resolved_number_map" },
+        "opacity": { "$ref": "#/$defs/resolved_opacity_map" }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tint", "opacity", "blur_request", "fallback"],
+      "properties": {
+        "tint": { "$ref": "#/$defs/color" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blur_request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "radius_px", "saturation"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "radius_px": { "type": "number", "minimum": 0, "maximum": 128 },
+            "saturation": { "type": "number", "minimum": 0, "maximum": 2 }
+          }
+        },
+        "fallback": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "color", "opacity"],
+          "properties": {
+            "kind": { "enum": ["alpha", "opaque"] },
+            "color": { "$ref": "#/$defs/color" },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["panel", "launcher", "notification", "menu"],
+      "properties": {
+        "panel": { "$ref": "#/$defs/material" },
+        "launcher": { "$ref": "#/$defs/material" },
+        "notification": { "$ref": "#/$defs/material" },
+        "menu": { "$ref": "#/$defs/material" }
+      }
+    },
+    "semantic_colors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "panel_surface",
+        "elevated_surface",
+        "window_frame",
+        "border_active",
+        "border_inactive",
+        "text_primary",
+        "text_muted",
+        "selection",
+        "focus_ring",
+        "danger",
+        "warning",
+        "success"
+      ],
+      "properties": {
+        "panel_surface": { "$ref": "#/$defs/color" },
+        "elevated_surface": { "$ref": "#/$defs/color" },
+        "window_frame": { "$ref": "#/$defs/color" },
+        "border_active": { "$ref": "#/$defs/color" },
+        "border_inactive": { "$ref": "#/$defs/color" },
+        "text_primary": { "$ref": "#/$defs/color" },
+        "text_muted": { "$ref": "#/$defs/color" },
+        "selection": { "$ref": "#/$defs/color" },
+        "focus_ring": { "$ref": "#/$defs/color" },
+        "danger": { "$ref": "#/$defs/color" },
+        "warning": { "$ref": "#/$defs/color" },
+        "success": { "$ref": "#/$defs/color" }
+      }
+    },
+    "semantic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["colors", "materials", "border", "shadow", "typography", "spacing", "panel", "decoration", "icon", "focus", "motion", "targets"],
+      "properties": {
+        "colors": { "$ref": "#/$defs/semantic_colors" },
+        "materials": { "$ref": "#/$defs/materials" },
+        "border": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["thickness_px", "minimum_contrast_ratio"],
+          "properties": {
+            "thickness_px": { "type": "number", "minimum": 1, "maximum": 65535 },
+            "minimum_contrast_ratio": { "type": "number", "minimum": 1, "maximum": 21 }
+          }
+        },
+        "shadow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["offset_y_px", "blur_radius_px", "opacity"],
+          "properties": {
+            "offset_y_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+            "blur_radius_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "typography": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["body_family", "body_size_px", "title_size_px", "weight_normal", "weight_emphasis"],
+          "properties": {
+            "body_family": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "body_size_px": { "type": "number", "minimum": 8, "maximum": 144 },
+            "title_size_px": { "type": "number", "minimum": 8, "maximum": 192 },
+            "weight_normal": { "type": "integer", "minimum": 100, "maximum": 900 },
+            "weight_emphasis": { "type": "integer", "minimum": 100, "maximum": 900 }
+          }
+        },
+        "spacing": { "$ref": "#/$defs/spacing_metrics" },
+        "panel": { "$ref": "#/$defs/panel_metrics" },
+        "decoration": { "$ref": "#/$defs/decoration_metrics" },
+        "icon": { "$ref": "#/$defs/icon_metrics" },
+        "focus": { "$ref": "#/$defs/focus_metrics" },
+        "motion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fast_ms", "normal_ms", "easing"],
+          "properties": {
+            "fast_ms": { "type": "integer", "minimum": 0, "maximum": 4000 },
+            "normal_ms": { "type": "integer", "minimum": 0, "maximum": 4000 },
+            "easing": { "enum": ["linear", "ease_out", "ease_in_out", "crisp"] }
+          }
+        },
+        "targets": { "$ref": "#/$defs/target_metrics" }
+      }
+    },
+    "spacing_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_px", "control_gap_px", "content_margin_px"],
+      "properties": {
+        "unit_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "control_gap_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "content_margin_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "panel_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["height_px", "icon_size_px"],
+      "properties": {
+        "height_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "icon_size_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "decoration_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["titlebar_height_px", "border_width_px"],
+      "properties": {
+        "titlebar_height_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "border_width_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "icon_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["small_px", "medium_px", "large_px"],
+      "properties": {
+        "small_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "medium_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "large_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "focus_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width_px", "offset_px"],
+      "properties": {
+        "width_px": { "type": "number", "minimum": 1, "maximum": 65535 },
+        "offset_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "target_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_px"],
+      "properties": {
+        "minimum_px": { "type": "number", "minimum": 24, "maximum": 65535 }
+      }
+    },
+    "component_style": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["radius_px", "padding_px", "border_width_px"],
+      "properties": {
+        "radius_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "padding_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "border_width_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_button", "launcher_tile", "titlebar_button", "notification_card", "quick_setting", "tooltip", "menu_item"],
+      "properties": {
+        "task_button": { "$ref": "#/$defs/component_style" },
+        "launcher_tile": { "$ref": "#/$defs/component_style" },
+        "titlebar_button": { "$ref": "#/$defs/component_style" },
+        "notification_card": { "$ref": "#/$defs/component_style" },
+        "quick_setting": { "$ref": "#/$defs/component_style" },
+        "tooltip": { "$ref": "#/$defs/component_style" },
+        "menu_item": { "$ref": "#/$defs/component_style" }
+      }
+    },
+    "effective_accessibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["high_contrast", "reduced_motion", "transparency_disabled", "text_scale", "animation_scale", "focus_width_px", "minimum_target_size_px", "minimum_contrast_ratio"],
+      "properties": {
+        "high_contrast": { "type": "boolean" },
+        "reduced_motion": { "type": "boolean" },
+        "transparency_disabled": { "type": "boolean" },
+        "text_scale": { "type": "number", "minimum": 0.75, "maximum": 3 },
+        "animation_scale": { "type": "number", "minimum": 0, "maximum": 2 },
+        "focus_width_px": { "type": "number", "minimum": 1, "maximum": 65535 },
+        "minimum_target_size_px": { "type": "number", "minimum": 24, "maximum": 65535 },
+        "minimum_contrast_ratio": { "type": "number", "minimum": 1, "maximum": 21 }
+      }
+    },
+    "resolved_material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color", "opacity", "blur_requested", "blur_radius_px", "saturation", "used_fallback"],
+      "properties": {
+        "color": { "$ref": "#/$defs/color" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blur_requested": { "type": "boolean" },
+        "blur_radius_px": { "type": "number", "minimum": 0, "maximum": 128 },
+        "saturation": { "type": "number", "minimum": 0, "maximum": 2 },
+        "used_fallback": { "type": "boolean" }
+      }
+    },
+    "resolved_materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["panel", "launcher", "notification", "menu"],
+      "properties": {
+        "panel": { "$ref": "#/$defs/resolved_material" },
+        "launcher": { "$ref": "#/$defs/resolved_material" },
+        "notification": { "$ref": "#/$defs/resolved_material" },
+        "menu": { "$ref": "#/$defs/resolved_material" }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "profile_id",
+        "profile_display_name",
+        "logical_source_ids",
+        "primitive",
+        "semantic",
+        "component",
+        "effective_accessibility",
+        "capability_fallbacks",
+        "resolved_materials",
+        "thumbnail_presentation",
+        "warnings"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "profile_id": { "enum": ["lustre", "forge"] },
+        "profile_display_name": { "enum": ["Prismdrake Lustre", "Prismdrake Forge"] },
+        "logical_source_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "enum": ["packaged_base", "packaged_lustre", "packaged_forge", "packaged_accessibility"] }
+        },
+        "primitive": { "$ref": "#/$defs/primitive" },
+        "semantic": { "$ref": "#/$defs/semantic" },
+        "component": { "$ref": "#/$defs/components" },
+        "effective_accessibility": { "$ref": "#/$defs/effective_accessibility" },
+        "capability_fallbacks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["blur", "thumbnails"],
+          "properties": {
+            "blur": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "thumbnails": { "type": "string", "minLength": 1, "maxLength": 256 }
+          }
+        },
+        "resolved_materials": { "$ref": "#/$defs/resolved_materials" },
+        "thumbnail_presentation": { "enum": ["provided_thumbnail", "application_icon_title_state"] },
+        "warnings": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "accent_suppressed_high_contrast",
+              "blur_fallback_active",
+              "thumbnail_fallback_active",
+              "safe_mode_active"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
