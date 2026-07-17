@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/prismdrake-dependency-manifest.schema.json",
+  "title": "Prismdrake component dependency manifest version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "component",
+    "component_kind",
+    "implementation_status",
+    "mandatory_core_startup",
+    "runtime_dependency_state",
+    "dependencies",
+    "unresolved"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "component": {
+      "type": "string",
+      "pattern": "^prismdrake-[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 128
+    },
+    "component_kind": {
+      "enum": ["repository_foundation", "internal_library", "core_service", "visible_shell", "optional_adapter"]
+    },
+    "implementation_status": {
+      "enum": ["contract_foundation", "planned", "experimental", "implemented"]
+    },
+    "mandatory_core_startup": { "type": "boolean" },
+    "runtime_dependency_state": {
+      "enum": ["not_applicable", "planned_unmeasured", "measured"]
+    },
+    "dependencies": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/dependency" }
+    },
+    "unresolved": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/unresolved" }
+    }
+  },
+  "$defs": {
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "gentoo_atom",
+        "scope",
+        "relationship",
+        "feature",
+        "requirement_status",
+        "version",
+        "packaging_status",
+        "license_review",
+        "fallback",
+        "reason"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[+_.-][a-z0-9]+)*$",
+          "maxLength": 128
+        },
+        "gentoo_atom": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z0-9+_-]+/[A-Za-z0-9+_.-]+(?::[A-Za-z0-9+_.-]+)?$",
+          "maxLength": 192
+        },
+        "scope": {
+          "enum": [
+            "contract_validation",
+            "development",
+            "build",
+            "test",
+            "mandatory_runtime",
+            "optional_runtime"
+          ]
+        },
+        "relationship": { "enum": ["tool", "direct", "transitive"] },
+        "feature": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+          "maxLength": 128
+        },
+        "requirement_status": { "enum": ["observed", "planned", "implemented"] },
+        "version": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["declared_minimum", "verified_minimum", "observed", "evidence"],
+          "properties": {
+            "declared_minimum": {
+              "type": ["string", "null"],
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._+~-]*$",
+              "maxLength": 64
+            },
+            "verified_minimum": {
+              "type": ["string", "null"],
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._+~-]*$",
+              "maxLength": 64
+            },
+            "observed": {
+              "type": ["string", "null"],
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._+~-]*$",
+              "maxLength": 64
+            },
+            "evidence": { "enum": ["unverified", "observed_reference", "verified_component"] }
+          }
+        },
+        "packaging_status": { "enum": ["observed_gentoo", "planned_gentoo", "not_applicable"] },
+        "license_review": { "enum": ["reviewed", "pending"] },
+        "fallback": { "type": ["string", "null"], "maxLength": 512 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "unresolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["area", "reason"],
+      "properties": {
+        "area": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+          "maxLength": 128
+        },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    }
+  }
+}

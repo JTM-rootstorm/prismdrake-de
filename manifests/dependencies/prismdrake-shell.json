@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "component": "prismdrake-shell",
+  "component_kind": "visible_shell",
+  "implementation_status": "planned",
+  "mandatory_core_startup": true,
+  "runtime_dependency_state": "planned_unmeasured",
+  "dependencies": [
+    {
+      "name": "qtbase",
+      "gentoo_atom": "dev-qt/qtbase:6",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "visible_shell_foundation",
+      "requirement_status": "planned",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "6.11.1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "Accepted ADR 0003 selects Qt 6 Quick for visible shell surfaces; the value is spike evidence, not a supported minimum."
+    },
+    {
+      "name": "qtdeclarative",
+      "gentoo_atom": "dev-qt/qtdeclarative:6",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "qml_and_qt_quick",
+      "requirement_status": "planned",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "6.11.1-r1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The isolated spike exercised QML, Qt Quick, and Quick Controls from the system Qt package; production usage remains unmeasured."
+    },
+    {
+      "name": "libxcb",
+      "gentoo_atom": "x11-libs/libxcb",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "x11_shell_surface",
+      "requirement_status": "planned",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.17.0",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The X11 spike directly linked XCB for standard dock properties; the production shell target does not yet exist."
+    }
+  ],
+  "unresolved": [
+    {
+      "area": "runtime_closure",
+      "reason": "The minimal Qt modules, direct versus transitive libraries, and supported minimum versions require measurement from the production shell."
+    },
+    {
+      "area": "accessibility_runtime",
+      "reason": "AT-SPI behavior was observed in the spike, but production accessibility linkage and packaging must be measured before declaration."
+    }
+  ]
+}

@@ -27,6 +27,7 @@ describe a usable or production-ready desktop release.
 - [Component model](architecture/component-model.md)
 - [Process model](architecture/process-model.md)
 - [Dependency policy](architecture/dependency-policy.md)
+- [Dependency manifests](build/dependencies.md)
 - [Configuration](architecture/configuration.md)
 - [Compatibility matrix](architecture/compatibility.md)
 - [Glasswyrm integration](architecture/glasswyrm-integration.md)
@@ -43,6 +44,8 @@ describe a usable or production-ready desktop release.
 - [Capability examples](../examples/capabilities/x11-standard.json)
 - [Draft interfaces](../interfaces/README.md)
 - [JSON schemas](../schemas/prismdrake-config.schema.json)
+- [Dependency-manifest schema](../schemas/prismdrake-dependency-manifest.schema.json)
+- [Foundation dependency manifest](../manifests/dependencies/prismdrake-foundation.json)
 - [Theme token documents](../themes/base.tokens.json)
 
 Run `make validate` from the repository root to check repository contracts and

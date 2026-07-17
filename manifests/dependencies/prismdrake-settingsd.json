@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "component": "prismdrake-settingsd",
+  "component_kind": "core_service",
+  "implementation_status": "planned",
+  "mandatory_core_startup": true,
+  "runtime_dependency_state": "planned_unmeasured",
+  "dependencies": [
+    {
+      "name": "dbus",
+      "gentoo_atom": "sys-apps/dbus",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "settings_ipc",
+      "requirement_status": "planned",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.16.2",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The Accepted component model publishes typed settings snapshots over D-Bus; the interface and target remain unstabilized."
+    },
+    {
+      "name": "libxcb",
+      "gentoo_atom": "x11-libs/libxcb",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "xsettings_publication",
+      "requirement_status": "planned",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.17.0",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "PD1 targets X11 and assigns XSettings publication to settingsd; production linkage is not implemented or measured."
+    }
+  ],
+  "unresolved": [
+    {
+      "area": "configuration_parsers",
+      "reason": "The TOML and JSON implementation libraries remain unselected; schema acceptance does not select parser packages."
+    },
+    {
+      "area": "atomic_storage",
+      "reason": "The implementation must establish whether standard-library facilities are sufficient before declaring another dependency."
+    }
+  ]
+}

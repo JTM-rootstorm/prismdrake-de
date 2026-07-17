@@ -22,6 +22,19 @@ PROFILE_NAMES = {
 }
 ALLOWED_DBUS_BASES = ("org.prismdrake", "org.freedesktop")
 LICENSE_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+DEPENDENCY_MANIFEST_COMPONENTS = {
+    "prismdrake-foundation": "internal_library",
+    "prismdrake-session": "core_service",
+    "prismdrake-settingsd": "core_service",
+    "prismdrake-shell": "visible_shell",
+}
+FORBIDDEN_CORE_RUNTIME_DEPENDENCIES = {
+    "gnome-shell",
+    "mutter",
+    "gnome-settings-daemon",
+    "gnome-control-center",
+    "libadwaita",
+}
 
 REQUIRED_FILES = (
     ".editorconfig",
@@ -81,6 +94,12 @@ REQUIRED_FILES = (
     "schemas/prismdrake-config.schema.json",
     "schemas/prismdrake-theme-tokens.schema.json",
     "schemas/prismdrake-capabilities.schema.json",
+    "schemas/prismdrake-dependency-manifest.schema.json",
+    "manifests/dependencies/prismdrake-foundation.json",
+    "manifests/dependencies/prismdrake-session.json",
+    "manifests/dependencies/prismdrake-settingsd.json",
+    "manifests/dependencies/prismdrake-shell.json",
+    "docs/build/dependencies.md",
     "themes/base.tokens.json",
     "themes/lustre.tokens.json",
     "themes/forge.tokens.json",
@@ -262,12 +281,103 @@ def validate_schema(
 
 def validate_required_files(validation: Validation) -> None:
     for relative in REQUIRED_FILES:
-        validation.require((ROOT / relative).is_file(), relative, "required PD0 file is missing")
+        validation.require((ROOT / relative).is_file(), relative, "required repository file is missing")
+
+
+def dependency_identity_candidates(dependency: dict[str, Any]) -> set[str]:
+    candidates = {str(dependency.get("name", "")).lower().replace("_", "-")}
+    atom = dependency.get("gentoo_atom")
+    if isinstance(atom, str) and "/" in atom:
+        package = atom.split("/", 1)[1].split(":", 1)[0]
+        candidates.add(package.lower().replace("_", "-"))
+    return candidates
+
+
+def dependency_manifest_policy_errors(document: dict[str, Any], location: str) -> list[str]:
+    errors: list[str] = []
+    dependencies = document.get("dependencies", [])
+    if not isinstance(dependencies, list):
+        return errors
+
+    if document.get("component_kind") in {"core_service", "visible_shell"}:
+        if document.get("mandatory_core_startup") is not True:
+            errors.append(
+                f"{location}.mandatory_core_startup: core services and the visible shell must enforce the core runtime boundary"
+            )
+
+    seen_names: set[str] = set()
+    for index, dependency in enumerate(dependencies):
+        if not isinstance(dependency, dict):
+            continue
+        dependency_location = f"{location}.dependencies[{index}]"
+        name = dependency.get("name")
+        if isinstance(name, str):
+            if name in seen_names:
+                errors.append(f"{dependency_location}.name: duplicate dependency name {name!r}")
+            seen_names.add(name)
+
+        scope = dependency.get("scope")
+        if document.get("mandatory_core_startup") is True and scope == "mandatory_runtime":
+            forbidden = dependency_identity_candidates(dependency) & FORBIDDEN_CORE_RUNTIME_DEPENDENCIES
+            if forbidden:
+                errors.append(
+                    f"{dependency_location}: forbidden mandatory core runtime dependency "
+                    f"{sorted(forbidden)[0]!r}"
+                )
+
+        version = dependency.get("version", {})
+        if not isinstance(version, dict):
+            continue
+        declared_minimum = version.get("declared_minimum")
+        verified_minimum = version.get("verified_minimum")
+        observed = version.get("observed")
+        evidence = version.get("evidence")
+        if dependency.get("requirement_status") == "planned" and verified_minimum is not None:
+            errors.append(
+                f"{dependency_location}.version.verified_minimum: planned dependencies cannot declare a verified minimum"
+            )
+        if evidence == "unverified" and (verified_minimum is not None or observed is not None):
+            errors.append(
+                f"{dependency_location}.version: unverified dependencies cannot declare verified or observed versions"
+            )
+        if evidence in {"observed_reference", "verified_component"} and observed is None:
+            errors.append(
+                f"{dependency_location}.version.observed: {evidence} evidence requires an observed version"
+            )
+        if verified_minimum is not None and evidence != "verified_component":
+            errors.append(
+                f"{dependency_location}.version.verified_minimum: a verified minimum requires verified component evidence"
+            )
+        if declared_minimum is not None and dependency.get("requirement_status") == "observed":
+            errors.append(
+                f"{dependency_location}.version.declared_minimum: observed-only tools cannot set project constraints"
+            )
+        if scope == "optional_runtime" and not dependency.get("fallback"):
+            errors.append(
+                f"{dependency_location}.fallback: optional runtime dependencies require a non-empty fallback"
+            )
+
+    if document.get("implementation_status") == "planned":
+        if document.get("runtime_dependency_state") != "planned_unmeasured":
+            errors.append(
+                f"{location}.runtime_dependency_state: planned components must remain planned_unmeasured"
+            )
+        if not document.get("unresolved"):
+            errors.append(f"{location}.unresolved: planned components must record unresolved dependency work")
+
+    if document.get("runtime_dependency_state") == "not_applicable":
+        runtime_scopes = {"mandatory_runtime", "optional_runtime"}
+        if any(isinstance(item, dict) and item.get("scope") in runtime_scopes for item in dependencies):
+            errors.append(
+                f"{location}.runtime_dependency_state: not_applicable manifests cannot declare runtime dependencies"
+            )
+
+    return errors
 
 
 def validate_contracts(validation: Validation) -> dict[str, Any]:
     schemas: dict[str, Any] = {}
-    for name in ("config", "theme-tokens", "capabilities"):
+    for name in ("config", "theme-tokens", "capabilities", "dependency-manifest"):
         path = ROOT / "schemas" / f"prismdrake-{name}.schema.json"
         document = load_json(path, validation)
         if isinstance(document, dict):
@@ -388,6 +498,38 @@ def validate_contracts(validation: Validation) -> dict[str, Any]:
                 f"{location}.fallbacks",
                 "capability example must define every required fallback",
             )
+
+    if "dependency-manifest" in schemas:
+        manifest_paths = sorted((ROOT / "manifests/dependencies").glob("*.json"))
+        validation.require(
+            {path.stem for path in manifest_paths} == set(DEPENDENCY_MANIFEST_COMPONENTS),
+            "manifests/dependencies",
+            "dependency manifests must match the required PD1 component set",
+        )
+        for path in manifest_paths:
+            document = load_json(path, validation)
+            if not isinstance(document, dict):
+                continue
+            location = path.relative_to(ROOT).as_posix()
+            validation.errors.extend(
+                validate_schema(
+                    document,
+                    schemas["dependency-manifest"],
+                    schemas["dependency-manifest"],
+                    location,
+                )
+            )
+            validation.require(
+                document.get("component") == path.stem,
+                f"{location}.component",
+                "component must match the manifest filename",
+            )
+            validation.require(
+                document.get("component_kind") == DEPENDENCY_MANIFEST_COMPONENTS.get(path.stem),
+                f"{location}.component_kind",
+                "component kind must match the reviewed PD1 boundary",
+            )
+            validation.errors.extend(dependency_manifest_policy_errors(document, location))
 
     return schemas
 
@@ -541,14 +683,23 @@ def validate_identity_and_hygiene(validation: Validation) -> None:
 
 
 def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation) -> None:
-    required = {"config", "theme-tokens", "capabilities"}
+    required = {"config", "theme-tokens", "capabilities", "dependency-manifest"}
     if set(schemas) != required:
         validation.error("self-test", "cannot run negative tests because a schema failed to load")
         return
 
     config = load_toml(ROOT / "examples/config/lustre.toml", validation)
     theme = load_json(ROOT / "themes/lustre.tokens.json", validation)
-    if not isinstance(config, dict) or not isinstance(theme, dict):
+    foundation_manifest = load_json(
+        ROOT / "manifests/dependencies/prismdrake-foundation.json", validation
+    )
+    shell_manifest = load_json(ROOT / "manifests/dependencies/prismdrake-shell.json", validation)
+    if (
+        not isinstance(config, dict)
+        or not isinstance(theme, dict)
+        or not isinstance(foundation_manifest, dict)
+        or not isinstance(shell_manifest, dict)
+    ):
         validation.error("self-test", "cannot run negative tests because fixtures failed to load")
         return
 
@@ -569,12 +720,51 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
     del missing_fallback["semantic"]["materials"]["panel"]["fallback"]
     cases.append(("missing blur fallback", missing_fallback, schemas["theme-tokens"], "fallback"))
 
+    unknown_manifest_key = copy.deepcopy(foundation_manifest)
+    unknown_manifest_key["implicit_dependencies"] = []
+    cases.append(
+        (
+            "unknown dependency manifest key",
+            unknown_manifest_key,
+            schemas["dependency-manifest"],
+            "unknown key",
+        )
+    )
+
     for name, document, schema, expected_fragment in cases:
         errors = validate_schema(document, schema, schema, f"self-test.{name}")
         validation.require(
             bool(errors) and any(expected_fragment in error for error in errors),
             "self-test",
             f"negative case {name!r} was not rejected with an actionable field",
+        )
+
+    dependency_policy_cases: list[tuple[str, dict[str, Any], str]] = []
+    forbidden_name = copy.deepcopy(shell_manifest)
+    forbidden_name["dependencies"][0]["name"] = "gnome-shell"
+    forbidden_name["dependencies"][0]["gentoo_atom"] = "gnome-base/gnome-shell"
+    dependency_policy_cases.append(("forbidden GNOME Shell runtime", forbidden_name, "gnome-shell"))
+
+    forbidden_atom = copy.deepcopy(shell_manifest)
+    forbidden_atom["dependencies"][0]["name"] = "ui-runtime"
+    forbidden_atom["dependencies"][0]["gentoo_atom"] = "gui-libs/libadwaita"
+    dependency_policy_cases.append(("forbidden libadwaita atom", forbidden_atom, "libadwaita"))
+
+    planned_minimum = copy.deepcopy(shell_manifest)
+    planned_minimum["dependencies"][0]["version"]["verified_minimum"] = "6.11.1"
+    dependency_policy_cases.append(("unverified planned minimum", planned_minimum, "verified_minimum"))
+
+    optional_without_fallback = copy.deepcopy(shell_manifest)
+    optional_without_fallback["dependencies"][0]["scope"] = "optional_runtime"
+    optional_without_fallback["dependencies"][0]["fallback"] = None
+    dependency_policy_cases.append(("optional runtime without fallback", optional_without_fallback, "fallback"))
+
+    for name, document, expected_fragment in dependency_policy_cases:
+        errors = dependency_manifest_policy_errors(document, f"self-test.{name}")
+        validation.require(
+            bool(errors) and any(expected_fragment in error for error in errors),
+            "self-test",
+            f"dependency policy case {name!r} was not rejected with an actionable field",
         )
 
     try:
@@ -615,7 +805,7 @@ def main() -> int:
     print("  JSON/TOML/XML/SVG: parsed and structurally validated")
     print("  profiles/themes/fallbacks: consistent")
     print("  ADRs/namespaces/local links/assets: consistent")
-    print("  negative self-tests: 5 rejection paths passed")
+    print("  negative self-tests: 10 rejection paths passed")
     return 0
 
 

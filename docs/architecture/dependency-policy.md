@@ -1,7 +1,8 @@
 # Dependency policy
 
-This policy implements `PD-DEP-001` through `PD-DEP-008`. PD0 introduces no
-production runtime dependency; Python 3.11 and GNU Make are development-only
+This policy implements `PD-DEP-001` through `PD-DEP-008`. The initial PD1
+foundation is an internal static library and introduces no installed production
+runtime dependency. Python 3.11 and GNU Make remain development-only
 contract-validation tools.
 
 ## Dependency classes
@@ -11,7 +12,8 @@ Every dependency declaration must identify:
 - the consuming component and feature;
 - build-only, test-only, mandatory runtime, or optional runtime scope;
 - direct use versus transitive arrival;
-- minimum and tested versions, once measured;
+- separately identified declared constraints, observed versions, and verified
+  minimum versions;
 - license and distribution packaging status;
 - behavior when an optional dependency is absent; and
 - the reason a small project utility is insufficient.
@@ -50,27 +52,19 @@ Build generators, linters, schema validators, and test harnesses stay out of
 runtime metadata. GPU and display-dependent tests remain opt-in when a normal
 environment cannot guarantee them; they do not replace display-free checks.
 
-## Future manifest
+## Component manifests
 
-When compiled code is introduced, each component should provide a
-machine-readable dependency manifest with this conceptual shape:
+PD1 component boundaries use strict machine-readable manifests under
+[`manifests/dependencies/`](../../manifests/dependencies/), validated against
+the [dependency-manifest schema](../../schemas/prismdrake-dependency-manifest.schema.json).
+The [dependency-manifest guide](../build/dependencies.md) defines version
+evidence, planned versus implemented status, runtime measurement, packaging,
+license-review, and fallback semantics.
 
-```json
-{
-  "schema_version": 1,
-  "component": "prismdrake-shell",
-  "dependencies": [
-    {
-      "name": "example-library",
-      "scope": "mandatory_runtime",
-      "feature": "visible_shell",
-      "minimum_version": "measured-by-packaging",
-      "fallback": null
-    }
-  ]
-}
-```
-
-The literal placeholder values above describe a future schema and are not a
-dependency claim. Validation will reject forbidden desktop-stack components in
-mandatory runtime scope when manifests exist.
+The implemented foundation manifest records current repository and build/test
+tools. Session, settings, and shell manifests are explicitly planned and
+unmeasured: observed Gentoo VM versions are evidence, not supported minima or
+proof of a production runtime closure. Declared constraints remain distinct
+from tested lower bounds. Validation rejects the forbidden GNOME desktop stack
+in mandatory core runtime scope and rejects verified minima that lack component
+evidence.

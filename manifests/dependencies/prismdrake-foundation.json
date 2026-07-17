@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "component": "prismdrake-foundation",
+  "component_kind": "internal_library",
+  "implementation_status": "implemented",
+  "mandatory_core_startup": false,
+  "runtime_dependency_state": "not_applicable",
+  "dependencies": [
+    {
+      "name": "python",
+      "gentoo_atom": "dev-lang/python",
+      "scope": "contract_validation",
+      "relationship": "tool",
+      "feature": "contract_validation",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": "3.11",
+        "verified_minimum": null,
+        "observed": "3.14.6",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "pending",
+      "fallback": null,
+      "reason": "The repository contract validator uses Python standard-library TOML, JSON, XML, and path support."
+    },
+    {
+      "name": "cmake",
+      "gentoo_atom": "dev-build/cmake",
+      "scope": "build",
+      "relationship": "tool",
+      "feature": "compiled_build",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": "3.24",
+        "verified_minimum": null,
+        "observed": "4.3.3-r1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "pending",
+      "fallback": null,
+      "reason": "The implemented scaffold declares CMake 3.24, while 4.3.3-r1 is the observed reference version; 3.24 has not been verified as the oldest supported version."
+    },
+    {
+      "name": "ninja",
+      "gentoo_atom": "dev-build/ninja",
+      "scope": "build",
+      "relationship": "tool",
+      "feature": "reference_build",
+      "requirement_status": "observed",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.13.2-r1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "CMake may use another explicitly selected supported generator.",
+      "reason": "Ninja is the observed generator in the Gentoo reference environment, not a universal runtime dependency."
+    },
+    {
+      "name": "pkgconf",
+      "gentoo_atom": "dev-util/pkgconf",
+      "scope": "build",
+      "relationship": "tool",
+      "feature": "system_dependency_discovery",
+      "requirement_status": "observed",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "2.5.1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The reference environment provides pkg-config-compatible discovery for system libraries."
+    },
+    {
+      "name": "gcc",
+      "gentoo_atom": "sys-devel/gcc",
+      "scope": "build",
+      "relationship": "tool",
+      "feature": "cpp20_compilation",
+      "requirement_status": "observed",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "15.3.0",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "Clang is the separately required second compiler family under ADR 0008.",
+      "reason": "GCC is the observed system compiler; a supported minimum remains unmeasured."
+    },
+    {
+      "name": "clang",
+      "gentoo_atom": "llvm-core/clang",
+      "scope": "build",
+      "relationship": "tool",
+      "feature": "cpp20_compilation",
+      "requirement_status": "observed",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "22.1.8",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "pending",
+      "fallback": "GCC is the reference system compiler and the separately required compiler family under ADR 0008.",
+      "reason": "Clang is installed for the accepted two-compiler build matrix; a supported minimum remains unmeasured."
+    },
+    {
+      "name": "googletest",
+      "gentoo_atom": "dev-cpp/gtest",
+      "scope": "test",
+      "relationship": "direct",
+      "feature": "cpp_unit_tests",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.17.0",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "pending",
+      "fallback": "Test-disabled builds must configure without GoogleTest.",
+      "reason": "The implemented foundation tests use the system-packaged GoogleTest 1.17.0 through CTest without linking it into runtime code."
+    }
+  ],
+  "unresolved": [
+    {
+      "area": "minimum_tool_versions",
+      "reason": "The CMake 3.24 declared constraint and minimum supported compiler, generator, and test-framework versions require lower-bound build evidence."
+    }
+  ]
+}
