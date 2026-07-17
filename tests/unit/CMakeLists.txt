@@ -22,7 +22,6 @@ add_executable(prismdrake-foundation-tests
     EwmhTaskListTests.cpp
     EwmhWindowRequestsTests.cpp
     FoundationPrimitivesTests.cpp
-    LauncherPipelineTests.cpp
     OutputTopologyTests.cpp
     PanelStrutGeometryTests.cpp
     PropertyReaderTests.cpp
@@ -66,15 +65,12 @@ prismdrake_configure_cpp_target(prismdrake-foundation-tests)
 prismdrake_enable_warnings(prismdrake-foundation-tests)
 prismdrake_enable_sanitizers(prismdrake-foundation-tests)
 
-add_dependencies(prismdrake-foundation-tests
-    prismdrake-application-launch-fixture
-    prismdrake-session-child-fixture)
+add_dependencies(prismdrake-foundation-tests prismdrake-session-child-fixture)
 gtest_discover_tests(
     prismdrake-foundation-tests
     DISCOVERY_MODE PRE_TEST
     PROPERTIES
         ENVIRONMENT
-            "PRISMDRAKE_APPLICATION_LAUNCH_FIXTURE=$<TARGET_FILE:prismdrake-application-launch-fixture>"
             "PRISMDRAKE_SESSION_CHILD_FIXTURE=$<TARGET_FILE:prismdrake-session-child-fixture>")
 
 add_executable(prismdrake-detached-application-tests
@@ -94,6 +90,22 @@ prismdrake_enable_sanitizers(prismdrake-detached-application-tests)
 add_dependencies(prismdrake-detached-application-tests prismdrake-application-launch-fixture)
 gtest_discover_tests(
     prismdrake-detached-application-tests
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES
+        ENVIRONMENT
+            "PRISMDRAKE_APPLICATION_LAUNCH_FIXTURE=$<TARGET_FILE:prismdrake-application-launch-fixture>")
+
+add_executable(prismdrake-launcher-pipeline-tests LauncherPipelineTests.cpp)
+target_link_libraries(prismdrake-launcher-pipeline-tests
+    PRIVATE Prismdrake::launcher-model GTest::gtest_main Threads::Threads)
+
+prismdrake_configure_cpp_target(prismdrake-launcher-pipeline-tests)
+prismdrake_enable_warnings(prismdrake-launcher-pipeline-tests)
+prismdrake_enable_sanitizers(prismdrake-launcher-pipeline-tests)
+
+add_dependencies(prismdrake-launcher-pipeline-tests prismdrake-application-launch-fixture)
+gtest_discover_tests(
+    prismdrake-launcher-pipeline-tests
     DISCOVERY_MODE PRE_TEST
     PROPERTIES
         ENVIRONMENT
