@@ -17,7 +17,9 @@ add_library(prismdrake-launcher-model STATIC
     DesktopExec.cpp
     DesktopExec.hpp
     DesktopFileId.cpp
-    DesktopFileId.hpp)
+    DesktopFileId.hpp
+    ProcessLaunch.cpp
+    ProcessLaunch.hpp)
 add_library(Prismdrake::launcher-model ALIAS prismdrake-launcher-model)
 
 target_include_directories(prismdrake-launcher-model

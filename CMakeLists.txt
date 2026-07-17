@@ -165,6 +165,8 @@ prismdrake_add_format_check(
     src/launcher/DesktopExec.hpp
     src/launcher/DesktopFileId.cpp
     src/launcher/DesktopFileId.hpp
+    src/launcher/ProcessLaunch.cpp
+    src/launcher/ProcessLaunch.hpp
     src/settingsd/ServiceOptions.cpp
     src/settingsd/ServiceOptions.hpp
     src/settingsd/ServiceWorker.cpp
@@ -219,6 +221,7 @@ prismdrake_add_format_check(
     tests/unit/OutputTopologyTests.cpp
     tests/unit/PanelStrutGeometryTests.cpp
     tests/unit/PropertyReaderTests.cpp
+    tests/unit/ProcessLaunchTests.cpp
     tests/unit/RandrTopologyTests.cpp
     tests/unit/ResultTests.cpp
     tests/unit/RootEventStreamTests.cpp

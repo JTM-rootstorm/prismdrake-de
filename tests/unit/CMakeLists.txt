@@ -25,6 +25,7 @@ add_executable(prismdrake-foundation-tests
     OutputTopologyTests.cpp
     PanelStrutGeometryTests.cpp
     PropertyReaderTests.cpp
+    ProcessLaunchTests.cpp
     RandrTopologyTests.cpp
     ResultTests.cpp
     RootEventStreamTests.cpp
