@@ -9,18 +9,23 @@ WORKSPACE=${PRISMDRAKE_WORKSPACE:-$DEFAULT_WORKSPACE}
 SHARED_PATH=${PRISMDRAKE_SHARED_PATH:-/mnt/shared}
 APPLY=false
 SYNC=false
+USE_BINPKGS=false
+BINPKG_OPTION=
 
 usage() {
 	cat <<'EOF'
-Usage: bootstrap-vm.sh [--apply] [--sync] [--workspace PATH] [--shared-path PATH]
+Usage: bootstrap-vm.sh [--apply] [--sync] [--use-binpkgs] [--workspace PATH]
+                       [--shared-path PATH]
 
 Without --apply, print the detected state and planned guest changes. With
 --apply, register prismdrake-local, write project-specific package USE policy,
 run a Portage pretend, and then ask before emerging prismdrake-dev-env.
 
 --sync is valid only with --apply and synchronizes the canonical Gentoo
-repository before resolution. Environment overrides: PRISMDRAKE_WORKSPACE and
-PRISMDRAKE_SHARED_PATH.
+repository before resolution. --use-binpkgs asks Portage to use the guest's
+configured binary package repositories when package USE settings match; review
+the reported provenance and every source fallback before approving the merge.
+Environment overrides: PRISMDRAKE_WORKSPACE and PRISMDRAKE_SHARED_PATH.
 EOF
 }
 
@@ -37,6 +42,11 @@ while [ "$#" -gt 0 ]; do
 			;;
 		--sync)
 			SYNC=true
+			shift
+			;;
+		--use-binpkgs)
+			USE_BINPKGS=true
+			BINPKG_OPTION=--getbinpkg
 			shift
 			;;
 		--workspace)
@@ -118,6 +128,7 @@ printf '  mode: %s\n' "$(if [ "$APPLY" = true ]; then printf apply; else printf 
 printf '  workspace: %s\n' "$WORKSPACE"
 printf '  workspace owner: %s (UID %s)\n' "$WORKSPACE_USER" "$WORKSPACE_OWNER"
 printf '  shared path: %s\n' "$SHARED_PATH"
+printf '  binary packages: %s\n' "$(if [ "$USE_BINPKGS" = true ]; then printf enabled; else printf disabled; fi)"
 printf '  root free space: %s GiB\n' "$(awk -v value="$AVAILABLE_KIB" 'BEGIN { printf "%.1f", value / 1048576 }')"
 printf '  guest memory: %s GiB\n' "$(awk -v value="$MEMORY_KIB" 'BEGIN { printf "%.1f", value / 1048576 }')"
 
@@ -169,10 +180,11 @@ fi
 # Bootstrap those tools exclusively from the already configured Gentoo
 # repository, with the same reviewed pretend-before-ask posture as later
 # layers.
+# BINPKG_OPTION is either empty or the single constant --getbinpkg.
 # shellcheck disable=SC2086
-emerge --pretend --verbose --noreplace --tree $LAYER_A_PACKAGES
+emerge $BINPKG_OPTION --pretend --verbose --noreplace --tree $LAYER_A_PACKAGES
 # shellcheck disable=SC2086
-emerge --ask --verbose --noreplace $LAYER_A_PACKAGES
+emerge $BINPKG_OPTION --ask --verbose --noreplace $LAYER_A_PACKAGES
 command -v pkgdev >/dev/null 2>&1 || die 'pkgdev is unavailable after Layer A installation'
 command -v pkgcheck >/dev/null 2>&1 || die 'pkgcheck is unavailable after Layer A installation'
 
@@ -251,10 +263,12 @@ pretend_combination() {
 	USE_OVERRIDE=$2
 	printf '\nResolving development metapackage combination: %s\n' "$LABEL"
 	if [ -n "$USE_OVERRIDE" ]; then
-		USE=$USE_OVERRIDE emerge --pretend --verbose --changed-use --deep --noreplace --tree \
+		# shellcheck disable=SC2086
+		USE=$USE_OVERRIDE emerge $BINPKG_OPTION --pretend --verbose --changed-use --deep --noreplace --tree \
 			dev-util/prismdrake-dev-env
 	else
-		emerge --pretend --verbose --changed-use --deep --noreplace --tree \
+		# shellcheck disable=SC2086
+		emerge $BINPKG_OPTION --pretend --verbose --changed-use --deep --noreplace --tree \
 			dev-util/prismdrake-dev-env
 	fi
 }
@@ -264,6 +278,8 @@ pretend_combination no-qt6 '-qt6'
 pretend_combination clang 'clang'
 pretend_combination implementation-deps 'implementation-deps'
 pretend_combination visual-tests 'visual-tests'
-emerge --ask --verbose --changed-use --deep --noreplace dev-util/prismdrake-dev-env
+# shellcheck disable=SC2086
+emerge $BINPKG_OPTION --ask --verbose --changed-use --deep --noreplace \
+	dev-util/prismdrake-dev-env
 
 "$SCRIPT_DIR/verify-vm.sh" --workspace "$WORKSPACE" --shared-path "$SHARED_PATH"

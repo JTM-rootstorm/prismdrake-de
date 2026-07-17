@@ -147,12 +147,18 @@ After reviewing the plan, apply guest-local configuration and package changes:
 
 ```sh
 tools/gentoo/bootstrap-vm.sh --apply \
+  --use-binpkgs \
   --workspace /mnt/shared/prismdrake-de \
   --shared-path /mnt/shared
 ```
 
 Add `--sync` only when the canonical Gentoo repository should be synchronized
-before resolution. The apply path:
+before resolution. `--use-binpkgs` explicitly asks Portage to use the guest's
+configured binary repositories when their signatures, package versions, and
+USE settings match. Inspect the reported repository provenance, ignored
+binaries, and source fallbacks in every pretend result; do not use
+`--binpkg-respect-use=n` to bypass the reviewed accessibility or X11 policy.
+Omit the option when source-only evidence is required. The apply path:
 
 1. verifies Gentoo, architecture, memory, disk, virtiofs, ownership mode, and
    local repository metadata;
