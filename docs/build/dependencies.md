@@ -53,13 +53,19 @@ carry a verified or observed version.
   The complete Gentoo dynamic closure is measured in the
   [settings-service evidence](../research/pd1-settings-service-evidence.md);
   supported provider and broker minima remain unmeasured.
+- `prismdrake-x11` is an Experimental internal library. It directly links
+  system core XCB 1.17.0 for its checked connection and selected-screen probe;
+  Xvfb 21.1.24 supplies isolated real-server tests. These observed versions are
+  not supported minima. EWMH, RandR, dock, and event dependencies remain
+  unresolved until their implementation slices select and measure them.
 - `prismdrake-session` and `prismdrake-shell` remain planned component
   manifests. The Qt and XCB versions come from the 2026-07-16 Gentoo reference
   VM evidence and remain observations rather than supported minima.
 - The settings service uses a mutex-protected immutable snapshot pointer and a
   single bounded worker; it introduced no atomic-storage dependency. Production
-  runtime-closure evidence, accessibility linkage, and init-neutral supervisor
-  support remain explicit unresolved areas rather than invented package claims.
+  runtime-closure evidence, accessibility linkage, and the supervisor
+  executable remain explicit unresolved areas rather than invented package
+  claims.
 
 Mandatory core runtime entries may not name GNOME Shell, Mutter,
 `gnome-settings-daemon`, `gnome-control-center`, or libadwaita. GTK itself is

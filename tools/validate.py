@@ -73,6 +73,7 @@ DEPENDENCY_MANIFEST_COMPONENTS = {
     "prismdrake-session": "core_service",
     "prismdrake-settingsd": "core_service",
     "prismdrake-shell": "visible_shell",
+    "prismdrake-x11": "internal_library",
 }
 FORBIDDEN_CORE_RUNTIME_DEPENDENCIES = {
     "gnome-shell",
@@ -146,7 +147,9 @@ REQUIRED_FILES = (
     "manifests/dependencies/prismdrake-session.json",
     "manifests/dependencies/prismdrake-settingsd.json",
     "manifests/dependencies/prismdrake-shell.json",
+    "manifests/dependencies/prismdrake-x11.json",
     "docs/build/dependencies.md",
+    "docs/research/pd1-x11-connection-evidence.md",
     "themes/base.tokens.json",
     "themes/lustre.tokens.json",
     "themes/forge.tokens.json",

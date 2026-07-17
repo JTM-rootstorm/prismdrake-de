@@ -41,6 +41,7 @@ describe a usable or production-ready desktop release.
 - [PD1 configuration-loader evidence](research/pd1-configuration-loader-evidence.md)
 - [PD1 theme-resolver evidence](research/pd1-theme-resolver-evidence.md)
 - [PD1 settings-service evidence](research/pd1-settings-service-evidence.md)
+- [PD1 X11 connection evidence](research/pd1-x11-connection-evidence.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
 
@@ -53,6 +54,7 @@ describe a usable or production-ready desktop release.
 - [Experimental runtime snapshot schema](../schemas/prismdrake-runtime-snapshot.schema.json)
 - [Dependency-manifest schema](../schemas/prismdrake-dependency-manifest.schema.json)
 - [Foundation dependency manifest](../manifests/dependencies/prismdrake-foundation.json)
+- [X11 dependency manifest](../manifests/dependencies/prismdrake-x11.json)
 - [Theme token documents](../themes/base.tokens.json)
 
 Run `make validate` from the repository root to check repository contracts and

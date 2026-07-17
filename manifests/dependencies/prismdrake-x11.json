@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "component": "prismdrake-x11",
+  "component_kind": "internal_library",
+  "implementation_status": "experimental",
+  "mandatory_core_startup": true,
+  "runtime_dependency_state": "measured",
+  "dependencies": [
+    {
+      "name": "libxcb",
+      "gentoo_atom": "x11-libs/libxcb",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "x11_transport",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.17.0",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The toolkit-neutral X11 connection directly uses system core XCB to select a screen and complete one checked server round trip."
+    },
+    {
+      "name": "xorg-server",
+      "gentoo_atom": "x11-base/xorg-server",
+      "scope": "test",
+      "relationship": "tool",
+      "feature": "isolated_x11_integration",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "21.1.24",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "A separately controlled X server may run the same transport integration binary.",
+      "reason": "The deterministic integration harness starts Xvfb through its displayfd interface and performs the real connection test without requiring a window manager."
+    }
+  ],
+  "unresolved": [
+    {
+      "area": "minimum_versions",
+      "reason": "Supported minimum libxcb and Xorg server versions remain unmeasured; the recorded versions are observations from the Gentoo reference VM."
+    },
+    {
+      "area": "remaining_adapter_scope",
+      "reason": "EWMH capabilities, bounded property reads, event decoding, dock properties, and output policy remain later PD1 work."
+    }
+  ]
+}
