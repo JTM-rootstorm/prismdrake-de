@@ -74,7 +74,10 @@ class CatalogExecutableTree final {
     entry.name = "Tool";
     entry.exec = "private;actual-exec-is-not-evaluated";
     entry.tryExec = std::move(tryExec);
-    return {std::move(identifier).value(), std::move(entry), visibility, 0U};
+    auto location = makeDiscoveredDesktopFileLocation("/fixture/applications", id, 0U);
+    EXPECT_TRUE(location);
+    return {std::move(identifier).value(), std::move(entry), visibility,
+            std::move(location).value()};
 }
 
 [[nodiscard]] std::shared_ptr<const DesktopEntryDiscoverySnapshot>
@@ -342,6 +345,37 @@ TEST(ApplicationCatalogTest, RejectsDuplicateDesktopIdsAndOversizedSnapshotVecto
     const auto tooLarge = createApplicationCatalog(oversized, lookup(tree), 1U);
     ASSERT_FALSE(tooLarge);
     EXPECT_EQ(tooLarge.error().code, ErrorCode::too_large);
+}
+
+TEST(ApplicationCatalogTest, RejectsDesktopIdAndRetainedLocationMismatch) {
+    CatalogExecutableTree tree;
+    auto mismatched = discovered("one.desktop");
+    auto otherLocation =
+        makeDiscoveredDesktopFileLocation("/fixture/applications", "two.desktop", 0U);
+    ASSERT_TRUE(otherLocation);
+    mismatched.location = std::move(otherLocation).value();
+
+    const auto result =
+        createApplicationCatalog(discovery({std::move(mismatched)}), lookup(tree), 1U);
+
+    ASSERT_FALSE(result);
+    EXPECT_EQ(result.error().code, ErrorCode::validation_error);
+}
+
+TEST(ApplicationCatalogTest, PreservesExactDiscoveredLocationInImmutableCatalogState) {
+    CatalogExecutableTree tree;
+    const auto source = discovery({discovered("nested-tool.desktop")});
+    auto catalog = operation(source, lookup(tree));
+
+    const auto snapshot = complete(catalog);
+
+    ASSERT_NE(snapshot, nullptr);
+    ASSERT_EQ(snapshot->discovery, source);
+    ASSERT_EQ(snapshot->discovery->entries.size(), 1U);
+    EXPECT_EQ(snapshot->discovery->entries[0].location.absolutePath(),
+              std::filesystem::path{"/fixture/applications/nested-tool.desktop"});
+    EXPECT_EQ(snapshot->discovery->entries[0].location.relativePath(), "nested-tool.desktop");
+    EXPECT_EQ(snapshot->discovery->entries[0].location.rootIndex(), 0U);
 }
 
 TEST(ApplicationCatalogTest, ValidatesLookupEnvelopeEvenForAnEmptyCatalog) {

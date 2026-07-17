@@ -37,7 +37,7 @@ Glasswyrm interface.
 |---|---|---|
 | `PD-LAUNCH-001` | Ordered application roots follow XDG data-directory precedence. Discovery derives Desktop Entry file identifiers, applies higher-root and tombstone shadowing, parses `Type=Application`, locale, visibility, `TryExec`, and execution metadata, and publishes only visible and eligible indices. | Icon-theme lookup, installed-session integration, filesystem monitoring, and a production refresh owner remain later work. |
 | `PD-LAUNCH-002` | Local search covers the selected localized `Name`, `GenericName`, `Keywords`, and `Categories` fields. An ordinary settings application represented by a desktop entry is searchable through the same fields. | There is no distinct settings-destination index or provider, so this model alone does not complete the full production requirement. |
-| `PD-LAUNCH-003` | `Exec` is parsed and expanded into bounded argument vectors. Actual and terminal executables are resolved from explicit inputs, launch plans contain exact argv, working directory, and environment values, and the detached boundary calls `execve()` directly. | D-Bus activation and desktop actions require separate paths. Production integration must continue to keep this synchronous boundary off the UI thread. |
+| `PD-LAUNCH-003` | `Exec` is parsed and expanded into bounded argument vectors. `%k` receives the exact validated discovered desktop-file location without exposing that path to QML. Actual and terminal executables are resolved from explicit inputs, launch plans contain exact argv, working directory, and environment values, and the detached boundary calls `execve()` directly. | D-Bus activation and desktop actions require separate paths. Production integration must continue to keep this synchronous boundary off the UI thread. |
 | `PD-LAUNCH-007` | Root precedence, relative-path traversal, identifier collisions, eligibility, ranking, truncation, and tie-breaking have stable ordering under identical inputs. Tests prove final discovery, catalog, and search results do not depend on pull-slice size or incoming visible-entry order. | Locale-aware collation is not claimed; any later collation policy must preserve a documented deterministic fallback. |
 | `PD-LAUNCH-008` | Search snapshots distinguish `loading`, `results`, `emptyCatalog`, `noResults`, and `error`, and carry catalog and request generations for stale-publication rejection. | No visual or assistive-technology presentation exists yet, so the user-facing state requirement remains a production UI responsibility. |
 | `PD-PERF-006` | Discovery, catalog construction, and search are caller-driven operations with explicit per-call work budgets and cancellation. They create no threads, and search performs no filesystem, display, provider, or process work. | Discovery does perform bounded synchronous filesystem work inside each pull. The shell must schedule pulls on an explicitly owned worker and publish only current generations; this PD1 library does not supply that dispatcher. |
@@ -145,6 +145,15 @@ malformed codes, and never rescans replacement data. The executable token cannot
 contain a field code or environment assignment. Unquoted reserved syntax and
 unsafe control content are rejected, while correctly quoted shell metacharacters
 remain literal argument bytes.
+
+Discovery retains one strongly validated lexical desktop-file location beside
+the private desktop-file identifier. The location preserves the exact accepted
+candidate path, including configured-root or regular-file symlinks, without
+canonicalizing precedence away. Catalog publication revalidates identifier and
+relative-location coherence. The path stays inside immutable C++ state and is
+supplied to `%k` expansion only at the launch boundary; it is not a QML property
+or user-visible diagnostic field. Synthetic location construction rejects
+traversal, controls, NULs, oversized paths, and out-of-range root indices.
 
 Executable lookup accepts an absolute path or a bare executable name. It uses an
 explicit PATH string and absolute lookup base, resolves empty and relative PATH

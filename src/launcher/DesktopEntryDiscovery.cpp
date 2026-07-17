@@ -44,6 +44,13 @@ struct Candidate final {
            native.end();
 }
 
+[[nodiscard]] bool containsUnsafeControl(std::string_view value) noexcept {
+    return std::ranges::any_of(value, [](char character) {
+        const auto byte = static_cast<unsigned char>(character);
+        return byte < 0x20U || byte == 0x7fU;
+    });
+}
+
 [[nodiscard]] bool hasDotTraversal(const std::filesystem::path &path) {
     return std::ranges::any_of(path, [](const auto &component) {
         return component == std::filesystem::path{"."} || component == std::filesystem::path{".."};
@@ -68,6 +75,45 @@ struct Candidate final {
 }
 
 } // namespace
+
+Result<DiscoveredDesktopFileLocation>
+makeDiscoveredDesktopFileLocation(const std::filesystem::path &applicationRoot,
+                                  std::string_view relativePath, std::size_t rootIndex) {
+    auto identifier = deriveDesktopFileId(relativePath);
+    if (!identifier) {
+        return Result<DiscoveredDesktopFileLocation>::failure(identifier.error());
+    }
+    if (rootIndex >= maximumDesktopDiscoveryRoots || applicationRoot.empty() ||
+        !applicationRoot.is_absolute() || containsNull(applicationRoot) ||
+        hasDotTraversal(applicationRoot) || containsUnsafeControl(applicationRoot.native()) ||
+        containsUnsafeControl(relativePath)) {
+        return Result<DiscoveredDesktopFileLocation>::failure(
+            {ErrorCode::invalid_argument, "The discovered desktop-file location is invalid.",
+             "Use bounded absolute roots and relative desktop paths without controls or "
+             "traversal."});
+    }
+    auto absolute = (applicationRoot / std::filesystem::path{relativePath}).lexically_normal();
+    if (!absolute.is_absolute() ||
+        absolute.native().size() > maximumDiscoveredDesktopFileLocationBytes) {
+        return Result<DiscoveredDesktopFileLocation>::failure(
+            {ErrorCode::too_large, "The discovered desktop-file location exceeds its limit.",
+             "Use a shorter application root and relative desktop path."});
+    }
+    return Result<DiscoveredDesktopFileLocation>::success(
+        DiscoveredDesktopFileLocation{std::move(absolute), std::string{relativePath}, rootIndex});
+}
+
+Result<void> validateDiscoveredDesktopFileLocation(const DesktopFileId &id,
+                                                   const DiscoveredDesktopFileLocation &location) {
+    auto derived = deriveDesktopFileId(location.relativePath());
+    if (!derived || derived.value() != id) {
+        return Result<void>::failure(
+            {ErrorCode::validation_error,
+             "The discovered desktop-file identity and location do not match.",
+             "Rebuild one authoritative discovery snapshot from matching path provenance."});
+    }
+    return Result<void>::success();
+}
 
 struct DesktopEntryDiscovery::Impl final {
     Impl(ApplicationPaths applicationPaths, DesktopEntryParseContext entryParseContext,
@@ -354,8 +400,14 @@ struct DesktopEntryDiscovery::Impl final {
         }
 
         const auto visibility = evaluateDesktopEntryVisibility(entry.value(), currentDesktop);
-        snapshot.entries.push_back(
-            {std::move(id).value(), std::move(entry).value(), visibility, rootIndex});
+        auto location = makeDiscoveredDesktopFileLocation(paths.applicationDirectories[rootIndex],
+                                                          candidate.relativePath, rootIndex);
+        if (!location) {
+            addDiagnostic(DesktopEntryDiscoveryDiagnosticCode::relativePathRejected);
+            return;
+        }
+        snapshot.entries.push_back({std::move(id).value(), std::move(entry).value(), visibility,
+                                    std::move(location).value()});
         const auto index = snapshot.entries.size() - 1U;
         if (isVisible(visibility)) {
             snapshot.visibleEntryIndices.push_back(index);

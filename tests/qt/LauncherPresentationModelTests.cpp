@@ -92,8 +92,13 @@ class ScopedQtWarningCapture final {
     entry.exec = "private --exec %U";
     entry.path = "/private/working/directory";
     entry.terminal = terminal;
+    auto location =
+        prismdrake::launcher::makeDiscoveredDesktopFileLocation("/fixture/applications", id, 0U);
+    if (!location) {
+        throw std::runtime_error(location.error().message);
+    }
     return {std::move(identifier).value(), std::move(entry),
-            DesktopEntryVisibilityReason::visibleByDefault, 0U};
+            DesktopEntryVisibilityReason::visibleByDefault, std::move(location).value()};
 }
 
 [[nodiscard]] std::shared_ptr<const ApplicationCatalogSnapshot>
@@ -202,8 +207,12 @@ Terminal=true
     ASSERT_TRUE(parsed);
     auto identifier = prismdrake::launcher::deriveDesktopFileId("localized.desktop");
     ASSERT_TRUE(identifier);
-    const auto source = catalog({{std::move(identifier).value(), std::move(parsed).value(),
-                                  DesktopEntryVisibilityReason::visibleByDefault, 0U}});
+    auto location = prismdrake::launcher::makeDiscoveredDesktopFileLocation(
+        "/fixture/applications", "localized.desktop", 0U);
+    ASSERT_TRUE(location);
+    const auto source =
+        catalog({{std::move(identifier).value(), std::move(parsed).value(),
+                  DesktopEntryVisibilityReason::visibleByDefault, std::move(location).value()}});
     auto operation = searchOperation(source, "calculatrice", 1U);
     LauncherPresentationModel model;
     ASSERT_TRUE(model.applySnapshot(source, complete(operation)));
@@ -216,8 +225,9 @@ Terminal=true
     EXPECT_EQ(result->icon(), QStringLiteral("accessories-calculator"));
     EXPECT_TRUE(result->terminalRequired());
     const auto *metadata = result->metaObject();
-    for (const char *property : {"desktopFileId", "discoveryEntryIndex", "catalogGeneration",
-                                 "requestGeneration", "path", "exec"}) {
+    for (const char *property :
+         {"desktopFileId", "discoveryEntryIndex", "catalogGeneration", "requestGeneration", "path",
+          "exec", "desktopFileLocation", "sourceLocation"}) {
         EXPECT_EQ(metadata->indexOfProperty(property), -1) << property;
     }
 }

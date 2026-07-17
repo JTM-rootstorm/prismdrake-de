@@ -199,8 +199,52 @@ TEST(DesktopEntryDiscoveryTest,
 
     ASSERT_EQ(completed.snapshot->entries.size(), 2U);
     EXPECT_EQ(completed.snapshot->entries[0].id.value(), "linked.desktop");
+    EXPECT_EQ(completed.snapshot->entries[0].location.absolutePath(),
+              linkedRoot / "linked.desktop");
+    EXPECT_EQ(completed.snapshot->entries[0].location.relativePath(), "linked.desktop");
+    EXPECT_EQ(completed.snapshot->entries[0].location.rootIndex(), 0U);
     EXPECT_EQ(completed.snapshot->entries[1].id.value(), "real.desktop");
+    EXPECT_EQ(completed.snapshot->entries[1].location.absolutePath(), linkedRoot / "real.desktop");
+    EXPECT_EQ(completed.snapshot->entries[1].location.relativePath(), "real.desktop");
+    EXPECT_EQ(completed.snapshot->entries[1].location.rootIndex(), 0U);
     EXPECT_EQ(completed.snapshot->claimedDesktopFileIds, 2U);
+}
+
+TEST(DesktopEntryDiscoveryTest, RejectsUnsafeOrOversizedSyntheticLocations) {
+    const auto outOfRangeRoot = makeDiscoveredDesktopFileLocation(
+        "/fixture/applications", "tool.desktop", maximumDesktopDiscoveryRoots);
+    ASSERT_FALSE(outOfRangeRoot);
+    EXPECT_EQ(outOfRangeRoot.error().code, ErrorCode::invalid_argument);
+
+    const auto traversal = makeDiscoveredDesktopFileLocation(
+        "/fixture/applications", "nested/../private-traversal.desktop", 0U);
+    ASSERT_FALSE(traversal);
+    EXPECT_EQ(traversal.error().code, ErrorCode::invalid_argument);
+    EXPECT_EQ(traversal.error().message.find("private-traversal"), std::string::npos);
+
+    const std::string controlledRelative{"private-control\n.desktop"};
+    const auto relativeControl =
+        makeDiscoveredDesktopFileLocation("/fixture/applications", controlledRelative, 0U);
+    ASSERT_FALSE(relativeControl);
+    EXPECT_EQ(relativeControl.error().code, ErrorCode::invalid_argument);
+    EXPECT_EQ(relativeControl.error().message.find("private-control"), std::string::npos);
+
+    const std::filesystem::path controlledRoot{std::string{"/private-control\nroot"}};
+    const auto rootControl = makeDiscoveredDesktopFileLocation(controlledRoot, "tool.desktop", 0U);
+    ASSERT_FALSE(rootControl);
+    EXPECT_EQ(rootControl.error().code, ErrorCode::invalid_argument);
+    EXPECT_EQ(rootControl.error().message.find("private-control"), std::string::npos);
+
+    const std::string nulRelative{"private-nul\0.desktop", 20U};
+    const auto nul = makeDiscoveredDesktopFileLocation("/fixture/applications", nulRelative, 0U);
+    ASSERT_FALSE(nul);
+    EXPECT_EQ(nul.error().code, ErrorCode::invalid_argument);
+
+    const std::filesystem::path oversizedRoot{
+        "/" + std::string(maximumDiscoveredDesktopFileLocationBytes, 'a')};
+    const auto oversized = makeDiscoveredDesktopFileLocation(oversizedRoot, "tool.desktop", 0U);
+    ASSERT_FALSE(oversized);
+    EXPECT_EQ(oversized.error().code, ErrorCode::too_large);
 }
 
 TEST(DesktopEntryDiscoveryTest, CancellationStopsBeforeWorkAndAFreshTokenResumes) {

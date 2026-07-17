@@ -53,6 +53,10 @@ catalogReason(DesktopTryExecEligibilityReason reason) noexcept {
     visibleIndices.reserve(discovery.visibleEntryIndices.size());
     desktopFileIds.reserve(discovery.entries.size());
     for (const auto &entry : discovery.entries) {
+        auto location = validateDiscoveredDesktopFileLocation(entry.id, entry.location);
+        if (!location) {
+            return location;
+        }
         if (!desktopFileIds.insert(entry.id.value()).second) {
             return Result<void>::failure(
                 {ErrorCode::validation_error,

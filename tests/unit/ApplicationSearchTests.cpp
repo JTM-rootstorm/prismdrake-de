@@ -35,8 +35,10 @@ using foundation::ErrorCode;
     entry.keywords = std::move(keywords);
     entry.categories = std::move(categories);
     entry.exec = "tool";
+    auto location = makeDiscoveredDesktopFileLocation("/fixture/applications", id, 0U);
+    EXPECT_TRUE(location);
     return {std::move(identifier).value(), std::move(entry),
-            DesktopEntryVisibilityReason::visibleByDefault, 0U};
+            DesktopEntryVisibilityReason::visibleByDefault, std::move(location).value()};
 }
 
 [[nodiscard]] std::shared_ptr<const DesktopEntryDiscoverySnapshot>
@@ -194,8 +196,12 @@ Exec=tool
     ASSERT_TRUE(parsed);
     auto identifier = deriveDesktopFileId("localized.desktop");
     ASSERT_TRUE(identifier);
-    const auto source = catalog({{std::move(identifier).value(), parsed.value(),
-                                  DesktopEntryVisibilityReason::visibleByDefault, 0U}});
+    auto location =
+        makeDiscoveredDesktopFileLocation("/fixture/applications", "localized.desktop", 0U);
+    ASSERT_TRUE(location);
+    const auto source =
+        catalog({{std::move(identifier).value(), parsed.value(),
+                  DesktopEntryVisibilityReason::visibleByDefault, std::move(location).value()}});
 
     for (const std::string_view text : {"calculatrice", "utilitaire", "calcul", "utility"}) {
         auto search = operation(source, text);

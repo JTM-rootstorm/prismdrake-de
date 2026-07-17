@@ -10,7 +10,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace prismdrake::launcher {
@@ -22,6 +26,7 @@ inline constexpr std::size_t maximumDesktopDiscoveryCandidatesPerRoot = 16384U;
 inline constexpr std::size_t maximumDesktopDiscoveryEntries = 16384U;
 inline constexpr std::size_t maximumDesktopDiscoveryDiagnostics = 256U;
 inline constexpr std::size_t maximumDesktopDiscoveryDepth = 64U;
+inline constexpr std::size_t maximumDiscoveredDesktopFileLocationBytes = 64U * 1024U;
 
 /// Caller-tunable limits capped by the compile-time discovery envelope.
 struct DesktopEntryDiscoveryLimits final {
@@ -58,12 +63,52 @@ struct DesktopEntryDiscoveryDiagnostic final {
                            const DesktopEntryDiscoveryDiagnostic &) = default;
 };
 
+/// Validated lexical provenance for one discovered desktop file.
+///
+/// The absolute path is the exact candidate path used for bounded reads, including an accepted
+/// regular-file symlink or a configured root symlink. It is not canonicalized. Relative identity
+/// and root precedence remain available for catalog revalidation without exposing paths to QML.
+class DiscoveredDesktopFileLocation final {
+  public:
+    [[nodiscard]] const std::filesystem::path &absolutePath() const noexcept {
+        return absolute_path_;
+    }
+    [[nodiscard]] const std::string &relativePath() const noexcept { return relative_path_; }
+    [[nodiscard]] std::size_t rootIndex() const noexcept { return root_index_; }
+
+    friend bool operator==(const DiscoveredDesktopFileLocation &,
+                           const DiscoveredDesktopFileLocation &) = default;
+
+  private:
+    DiscoveredDesktopFileLocation(std::filesystem::path absolutePath, std::string relativePath,
+                                  std::size_t rootIndex)
+        : absolute_path_(std::move(absolutePath)), relative_path_(std::move(relativePath)),
+          root_index_(rootIndex) {}
+
+    std::filesystem::path absolute_path_;
+    std::string relative_path_;
+    std::size_t root_index_;
+
+    friend foundation::Result<DiscoveredDesktopFileLocation>
+    makeDiscoveredDesktopFileLocation(const std::filesystem::path &, std::string_view, std::size_t);
+};
+
+/// Validates lexical root/relative provenance without resolving symlinks or accessing a file.
+[[nodiscard]] foundation::Result<DiscoveredDesktopFileLocation>
+makeDiscoveredDesktopFileLocation(const std::filesystem::path &applicationRoot,
+                                  std::string_view relativePath, std::size_t rootIndex);
+
+/// Revalidates that a retained relative location derives the accompanying desktop-file identity.
+[[nodiscard]] foundation::Result<void>
+validateDiscoveredDesktopFileLocation(const DesktopFileId &id,
+                                      const DiscoveredDesktopFileLocation &location);
+
 /// One successfully parsed desktop entry, including non-launchable tombstones.
 struct DiscoveredDesktopEntry final {
     DesktopFileId id;
     DesktopEntry entry;
     DesktopEntryVisibilityReason visibility;
-    std::size_t rootIndex;
+    DiscoveredDesktopFileLocation location;
 
     friend bool operator==(const DiscoveredDesktopEntry &,
                            const DiscoveredDesktopEntry &) = default;
