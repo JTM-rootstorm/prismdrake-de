@@ -8,6 +8,8 @@ add_library(prismdrake-launcher-model STATIC
     DesktopEntryParser.hpp
     DesktopEntryVisibility.cpp
     DesktopEntryVisibility.hpp
+    DesktopExecutable.cpp
+    DesktopExecutable.hpp
     DesktopExec.cpp
     DesktopExec.hpp
     DesktopFileId.cpp
