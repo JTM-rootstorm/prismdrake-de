@@ -29,17 +29,17 @@ FocusScope {
             return
         }
         // Repeater.itemAt() is statically a QQuickItem; every delegate is a NotificationCard.
-        // qmllint disable missing-property
+        // qmllint disable
         if (backward)
             candidate["focusLastAvailable"]()
         else
             candidate["focusCard"]()
-        // qmllint enable missing-property
+        // qmllint enable
     }
 
     function captureFocusRecovery() {
         // Repeater.itemAt() is statically a QQuickItem; every delegate is a NotificationCard.
-        // qmllint disable missing-property
+        // qmllint disable
         pendingFocusRecovery = null
         for (let index = 0; index < cardRepeater.count; ++index) {
             const candidate = cardRepeater.itemAt(index)
@@ -52,12 +52,12 @@ FocusScope {
                 return
             }
         }
-        // qmllint enable missing-property
+        // qmllint enable
     }
 
     function recoverFocus() {
         // Repeater.itemAt() is statically a QQuickItem; every delegate is a NotificationCard.
-        // qmllint disable missing-property
+        // qmllint disable
         const recovery = pendingFocusRecovery
         pendingFocusRecovery = null
         if (recovery === null)
@@ -82,7 +82,7 @@ FocusScope {
             fallback["focusCard"]()
         else
             root.focusExitForward()
-        // qmllint enable missing-property
+        // qmllint enable
     }
 
     implicitWidth: cardWidth

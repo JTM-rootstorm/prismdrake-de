@@ -46,7 +46,15 @@ jobs:
       - name: Install system build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends dbus libsystemd-dev libxcb1-dev libxcb-randr0-dev ninja-build libgtest-dev libtomlplusplus-dev nlohmann-json3-dev qt6-base-dev qt6-declarative-dev qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qttest xvfb ${{ matrix.packages }}
+          sudo apt-get install --no-install-recommends \
+            dbus libsystemd-dev libxcb1-dev libxcb-randr0-dev ninja-build \
+            libgtest-dev libtomlplusplus-dev nlohmann-json3-dev \
+            qt6-base-dev qt6-declarative-dev \
+            qml6-module-qtqml qml6-module-qtqml-models \
+            qml6-module-qtqml-workerscript qml6-module-qtquick \
+            qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-templates qml6-module-qtquick-window \
+            qml6-module-qttest xvfb ${{ matrix.packages }}
 
       - name: Record Qt component versions
         run: pkg-config --modversion Qt6Core Qt6Qml Qt6Quick Qt6QuickControls2
@@ -75,7 +83,14 @@ jobs:
       - name: Install formatter
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends ninja-build clang-format-18 libsystemd-dev libtomlplusplus-dev libxcb1-dev libxcb-randr0-dev nlohmann-json3-dev qt6-base-dev qt6-declarative-dev qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts
+          sudo apt-get install --no-install-recommends \
+            ninja-build clang-format-18 libsystemd-dev libtomlplusplus-dev \
+            libxcb1-dev libxcb-randr0-dev nlohmann-json3-dev \
+            qt6-base-dev qt6-declarative-dev \
+            qml6-module-qtqml qml6-module-qtqml-models \
+            qml6-module-qtqml-workerscript qml6-module-qtquick \
+            qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-templates qml6-module-qtquick-window
 
       - name: Configure without tests
         run: >-
