@@ -10,6 +10,7 @@ add_executable(prismdrake-foundation-tests
     DiagnosticsTests.cpp
     FoundationPrimitivesTests.cpp
     ResultTests.cpp
+    RestartPolicyTests.cpp
     ServiceOptionsTests.cpp
     ServiceWorkerTests.cpp
     SettingsEngineTests.cpp
@@ -19,6 +20,7 @@ add_executable(prismdrake-foundation-tests
 target_link_libraries(prismdrake-foundation-tests
     PRIVATE
         Prismdrake::foundation
+        Prismdrake::session-core
         Prismdrake::settings-service
         Prismdrake::settings-core
         Prismdrake::config

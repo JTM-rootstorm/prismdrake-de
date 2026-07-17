@@ -57,6 +57,7 @@ endif()
 add_subdirectory(src/theme)
 add_subdirectory(src/settings)
 add_subdirectory(src/settingsd)
+add_subdirectory(src/session)
 
 if(BUILD_TESTING)
     find_package(GTest QUIET)
@@ -113,6 +114,8 @@ prismdrake_add_format_check(
     src/settingsd/SettingsService.cpp
     src/settingsd/SettingsService.hpp
     src/settingsd/main.cpp
+    src/session/RestartPolicy.cpp
+    src/session/RestartPolicy.hpp
     tests/integration/SettingsServiceTests.cpp
     tests/unit/ServiceOptionsTests.cpp
     tests/unit/ServiceWorkerTests.cpp
@@ -124,6 +127,7 @@ prismdrake_add_format_check(
     tests/unit/DiagnosticsTests.cpp
     tests/unit/FoundationPrimitivesTests.cpp
     tests/unit/ResultTests.cpp
+    tests/unit/RestartPolicyTests.cpp
     tests/unit/SettingsEngineTests.cpp
     tests/unit/ThemeParserTests.cpp
     tests/unit/ThemeResolverTests.cpp
