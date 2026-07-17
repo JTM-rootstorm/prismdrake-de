@@ -3,7 +3,7 @@
 The Gentoo VM is Prismdrake's PD1 reference environment for dependency
 resolution, toolkit evidence, X11 integration, and local Portage QA. It is a
 development and system-test environment, not a supported Prismdrake runtime or
-a claim that the Proposed toolkit and build decisions are Accepted.
+evidence that the PD1 prototype is production-ready.
 
 This document implements the environment-facing parts of `PD-DOC-001`,
 `PD-DOC-008`, `PD-OBS-004`, and `PD-SEC-008`. The bootstrap helper changes only
@@ -132,7 +132,11 @@ tools/gentoo/verify-vm.sh \
 
 Before bootstrap, failures for an unregistered `prismdrake-local`, missing
 `pkgcheck`, and absent test tools are expected detected differences. The script
-does not write guest configuration, install packages, or modify the host.
+does not write guest configuration, install packages, or modify the host. A
+read-only or non-virtiofs share, malformed resource observation, or a guest
+below the 5 GiB disk and 4 GiB memory safety floors is a verification failure,
+not a warning. Verification also checks `gdbus` and the installed AT-SPI bus
+launcher directly.
 
 Preview the bootstrap next:
 
@@ -165,9 +169,12 @@ Omit the option when source-only evidence is required. The apply path:
 2. requires the shared checkout owner to map to an ordinary guest account and
    runs repository QA as that account;
 3. pretends and asks before installing the canonical Gentoo Layer A QA tools;
-4. backs up only project-owned Portage files that it needs to change;
+4. backs up only project-owned Portage files that it needs to change under
+   `/etc/portage/prismdrake-backups`, outside Portage's active configuration
+   directories, using collision-resistant names;
 5. writes `prismdrake-local.conf`, `package.use/prismdrake-dev`, and the narrow
-   `package.accept_keywords/prismdrake-dev` exception atomically;
+   `package.accept_keywords/prismdrake-dev` exception atomically with mode
+   `0644`, including when existing content already matches;
 6. confirms with both `portageq` and `eselect` that Portage resolves the live
    shared overlay rather than a stale copy;
 7. runs `pkgdev manifest` and `pkgcheck scan` before local package resolution;

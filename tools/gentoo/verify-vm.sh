@@ -4,6 +4,8 @@
 set -u
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
+# shellcheck source=tools/gentoo/vm-checks.sh
+. "$SCRIPT_DIR/vm-checks.sh"
 DEFAULT_WORKSPACE=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd -P)
 WORKSPACE=${PRISMDRAKE_WORKSPACE:-$DEFAULT_WORKSPACE}
 SHARED_PATH=${PRISMDRAKE_SHARED_PATH:-/mnt/shared}
@@ -102,6 +104,13 @@ printf '\nResources\n'
 uname -r 2>/dev/null || true
 awk '/MemTotal:/ { printf "memory: %.1f GiB\n", $2 / 1048576 }' /proc/meminfo 2>/dev/null || true
 df -h / 2>/dev/null || warn 'could not inspect root filesystem capacity'
+AVAILABLE_KIB=$(df -Pk / 2>/dev/null | awk 'NR == 2 { print $4 }' || true)
+MEMORY_KIB=$(awk '/MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || true)
+if RESOURCE_ERROR=$(prismdrake_validate_resources "$AVAILABLE_KIB" "$MEMORY_KIB"); then
+	pass 'guest meets the 5 GiB disk and 4 GiB memory safety floors'
+else
+	fail "$RESOURCE_ERROR"
+fi
 
 printf '\nShared artifact mount\n'
 if [ ! -d "$SHARED_PATH" ]; then
@@ -109,25 +118,22 @@ if [ ! -d "$SHARED_PATH" ]; then
 elif command -v findmnt >/dev/null 2>&1; then
 	MOUNT_TYPE=$(findmnt -T "$SHARED_PATH" -n -o FSTYPE 2>/dev/null || true)
 	MOUNT_OPTIONS=$(findmnt -T "$SHARED_PATH" -n -o OPTIONS 2>/dev/null || true)
-	case "$MOUNT_TYPE" in
-		virtiofs) pass 'shared path is on virtiofs' ;;
-		'') fail 'no mount contains the shared path' ;;
-		*) fail 'shared path is not on virtiofs' ;;
-	esac
-	case ",$MOUNT_OPTIONS," in
-		*,rw,*) pass 'shared artifact mount is read-write' ;;
-		*) warn 'shared artifact mount is not reported read-write' ;;
-	esac
+	if MOUNT_ERROR=$(prismdrake_validate_mount_state "$MOUNT_TYPE" "$MOUNT_OPTIONS"); then
+		pass 'shared path is on read-write virtiofs'
+	else
+		fail "shared path: $MOUNT_ERROR"
+	fi
 	OWNER_MODE=$(stat -c '%u:%g %a' "$SHARED_PATH" 2>/dev/null || true)
 	if [ -n "$OWNER_MODE" ]; then
 		printf 'INFO: shared artifact ownership and mode: %s\n' "$OWNER_MODE"
 		MODE=${OWNER_MODE##* }
-		OTHER_DIGIT=$((MODE % 10))
-		if [ $((OTHER_DIGIT & 2)) -ne 0 ]; then
-			fail 'shared artifact mount is world-writable'
-		else
+		if MODE_ERROR=$(prismdrake_validate_mode "$MODE" "$SHARED_PATH"); then
 			pass 'shared artifact mount is not world-writable'
+		else
+			fail "$MODE_ERROR"
 		fi
+	else
+		fail 'could not inspect shared artifact ownership and mode'
 	fi
 else
 	fail 'findmnt is unavailable'
@@ -140,11 +146,17 @@ else
 		"$SHARED_PATH/"*) pass 'workspace is contained by the shared path' ;;
 		*) fail 'workspace is not contained by the shared path' ;;
 	esac
-	if command -v findmnt >/dev/null 2>&1 &&
-		[ "$(findmnt -T "$WORKSPACE" -n -o FSTYPE 2>/dev/null)" = virtiofs ]; then
-		pass 'workspace itself is on virtiofs'
+	if command -v findmnt >/dev/null 2>&1; then
+		WORKSPACE_MOUNT_TYPE=$(findmnt -T "$WORKSPACE" -n -o FSTYPE 2>/dev/null || true)
+		WORKSPACE_MOUNT_OPTIONS=$(findmnt -T "$WORKSPACE" -n -o OPTIONS 2>/dev/null || true)
+		if MOUNT_ERROR=$(prismdrake_validate_mount_state \
+			"$WORKSPACE_MOUNT_TYPE" "$WORKSPACE_MOUNT_OPTIONS"); then
+			pass 'workspace itself is on read-write virtiofs'
+		else
+			fail "workspace: $MOUNT_ERROR"
+		fi
 	else
-		fail 'workspace itself is not on virtiofs'
+		fail 'findmnt is unavailable for workspace inspection'
 	fi
 fi
 
@@ -162,46 +174,60 @@ for EDIT_PATH in "$WORKSPACE" "$PORTAGE_REPO"; do
 		continue
 	fi
 	EDIT_MODE=${EDIT_OWNER_GROUP_MODE##* }
-	EDIT_OTHER_DIGIT=$((EDIT_MODE % 10))
-	if [ $((EDIT_OTHER_DIGIT & 2)) -ne 0 ]; then
-		fail "source path is world-writable: $EDIT_PATH"
+	if ! MODE_ERROR=$(prismdrake_validate_mode "$EDIT_MODE" "$EDIT_PATH"); then
+		fail "$MODE_ERROR"
 	fi
 	EDIT_USER=$(getent passwd "$EDIT_OWNER" 2>/dev/null | cut -d: -f1)
-	if [ -z "$EDIT_USER" ]; then
-		fail "source owner UID $EDIT_OWNER has no guest account"
-	elif [ "$EDIT_OWNER" -eq 0 ]; then
-		fail "source path is root-owned instead of editable by an ordinary user: $EDIT_PATH"
-	elif [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1; then
-		if runuser -u "$EDIT_USER" -- test -r "$EDIT_PATH" &&
-			runuser -u "$EDIT_USER" -- test -w "$EDIT_PATH"; then
-			pass "$EDIT_USER can read and write $EDIT_PATH without world-write"
+	EDIT_READABLE=unchecked
+	EDIT_WRITABLE=unchecked
+	if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1 && [ -n "$EDIT_USER" ]; then
+		EDIT_READABLE=false
+		EDIT_WRITABLE=false
+		runuser -u "$EDIT_USER" -- test -r "$EDIT_PATH" && EDIT_READABLE=true
+		runuser -u "$EDIT_USER" -- test -w "$EDIT_PATH" && EDIT_WRITABLE=true
+	elif prismdrake_is_unsigned_integer "$EDIT_OWNER" &&
+		[ "$(id -u)" -eq "$EDIT_OWNER" ]; then
+		EDIT_READABLE=false
+		EDIT_WRITABLE=false
+		[ -r "$EDIT_PATH" ] && EDIT_READABLE=true
+		[ -w "$EDIT_PATH" ] && EDIT_WRITABLE=true
+	fi
+	if [ "$EDIT_READABLE" = unchecked ]; then
+		if ! OWNER_ERROR=$(prismdrake_validate_owner_state \
+			"$EDIT_OWNER" "$EDIT_USER" true true); then
+			fail "$EDIT_PATH: $OWNER_ERROR"
 		else
-			fail "$EDIT_USER cannot read and write $EDIT_PATH"
+			fail "ordinary-user access was not checked for $EDIT_PATH; run verification as root or its owner"
 		fi
+	elif OWNER_ERROR=$(prismdrake_validate_owner_state \
+		"$EDIT_OWNER" "$EDIT_USER" "$EDIT_READABLE" "$EDIT_WRITABLE"); then
+		pass "$EDIT_USER can read and write $EDIT_PATH without world-write"
 	else
-		warn "ordinary-user access was not checked for $EDIT_PATH; run verification as root"
+		fail "$EDIT_PATH: $OWNER_ERROR"
 	fi
 done
 
 printf '\nLocal Portage repository\n'
-if [ -r "$PORTAGE_REPO/profiles/repo_name" ] &&
-	[ "$(cat "$PORTAGE_REPO/profiles/repo_name")" = prismdrake-local ]; then
+OVERLAY_VALID=false
+REPOSITORY_NAME=$(cat "$PORTAGE_REPO/profiles/repo_name" 2>/dev/null || true)
+if REPO_NAME_ERROR=$(prismdrake_validate_repo_name "$REPOSITORY_NAME"); then
 	pass 'tracked prismdrake-local metadata is present'
+	OVERLAY_VALID=true
 else
-	fail "tracked prismdrake-local metadata is missing from $WORKSPACE"
+	fail "$PORTAGE_REPO: $REPO_NAME_ERROR"
 fi
 
 REGISTERED_REPO=
+REGISTERED_REPO_VALID=false
 if command -v portageq >/dev/null 2>&1; then
 	REGISTERED_REPO=$(portageq get_repo_path / prismdrake-local 2>/dev/null || true)
-	if [ -n "$REGISTERED_REPO" ]; then
+	EXPECTED_REPO=$(readlink -f "$PORTAGE_REPO" 2>/dev/null || true)
+	RESOLVED_REPO=$(readlink -f "$REGISTERED_REPO" 2>/dev/null || true)
+	if REPO_ERROR=$(prismdrake_validate_registered_repo "$EXPECTED_REPO" "$RESOLVED_REPO"); then
 		pass 'Portage recognizes prismdrake-local'
-		if [ -d "$PORTAGE_REPO" ] &&
-			[ "$(readlink -f "$REGISTERED_REPO" 2>/dev/null)" != "$(readlink -f "$PORTAGE_REPO" 2>/dev/null)" ]; then
-			fail "registered prismdrake-local does not point at $WORKSPACE"
-		fi
+		REGISTERED_REPO_VALID=true
 	else
-		fail 'Portage does not recognize prismdrake-local'
+		fail "$REPO_ERROR"
 	fi
 else
 	fail 'portageq is unavailable'
@@ -214,7 +240,7 @@ else
 fi
 
 printf '\nRepository QA\n'
-if command -v pkgcheck >/dev/null 2>&1; then
+if [ "$OVERLAY_VALID" = true ] && command -v pkgcheck >/dev/null 2>&1; then
 	QA_REPO=$(mktemp -d /tmp/prismdrake-repository-qa.XXXXXX)
 	PKGCHECK_CACHE=$(mktemp -d /tmp/prismdrake-pkgcheck.XXXXXX)
 	trap 'rm -rf "$QA_REPO" "$PKGCHECK_CACHE"' EXIT HUP INT TERM
@@ -226,21 +252,35 @@ if command -v pkgcheck >/dev/null 2>&1; then
 	fi
 	rm -rf "$QA_REPO" "$PKGCHECK_CACHE"
 	trap - EXIT HUP INT TERM
+elif [ "$OVERLAY_VALID" != true ]; then
+	printf 'INFO: pkgcheck scan skipped because tracked repository metadata is invalid or unavailable\n'
 else
 	fail 'pkgcheck is unavailable; enable prismdrake-dev-env[portage-qa]'
 fi
 
 printf '\nTool availability\n'
-for TOOL in gcc cmake ninja git gdb strace valgrind lsof Xvfb Xephyr openbox dbus-run-session qmake6; do
+for TOOL in gcc cmake ninja git gdb strace valgrind lsof Xvfb Xephyr openbox \
+	dbus-daemon dbus-run-session gdbus qmake6; do
 	if command -v "$TOOL" >/dev/null 2>&1; then
 		printf 'PASS: %-18s available\n' "$TOOL"
 	else
 		fail "$TOOL is unavailable"
 	fi
 done
+AT_SPI_LAUNCHER=
+if command -v qlist >/dev/null 2>&1 &&
+	qlist -IC app-accessibility/at-spi2-core >/dev/null 2>&1; then
+	AT_SPI_LAUNCHER=$(qlist -e app-accessibility/at-spi2-core 2>/dev/null |
+		awk '/\/at-spi-bus-launcher$/ { print; exit }')
+fi
+if [ -n "$AT_SPI_LAUNCHER" ] && [ -x "$AT_SPI_LAUNCHER" ]; then
+	pass "AT-SPI core bus launcher is installed and executable ($AT_SPI_LAUNCHER)"
+else
+	fail 'AT-SPI core or its bus launcher is unavailable'
+fi
 
 printf '\nPackage and USE resolution\n'
-if command -v emerge >/dev/null 2>&1 && [ -n "$REGISTERED_REPO" ]; then
+if command -v emerge >/dev/null 2>&1 && [ "$REGISTERED_REPO_VALID" = true ]; then
 	if command -v qlist >/dev/null 2>&1 &&
 		qlist -IC dev-util/prismdrake-dev-env >/dev/null 2>&1; then
 		pass 'development metapackage is installed'

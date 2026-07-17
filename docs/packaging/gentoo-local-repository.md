@@ -71,10 +71,9 @@ about the future Prismdrake runtime package.
 | `implementation-deps` | off | Candidate parser, D-Bus, and test libraries after decision approval |
 | `visual-tests` | off | Optional ImageMagick comparison, `xdotool` input, and XWD own-window capture tooling |
 
-Enabling `qt6` gathers evidence for Proposed ADR 0003. It does not Accept Qt 6
-Quick, CMake, or another architecture decision. Likewise,
-`implementation-deps` describes candidate packages and stays disabled until
-the corresponding implementation work is approved.
+The generic ebuild defaults keep `clang` and `implementation-deps` disabled.
+The implementation-authorized reference VM policy enables both for the
+accepted compiler matrix and PD1 parser, D-Bus, and test dependencies.
 
 ## Project-specific USE policy
 
@@ -83,7 +82,7 @@ in global `make.conf`:
 
 ```text
 # Prismdrake PD1 reference-VM policy; keep changes package-local.
-dev-util/prismdrake-dev-env portage-qa debug-tools x11 qt6 -clang -implementation-deps -visual-tests
+dev-util/prismdrake-dev-env portage-qa debug-tools x11 qt6 clang implementation-deps -visual-tests
 x11-base/xorg-server xephyr xvfb
 x11-wm/openbox session xdg
 x11-libs/libxkbcommon X tools

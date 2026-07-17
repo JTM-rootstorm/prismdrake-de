@@ -4,6 +4,8 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
+# shellcheck source=tools/gentoo/vm-checks.sh
+. "$SCRIPT_DIR/vm-checks.sh"
 DEFAULT_WORKSPACE=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd -P)
 WORKSPACE=${PRISMDRAKE_WORKSPACE:-$DEFAULT_WORKSPACE}
 SHARED_PATH=${PRISMDRAKE_SHARED_PATH:-/mnt/shared}
@@ -82,8 +84,10 @@ esac
 [ -d "$WORKSPACE" ] || die "workspace does not exist: $WORKSPACE"
 WORKSPACE=$(CDPATH='' cd -- "$WORKSPACE" && pwd -P)
 PORTAGE_REPO=$WORKSPACE/packaging/gentoo/repository
-[ -r "$PORTAGE_REPO/profiles/repo_name" ] || die 'local repository metadata is missing'
-[ "$(cat "$PORTAGE_REPO/profiles/repo_name")" = prismdrake-local ] || die 'unexpected local repository name'
+REPOSITORY_NAME=$(cat "$PORTAGE_REPO/profiles/repo_name" 2>/dev/null || true)
+if ! REPO_NAME_ERROR=$(prismdrake_validate_repo_name "$REPOSITORY_NAME"); then
+	die "$REPO_NAME_ERROR"
+fi
 
 [ -d "$SHARED_PATH" ] || die "shared path does not exist: $SHARED_PATH"
 SHARED_PATH=$(CDPATH='' cd -- "$SHARED_PATH" && pwd -P)
@@ -92,41 +96,51 @@ case "$WORKSPACE/" in
 	*) die 'workspace must be contained by the shared path' ;;
 esac
 if command -v findmnt >/dev/null 2>&1; then
-	[ "$(findmnt -T "$SHARED_PATH" -n -o FSTYPE 2>/dev/null)" = virtiofs ] ||
-		die 'shared path is not on virtiofs'
-	[ "$(findmnt -T "$WORKSPACE" -n -o FSTYPE 2>/dev/null)" = virtiofs ] ||
-		die 'workspace itself is not on virtiofs'
+	for MOUNT_PATH in "$SHARED_PATH" "$WORKSPACE"; do
+		MOUNT_TYPE=$(findmnt -T "$MOUNT_PATH" -n -o FSTYPE 2>/dev/null || true)
+		MOUNT_OPTIONS=$(findmnt -T "$MOUNT_PATH" -n -o OPTIONS 2>/dev/null || true)
+		if ! MOUNT_ERROR=$(prismdrake_validate_mount_state "$MOUNT_TYPE" "$MOUNT_OPTIONS"); then
+			die "$MOUNT_PATH: $MOUNT_ERROR"
+		fi
+	done
 else
 	die 'findmnt is required to verify the host-fed share'
 fi
 
-MODE=$(stat -c '%a' "$SHARED_PATH")
-OTHER_DIGIT=$((MODE % 10))
-[ $((OTHER_DIGIT & 2)) -eq 0 ] || die 'refusing a world-writable shared path'
+MODE=$(stat -c '%a' "$SHARED_PATH" 2>/dev/null || true)
+if ! MODE_ERROR=$(prismdrake_validate_mode "$MODE" "$SHARED_PATH"); then
+	die "$MODE_ERROR"
+fi
 for SAFE_PATH in "$WORKSPACE" "$PORTAGE_REPO"; do
-	SAFE_MODE=$(stat -c '%a' "$SAFE_PATH")
-	SAFE_OTHER_DIGIT=$((SAFE_MODE % 10))
-	[ $((SAFE_OTHER_DIGIT & 2)) -eq 0 ] ||
-		die "refusing world-writable source path: $SAFE_PATH"
+	SAFE_MODE=$(stat -c '%a' "$SAFE_PATH" 2>/dev/null || true)
+	if ! MODE_ERROR=$(prismdrake_validate_mode "$SAFE_MODE" "$SAFE_PATH"); then
+		die "$MODE_ERROR"
+	fi
 done
-WORKSPACE_OWNER=$(stat -c '%u' "$WORKSPACE")
+WORKSPACE_OWNER=$(stat -c '%u' "$WORKSPACE" 2>/dev/null || true)
 WORKSPACE_USER=$(getent passwd "$WORKSPACE_OWNER" 2>/dev/null | cut -d: -f1)
-[ -n "$WORKSPACE_USER" ] || die "workspace owner UID $WORKSPACE_OWNER has no guest account"
-[ "$WORKSPACE_OWNER" -ne 0 ] || die 'workspace must be owned by an ordinary guest user'
 command -v runuser >/dev/null 2>&1 || die 'runuser is required for unprivileged repository QA'
-runuser -u "$WORKSPACE_USER" -- test -r "$PORTAGE_REPO" ||
-	die "workspace owner $WORKSPACE_USER cannot read the local repository"
-runuser -u "$WORKSPACE_USER" -- test -w "$PORTAGE_REPO" ||
-	die "workspace owner $WORKSPACE_USER cannot write the local repository"
+OWNER_READABLE=false
+OWNER_WRITABLE=false
+if [ -n "$WORKSPACE_USER" ]; then
+	runuser -u "$WORKSPACE_USER" -- test -r "$PORTAGE_REPO" && OWNER_READABLE=true
+	runuser -u "$WORKSPACE_USER" -- test -w "$PORTAGE_REPO" && OWNER_WRITABLE=true
+fi
+if ! OWNER_ERROR=$(prismdrake_validate_owner_state \
+	"$WORKSPACE_OWNER" "$WORKSPACE_USER" "$OWNER_READABLE" "$OWNER_WRITABLE"); then
+	die "$OWNER_ERROR"
+fi
 
-AVAILABLE_KIB=$(df -Pk / | awk 'NR == 2 { print $4 }')
-[ "$AVAILABLE_KIB" -ge 5242880 ] || die 'less than 5 GiB is free on the guest root filesystem'
-MEMORY_KIB=$(awk '/MemTotal:/ { print $2 }' /proc/meminfo)
-[ "$MEMORY_KIB" -ge 4194304 ] || die 'less than 4 GiB of memory is available to the guest'
+AVAILABLE_KIB=$(df -Pk / 2>/dev/null | awk 'NR == 2 { print $4 }' || true)
+MEMORY_KIB=$(awk '/MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || true)
+if ! RESOURCE_ERROR=$(prismdrake_validate_resources "$AVAILABLE_KIB" "$MEMORY_KIB"); then
+	die "$RESOURCE_ERROR"
+fi
 
 REPOS_FILE=/etc/portage/repos.conf/prismdrake-local.conf
 USE_FILE=/etc/portage/package.use/prismdrake-dev
 KEYWORDS_FILE=/etc/portage/package.accept_keywords/prismdrake-dev
+BACKUP_DIR=/etc/portage/prismdrake-backups
 LAYER_A_PACKAGES='app-eselect/eselect-repository dev-util/pkgcheck dev-util/pkgdev app-portage/gentoolkit app-portage/portage-utils dev-vcs/git'
 
 printf 'Prismdrake Gentoo bootstrap\n'
@@ -199,38 +213,13 @@ emerge $BINPKG_OPTION --ask --verbose --noreplace $LAYER_A_PACKAGES
 command -v pkgdev >/dev/null 2>&1 || die 'pkgdev is unavailable after Layer A installation'
 command -v pkgcheck >/dev/null 2>&1 || die 'pkgcheck is unavailable after Layer A installation'
 
-install_project_file() {
-	TARGET=$1
-	CONTENT=$2
-	TARGET_DIR=$(dirname -- "$TARGET")
-	install -d -m 0755 "$TARGET_DIR"
-	TEMP=$(mktemp "$TARGET.tmp.XXXXXX")
-	trap 'rm -f "$TEMP"' EXIT HUP INT TERM
-	printf '%s\n' "$CONTENT" >"$TEMP"
-	chmod 0644 "$TEMP"
-	if [ -e "$TARGET" ] && cmp -s "$TEMP" "$TARGET"; then
-		rm -f "$TEMP"
-		trap - EXIT HUP INT TERM
-		printf 'Unchanged: %s\n' "$TARGET"
-		return
-	fi
-	if [ -e "$TARGET" ]; then
-		BACKUP=$TARGET.prismdrake-backup.$(date -u +%Y%m%dT%H%M%SZ)
-		cp -p -- "$TARGET" "$BACKUP"
-		printf 'Backed up: %s\n' "$BACKUP"
-	fi
-	mv -f -- "$TEMP" "$TARGET"
-	trap - EXIT HUP INT TERM
-	printf 'Updated: %s\n' "$TARGET"
-}
-
 REPOS_CONTENT="[prismdrake-local]
 location = $PORTAGE_REPO
 priority = 1000
 auto-sync = no"
 
 USE_CONTENT="# Prismdrake PD1 reference-VM policy; keep changes package-local.
-dev-util/prismdrake-dev-env portage-qa debug-tools x11 qt6 -clang -implementation-deps -visual-tests
+dev-util/prismdrake-dev-env portage-qa debug-tools x11 qt6 clang implementation-deps -visual-tests
 x11-base/xorg-server xephyr xvfb
 x11-wm/openbox session xdg
 x11-libs/libxkbcommon X tools
@@ -247,14 +236,16 @@ dev-qt/qttools:6 opengl qdbus qtdiag qtplugininfo"
 KEYWORDS_CONTENT="# The project-owned development metapackage is intentionally testing-only.
 dev-util/prismdrake-dev-env ~amd64"
 
-install_project_file "$REPOS_FILE" "$REPOS_CONTENT"
-install_project_file "$USE_FILE" "$USE_CONTENT"
-install_project_file "$KEYWORDS_FILE" "$KEYWORDS_CONTENT"
+prismdrake_install_project_file "$REPOS_FILE" "$REPOS_CONTENT" "$BACKUP_DIR"
+prismdrake_install_project_file "$USE_FILE" "$USE_CONTENT" "$BACKUP_DIR"
+prismdrake_install_project_file "$KEYWORDS_FILE" "$KEYWORDS_CONTENT" "$BACKUP_DIR"
 
 REGISTERED_REPO=$(portageq get_repo_path / prismdrake-local 2>/dev/null || true)
-[ -n "$REGISTERED_REPO" ] || die 'Portage does not recognize prismdrake-local after registration'
-[ "$(readlink -f "$REGISTERED_REPO")" = "$(readlink -f "$PORTAGE_REPO")" ] ||
-	die 'Portage resolved prismdrake-local to a stale or unexpected path'
+EXPECTED_REPO=$(readlink -f "$PORTAGE_REPO" 2>/dev/null || true)
+RESOLVED_REPO=$(readlink -f "$REGISTERED_REPO" 2>/dev/null || true)
+if ! REPO_ERROR=$(prismdrake_validate_registered_repo "$EXPECTED_REPO" "$RESOLVED_REPO"); then
+	die "$REPO_ERROR after registration"
+fi
 eselect repository list -i | grep -q 'prismdrake-local' ||
 	die 'eselect does not report prismdrake-local as installed'
 printf 'Verified live repository path: %s\n' "$REGISTERED_REPO"
