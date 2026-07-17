@@ -15,7 +15,7 @@
 #include <string_view>
 #include <utility>
 
-namespace prismdrake::settingsd::sdbus {
+namespace prismdrake::ipc::sdbus {
 
 template <typename Object, Object *(*Unref)(Object *)> class UniqueHandle final {
   public:
@@ -64,4 +64,4 @@ using Credentials = UniqueHandle<sd_bus_creds, sd_bus_creds_unref>;
 /// Returns the selected build-time provider name for diagnostics.
 [[nodiscard]] std::string_view providerName() noexcept;
 
-} // namespace prismdrake::settingsd::sdbus
+} // namespace prismdrake::ipc::sdbus

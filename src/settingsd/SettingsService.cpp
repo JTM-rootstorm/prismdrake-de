@@ -24,6 +24,8 @@
 namespace prismdrake::settingsd {
 namespace {
 
+namespace sdbus = ipc::sdbus;
+
 using foundation::Error;
 using foundation::ErrorCode;
 using foundation::Result;

@@ -56,6 +56,7 @@ if(NOT nlohmann_json_FOUND)
 endif()
 add_subdirectory(src/theme)
 add_subdirectory(src/settings)
+add_subdirectory(src/ipc)
 add_subdirectory(src/settingsd)
 add_subdirectory(src/session)
 
@@ -105,8 +106,8 @@ prismdrake_add_format_check(
     src/settings/RuntimeSnapshot.hpp
     src/settings/SettingsSnapshot.cpp
     src/settings/SettingsSnapshot.hpp
-    src/settingsd/SdBusApi.cpp
-    src/settingsd/SdBusApi.hpp
+    src/ipc/SdBusApi.cpp
+    src/ipc/SdBusApi.hpp
     src/settingsd/ServiceOptions.cpp
     src/settingsd/ServiceOptions.hpp
     src/settingsd/ServiceWorker.cpp

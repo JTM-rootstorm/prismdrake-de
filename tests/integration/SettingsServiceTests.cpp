@@ -29,9 +29,9 @@
 
 namespace {
 
-using prismdrake::settingsd::sdbus::Bus;
-using prismdrake::settingsd::sdbus::Message;
-using prismdrake::settingsd::sdbus::Slot;
+using prismdrake::ipc::sdbus::Bus;
+using prismdrake::ipc::sdbus::Message;
+using prismdrake::ipc::sdbus::Slot;
 
 constexpr char serviceName[] = "org.prismdrake.Settings1";
 constexpr char objectPath[] = "/org/prismdrake/Settings1";

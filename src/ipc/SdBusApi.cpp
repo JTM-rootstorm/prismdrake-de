@@ -1,6 +1,6 @@
 #include "SdBusApi.hpp"
 
-namespace prismdrake::settingsd::sdbus {
+namespace prismdrake::ipc::sdbus {
 
 std::string_view providerName() noexcept {
 #if defined(PRISMDRAKE_SD_BUS_PROVIDER_BASU)
@@ -10,4 +10,4 @@ std::string_view providerName() noexcept {
 #endif
 }
 
-} // namespace prismdrake::settingsd::sdbus
+} // namespace prismdrake::ipc::sdbus
