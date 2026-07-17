@@ -86,3 +86,31 @@ add_test(NAME NotificationListQmlTest
 set_tests_properties(NotificationListQmlTest PROPERTIES
     ENVIRONMENT
         "QT_QPA_PLATFORM=offscreen;QSG_RHI_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+
+add_executable(prismdrake-panel-surface-qml-tests
+    PanelSurfaceQmlFixture.cpp
+    PanelSurfaceQmlFixture.hpp
+    PanelSurfaceQmlTestRunner.cpp)
+set_target_properties(prismdrake-panel-surface-qml-tests PROPERTIES AUTOMOC ON)
+target_compile_definitions(prismdrake-panel-surface-qml-tests PRIVATE
+    PRISMDRAKE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
+target_link_libraries(prismdrake-panel-surface-qml-tests
+    PRIVATE
+        Prismdrake::settings-core
+        Prismdrake::shell-task-presentation
+        Prismdrake::shell-theme
+        Prismdrake::shell-panel-qml
+        Qt6::Qml
+        Qt6::QuickTest)
+
+prismdrake_configure_cpp_target(prismdrake-panel-surface-qml-tests)
+prismdrake_enable_warnings(prismdrake-panel-surface-qml-tests)
+prismdrake_enable_sanitizers(prismdrake-panel-surface-qml-tests)
+
+add_test(NAME PanelSurfaceQmlTest
+    COMMAND prismdrake-panel-surface-qml-tests
+        -input "${CMAKE_CURRENT_SOURCE_DIR}/qml-panel")
+set_tests_properties(PanelSurfaceQmlTest PROPERTIES
+    ENVIRONMENT
+        "QT_QPA_PLATFORM=offscreen;QSG_RHI_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")

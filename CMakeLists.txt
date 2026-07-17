@@ -253,6 +253,9 @@ prismdrake_add_format_check(
     tests/qt/NotificationListQmlFixture.hpp
     tests/qt/NotificationListQmlTestRunner.cpp
     tests/qt/NotificationPresentationModelTests.cpp
+    tests/qt/PanelSurfaceQmlFixture.cpp
+    tests/qt/PanelSurfaceQmlFixture.hpp
+    tests/qt/PanelSurfaceQmlTestRunner.cpp
     tests/qt/ShellThemeSnapshotAdapterTests.cpp
     tests/qt/LauncherPresentationModelTests.cpp
     tests/qt/TaskPresentationModelTests.cpp

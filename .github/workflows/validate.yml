@@ -102,4 +102,7 @@ jobs:
         run: cmake --build build/format --target format-check
 
       - name: Check QML
-        run: cmake --build build/format --target prismdrake-shell-notification-qml_qmllint
+        run: >-
+          cmake --build build/format --target
+          prismdrake-shell-notification-qml_qmllint
+          prismdrake-shell-panel-qml_qmllint
