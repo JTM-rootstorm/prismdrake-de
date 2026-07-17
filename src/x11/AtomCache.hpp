@@ -11,6 +11,8 @@
 namespace prismdrake::x11 {
 
 class X11Connection;
+class DockProperties;
+class EwmhWindowRequests;
 class PropertyReader;
 
 /// Closed atom vocabulary used by the PD1 standards-only X11 adapter.
@@ -27,11 +29,13 @@ enum class AtomName : std::uint8_t {
     wm_class,
     wm_protocols,
     wm_delete_window,
+    wm_change_state,
     net_supported,
     net_supporting_wm_check,
     net_client_list,
     net_client_list_stacking,
     net_active_window,
+    net_close_window,
     net_number_of_desktops,
     net_current_desktop,
     net_wm_desktop,
@@ -39,6 +43,7 @@ enum class AtomName : std::uint8_t {
     net_wm_pid,
     net_wm_window_type,
     net_wm_window_type_dock,
+    net_wm_strut,
     net_wm_strut_partial,
     net_wm_state,
     net_wm_state_hidden,
@@ -59,6 +64,8 @@ class AtomCache final {
     [[nodiscard]] std::optional<AtomId> atom(AtomName name) const noexcept;
 
   private:
+    friend class DockProperties;
+    friend class EwmhWindowRequests;
     friend class PropertyReader;
 
     static constexpr std::size_t atomCount = static_cast<std::size_t>(AtomName::count);

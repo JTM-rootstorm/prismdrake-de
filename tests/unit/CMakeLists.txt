@@ -9,6 +9,8 @@ add_executable(prismdrake-foundation-tests
     ConfigurationLoaderTests.cpp
     ConfigurationParserTests.cpp
     DiagnosticsTests.cpp
+    DockPropertiesTests.cpp
+    EwmhWindowRequestsTests.cpp
     FoundationPrimitivesTests.cpp
     OutputTopologyTests.cpp
     PanelStrutGeometryTests.cpp

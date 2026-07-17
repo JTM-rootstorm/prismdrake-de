@@ -11,6 +11,8 @@
 namespace prismdrake::x11 {
 
 class AtomCache;
+class DockProperties;
+class EwmhWindowRequests;
 class PropertyReader;
 class RandrTopologyProtocol;
 class RootEventStream;
@@ -38,6 +40,8 @@ class X11Connection final {
 
   private:
     friend class AtomCache;
+    friend class DockProperties;
+    friend class EwmhWindowRequests;
     friend class PropertyReader;
     friend class RandrTopologyProtocol;
     friend class RootEventStream;

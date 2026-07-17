@@ -32,6 +32,7 @@ struct EwmhCapabilityFlags final {
     bool basicWorkspaces = false;
     bool dockWindowType = false;
     bool dockStrutPartial = false;
+    bool closeWindow = false;
 
     friend bool operator==(const EwmhCapabilityFlags &, const EwmhCapabilityFlags &) = default;
 };

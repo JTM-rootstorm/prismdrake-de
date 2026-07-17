@@ -29,7 +29,9 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(PRISMDRAKE_TEST_XCB REQUIRED IMPORTED_TARGET xcb)
 
 add_executable(prismdrake-x11-integration-tests
+    DockPropertiesTests.cpp
     EwmhCapabilitiesTests.cpp
+    EwmhWindowRequestsTests.cpp
     PropertyReaderTests.cpp
     RandrTopologyTests.cpp
     RootEventStreamTests.cpp
@@ -45,6 +47,8 @@ prismdrake_enable_warnings(prismdrake-x11-integration-tests)
 prismdrake_enable_sanitizers(prismdrake-x11-integration-tests)
 
 find_program(PRISMDRAKE_XVFB_EXECUTABLE NAMES Xvfb)
+find_program(PRISMDRAKE_OPENBOX_EXECUTABLE NAMES openbox)
+find_program(PRISMDRAKE_XPROP_EXECUTABLE NAMES xprop)
 if(PRISMDRAKE_XVFB_EXECUTABLE)
     add_test(
         NAME X11ConnectionIntegrationTest
@@ -81,4 +85,35 @@ else()
         TIMEOUT 5)
     message(STATUS
         "Xvfb is unavailable; the X11 integration test is registered as skipped")
+endif()
+
+if(PRISMDRAKE_XVFB_EXECUTABLE AND PRISMDRAKE_OPENBOX_EXECUTABLE
+   AND PRISMDRAKE_XPROP_EXECUTABLE)
+    add_test(
+        NAME X11DockOpenboxIntegrationTest
+        COMMAND
+            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_with_xvfb.py"
+            --openbox "${PRISMDRAKE_OPENBOX_EXECUTABLE}"
+            --xprop "${PRISMDRAKE_XPROP_EXECUTABLE}"
+            "${PRISMDRAKE_XVFB_EXECUTABLE}"
+            "$<TARGET_FILE:prismdrake-x11-integration-tests>"
+            --
+            --gtest_filter=DockPropertiesIntegrationTest.VerifiedWindowManagerAppliesCurrentDesktopWorkarea)
+    set_tests_properties(X11DockOpenboxIntegrationTest PROPERTIES TIMEOUT 30)
+elseif(NOT PRISMDRAKE_XVFB_EXECUTABLE)
+    add_test(
+        NAME X11DockOpenboxIntegrationTest
+        COMMAND "${CMAKE_COMMAND}" -E echo
+            "SKIP: Xvfb is unavailable; dock work-area integration requires the VM or CI profile")
+    set_tests_properties(X11DockOpenboxIntegrationTest PROPERTIES
+        SKIP_REGULAR_EXPRESSION "^SKIP:"
+        TIMEOUT 5)
+else()
+    add_test(
+        NAME X11DockOpenboxIntegrationTest
+        COMMAND "${CMAKE_COMMAND}" -E echo
+            "SKIP: Openbox or xprop is unavailable; WM-applied work-area verification requires both")
+    set_tests_properties(X11DockOpenboxIntegrationTest PROPERTIES
+        SKIP_REGULAR_EXPRESSION "^SKIP:"
+        TIMEOUT 5)
 endif()

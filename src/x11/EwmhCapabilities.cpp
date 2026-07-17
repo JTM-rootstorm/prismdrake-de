@@ -54,7 +54,9 @@ using foundation::Result;
                                 contains(supported, atoms.atom(AtomName::net_wm_window_type_dock));
     const bool dockStrutPartial =
         dockWindowType && contains(supported, atoms.atom(AtomName::net_wm_strut_partial));
-    return {clientList, activeWindow, basicWorkspaces, dockWindowType, dockStrutPartial};
+    const bool closeWindow = contains(supported, atoms.atom(AtomName::net_close_window));
+    return {clientList,     activeWindow,     basicWorkspaces,
+            dockWindowType, dockStrutPartial, closeWindow};
 }
 
 } // namespace

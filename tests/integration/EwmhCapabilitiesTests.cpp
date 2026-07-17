@@ -66,6 +66,7 @@ class EwmhCapabilitiesIntegrationTest : public ::testing::Test {
         netSupported_ = intern("_NET_SUPPORTED");
         netClientList_ = intern("_NET_CLIENT_LIST");
         netActiveWindow_ = intern("_NET_ACTIVE_WINDOW");
+        netCloseWindow_ = intern("_NET_CLOSE_WINDOW");
         netNumberOfDesktops_ = intern("_NET_NUMBER_OF_DESKTOPS");
         netCurrentDesktop_ = intern("_NET_CURRENT_DESKTOP");
         netWmDesktop_ = intern("_NET_WM_DESKTOP");
@@ -200,6 +201,7 @@ class EwmhCapabilitiesIntegrationTest : public ::testing::Test {
     xcb_atom_t netSupported_ = XCB_ATOM_NONE;
     xcb_atom_t netClientList_ = XCB_ATOM_NONE;
     xcb_atom_t netActiveWindow_ = XCB_ATOM_NONE;
+    xcb_atom_t netCloseWindow_ = XCB_ATOM_NONE;
     xcb_atom_t netNumberOfDesktops_ = XCB_ATOM_NONE;
     xcb_atom_t netCurrentDesktop_ = XCB_ATOM_NONE;
     xcb_atom_t netWmDesktop_ = XCB_ATOM_NONE;
@@ -219,9 +221,9 @@ TEST_F(EwmhCapabilitiesIntegrationTest, MissingOwnerIsARecoverableUnavailableCap
 }
 
 TEST_F(EwmhCapabilitiesIntegrationTest, VerifiesOwnerAndReportsOnlyAdvertisedPd1Features) {
-    const std::array supported{netClientList_,       netActiveWindow_,  netNumberOfDesktops_,
-                               netCurrentDesktop_,   netWmDesktop_,     netWmWindowType_,
-                               netWmWindowTypeDock_, netWmStrutPartial_};
+    const std::array supported{netClientList_,       netActiveWindow_,     netCloseWindow_,
+                               netNumberOfDesktops_, netCurrentDesktop_,   netWmDesktop_,
+                               netWmWindowType_,     netWmWindowTypeDock_, netWmStrutPartial_};
     configureVerifiedOwner(supported);
 
     const auto result = discover();
@@ -229,7 +231,7 @@ TEST_F(EwmhCapabilitiesIntegrationTest, VerifiesOwnerAndReportsOnlyAdvertisedPd1
     ASSERT_TRUE(result);
     ASSERT_EQ(result.value().status, EwmhDiscoveryStatus::verified);
     EXPECT_EQ(ewmhDiscoveryStatusId(result.value().status), "ewmh_verified");
-    EXPECT_EQ(result.value().flags, (EwmhCapabilityFlags{true, true, true, true, true}));
+    EXPECT_EQ(result.value().flags, (EwmhCapabilityFlags{true, true, true, true, true, true}));
 }
 
 TEST_F(EwmhCapabilitiesIntegrationTest, KeepsIncompleteAdvertisementPreciselyReduced) {

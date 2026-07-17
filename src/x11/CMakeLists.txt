@@ -5,9 +5,15 @@ pkg_check_modules(PRISMDRAKE_XCB_RANDR REQUIRED IMPORTED_TARGET xcb-randr)
 add_library(prismdrake-x11 STATIC
     AtomCache.cpp
     AtomCache.hpp
+    DockProperties.cpp
+    DockProperties.hpp
+    DockPropertiesInternal.hpp
     EwmhCapabilities.cpp
     EwmhCapabilities.hpp
     EwmhCapabilitiesInternal.hpp
+    EwmhWindowRequests.cpp
+    EwmhWindowRequests.hpp
+    EwmhWindowRequestsInternal.hpp
     OutputTopology.cpp
     OutputTopology.hpp
     PanelStrutGeometry.cpp
