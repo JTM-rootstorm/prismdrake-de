@@ -1,6 +1,8 @@
 add_library(prismdrake-session-core STATIC
     RestartPolicy.cpp
-    RestartPolicy.hpp)
+    RestartPolicy.hpp
+    SessionEnvironment.cpp
+    SessionEnvironment.hpp)
 add_library(Prismdrake::session-core ALIAS prismdrake-session-core)
 
 target_include_directories(prismdrake-session-core

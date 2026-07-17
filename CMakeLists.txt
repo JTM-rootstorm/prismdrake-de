@@ -116,6 +116,8 @@ prismdrake_add_format_check(
     src/settingsd/main.cpp
     src/session/RestartPolicy.cpp
     src/session/RestartPolicy.hpp
+    src/session/SessionEnvironment.cpp
+    src/session/SessionEnvironment.hpp
     tests/integration/SettingsServiceTests.cpp
     tests/unit/ServiceOptionsTests.cpp
     tests/unit/ServiceWorkerTests.cpp
@@ -128,6 +130,7 @@ prismdrake_add_format_check(
     tests/unit/FoundationPrimitivesTests.cpp
     tests/unit/ResultTests.cpp
     tests/unit/RestartPolicyTests.cpp
+    tests/unit/SessionEnvironmentTests.cpp
     tests/unit/SettingsEngineTests.cpp
     tests/unit/ThemeParserTests.cpp
     tests/unit/ThemeResolverTests.cpp
