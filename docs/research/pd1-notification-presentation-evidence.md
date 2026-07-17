@@ -142,6 +142,10 @@ metadata, and brief interruptible motion. It provides:
 - reduced-motion, high-contrast, opaque-fallback, Lustre, and Forge token inputs
   through one shared component implementation.
 
+The compiled internal QML module carries version `0.1` because Qt 6.4 requires
+module-version metadata. This Experimental version does not declare a stable
+public QML API or compatibility guarantee.
+
 `NotificationList.qml` moves focus between cards and recovers focus when a
 publication removes or replaces the focused delegate. It keeps the same
 control focused when an unaffected card survives, moves to the next card after

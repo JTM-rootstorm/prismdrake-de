@@ -3,6 +3,7 @@ set(CMAKE_AUTOMOC ON)
 qt_add_qml_module(prismdrake-shell-notification-qml
     STATIC
     URI org.prismdrake.shell.notifications
+    VERSION 0.1
     OUTPUT_DIRECTORY
         "${CMAKE_BINARY_DIR}/qml/org/prismdrake/shell/notifications"
     RESOURCE_PREFIX /qt/qml
