@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+  <maintainer type="person">
+    <email>jtm@root-storm.com</email>
+    <name>JT</name>
+  </maintainer>
+  <longdescription>
+    Installs the development and evidence-gathering environment used by the
+    Prismdrake Gentoo reference VM. This package is not a Prismdrake runtime
+    package and does not select or accept an architectural decision.
+  </longdescription>
+  <use>
+    <flag name="clang">Install Clang for optional compiler-matrix coverage.</flag>
+    <flag name="debug-tools">Install native debuggers, tracing tools, and process inspection utilities.</flag>
+    <flag name="implementation-deps">Install candidate parser, D-Bus, and C++ test libraries for approved implementation work.</flag>
+    <flag name="portage-qa">Install tools for local repository QA and Portage inspection.</flag>
+    <flag name="qt6">Install Qt 6 modules used by the isolated visible-shell evidence spike.</flag>
+    <flag name="visual-tests">Install the optional image-comparison tool used by deterministic visual tests.</flag>
+    <flag name="x11">Install the X11, D-Bus, accessibility, software-rendering, and deterministic display harness.</flag>
+  </use>
+  <upstream>
+    <remote-id type="github">JTM-rootstorm/prismdrake-de</remote-id>
+  </upstream>
+</pkgmetadata>
