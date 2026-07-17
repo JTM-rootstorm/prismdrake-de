@@ -40,7 +40,6 @@ FocusScope {
     function captureFocusRecovery() {
         // Repeater.itemAt() is statically a QQuickItem; every delegate is a NotificationCard.
         // qmllint disable
-        pendingFocusRecovery = null
         for (let index = 0; index < cardRepeater.count; ++index) {
             const candidate = cardRepeater.itemAt(index)
             if (candidate !== null && candidate["hasFocusWithin"]()) {
@@ -88,13 +87,20 @@ FocusScope {
     implicitWidth: cardWidth
     implicitHeight: cards.implicitHeight
 
+    Timer {
+        id: focusRecoveryTimer
+        interval: 0
+        repeat: false
+        onTriggered: root.recoverFocus()
+    }
+
     Connections {
         target: root.presentationModel
         function onPublicationReconciliationStarted() {
             root.captureFocusRecovery()
         }
         function onPublicationApplied() {
-            Qt.callLater(root.recoverFocus)
+            focusRecoveryTimer.restart()
         }
     }
 
