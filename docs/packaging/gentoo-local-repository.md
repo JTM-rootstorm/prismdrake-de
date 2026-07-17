@@ -87,11 +87,15 @@ dev-util/prismdrake-dev-env portage-qa debug-tools x11 qt6 -clang -implementatio
 x11-base/xorg-server xephyr xvfb
 x11-wm/openbox session xdg
 x11-libs/libxkbcommon X tools
+x11-libs/pango X
+x11-libs/cairo X
 app-accessibility/at-spi2-core X
+media-libs/freetype harfbuzz
+media-libs/libglvnd X
 media-libs/mesa X llvm
 dev-qt/qtbase:6 X accessibility dbus gui opengl -gtk
 dev-qt/qtdeclarative:6 accessibility opengl qmlls
-dev-qt/qttools:6 qdbus qtdiag qtplugininfo
+dev-qt/qttools:6 opengl qdbus qtdiag qtplugininfo
 ```
 
 These flags were checked against the Gentoo repository visible to the reference
@@ -99,6 +103,10 @@ VM on 2026-07-16. Re-run Portage inspection after repository updates; remove a
 flag that the selected ebuild no longer exposes. The Qt `-gtk` selection avoids
 adding a GTK platform-theme integration plugin to the controlled evidence
 spike. It is not a ban on GTK applications or a project-wide toolkit policy.
+The Pango, Cairo, Freetype, and libglvnd settings are the package-local closure
+required by the X11 harness on a guest whose global USE policy disables X.
+`qttools[widgets]` couples its OpenGL state to `qtbase`, so all three selected
+Qt modules use the same OpenGL setting.
 
 Do not globally enable `~amd64`, `X`, `qt6`, `systemd`, or `elogind`. Follow the
 guest profile for init integration. Add `xorg` to `x11-base/xorg-server` only

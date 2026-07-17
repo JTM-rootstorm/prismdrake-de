@@ -211,11 +211,15 @@ dev-util/prismdrake-dev-env portage-qa debug-tools x11 qt6 -clang -implementatio
 x11-base/xorg-server xephyr xvfb
 x11-wm/openbox session xdg
 x11-libs/libxkbcommon X tools
+x11-libs/pango X
+x11-libs/cairo X
 app-accessibility/at-spi2-core X
+media-libs/freetype harfbuzz
+media-libs/libglvnd X
 media-libs/mesa X llvm
 dev-qt/qtbase:6 X accessibility dbus gui opengl -gtk
 dev-qt/qtdeclarative:6 accessibility opengl qmlls
-dev-qt/qttools:6 qdbus qtdiag qtplugininfo"
+dev-qt/qttools:6 opengl qdbus qtdiag qtplugininfo"
 
 KEYWORDS_CONTENT="# The project-owned development metapackage is intentionally testing-only.
 dev-util/prismdrake-dev-env ~amd64"
