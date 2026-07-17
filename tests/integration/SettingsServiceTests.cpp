@@ -1,4 +1,5 @@
 #include "SdBusApi.hpp"
+#include "SettingsReadiness.hpp"
 
 #include <gtest/gtest.h>
 
@@ -382,6 +383,16 @@ TEST_F(SettingsServiceFixture, PublishesCompleteInitialSnapshotAndNoOpReload) {
     EXPECT_NE(snapshot.find("\"profile_id\":\"lustre\""), std::string::npos);
     EXPECT_EQ(snapshot.find(root_.string()), std::string::npos);
     EXPECT_EQ(reload(), 1U);
+}
+
+TEST_F(SettingsServiceFixture, SatisfiesTheBoundedSessionReadinessProbe) {
+    const auto readiness = prismdrake::session::probeSettingsReadiness(std::chrono::seconds{2});
+
+    ASSERT_TRUE(readiness);
+    EXPECT_EQ(readiness.value().generation, 1U);
+    EXPECT_GT(readiness.value().snapshotBytes, 0U);
+    EXPECT_LE(readiness.value().snapshotBytes,
+              prismdrake::session::maximumSettingsReadinessSnapshotBytes);
 }
 
 TEST_F(SettingsServiceFixture, ProfileRequestsAreAtomicAndTyped) {
