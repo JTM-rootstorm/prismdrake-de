@@ -43,6 +43,7 @@ RDEPEND="
 	visual-tests? (
 		media-gfx/imagemagick
 		x11-misc/xdotool
+		x11-apps/xwd
 	)
 	x11? (
 		app-accessibility/at-spi2-core
