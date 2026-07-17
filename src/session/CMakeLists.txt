@@ -3,6 +3,8 @@ add_library(prismdrake-session-core STATIC
     RestartPolicy.hpp
     SessionEnvironment.cpp
     SessionEnvironment.hpp
+    SessionOptions.cpp
+    SessionOptions.hpp
     SettingsReadiness.cpp
     SettingsReadiness.hpp)
 add_library(Prismdrake::session-core ALIAS prismdrake-session-core)

@@ -12,6 +12,7 @@ add_executable(prismdrake-foundation-tests
     ResultTests.cpp
     RestartPolicyTests.cpp
     SessionEnvironmentTests.cpp
+    SessionOptionsTests.cpp
     SettingsReadinessTests.cpp
     ServiceOptionsTests.cpp
     ServiceWorkerTests.cpp
