@@ -1,4 +1,4 @@
-name: PD0 contract validation
+name: Prismdrake validation
 
 on:
   pull_request:
@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  validate:
-    name: Validate PD0 contracts
-    runs-on: ubuntu-latest
+  contracts:
+    name: Validate repository contracts
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Check out source
@@ -24,3 +24,61 @@ jobs:
 
       - name: Run contract validation
         run: make validate
+
+  build:
+    name: Build and test (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC
+            compiler: g++
+            packages: g++
+          - name: Clang 18
+            compiler: clang++-18
+            packages: clang-18
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install system build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends ninja-build libgtest-dev ${{ matrix.packages }}
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build/ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+          -DPRISMDRAKE_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build/ci --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build/ci --output-on-failure
+
+  format:
+    name: Check C++ formatting
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install formatter
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends ninja-build clang-format-18
+
+      - name: Configure without tests
+        run: >-
+          cmake -S . -B build/format -G Ninja
+          -DBUILD_TESTING=OFF
+          -DPRISMDRAKE_CLANG_FORMAT_EXECUTABLE=/usr/bin/clang-format-18
+
+      - name: Check formatting
+        run: cmake --build build/format --target format-check
