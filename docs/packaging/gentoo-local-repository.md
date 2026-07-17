@@ -134,17 +134,21 @@ layer:
 export PRISMDRAKE_WORKSPACE=/mnt/shared/prismdrake-de
 export PRISMDRAKE_PORTAGE_REPO="$PRISMDRAKE_WORKSPACE/packaging/gentoo/repository"
 
-(cd "$PRISMDRAKE_PORTAGE_REPO" && pkgdev manifest)
+PRISMDRAKE_QA_REPO=$(mktemp -d /tmp/prismdrake-repository-qa.XXXXXX)
 PRISMDRAKE_PKGCHECK_CACHE=$(mktemp -d /tmp/prismdrake-pkgcheck.XXXXXX)
+cp -a "$PRISMDRAKE_PORTAGE_REPO/." "$PRISMDRAKE_QA_REPO/"
+(cd "$PRISMDRAKE_QA_REPO" && pkgdev manifest)
 pkgcheck scan --cache-dir "$PRISMDRAKE_PKGCHECK_CACHE" \
-  "$PRISMDRAKE_PORTAGE_REPO"
-rm -rf "$PRISMDRAKE_PKGCHECK_CACHE"
+  "$PRISMDRAKE_QA_REPO"
+rm -rf "$PRISMDRAKE_QA_REPO" "$PRISMDRAKE_PKGCHECK_CACHE"
 ```
 
-Metapackages without distfiles normally produce no Manifest, but `pkgdev`
-remains the authoritative generator if one becomes necessary. Never hand-edit
-a generated Manifest. Keeping pkgcheck's disposable caches outside the overlay
-also prevents a read-only scan from dirtying the shared checkout.
+Metapackages without distfiles normally produce no Manifest. The current QA
+flow uses a disposable exact copy because both pkgdev and pkgcheck may create
+cache data while inspecting a repository. If a future package needs a
+Manifest, generate it with pkgdev, review it, and commit it with the package;
+never hand-edit it. Keeping all disposable caches outside the overlay prevents
+a scan from dirtying the shared checkout.
 
 Run a reviewed pretend before every install or feature combination:
 
