@@ -10,6 +10,8 @@ add_executable(prismdrake-foundation-tests
     DiagnosticsTests.cpp
     FoundationPrimitivesTests.cpp
     ResultTests.cpp
+    ServiceOptionsTests.cpp
+    ServiceWorkerTests.cpp
     SettingsEngineTests.cpp
     ThemeParserTests.cpp
     ThemeResolverTests.cpp
@@ -17,6 +19,7 @@ add_executable(prismdrake-foundation-tests
 target_link_libraries(prismdrake-foundation-tests
     PRIVATE
         Prismdrake::foundation
+        Prismdrake::settings-service
         Prismdrake::settings-core
         Prismdrake::config
         Prismdrake::theme

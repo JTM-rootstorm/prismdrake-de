@@ -24,6 +24,7 @@ include(PrismdrakeCompiler)
 include(PrismdrakeWarnings)
 include(PrismdrakeSanitizers)
 include(PrismdrakeFormatting)
+include(PrismdrakeSdBus)
 
 prismdrake_validate_toolchain()
 
@@ -55,6 +56,7 @@ if(NOT nlohmann_json_FOUND)
 endif()
 add_subdirectory(src/theme)
 add_subdirectory(src/settings)
+add_subdirectory(src/settingsd)
 
 if(BUILD_TESTING)
     find_package(GTest QUIET)
@@ -102,6 +104,18 @@ prismdrake_add_format_check(
     src/settings/RuntimeSnapshot.hpp
     src/settings/SettingsSnapshot.cpp
     src/settings/SettingsSnapshot.hpp
+    src/settingsd/SdBusApi.cpp
+    src/settingsd/SdBusApi.hpp
+    src/settingsd/ServiceOptions.cpp
+    src/settingsd/ServiceOptions.hpp
+    src/settingsd/ServiceWorker.cpp
+    src/settingsd/ServiceWorker.hpp
+    src/settingsd/SettingsService.cpp
+    src/settingsd/SettingsService.hpp
+    src/settingsd/main.cpp
+    tests/integration/SettingsServiceTests.cpp
+    tests/unit/ServiceOptionsTests.cpp
+    tests/unit/ServiceWorkerTests.cpp
     tests/unit/AtomicFileTests.cpp
     tests/unit/BoundedFileTests.cpp
     tests/unit/BuildInfoTests.cpp
