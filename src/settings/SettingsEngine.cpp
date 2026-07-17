@@ -43,12 +43,25 @@ startupWarnings(const std::vector<config::ConfigurationIssue> &issues) {
 } // namespace
 
 Result<std::unique_ptr<SettingsEngine>> SettingsEngine::start(SettingsEngineOptions options) {
+    const bool safeMode = options.mode == SettingsEngineMode::development_safe_mode;
+    options.themeOptions.safeMode = safeMode;
     auto bundle = theme::loadPackagedThemeBundle(options.themeDirectory);
     if (!bundle) {
         return Result<std::unique_ptr<SettingsEngine>>::failure(std::move(bundle).error());
     }
-    auto startup =
-        config::loadStartupConfiguration(options.configurationLocations, options.parseOptions);
+    Result<config::StartupConfiguration> startup = [&]() {
+        if (!safeMode) {
+            return config::loadStartupConfiguration(options.configurationLocations,
+                                                    options.parseOptions);
+        }
+
+        auto packaged =
+            config::loadPackagedConfiguration(options.configurationLocations, options.parseOptions);
+        if (!packaged) {
+            return Result<config::StartupConfiguration>::failure(std::move(packaged).error());
+        }
+        return Result<config::StartupConfiguration>::success({std::move(packaged).value(), {}});
+    }();
     if (!startup) {
         return Result<std::unique_ptr<SettingsEngine>>::failure(std::move(startup).error());
     }
@@ -66,7 +79,8 @@ Result<std::unique_ptr<SettingsEngine>> SettingsEngine::start(SettingsEngineOpti
         return Result<std::unique_ptr<SettingsEngine>>::failure(std::move(publication).error());
     }
 
-    if (startup.value().candidate.source == config::ConfigurationSource::user) {
+    if (engine->options_.mode == SettingsEngineMode::normal &&
+        startup.value().candidate.source == config::ConfigurationSource::user) {
         // Persistence follows the authoritative pointer swap. A failure must not imply rollback.
         (void)config::promoteLastKnownValidConfiguration(engine->options_.configurationLocations,
                                                          startup.value().candidate,
@@ -79,13 +93,16 @@ Result<SettingsCandidate>
 SettingsEngine::buildCandidate(config::Configuration configuration,
                                config::ConfigurationSource source, bool runtimeProfileOverride,
                                std::vector<SettingsWarning> warnings) const {
+    auto effectiveConfiguration = options_.mode == SettingsEngineMode::development_safe_mode
+                                      ? config::withOptionalIntegrationsDisabled(configuration)
+                                      : std::move(configuration);
     auto resolved = theme::resolveThemeCandidate(theme_bundle_->base, theme_bundle_->lustre,
                                                  theme_bundle_->forge, theme_bundle_->accessibility,
-                                                 configuration, options_.themeOptions);
+                                                 effectiveConfiguration, options_.themeOptions);
     if (!resolved) {
         return Result<SettingsCandidate>::failure(std::move(resolved).error());
     }
-    const auto expectedProfile = configuration.profile == config::Profile::lustre
+    const auto expectedProfile = effectiveConfiguration.profile == config::Profile::lustre
                                      ? theme::Profile::lustre
                                      : theme::Profile::forge;
     if (resolved.value().profile != expectedProfile) {
@@ -94,7 +111,7 @@ SettingsEngine::buildCandidate(config::Configuration configuration,
              "The resolved theme profile does not match the normalized configuration.",
              "Resolve one complete configuration and theme candidate together."});
     }
-    return Result<SettingsCandidate>::success(SettingsCandidate{std::move(configuration),
+    return Result<SettingsCandidate>::success(SettingsCandidate{std::move(effectiveConfiguration),
                                                                 {source, runtimeProfileOverride},
                                                                 std::move(resolved).value(),
                                                                 std::move(warnings)});
@@ -125,8 +142,11 @@ Result<PublicationOutcome> SettingsEngine::requestProfileChange(std::string_view
 }
 
 Result<PublicationOutcome> SettingsEngine::reload() {
-    auto reloaded =
-        config::loadReloadConfiguration(options_.configurationLocations, options_.parseOptions);
+    auto reloaded = options_.mode == SettingsEngineMode::development_safe_mode
+                        ? config::loadPackagedConfiguration(options_.configurationLocations,
+                                                            options_.parseOptions)
+                        : config::loadReloadConfiguration(options_.configurationLocations,
+                                                          options_.parseOptions);
     if (!reloaded) {
         return Result<PublicationOutcome>::failure(std::move(reloaded).error());
     }
@@ -149,7 +169,7 @@ Result<PublicationOutcome> SettingsEngine::reload() {
         theme_bundle_ = previousBundle;
         return publication;
     }
-    if (publication.value().published &&
+    if (options_.mode == SettingsEngineMode::normal && publication.value().published &&
         reloaded.value().source == config::ConfigurationSource::user) {
         const auto promotion = config::promoteLastKnownValidConfiguration(
             options_.configurationLocations, reloaded.value(), options_.parseOptions);

@@ -56,6 +56,7 @@ Result<ServiceOptions> parseServiceOptions(std::span<const std::string_view> arg
                                            const ServicePathDefaults &pathDefaults) {
     ServiceAction action = ServiceAction::run;
     bool foregroundSeen = false;
+    bool safeModeSeen = false;
 
     for (const auto argument : arguments) {
         if (argument == "--foreground") {
@@ -65,6 +66,16 @@ Result<ServiceOptions> parseServiceOptions(std::span<const std::string_view> arg
                     "Specify --foreground at most once.");
             }
             foregroundSeen = true;
+            continue;
+        }
+
+        if (argument == "--safe-mode") {
+            if (safeModeSeen) {
+                return invalidUsage<ServiceOptions>(
+                    "A command-line option was provided more than once.",
+                    "Specify --safe-mode at most once.");
+            }
+            safeModeSeen = true;
             continue;
         }
 
@@ -91,7 +102,7 @@ Result<ServiceOptions> parseServiceOptions(std::span<const std::string_view> arg
     }
 
     if (action != ServiceAction::run) {
-        if (foregroundSeen) {
+        if (foregroundSeen || safeModeSeen) {
             return invalidUsage<ServiceOptions>(
                 "A display action cannot be combined with a runtime option.",
                 "Use --help or --version by itself.");
@@ -115,6 +126,8 @@ Result<ServiceOptions> parseServiceOptions(std::span<const std::string_view> arg
         defaults.value().themeDirectory,
         {},
         {},
+        safeModeSeen ? settings::SettingsEngineMode::development_safe_mode
+                     : settings::SettingsEngineMode::normal,
     };
 
     return Result<ServiceOptions>::success(ServiceOptions{
@@ -125,12 +138,13 @@ Result<ServiceOptions> parseServiceOptions(std::span<const std::string_view> arg
 }
 
 std::string serviceHelpText() {
-    return "Usage: prismdrake-settingsd [--foreground] [--help] [--version]\n"
+    return "Usage: prismdrake-settingsd [--foreground] [--safe-mode] [--help] [--version]\n"
            "\n"
            "Publish validated Prismdrake settings snapshots on the user session bus.\n"
            "\n"
            "Options:\n"
            "  --foreground  Run in the foreground (the default).\n"
+           "  --safe-mode   Use packaged defaults and disable optional integrations.\n"
            "  -h, --help    Show this help and exit.\n"
            "  -V, --version Show the version and exit.\n";
 }

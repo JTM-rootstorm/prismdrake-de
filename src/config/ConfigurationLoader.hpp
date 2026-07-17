@@ -61,6 +61,14 @@ loadStartupConfiguration(const ConfigurationLocations &locations,
 loadReloadConfiguration(const ConfigurationLocations &locations,
                         ConfigurationParseOptions options = {});
 
+/// Loads only the packaged default without inspecting user or last-known-valid state.
+///
+/// This narrow recovery path is used by development safe mode. It never promotes or writes the
+/// returned candidate and always identifies the source as packaged_default.
+[[nodiscard]] foundation::Result<ConfigurationCandidate>
+loadPackagedConfiguration(const ConfigurationLocations &locations,
+                          ConfigurationParseOptions options = {});
+
 /// Validates one complete document and atomically replaces only the canonical user file.
 [[nodiscard]] foundation::Result<Configuration>
 validateAndWriteUserConfiguration(const ConfigurationLocations &locations, std::string_view input,

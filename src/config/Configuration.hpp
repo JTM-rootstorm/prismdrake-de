@@ -131,4 +131,19 @@ struct Configuration final {
             configuration.developer};
 }
 
+/// Rebuilds a complete normalized configuration with optional external integrations disabled.
+///
+/// This is a nonpersistent recovery override. It deliberately preserves profile and
+/// accessibility values; safe-mode visual overrides are applied separately by the theme
+/// resolver after all ordinary configuration layers.
+[[nodiscard]] inline Configuration
+withOptionalIntegrationsDisabled(const Configuration &configuration) {
+    return {configuration.schemaVersion, configuration.profile,
+            configuration.appearance,    configuration.panel,
+            configuration.launcher,      configuration.notifications,
+            configuration.desktop,       Integration{false, false, false, false},
+            configuration.accessibility, configuration.keyboard,
+            configuration.developer};
+}
+
 } // namespace prismdrake::config

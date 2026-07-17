@@ -50,6 +50,7 @@ TEST(ServiceOptionsTest, HelpAndVersionDoNotRequireRuntimePaths) {
     EXPECT_EQ(help.value().action, ServiceAction::show_help);
     EXPECT_FALSE(help.value().runtime);
     EXPECT_NE(serviceHelpText().find("--foreground"), std::string::npos);
+    EXPECT_NE(serviceHelpText().find("--safe-mode"), std::string::npos);
 
     const std::array versionArguments{std::string_view{"--version"}};
     const auto version = parseServiceOptions(versionArguments, {});
@@ -69,8 +70,15 @@ TEST(ServiceOptionsTest, RejectsUnknownDuplicateAndConflictingArgumentsWithoutEc
     const std::array duplicate{std::string_view{"--foreground"}, std::string_view{"--foreground"}};
     EXPECT_FALSE(parseServiceOptions(duplicate, {}));
 
+    const std::array duplicateSafeMode{std::string_view{"--safe-mode"},
+                                       std::string_view{"--safe-mode"}};
+    EXPECT_FALSE(parseServiceOptions(duplicateSafeMode, {}));
+
     const std::array conflicting{std::string_view{"--help"}, std::string_view{"--version"}};
     EXPECT_FALSE(parseServiceOptions(conflicting, {}));
+
+    const std::array safeModeHelp{std::string_view{"--safe-mode"}, std::string_view{"--help"}};
+    EXPECT_FALSE(parseServiceOptions(safeModeHelp, {}));
 }
 
 TEST(ServiceOptionsTest, ResolvesFixedPackagedAndXdgLocationsForRun) {
@@ -96,6 +104,28 @@ TEST(ServiceOptionsTest, ResolvesFixedPackagedAndXdgLocationsForRun) {
     EXPECT_EQ(runtimeOptions.settingsEngine.configurationLocations.user,
               root / "config/prismdrake/config.toml");
     EXPECT_EQ(runtimeOptions.settingsEngine.themeDirectory, defaults.themeDirectory);
+    EXPECT_EQ(runtimeOptions.settingsEngine.mode, settings::SettingsEngineMode::normal);
+}
+
+TEST(ServiceOptionsTest, EnablesNonpersistentSafeModeForTheSettingsEngine) {
+    const auto root = std::filesystem::temp_directory_path() / "prismdrake-safe-options-test";
+    EnvironmentValue home{"HOME", root / "home"};
+    EnvironmentValue config{"XDG_CONFIG_HOME", root / "config"};
+    EnvironmentValue data{"XDG_DATA_HOME", root / "data"};
+    EnvironmentValue state{"XDG_STATE_HOME", root / "state"};
+    EnvironmentValue cache{"XDG_CACHE_HOME", root / "cache"};
+    EnvironmentValue runtime{"XDG_RUNTIME_DIR", root / "runtime"};
+
+    const std::array arguments{std::string_view{"--safe-mode"}};
+    const ServicePathDefaults defaults{"/usr/share/prismdrake/defaults/config.toml",
+                                       "/usr/share/prismdrake/themes"};
+    auto options = parseServiceOptions(arguments, defaults);
+
+    ASSERT_TRUE(options);
+    ASSERT_TRUE(options.value().runtime);
+    const auto runtimeOptions = requireOptional(std::move(options.value().runtime));
+    EXPECT_EQ(runtimeOptions.settingsEngine.mode,
+              settings::SettingsEngineMode::development_safe_mode);
 }
 
 } // namespace

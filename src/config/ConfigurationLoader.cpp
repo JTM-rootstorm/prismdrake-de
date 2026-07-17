@@ -93,6 +93,11 @@ Result<ConfigurationCandidate> loadReloadConfiguration(const ConfigurationLocati
     return loadSource(locations.packagedDefault, ConfigurationSource::packaged_default, options);
 }
 
+Result<ConfigurationCandidate> loadPackagedConfiguration(const ConfigurationLocations &locations,
+                                                         ConfigurationParseOptions options) {
+    return loadSource(locations.packagedDefault, ConfigurationSource::packaged_default, options);
+}
+
 Result<Configuration> validateAndWriteUserConfiguration(const ConfigurationLocations &locations,
                                                         std::string_view input,
                                                         ConfigurationParseOptions options) {

@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <fstream>
@@ -51,6 +52,11 @@ void writeText(const std::filesystem::path &path, std::string_view text) {
 [[nodiscard]] std::string defaultConfiguration() {
     std::ifstream stream(std::filesystem::path(PRISMDRAKE_SOURCE_DIR) /
                          "data/defaults/config.toml");
+    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+}
+
+[[nodiscard]] std::string fixtureConfiguration(std::string_view relativePath) {
+    std::ifstream stream(std::filesystem::path(PRISMDRAKE_SOURCE_DIR) / relativePath);
     return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
 
@@ -159,6 +165,71 @@ TEST(SettingsEngineTest, CandidateValidationIsBoundedRedactedAndSideEffectFree) 
     ASSERT_FALSE(tooLarge);
     EXPECT_EQ(tooLarge.error().code, foundation::ErrorCode::too_large);
     EXPECT_EQ(engine.value()->current()->generation.value(), 1U);
+}
+
+TEST(SettingsEngineTest, SafeModeUsesOnlyPackagedDefaultsAndDisablesOptionalIntegrations) {
+    TemporaryDirectory temporary;
+    auto options = optionsFor(temporary);
+    const auto userDocument = fixtureConfiguration("examples/config/forge.toml");
+    const auto recoveryDocument = fixtureConfiguration("examples/config/lustre.toml");
+    writeText(options.configurationLocations.user, userDocument);
+    writeText(options.configurationLocations.lastKnownValid, recoveryDocument);
+    options.mode = SettingsEngineMode::development_safe_mode;
+
+    auto engine = SettingsEngine::start(options);
+
+    ASSERT_TRUE(engine);
+    const auto &snapshot = engine.value()->current();
+    ASSERT_TRUE(snapshot);
+    EXPECT_EQ(snapshot->candidate.provenance.configurationSource,
+              config::ConfigurationSource::packaged_default);
+    EXPECT_EQ(snapshot->candidate.configuration.profile, config::Profile::lustre);
+    const auto &integration = snapshot->candidate.configuration.integration;
+    EXPECT_FALSE(integration.exportGtk);
+    EXPECT_FALSE(integration.exportQt);
+    EXPECT_FALSE(integration.exportXsettings);
+    EXPECT_FALSE(integration.exportPortal);
+    EXPECT_TRUE(snapshot->candidate.theme.accessibility.reducedMotion);
+    EXPECT_TRUE(snapshot->candidate.theme.accessibility.transparencyDisabled);
+    EXPECT_EQ(snapshot->candidate.theme.accessibility.animationScale, 0.0);
+    EXPECT_EQ(snapshot->candidate.theme.materials.panel.opacity, 1.0);
+    EXPECT_TRUE(snapshot->candidate.theme.materials.panel.usedFallback);
+    EXPECT_NE(std::find(snapshot->candidate.theme.warnings.begin(),
+                        snapshot->candidate.theme.warnings.end(),
+                        theme::ThemeWarning::safe_mode_active),
+              snapshot->candidate.theme.warnings.end());
+
+    ASSERT_TRUE(engine.value()->requestProfileChange("forge"));
+    const auto reloaded = engine.value()->reload();
+    ASSERT_TRUE(reloaded);
+    EXPECT_TRUE(reloaded.value().published);
+    EXPECT_EQ(reloaded.value().snapshot->candidate.configuration.profile, config::Profile::lustre);
+
+    std::ifstream recovery(options.configurationLocations.lastKnownValid, std::ios::binary);
+    const std::string retained{std::istreambuf_iterator<char>(recovery),
+                               std::istreambuf_iterator<char>()};
+    EXPECT_EQ(retained, recoveryDocument);
+    std::ifstream user(options.configurationLocations.user, std::ios::binary);
+    const std::string retainedUser{std::istreambuf_iterator<char>(user),
+                                   std::istreambuf_iterator<char>()};
+    EXPECT_EQ(retainedUser, userDocument);
+}
+
+TEST(SettingsEngineTest, SafeModeFailsIfThePackagedDefaultIsInvalid) {
+    TemporaryDirectory temporary;
+    auto options = optionsFor(temporary);
+    writeText(options.configurationLocations.user,
+              fixtureConfiguration("examples/config/forge.toml"));
+    writeText(options.configurationLocations.lastKnownValid,
+              fixtureConfiguration("examples/config/lustre.toml"));
+    options.configurationLocations.packagedDefault = temporary.path() / "packaged/config.toml";
+    writeText(options.configurationLocations.packagedDefault, "schema_version = 99\n");
+    options.mode = SettingsEngineMode::development_safe_mode;
+
+    const auto engine = SettingsEngine::start(options);
+
+    ASSERT_FALSE(engine);
+    EXPECT_EQ(engine.error().code, foundation::ErrorCode::unsupported);
 }
 
 TEST(SettingsSnapshotTest, StableIdentifiersCoverClosedWireValues) {

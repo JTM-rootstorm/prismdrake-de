@@ -185,6 +185,20 @@ TEST(ConfigurationLoaderTest, MissingUserReloadExplicitlySelectsPackagedDefault)
     EXPECT_EQ(result.value().configuration.profile, Profile::lustre);
 }
 
+TEST(ConfigurationLoaderTest, PackagedRecoveryIgnoresUserAndLastKnownValidSources) {
+    ConfigurationStorageFixture storage;
+    const auto locations = storage.locations();
+    writeDocument(locations.user, readFixture("examples/config/forge.toml"));
+    writeDocument(locations.lastKnownValid, readFixture("examples/config/forge.toml"));
+    writeDocument(locations.packagedDefault, readFixture("data/defaults/config.toml"));
+
+    const auto result = loadPackagedConfiguration(locations);
+
+    ASSERT_TRUE(result);
+    EXPECT_EQ(result.value().source, ConfigurationSource::packaged_default);
+    EXPECT_EQ(result.value().configuration.profile, Profile::lustre);
+}
+
 TEST(ConfigurationLoaderTest, InvalidCandidateNeverReplacesUserConfiguration) {
     ConfigurationStorageFixture storage;
     const auto locations = storage.locations();

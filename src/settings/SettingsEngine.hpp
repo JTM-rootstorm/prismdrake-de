@@ -6,6 +6,7 @@
 #include "ThemeBundle.hpp"
 #include "ThemeResolver.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -16,6 +17,11 @@
 namespace prismdrake::settings {
 
 inline constexpr std::size_t maximumValidationDiagnostics = 64U;
+
+enum class SettingsEngineMode : std::uint8_t {
+    normal,
+    development_safe_mode,
+};
 
 struct ValidationDiagnostic final {
     std::string logicalSourceId;
@@ -37,6 +43,7 @@ struct SettingsEngineOptions final {
     std::filesystem::path themeDirectory;
     config::ConfigurationParseOptions parseOptions;
     theme::ThemeResolveOptions themeOptions;
+    SettingsEngineMode mode = SettingsEngineMode::normal;
 };
 
 /// Display-free owner of complete settings/theme transactions for one service epoch.
