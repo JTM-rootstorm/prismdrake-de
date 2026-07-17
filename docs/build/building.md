@@ -15,13 +15,22 @@ is `nlohmann-json3-dev`. The dependency is header-only and is compiled into the
 internal theme target. The configured 3.11 constraint is declared but is not a
 verified lower bound.
 
-The PD1 production build contains internal `prismdrake-foundation`,
-`prismdrake-config`, and `prismdrake-theme` targets. They expose build
-diagnostics, the documented
-[foundation utilities](foundation-utilities.md), and strict version-1
-configuration and theme resolution to later in-tree components, but are not
-installed libraries or stable C++ ABIs. Qt, X11, and the isolated toolkit
-experiment are not part of these targets.
+The PD1 production build contains internal foundation, configuration, theme,
+settings, launcher, notification, X11, and session targets. The Experimental
+notification presentation consists of a passive Qt Core bridge over immutable
+synthetic snapshots and one compiled QML module containing the card, list, and
+typed token input. The bridge emits typed presentation intents; neither layer
+mutates the synthetic authority or implements a notification service. These
+targets are not installed libraries or stable C++ ABIs. The isolated toolkit
+experiment remains a separate CMake project and is not linked into production
+targets.
+
+The notification presentation requires system Qt Core, QML, Quick, and Quick
+Controls 6.4 or newer through the Qt CMake packages; tests also require Quick
+Test. The 6.4 constraint selects the API subset intended for Ubuntu 24.04 and
+Gentoo validation; it is a declared, not yet verified, supported minimum.
+Current host and Gentoo component evidence use Qt 6.11.1. The complete shell
+executable and resolved production theme adapter remain later PD1 integration.
 
 ## Canonical developer builds
 
@@ -60,9 +69,10 @@ Warnings-as-errors is enabled in controlled development and CI configurations,
 not forced on distribution packagers. Developer overrides must remain disabled
 in production builds.
 
-Missing toml++ or nlohmann JSON is always a configure error with package
-guidance. When tests are enabled, a missing system GoogleTest installation is
-also a configure error. Use `-DBUILD_TESTING=OFF` for a runtime-only build;
+Missing required Qt modules, toml++, or nlohmann JSON is always a configure
+error with package guidance from the corresponding system package discovery.
+When tests are enabled, missing system GoogleTest or Qt Quick Test is also a
+configure error. Use `-DBUILD_TESTING=OFF` for a runtime-only build;
 Prismdrake never downloads dependencies during configuration.
 
 The Gentoo evidence environment has tested CMake 4.3.3-r1, GCC 15.3.0, and

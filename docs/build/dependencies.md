@@ -67,9 +67,15 @@ carry a verified or observed version.
   immutable model generations, stale-record removal, and observation-based
   request confirmation are also implemented without another link dependency.
   The production task-strip UI remains unresolved PD1 scope.
-- `prismdrake-session` and `prismdrake-shell` remain planned component
-  manifests. The Qt and XCB versions come from the 2026-07-16 Gentoo reference
-  VM evidence and remain observations rather than supported minima.
+- `prismdrake-session` remains a planned component manifest.
+  `prismdrake-shell` is Experimental because its passive notification adapter
+  and compiled card/list module now directly use Qt Core, QML, Quick, and Quick
+  Controls; Quick Test is test-only. Qt 6.4 is a declared common-API build
+  constraint, while Qt 6.11.1 is the currently observed host component version
+  and Gentoo supplies qtdeclarative 6.11.1-r1. No supported minimum is claimed
+  until the lower-bound CI lane passes. The shell executable, resolved
+  production theme adapter, X11 surface integration, accessibility runtime
+  closure, and complete dynamic dependency graph remain explicitly unresolved.
 - The settings service uses a mutex-protected immutable snapshot pointer and a
   single bounded worker; it introduced no atomic-storage dependency. Production
   runtime-closure evidence, accessibility linkage, and the supervisor

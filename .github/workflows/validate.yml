@@ -46,7 +46,7 @@ jobs:
       - name: Install system build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends dbus libsystemd-dev libxcb1-dev libxcb-randr0-dev ninja-build libgtest-dev libtomlplusplus-dev nlohmann-json3-dev xvfb ${{ matrix.packages }}
+          sudo apt-get install --no-install-recommends dbus libsystemd-dev libxcb1-dev libxcb-randr0-dev ninja-build libgtest-dev libtomlplusplus-dev nlohmann-json3-dev qt6-base-dev qt6-declarative-dev qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qttest xvfb ${{ matrix.packages }}
 
       - name: Configure
         run: >-
@@ -72,7 +72,7 @@ jobs:
       - name: Install formatter
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends ninja-build clang-format-18 libsystemd-dev libtomlplusplus-dev libxcb1-dev libxcb-randr0-dev nlohmann-json3-dev
+          sudo apt-get install --no-install-recommends ninja-build clang-format-18 libsystemd-dev libtomlplusplus-dev libxcb1-dev libxcb-randr0-dev nlohmann-json3-dev qt6-base-dev qt6-declarative-dev qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts
 
       - name: Configure without tests
         run: >-
@@ -82,3 +82,6 @@ jobs:
 
       - name: Check formatting
         run: cmake --build build/format --target format-check
+
+      - name: Check QML
+        run: cmake --build build/format --target prismdrake-shell-notification-qml_qmllint

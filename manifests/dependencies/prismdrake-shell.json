@@ -2,7 +2,7 @@
   "schema_version": 1,
   "component": "prismdrake-shell",
   "component_kind": "visible_shell",
-  "implementation_status": "planned",
+  "implementation_status": "experimental",
   "mandatory_core_startup": true,
   "runtime_dependency_state": "planned_unmeasured",
   "dependencies": [
@@ -12,17 +12,17 @@
       "scope": "mandatory_runtime",
       "relationship": "direct",
       "feature": "visible_shell_foundation",
-      "requirement_status": "planned",
+      "requirement_status": "implemented",
       "version": {
-        "declared_minimum": null,
+        "declared_minimum": "6.4",
         "verified_minimum": null,
         "observed": "6.11.1",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "Accepted ADR 0003 selects Qt 6 Quick for visible shell surfaces; the value is spike evidence, not a supported minimum."
+      "reason": "The Experimental notification presentation adapter directly uses system Qt Core. Qt 6.4 is a declared build constraint for the common API subset, not yet a verified supported minimum; Gentoo 6.11.1 supplies current component evidence."
     },
     {
       "name": "qtdeclarative",
@@ -30,17 +30,17 @@
       "scope": "mandatory_runtime",
       "relationship": "direct",
       "feature": "qml_and_qt_quick",
-      "requirement_status": "planned",
+      "requirement_status": "implemented",
       "version": {
-        "declared_minimum": null,
+        "declared_minimum": "6.4",
         "verified_minimum": null,
         "observed": "6.11.1-r1",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The isolated spike exercised QML, Qt Quick, and Quick Controls from the system Qt package; production usage remains unmeasured."
+      "reason": "The Experimental notification card and list module directly use system QML, Qt Quick, and Quick Controls. Qt 6.4 is a declared common-API build constraint, not yet a verified supported minimum; Gentoo 6.11.1-r1 supplies current component evidence."
     },
     {
       "name": "libxcb",
@@ -58,13 +58,13 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The X11 spike directly linked XCB for standard dock properties; the production shell target does not yet exist."
+      "reason": "The passive notification presentation adapter deliberately has no X11 dependency; production shell-window linkage remains unimplemented and unmeasured."
     }
   ],
   "unresolved": [
     {
       "area": "runtime_closure",
-      "reason": "The minimal Qt modules, direct versus transitive libraries, and supported minimum versions require measurement from the production shell."
+      "reason": "The Qt adapter and visible synthetic-card QML module are implemented, but the complete shell executable, resolved production theme adapter, direct and transitive runtime closure, and supported minimum versions still require measurement."
     },
     {
       "area": "accessibility_runtime",

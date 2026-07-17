@@ -14,3 +14,4 @@ set_tests_properties(GentooVmToolsTest PROPERTIES
 add_subdirectory(fixtures)
 add_subdirectory(unit)
 add_subdirectory(integration)
+add_subdirectory(qt)

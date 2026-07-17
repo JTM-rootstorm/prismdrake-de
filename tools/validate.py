@@ -1277,6 +1277,7 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
     dependency_policy_cases.append(("forbidden libadwaita atom", forbidden_atom, "libadwaita"))
 
     planned_minimum = copy.deepcopy(shell_manifest)
+    planned_minimum["dependencies"][0]["requirement_status"] = "planned"
     planned_minimum["dependencies"][0]["version"]["verified_minimum"] = "6.11.1"
     dependency_policy_cases.append(("unverified planned minimum", planned_minimum, "verified_minimum"))
 

@@ -1,0 +1,302 @@
+# PD1 synthetic notification-presentation evidence
+
+**Date:** 2026-07-17
+
+**Reference environments:** host plus `prismdrake-vm`
+
+**Evidence checkpoint:** pending final WP12 revision and validation record
+
+## Scope and status
+
+This report describes the implementation boundary currently present for
+PD1-WP12 and issue `PD1-014`: a bounded synthetic notification-card model, a
+passive Qt presentation adapter, and token-driven Qt Quick card and list
+components. The work supplies notification fixtures, deterministic replacement
+and timeout behavior, typed action and dismissal intents, keyboard traversal,
+accessible metadata, and presentation inputs for Prismdrake Lustre, Prismdrake
+Forge, high contrast, reduced motion, and opaque fallback operation.
+
+This is not a production notification service. It does not own
+`org.freedesktop.Notifications`, accept D-Bus sender input, persist history,
+implement do-not-disturb policy, fetch remote images, load sender-selected local
+paths, play sounds, retain notifications across sessions, or define lock-surface
+behavior. It also does not install or launch a complete `prismdrake-shell`
+process. The production `prismdrake-notifyd` authority and its service contract
+remain PD2-or-later work under the controlling PD1 plan.
+
+The implementation preserves the Accepted component boundary in
+[ADR 0002](../adr/0002-component-and-process-model.md): notification surfaces
+remain a logical module of `prismdrake-shell`, while the future freedesktop
+service, policy, history, and routing authority belongs to
+`prismdrake-notifyd`. It follows the Accepted Qt 6 Quick and C++ division in
+[ADR 0003](../adr/0003-shell-toolkit.md), the shared profile and accessibility
+token direction in [ADR 0006](../adr/0006-theme-token-model.md), and the C++20,
+CMake, CTest, system-dependency, and sanitizer baseline in
+[ADR 0008](../adr/0008-build-language-and-testing-baseline.md).
+[ADR 0005](../adr/0005-standards-and-glasswyrm-integration.md) remains
+Proposed; this implementation neither accepts nor implements one of its
+candidate native protocols.
+
+## Requirement mapping
+
+| Requirement | Implemented PD1 evidence | Remaining boundary |
+|---|---|---|
+| `PD-NOTIFY-002` | Synthetic cards have model-owned stable identifiers, typed urgency, ordered actions, deterministic identifier replacement, configured/default/never timeouts, an injected monotonic clock, and generation-checked action and dismissal intents. | These semantics have not been connected to a freedesktop notification-service owner or real sender lifecycle. |
+| `PD-NOTIFY-005` | The card exposes a notification role, name, description, and focus state. Actions and dismissal expose button metadata. Keyboard order is card, enabled actions in source order, then dismissal; reverse traversal, Escape dismissal, list-to-list traversal, and focus recovery after replacement, dismissal, or timeout are represented in the QML tests. | Live AT-SPI and screen-reader behavior, large-text layout, RTL behavior, and the final accessibility-tree smoke lane remain WP13 work. |
+| `PD-NOTIFY-006` | Text, identifiers, actions, icon names, image metadata and pixels, timeouts, generations, and aggregate publication size are validated before publication and revalidated at the Qt boundary. QML renders sender text with `Text.PlainText`. | A future D-Bus service must repeat validation at its process boundary and define sender, image-decoding, and transport policy. |
+| `PD-A11Y-001` through `PD-A11Y-009` | The component has explicit keyboard traversal, visible focus borders, accessible roles and labels, token-supplied minimum target dimensions, a textual and shaped urgency indicator, and zero-duration reduced-motion behavior. The same card implementation consumes Lustre and Forge token values. | This slice does not establish real wallpaper contrast, mixed scaling, text expansion, platform-bridge behavior, or complete shell focus integration. |
+| `PD-THEME-003`, `PD-THEME-008`, `PD-THEME-009` | The QML component consumes high-contrast, reduced-motion, opaque-fallback, focus, urgency, and minimum-target values through one typed token input instead of profile-specific component forks. Urgency remains available as text and shape, not hue alone. | The token input is not yet connected to the production resolved settings/theme snapshot. Contrast and final rendering still require deterministic baselines. |
+| `PD-SEC-001`, `PD-SEC-011`, `PD-SEC-012` | The model rejects malformed, oversized, unsafe-control, non-UTF-8, path-like icon, inconsistent image, invalid enum, stale-generation, and capacity-exceeding inputs. Negative unit tests exercise these boundaries. No rich-text, script, file, URI, or command execution path exists. | Scheduled fuzzing and the production service's process-boundary validation remain outside WP12. |
+| `PD-PERF-001`, `PD-PERF-004`, `PD-PERF-009` | The synthetic authority and passive adapter perform no disk, network, D-Bus, X11, image-decoding, or polling work. Time is injected and publications are bounded. Reduced-motion duration is deterministic. | No frame-time, input-latency, allocation, startup, or wakeup budget is measured here. |
+
+`PD-NOTIFY-001`, `PD-NOTIFY-003`, `PD-NOTIFY-004`, and `PD-NOTIFY-007`
+are not claimed by this slice. Their freedesktop service, history, policy, and
+service-continuity responsibilities remain with the future
+`prismdrake-notifyd` implementation.
+
+## Model and publication boundary
+
+`SyntheticNotificationModel` is a single-owner, display-free C++ model. It
+performs no I/O, logging, D-Bus work, rendering, image decoding, thread
+creation, or sender callback. The only accepted inputs are explicit synthetic
+fixtures or developer/test callers. Each accepted mutation publishes one
+complete immutable `NotificationSnapshot` with a nonzero generation. Captured
+snapshot pointers retain prior publications unchanged.
+
+The model implements the following deterministic behavior:
+
+- Upsert allocates a stable local identifier or replaces the exact requested
+  existing card without changing list position.
+- Card content generations change independently from snapshot generations, so
+  stale actions and dismissals fail rather than targeting replacement content.
+- Default, explicit, and non-expiring timeout forms are typed. Explicit and
+  default expiry use an injected monotonic clock and an inclusive deadline.
+- Timeout advancement removes all cards due at the observed clock value in one
+  complete publication.
+- Focus targets are modelled as card, enabled actions in input order, then
+  dismissal when available.
+- The model publishes typed intent data for an action; it never invokes sender
+  code or another process.
+- Failed validation, stale identity, stale generation, or capacity exhaustion
+  retains the previous complete snapshot.
+
+`validateNotificationSnapshot()` repeats the complete card, identifier,
+generation, text, visual, action, timeout, accessibility, and aggregate-image
+checks before copied or test-constructed state can cross into another in-process
+layer.
+
+## Untrusted-data limits
+
+The implementation uses fixed compile-time envelopes rather than accepting
+sender-controlled unbounded collections or allocation sizes:
+
+| Boundary | Limit and policy |
+|---|---|
+| Complete publication | 32 cards and 8 MiB of aggregate decoded synthetic image pixels |
+| Summary | 1,024 UTF-8 bytes and 256 Unicode code points; nonempty |
+| Body | 16 KiB and 4,096 code points; tab and newline are the only accepted control whitespace |
+| Application name | 512 bytes and 128 code points |
+| Application identifier | 255 ASCII identifier bytes; no path or URI form |
+| Actions | 8 unique action identifiers per card |
+| Action identifier and label | 64 ASCII identifier bytes; label up to 512 UTF-8 bytes and 128 code points |
+| Theme icon name | 255 ASCII identifier bytes; separators, URI syntax, `.` and `..` are rejected |
+| Decoded synthetic image | Tightly packed RGB8 or RGBA8, at most 512 by 512 pixels and 1 MiB per card |
+| Timeout | Positive explicit/default duration no longer than 24 hours, or typed non-expiring behavior |
+
+All visible sender text remains literal plain text. The core does not parse a
+rich-text subset, and `NotificationCard.qml` explicitly selects
+`Text.PlainText` for summaries, bodies, urgency text, and action labels. Theme
+icons remain validated lookup keys, not paths. Decoded image fixtures have no
+file or network origin. The current Qt adapter deliberately does not expose the
+icon or pixel payload to QML, so this slice makes no image-rendering, scaling,
+or image-accessibility claim. Diagnostics are static and do not include rejected
+notification bodies or other sender content.
+
+## Qt presentation boundary
+
+`NotificationPresentationModel` is a passive `QAbstractListModel` mirror of one
+validated immutable publication. It exposes bounded Unicode presentation
+properties and QObject action affordances; exact 64-bit notification identities
+and content generations remain in C++ and are emitted only through typed
+`actionRequested` and `dismissRequested` signals. They do not round-trip through
+JavaScript numeric values.
+
+The adapter rejects absent, stale, conflicting, malformed, reentrant, and
+non-owner-thread publications without replacing its prior coherent snapshot.
+Incremental row removal, insertion, movement, and replacement preserve QObject
+identity for unchanged cards. Reconciliation-start and publication-complete
+signals allow `NotificationList.qml` to capture focus before a model mutation
+and restore it only after the rows and current snapshot are coherent.
+
+`NotificationCard.qml` owns layout, visual state, toolkit accessibility
+metadata, and brief interruptible motion. It provides:
+
+- literal summary, body, application-name, action, and urgency presentation;
+- explicit notification and button roles, names, descriptions, focusability,
+  and focused state;
+- visible focus borders and token-sized action and dismissal targets in both
+  dimensions;
+- deterministic Tab and Backtab traversal that skips disabled actions;
+- Escape dismissal for dismissible cards;
+- a textual urgency label plus a shaped urgency surface; and
+- reduced-motion, high-contrast, opaque-fallback, Lustre, and Forge token inputs
+  through one shared component implementation.
+
+`NotificationList.qml` moves focus between cards and recovers focus when a
+publication removes or replaces the focused delegate. It keeps the same
+control focused when an unaffected card survives, moves to the next card after
+a focused removal when one exists, otherwise moves to the previous card, and
+emits a focus-exit intent when the focused list becomes empty. The QML layer
+does not mutate the synthetic model directly; it emits passive action or
+dismissal intent for a C++ owner to evaluate.
+
+## Standards and Glasswyrm ownership
+
+Notification presentation is a Prismdrake responsibility, so this slice does
+not read or mutate window-manager state. It has no X11 transport, compositor,
+capture, thumbnail, or blur implementation and advertises no `GW_*` capability.
+Glasswyrm or another active window manager remains authoritative for focus,
+stacking, outputs, and composition. Any later translucent material remains an
+effect request whose blur execution belongs to the compositor; the current
+opaque-fallback input uses an ordinary resolved surface color and never captures
+or blurs the desktop.
+
+The freedesktop notification standard remains the required production baseline,
+but this evidence intentionally stops before bus ownership or protocol handling.
+Implementing an internal synthetic model does not satisfy
+`PD-NOTIFY-001` and does not imply compatibility with real notification senders.
+
+## Dependency and fallback impact
+
+The display-free `prismdrake-notification-model` target links only the existing
+Prismdrake foundation boundary. Its public API contains no Qt types. The passive
+presentation adapter links Qt Core, while the separate compiled QML module uses
+system Qt QML, Qt Quick, and Qt Quick Controls. Qt Quick Test is test-only.
+GoogleTest remains test-only, and no dependency is downloaded or vendored.
+
+The root build currently declares Qt 6.4 as a common-API configure constraint,
+but that value is not a verified supported minimum until the lower-bound CI lane
+is recorded. The shell dependency manifest remains
+`planned_unmeasured`: the complete shell executable, production theme adapter,
+AT-SPI runtime linkage, installation shape, and direct and transitive runtime
+closure have not been measured. The slice adds no GTK, GNOME Shell, Mutter,
+GNOME settings/control-center, libadwaita, Xlib, Glasswyrm-native, or image-loader
+dependency.
+
+Fallback behavior is local and explicit:
+
+- invalid or stale publications retain the prior coherent presentation;
+- disabled actions cannot emit activation intent;
+- nondismissible cards omit the dismissal affordance;
+- missing native capabilities require no alternate code path because none are
+  consumed;
+- reduced motion makes the component motion duration zero;
+- disabled transparency and missing blur are represented by an opaque resolved
+  surface input; and
+- Lustre and Forge use the same component with different resolved values.
+
+The production settings/theme adapter still must prove that these QML token
+inputs arrive as one validated generation rather than mixed individual values.
+
+## Implemented test inventory
+
+This section records source-level coverage present in the repository. It is not
+a claim that the final revision, host matrix, VM matrix, or CI run passed; those
+outcomes belong in the validation table below after they are personally
+observed.
+
+### Display-free model tests
+
+`tests/unit/NotificationModelTests.cpp` defines 14 GoogleTest cases covering:
+
+- typed accessible plain-text publication and focus order;
+- replacement identity, ordering, content generation, and immutable prior
+  snapshots;
+- default, explicit, never, and inclusive injected-clock timeouts;
+- nondismissible focus behavior and owner removal;
+- generation-checked dismissal and unknown or stale identity;
+- valid packed RGB8 and RGBA8 images;
+- malformed, oversized, control, invalid-UTF-8, and redacted text failures;
+- copied-snapshot revalidation;
+- malformed, duplicate, and oversized actions;
+- path-, URI-, and traversal-like icon rejection;
+- malformed, inconsistent, invalid-format, and oversized image rejection;
+- aggregate image-memory enforcement;
+- invalid timeout, urgency, clock, and configuration state; and
+- card capacity, unknown replacement, and moved-from
+  behavior.
+
+### Passive Qt adapter tests
+
+`tests/qt/NotificationPresentationModelTests.cpp` defines nine GoogleTest cases
+covering literal ordered mirroring without numeric identity properties,
+replacement and typed intent refresh, unchanged QObject preservation,
+disabled and nondismissible affordances, typed dismissal intent, copied-input
+and size-bound rejection, stale and conflicting generation retention,
+cross-thread rejection, and reentrant publication rejection while rows remain
+coherent.
+
+### Qt Quick component tests
+
+`tests/qt/qml/tst_NotificationCard.qml` defines four card tests covering literal
+plain-text and accessible notification metadata; reduced-motion, opaque, and
+high-contrast inputs; forward and reverse keyboard order with disabled-action
+skipping, exact activation, Escape dismissal, and minimum target width and
+height; and reuse of the same component with Forge token values.
+
+`tests/qt/qml-real/tst_NotificationList.qml` uses a C++ Quick Test fixture backed
+by the real `SyntheticNotificationModel` and `NotificationPresentationModel`.
+Its six tests cover next-then-previous focus after dismissal, next-card focus
+after injected-clock timeout, card focus after replacement, preservation of an
+unaffected action focus when an earlier row is removed, presentation-object
+identity when multiple cards have identical visible content, and focus exit
+when the focused list becomes empty.
+
+Both QML targets are configured for the offscreen platform, software rendering,
+and the Basic Quick Controls style. That configuration makes component behavior
+deterministic enough for functional tests; it is not a visual-baseline result.
+
+## Final validation record
+
+The finalizer must replace the em dashes only with commands and outcomes
+observed against the final evidence revision. Exact-source archives must record
+their checksum and extraction directory. A skipped lane must name the precise
+environmental reason rather than being reported as a pass.
+
+| Layer | Exact command or artifact | Result | Revision, environment, or run |
+|---|---|---|---|
+| Contract validation | — | — | — |
+| Host GCC warning-as-error build and complete CTest suite | — | — | — |
+| Host Qt QML lint, card Quick Test, and real-model list Quick Test | — | — | — |
+| Host Clang build and focused notification tests | — | — | — |
+| Host ASan plus UBSan notification tests | — | — | — |
+| Exact staged/source archive and SHA-256 | — | — | — |
+| Gentoo VM GCC complete suite, including Xvfb and isolated D-Bus lanes | — | — | — |
+| Gentoo VM Clang focused notification tests | — | — | — |
+| Gentoo VM ASan plus UBSan focused notification tests | — | — | — |
+| Ubuntu lower-bound Qt lane | — | — | — |
+| GitHub Actions | — | — | — |
+
+## Explicitly unresolved evidence
+
+WP12's model and functional presentation code does not close the visual and
+assistive-technology acceptance gate by itself. The following remain assigned
+to PD1-WP13 or later integration:
+
+- intentionally reviewed deterministic visual baselines for Lustre, Forge,
+  high contrast, reduced motion, disabled transparency, missing blur, large
+  text, and RTL layout;
+- contrast evaluation over controlled wallpaper and opaque fallback material;
+- a live AT-SPI accessibility-tree and screen-reader smoke procedure;
+- full shell focus integration, per-output placement, mixed scaling, and a
+  production font baseline;
+- rendering and accessibility policy for validated icon or image content;
+- connection to one resolved immutable settings/theme generation;
+- real `prismdrake-shell` startup, installation, and runtime-closure evidence;
+  and
+- the separately owned `prismdrake-notifyd` freedesktop service, persistence,
+  privacy, do-not-disturb, restart-continuity, and lock-surface policy.
+
+Until the final validation table and WP13 evidence are complete, this document
+supports review of the `PD1-014` implementation boundary but does not claim the
+PD1 notification exit gate or the complete PD1 milestone is closed.

@@ -10,12 +10,17 @@ cmake --build --preset gcc-debug
 ctest --preset gcc-debug
 ```
 
-The current CTest suite is display-free. It verifies that the generated build
-metadata uses the tracked product version, that developer overrides report
-their explicit compile-time state, and that the Gentoo VM safety helpers obey
-their non-root mutation policy through hermetic Python tests. GoogleTest is
-obtained only from the system package manager and is never linked into an
-installed runtime target.
+Most of the current CTest suite is display-free. In addition to foundation,
+settings, launcher, session, X11, and synthetic notification-model coverage,
+it tests the Qt Core presentation bridge without a GUI application or display
+connection. Those tests verify ordered immutable mirroring, defensive
+revalidation, stable unaffected objects, reentrancy and thread rejection,
+disabled affordances, replacement refresh, and typed action and dismissal
+intents whose 64-bit identity never round-trips through JavaScript. A bounded
+Qt Quick Test lane uses the offscreen platform and software renderer to verify
+literal text, keyboard order, accessible metadata, non-color urgency text,
+reduced motion, high contrast, and opaque resolved token inputs. GoogleTest and
+Qt are obtained only from the system package manager and are never downloaded.
 
 The checked-in Clang path is:
 
@@ -40,6 +45,7 @@ Formatting is checked without rewriting source:
 
 ```sh
 cmake --build --preset clang-debug --target format-check
+cmake --build --preset clang-debug --target prismdrake-shell-notification-qml_qmllint
 ```
 
 The authoritative CI formatting path uses `clang-format-18` on Ubuntu 24.04.
