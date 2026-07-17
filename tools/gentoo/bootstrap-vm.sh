@@ -224,7 +224,10 @@ install_project_file "$REPOS_FILE" "$REPOS_CONTENT"
 install_project_file "$USE_FILE" "$USE_CONTENT"
 install_project_file "$KEYWORDS_FILE" "$KEYWORDS_CONTENT"
 
-runuser -u "$WORKSPACE_USER" -- pkgdev manifest "$PORTAGE_REPO"
+# The single-quoted script expands $1 only in the unprivileged child shell.
+# shellcheck disable=SC2016
+runuser -u "$WORKSPACE_USER" -- sh -c \
+	'cd -- "$1" && exec pkgdev manifest' sh "$PORTAGE_REPO"
 PKGCHECK_CACHE=$(mktemp -d /tmp/prismdrake-pkgcheck.XXXXXX)
 chown "$WORKSPACE_OWNER:$(stat -c '%g' "$WORKSPACE")" "$PKGCHECK_CACHE"
 trap 'rm -rf "$PKGCHECK_CACHE"' EXIT HUP INT TERM

@@ -126,7 +126,7 @@ layer:
 export PRISMDRAKE_WORKSPACE=/mnt/shared/prismdrake-de
 export PRISMDRAKE_PORTAGE_REPO="$PRISMDRAKE_WORKSPACE/packaging/gentoo/repository"
 
-pkgdev manifest "$PRISMDRAKE_PORTAGE_REPO"
+(cd "$PRISMDRAKE_PORTAGE_REPO" && pkgdev manifest)
 PRISMDRAKE_PKGCHECK_CACHE=$(mktemp -d /tmp/prismdrake-pkgcheck.XXXXXX)
 pkgcheck scan --cache-dir "$PRISMDRAKE_PKGCHECK_CACHE" \
   "$PRISMDRAKE_PORTAGE_REPO"
