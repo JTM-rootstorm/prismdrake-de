@@ -9,6 +9,8 @@ add_library(prismdrake-x11 STATIC
     EwmhCapabilitiesInternal.hpp
     PropertyReader.cpp
     PropertyReader.hpp
+    RootEventStream.cpp
+    RootEventStream.hpp
     X11Connection.cpp
     X11Connection.hpp
     X11ConnectionPrivate.hpp

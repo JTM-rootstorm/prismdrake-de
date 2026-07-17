@@ -2,6 +2,7 @@
 
 #include "X11Connection.hpp"
 
+#include <atomic>
 #include <memory>
 #include <utility>
 
@@ -30,9 +31,19 @@ class X11Connection::Implementation final {
                    std::uint64_t identity) noexcept
         : connection_(std::move(connection)), screen_(screen), identity_(identity) {}
 
+    [[nodiscard]] bool tryAcquireRootEventStream() noexcept {
+        bool expected = false;
+        return rootEventStreamActive_.compare_exchange_strong(expected, true);
+    }
+
+    void releaseRootEventStream() noexcept { rootEventStreamActive_.store(false); }
+
     detail::ConnectionHandle connection_;
     ScreenInfo screen_;
     std::uint64_t identity_;
+
+  private:
+    std::atomic_bool rootEventStreamActive_{false};
 };
 
 } // namespace prismdrake::x11

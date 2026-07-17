@@ -12,6 +12,7 @@ namespace prismdrake::x11 {
 
 class AtomCache;
 class PropertyReader;
+class RootEventStream;
 
 inline constexpr std::size_t maximumDisplayNameBytes = 255U;
 
@@ -37,6 +38,7 @@ class X11Connection final {
   private:
     friend class AtomCache;
     friend class PropertyReader;
+    friend class RootEventStream;
 
     class Implementation;
     using Identity = std::uint64_t;

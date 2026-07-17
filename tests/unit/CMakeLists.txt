@@ -12,6 +12,7 @@ add_executable(prismdrake-foundation-tests
     FoundationPrimitivesTests.cpp
     PropertyReaderTests.cpp
     ResultTests.cpp
+    RootEventStreamTests.cpp
     RestartPolicyTests.cpp
     SessionEnvironmentTests.cpp
     SessionOptionsTests.cpp

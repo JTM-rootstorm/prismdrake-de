@@ -108,6 +108,8 @@ prismdrake_add_format_check(
     src/x11/EwmhCapabilitiesInternal.hpp
     src/x11/PropertyReader.cpp
     src/x11/PropertyReader.hpp
+    src/x11/RootEventStream.cpp
+    src/x11/RootEventStream.hpp
     src/x11/X11Connection.cpp
     src/x11/X11Connection.hpp
     src/x11/X11ConnectionPrivate.hpp
@@ -142,6 +144,7 @@ prismdrake_add_format_check(
     src/session/SettingsReadiness.hpp
     tests/integration/EwmhCapabilitiesTests.cpp
     tests/integration/PropertyReaderTests.cpp
+    tests/integration/RootEventStreamTests.cpp
     tests/integration/SettingsServiceTests.cpp
     tests/integration/X11ConnectionTests.cpp
     tests/fixtures/SessionChildFixture.cpp
@@ -157,6 +160,7 @@ prismdrake_add_format_check(
     tests/unit/FoundationPrimitivesTests.cpp
     tests/unit/PropertyReaderTests.cpp
     tests/unit/ResultTests.cpp
+    tests/unit/RootEventStreamTests.cpp
     tests/unit/RestartPolicyTests.cpp
     tests/unit/SessionEnvironmentTests.cpp
     tests/unit/SessionOptionsTests.cpp
