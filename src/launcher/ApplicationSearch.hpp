@@ -1,7 +1,7 @@
 #pragma once
 
+#include "ApplicationCatalog.hpp"
 #include "Cancellation.hpp"
-#include "DesktopEntryDiscovery.hpp"
 #include "Result.hpp"
 
 #include <cstddef>
@@ -106,15 +106,14 @@ class ApplicationSearchOperation final {
     std::unique_ptr<Impl> implementation_;
 
     friend foundation::Result<ApplicationSearchOperation>
-    createApplicationSearch(std::shared_ptr<const DesktopEntryDiscoverySnapshot> catalog,
-                            std::uint64_t catalogGeneration, std::uint64_t requestGeneration,
-                            ApplicationSearchQuery query, std::size_t resultLimit);
+    createApplicationSearch(std::shared_ptr<const ApplicationCatalogSnapshot> catalog,
+                            std::uint64_t requestGeneration, ApplicationSearchQuery query,
+                            std::size_t resultLimit);
 };
 
 [[nodiscard]] foundation::Result<ApplicationSearchOperation>
-createApplicationSearch(std::shared_ptr<const DesktopEntryDiscoverySnapshot> catalog,
-                        std::uint64_t catalogGeneration, std::uint64_t requestGeneration,
-                        ApplicationSearchQuery query,
+createApplicationSearch(std::shared_ptr<const ApplicationCatalogSnapshot> catalog,
+                        std::uint64_t requestGeneration, ApplicationSearchQuery query,
                         std::size_t resultLimit = maximumApplicationSearchResults);
 
 /// Creates the model-level error state used when catalog construction failed.

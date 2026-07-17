@@ -40,8 +40,8 @@ using foundation::ErrorCode;
 }
 
 [[nodiscard]] std::shared_ptr<const DesktopEntryDiscoverySnapshot>
-catalog(std::vector<DiscoveredDesktopEntry> entries, std::vector<std::size_t> visible = {},
-        bool complete = true) {
+discovery(std::vector<DiscoveredDesktopEntry> entries, std::vector<std::size_t> visible = {},
+          bool complete = true) {
     if (visible.empty() && !entries.empty()) {
         visible.resize(entries.size());
         for (std::size_t index = 0U; index < visible.size(); ++index) {
@@ -52,6 +52,25 @@ catalog(std::vector<DiscoveredDesktopEntry> entries, std::vector<std::size_t> vi
         std::move(entries), std::move(visible), {}, 0U, complete, false, false});
 }
 
+[[nodiscard]] std::shared_ptr<const ApplicationCatalogSnapshot>
+catalog(std::shared_ptr<const DesktopEntryDiscoverySnapshot> source,
+        std::uint64_t generation = 7U) {
+    std::vector<ApplicationCatalogDecision> decisions;
+    decisions.reserve(source->visibleEntryIndices.size());
+    for (const auto index : source->visibleEntryIndices) {
+        decisions.push_back({index, ApplicationCatalogEligibilityReason::eligibleWithoutTryExec});
+    }
+    return std::make_shared<const ApplicationCatalogSnapshot>(ApplicationCatalogSnapshot{
+        generation, source, std::move(decisions), source->visibleEntryIndices,
+        source->visibleEntryIndices.size(), source->visibleEntryIndices.size(), source->complete});
+}
+
+[[nodiscard]] std::shared_ptr<const ApplicationCatalogSnapshot>
+catalog(std::vector<DiscoveredDesktopEntry> entries, std::vector<std::size_t> visible = {},
+        bool complete = true, std::uint64_t generation = 7U) {
+    return catalog(discovery(std::move(entries), std::move(visible), complete), generation);
+}
+
 [[nodiscard]] ApplicationSearchQuery query(std::string_view text) {
     auto result = parseApplicationSearchQuery(text);
     EXPECT_TRUE(result) << (result ? "" : result.error().message);
@@ -59,11 +78,11 @@ catalog(std::vector<DiscoveredDesktopEntry> entries, std::vector<std::size_t> vi
 }
 
 [[nodiscard]] ApplicationSearchOperation
-operation(std::shared_ptr<const DesktopEntryDiscoverySnapshot> source, std::string_view text,
+operation(std::shared_ptr<const ApplicationCatalogSnapshot> source, std::string_view text,
           std::size_t resultLimit = maximumApplicationSearchResults,
-          std::uint64_t catalogGeneration = 7U, std::uint64_t requestGeneration = 11U) {
-    auto result = createApplicationSearch(std::move(source), catalogGeneration, requestGeneration,
-                                          query(text), resultLimit);
+          std::uint64_t requestGeneration = 11U) {
+    auto result =
+        createApplicationSearch(std::move(source), requestGeneration, query(text), resultLimit);
     EXPECT_TRUE(result) << (result ? "" : result.error().message);
     return std::move(result).value();
 }
@@ -91,10 +110,10 @@ complete(ApplicationSearchOperation &search, std::size_t budget = 3U) {
 }
 
 [[nodiscard]] std::vector<std::string> resultIds(const ApplicationSearchSnapshot &search,
-                                                 const DesktopEntryDiscoverySnapshot &source) {
+                                                 const ApplicationCatalogSnapshot &source) {
     std::vector<std::string> ids;
     for (const auto &result : search.results) {
-        ids.push_back(source.entries[result.discoveryEntryIndex].id.value());
+        ids.push_back(source.discovery->entries[result.discoveryEntryIndex].id.value());
     }
     return ids;
 }
@@ -127,6 +146,36 @@ TEST(ApplicationSearchTest, SearchesOnlyPublishedVisibleEntryIndices) {
 
     auto unpublished = operation(source, "private");
     EXPECT_EQ(complete(unpublished)->state, ApplicationSearchViewState::noResults);
+}
+
+TEST(ApplicationSearchTest, CannotSearchTryExecExcludedEntries) {
+    const auto source = discovery({discovered("eligible.desktop", "Eligible Dragon"),
+                                   discovered("excluded.desktop", "Excluded Secret")});
+    const auto eligibleCatalog =
+        std::make_shared<const ApplicationCatalogSnapshot>(ApplicationCatalogSnapshot{
+            19U,
+            source,
+            {{0U, ApplicationCatalogEligibilityReason::eligibleWithoutTryExec},
+             {1U, ApplicationCatalogEligibilityReason::excludedTryExecMissing}},
+            {0U},
+            2U,
+            2U,
+            true});
+
+    auto excluded = operation(eligibleCatalog, "secret");
+    const auto excludedResult = complete(excluded);
+    ASSERT_NE(excludedResult, nullptr);
+    EXPECT_EQ(excludedResult->state, ApplicationSearchViewState::noResults);
+    EXPECT_TRUE(excludedResult->results.empty());
+    EXPECT_EQ(excludedResult->catalogGeneration, 19U);
+    EXPECT_EQ(excludedResult->examinedApplications, 1U);
+    EXPECT_EQ(excludedResult->totalApplications, 1U);
+
+    auto eligible = operation(eligibleCatalog, "dragon");
+    const auto eligibleResult = complete(eligible);
+    ASSERT_NE(eligibleResult, nullptr);
+    EXPECT_EQ(resultIds(*eligibleResult, *eligibleCatalog),
+              (std::vector<std::string>{"eligible.desktop"}));
 }
 
 TEST(ApplicationSearchTest, SearchesParserSelectedLocalizedValuesAndBaseCategories) {
@@ -228,8 +277,8 @@ TEST(ApplicationSearchTest, PublishesLoadingEmptyNoResultResultAndErrorStates) {
 
     auto hiddenEntry = discovered("hidden.desktop", "Hidden");
     hiddenEntry.visibility = DesktopEntryVisibilityReason::hiddenNoDisplay;
-    const auto empty = std::make_shared<const DesktopEntryDiscoverySnapshot>(
-        DesktopEntryDiscoverySnapshot{{std::move(hiddenEntry)}, {}, {}, 0U, true, false, false});
+    const auto empty = catalog(std::make_shared<const DesktopEntryDiscoverySnapshot>(
+        DesktopEntryDiscoverySnapshot{{std::move(hiddenEntry)}, {}, {}, 0U, true, false, false}));
     auto emptySearch = operation(empty, "anything");
     EXPECT_EQ(advance(emptySearch)->state, ApplicationSearchViewState::emptyCatalog);
 
@@ -267,7 +316,7 @@ TEST(ApplicationSearchTest, CancellationNeverPublishesAStaleCompletion) {
     ASSERT_FALSE(staleResume);
     EXPECT_EQ(staleResume.error().code, ErrorCode::cancelled);
 
-    auto replacement = operation(source, "match", maximumApplicationSearchResults, 7U, 12U);
+    auto replacement = operation(source, "match", maximumApplicationSearchResults, 12U);
     const auto completed = complete(replacement);
     ASSERT_NE(completed, nullptr);
     EXPECT_EQ(completed->state, ApplicationSearchViewState::results);
@@ -306,10 +355,15 @@ TEST(ApplicationSearchTest, AcceptsExactQueryAndOperationLimitsAndRejectsOneOver
     EXPECT_EQ(tooManyTokens.error().code, ErrorCode::too_large);
 
     const auto source = catalog({discovered("one.desktop", "One")});
-    EXPECT_TRUE(
-        createApplicationSearch(source, 1U, 1U, query("one"), maximumApplicationSearchResults));
-    EXPECT_FALSE(createApplicationSearch(source, 1U, 1U, query("one"),
-                                         maximumApplicationSearchResults + 1U));
+    EXPECT_TRUE(createApplicationSearch(source, 1U, query("one"), maximumApplicationSearchResults));
+    EXPECT_FALSE(
+        createApplicationSearch(source, 0U, query("one"), maximumApplicationSearchResults));
+    auto zeroGeneration = std::make_shared<ApplicationCatalogSnapshot>(*source);
+    zeroGeneration->generation = 0U;
+    EXPECT_FALSE(createApplicationSearch(std::move(zeroGeneration), 1U, query("one"),
+                                         maximumApplicationSearchResults));
+    EXPECT_FALSE(
+        createApplicationSearch(source, 1U, query("one"), maximumApplicationSearchResults + 1U));
     auto search = operation(source, "one");
     CancellationSource cancellation;
     EXPECT_TRUE(search.advance(maximumApplicationSearchWorkUnits, cancellation.token()));
@@ -331,26 +385,80 @@ TEST(ApplicationSearchTest, RejectsInvalidInputWithStaticRedactedFailures) {
     ASSERT_FALSE(invalidNull);
     EXPECT_EQ(invalidNull.error().message.find("private"), std::string::npos);
 
-    auto invalidCatalog = std::make_shared<const DesktopEntryDiscoverySnapshot>(
+    const auto invalidDiscovery = std::make_shared<const DesktopEntryDiscoverySnapshot>(
         DesktopEntryDiscoverySnapshot{{}, {99U}, {}, 0U, true, false, false});
+    auto invalidCatalog =
+        std::make_shared<const ApplicationCatalogSnapshot>(ApplicationCatalogSnapshot{
+            1U,
+            invalidDiscovery,
+            {{99U, ApplicationCatalogEligibilityReason::eligibleWithoutTryExec}},
+            {99U},
+            1U,
+            1U,
+            true});
     const auto invalidOperation =
-        createApplicationSearch(std::move(invalidCatalog), 1U, 1U, query("private"), 1U);
+        createApplicationSearch(std::move(invalidCatalog), 1U, query("private"), 1U);
     ASSERT_FALSE(invalidOperation);
     EXPECT_EQ(invalidOperation.error().message.find("private"), std::string::npos);
+}
+
+TEST(ApplicationSearchTest, RejectsInconsistentCatalogPublicationShapes) {
+    const auto source =
+        discovery({discovered("one.desktop", "One"), discovered("two.desktop", "Two")});
+    const ApplicationCatalogSnapshot valid{
+        5U,
+        source,
+        {{0U, ApplicationCatalogEligibilityReason::eligibleWithoutTryExec},
+         {1U, ApplicationCatalogEligibilityReason::excludedTryExecNotExecutable}},
+        {0U},
+        2U,
+        2U,
+        true};
+    const auto expectRejected = [](ApplicationCatalogSnapshot candidate) {
+        const auto result = createApplicationSearch(
+            std::make_shared<const ApplicationCatalogSnapshot>(std::move(candidate)), 1U,
+            query("one"), 1U);
+        ASSERT_FALSE(result);
+        EXPECT_EQ(result.error().code, ErrorCode::validation_error);
+    };
+
+    auto missingDiscovery = valid;
+    missingDiscovery.discovery.reset();
+    expectRejected(std::move(missingDiscovery));
+
+    auto countMismatch = valid;
+    countMismatch.examinedEntries = 1U;
+    expectRejected(std::move(countMismatch));
+
+    auto prefixMismatch = valid;
+    std::swap(prefixMismatch.decisions[0], prefixMismatch.decisions[1]);
+    expectRejected(std::move(prefixMismatch));
+
+    auto unknownReason = valid;
+    unknownReason.decisions[0].reason = static_cast<ApplicationCatalogEligibilityReason>(255U);
+    expectRejected(std::move(unknownReason));
+
+    auto eligibilityMismatch = valid;
+    eligibilityMismatch.eligibleEntryIndices = {1U};
+    expectRejected(std::move(eligibilityMismatch));
+
+    auto completionMismatch = valid;
+    completionMismatch.complete = false;
+    expectRejected(std::move(completionMismatch));
 }
 
 TEST(ApplicationSearchTest, RejectsDuplicateIdsAndNonvisibleReferencedEntries) {
     auto first = discovered("duplicate.desktop", "First");
     auto second = discovered("duplicate.desktop", "Second");
     const auto duplicateCatalog = catalog({std::move(first), std::move(second)});
-    const auto duplicate = createApplicationSearch(duplicateCatalog, 1U, 1U, query("entry"), 1U);
+    const auto duplicate = createApplicationSearch(duplicateCatalog, 1U, query("entry"), 1U);
     ASSERT_FALSE(duplicate);
     EXPECT_EQ(duplicate.error().code, ErrorCode::validation_error);
 
     auto hidden = discovered("hidden.desktop", "Hidden");
     hidden.visibility = DesktopEntryVisibilityReason::hiddenNoDisplay;
     const auto hiddenCatalog = catalog({std::move(hidden)});
-    const auto nonvisible = createApplicationSearch(hiddenCatalog, 1U, 1U, query("hidden"), 1U);
+    const auto nonvisible = createApplicationSearch(hiddenCatalog, 1U, query("hidden"), 1U);
     ASSERT_FALSE(nonvisible);
     EXPECT_EQ(nonvisible.error().code, ErrorCode::validation_error);
 }

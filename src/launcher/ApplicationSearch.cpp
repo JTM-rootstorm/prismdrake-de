@@ -240,6 +240,18 @@ scoreEntry(const DiscoveredDesktopEntry &discovered, std::size_t entryIndex,
     return catalogGeneration != 0U && requestGeneration != 0U;
 }
 
+[[nodiscard]] bool isKnownEligibilityReason(ApplicationCatalogEligibilityReason reason) noexcept {
+    switch (reason) {
+    case ApplicationCatalogEligibilityReason::eligibleWithoutTryExec:
+    case ApplicationCatalogEligibilityReason::eligibleTryExec:
+    case ApplicationCatalogEligibilityReason::excludedTryExecMissing:
+    case ApplicationCatalogEligibilityReason::excludedTryExecNotRegularFile:
+    case ApplicationCatalogEligibilityReason::excludedTryExecNotExecutable:
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 Result<ApplicationSearchQuery> parseApplicationSearchQuery(std::string_view text) {
@@ -294,15 +306,12 @@ Result<ApplicationSearchQuery> parseApplicationSearchQuery(std::string_view text
 }
 
 struct ApplicationSearchOperation::Impl final {
-    Impl(std::shared_ptr<const DesktopEntryDiscoverySnapshot> source,
-         std::uint64_t sourceGeneration, std::uint64_t searchGeneration,
+    Impl(std::shared_ptr<const ApplicationCatalogSnapshot> source, std::uint64_t searchGeneration,
          ApplicationSearchQuery searchQuery, std::size_t maximumResults)
-        : catalog(std::move(source)), catalogGeneration(sourceGeneration),
-          requestGeneration(searchGeneration), query(std::move(searchQuery)),
-          resultLimit(maximumResults) {}
+        : catalog(std::move(source)), requestGeneration(searchGeneration),
+          query(std::move(searchQuery)), resultLimit(maximumResults) {}
 
-    std::shared_ptr<const DesktopEntryDiscoverySnapshot> catalog;
-    std::uint64_t catalogGeneration;
+    std::shared_ptr<const ApplicationCatalogSnapshot> catalog;
     std::uint64_t requestGeneration;
     ApplicationSearchQuery query;
     std::size_t resultLimit;
@@ -333,9 +342,9 @@ struct ApplicationSearchOperation::Impl final {
         }
 
         ApplicationSearchViewState state = ApplicationSearchViewState::loading;
-        const bool examinedCurrentCatalog = cursor == catalog->visibleEntryIndices.size();
+        const bool examinedCurrentCatalog = cursor == catalog->eligibleEntryIndices.size();
         if (catalog->complete && examinedCurrentCatalog) {
-            if (catalog->visibleEntryIndices.empty()) {
+            if (catalog->eligibleEntryIndices.empty()) {
                 state = ApplicationSearchViewState::emptyCatalog;
             } else if (results.empty()) {
                 state = ApplicationSearchViewState::noResults;
@@ -344,8 +353,8 @@ struct ApplicationSearchOperation::Impl final {
             }
         }
         published = std::make_shared<const ApplicationSearchSnapshot>(ApplicationSearchSnapshot{
-            catalogGeneration, requestGeneration, state, cursor,
-            catalog->visibleEntryIndices.size(), std::move(results), truncated});
+            catalog->generation, requestGeneration, state, cursor,
+            catalog->eligibleEntryIndices.size(), std::move(results), truncated});
         return published;
     }
 };
@@ -376,7 +385,7 @@ ApplicationSearchOperation::advance(std::size_t maximumWorkUnits,
     }
 
     std::size_t workUnits = 0U;
-    while (implementation_->cursor < implementation_->catalog->visibleEntryIndices.size() &&
+    while (implementation_->cursor < implementation_->catalog->eligibleEntryIndices.size() &&
            workUnits < maximumWorkUnits) {
         if (cancellation.isCancellationRequested()) {
             implementation_->cancellationObserved = true;
@@ -385,10 +394,10 @@ ApplicationSearchOperation::advance(std::size_t maximumWorkUnits,
                 "Discard the stale request and begin a current search if needed.");
         }
         const auto entryIndex =
-            implementation_->catalog->visibleEntryIndices[implementation_->cursor];
+            implementation_->catalog->eligibleEntryIndices[implementation_->cursor];
         bool cancelled = false;
-        auto score = scoreEntry(implementation_->catalog->entries[entryIndex], entryIndex,
-                                implementation_->query, cancellation, cancelled);
+        auto score = scoreEntry(implementation_->catalog->discovery->entries[entryIndex],
+                                entryIndex, implementation_->query, cancellation, cancelled);
         if (cancelled) {
             implementation_->cancellationObserved = true;
             return operationFailure<std::shared_ptr<const ApplicationSearchSnapshot>>(
@@ -412,15 +421,15 @@ ApplicationSearchOperation::advance(std::size_t maximumWorkUnits,
 }
 
 Result<ApplicationSearchOperation>
-createApplicationSearch(std::shared_ptr<const DesktopEntryDiscoverySnapshot> catalog,
-                        std::uint64_t catalogGeneration, std::uint64_t requestGeneration,
-                        ApplicationSearchQuery query, std::size_t resultLimit) {
+createApplicationSearch(std::shared_ptr<const ApplicationCatalogSnapshot> catalog,
+                        std::uint64_t requestGeneration, ApplicationSearchQuery query,
+                        std::size_t resultLimit) {
     if (!catalog) {
         return operationFailure<ApplicationSearchOperation>(
             ErrorCode::invalid_argument, "The application search catalog is unavailable.",
-            "Provide one immutable desktop-entry discovery snapshot.");
+            "Provide one immutable application catalog snapshot.");
     }
-    if (!generationsAreValid(catalogGeneration, requestGeneration)) {
+    if (!generationsAreValid(catalog->generation, requestGeneration)) {
         return operationFailure<ApplicationSearchOperation>(
             ErrorCode::invalid_argument, "The application search generation is invalid.",
             "Use nonzero catalog and request generations.");
@@ -430,31 +439,75 @@ createApplicationSearch(std::shared_ptr<const DesktopEntryDiscoverySnapshot> cat
             ErrorCode::invalid_argument, "The application search result limit is invalid.",
             "Use a nonzero result limit within the documented search limit.");
     }
-    if (catalog->entries.size() > maximumDesktopDiscoveryEntries ||
-        catalog->visibleEntryIndices.size() > maximumDesktopDiscoveryEntries) {
+    if (!catalog->discovery) {
+        return operationFailure<ApplicationSearchOperation>(
+            ErrorCode::validation_error, "The application search catalog is invalid.",
+            "Rebuild one immutable application catalog snapshot before searching.");
+    }
+    const auto &discovery = *catalog->discovery;
+    if (discovery.entries.size() > maximumDesktopDiscoveryEntries ||
+        discovery.visibleEntryIndices.size() > maximumDesktopDiscoveryEntries ||
+        discovery.diagnostics.size() > maximumDesktopDiscoveryDiagnostics ||
+        catalog->decisions.size() > maximumDesktopDiscoveryEntries ||
+        catalog->eligibleEntryIndices.size() > maximumDesktopDiscoveryEntries) {
         return operationFailure<ApplicationSearchOperation>(
             ErrorCode::too_large, "The application search catalog is too large.",
             "Rebuild discovery within its documented entry limit.");
     }
 
+    if (catalog->totalVisibleEntries != discovery.visibleEntryIndices.size() ||
+        catalog->examinedEntries != catalog->decisions.size() ||
+        catalog->examinedEntries > catalog->totalVisibleEntries ||
+        catalog->complete !=
+            (discovery.complete && catalog->examinedEntries == catalog->totalVisibleEntries)) {
+        return operationFailure<ApplicationSearchOperation>(
+            ErrorCode::validation_error, "The application search catalog is invalid.",
+            "Rebuild one immutable application catalog snapshot before searching.");
+    }
+
     std::unordered_set<std::size_t> seenIndices;
     std::unordered_set<std::string> seenDesktopFileIds;
-    seenIndices.reserve(catalog->visibleEntryIndices.size());
-    seenDesktopFileIds.reserve(catalog->visibleEntryIndices.size());
-    for (const auto index : catalog->visibleEntryIndices) {
-        if (index >= catalog->entries.size() || !seenIndices.insert(index).second ||
-            !isVisible(catalog->entries[index].visibility) ||
-            !seenDesktopFileIds.insert(catalog->entries[index].id.value()).second) {
+    seenIndices.reserve(discovery.visibleEntryIndices.size());
+    seenDesktopFileIds.reserve(discovery.entries.size());
+    for (const auto &entry : discovery.entries) {
+        if (!seenDesktopFileIds.insert(entry.id.value()).second) {
             return operationFailure<ApplicationSearchOperation>(
                 ErrorCode::validation_error, "The application search catalog is invalid.",
-                "Rebuild one immutable discovery snapshot before searching.");
+                "Rebuild one immutable application catalog snapshot before searching.");
+        }
+    }
+    for (const auto index : discovery.visibleEntryIndices) {
+        if (index >= discovery.entries.size() || !seenIndices.insert(index).second ||
+            !isVisible(discovery.entries[index].visibility)) {
+            return operationFailure<ApplicationSearchOperation>(
+                ErrorCode::validation_error, "The application search catalog is invalid.",
+                "Rebuild one immutable application catalog snapshot before searching.");
         }
     }
 
-    return Result<ApplicationSearchOperation>::success(ApplicationSearchOperation{
-        std::make_unique<ApplicationSearchOperation::Impl>(std::move(catalog), catalogGeneration,
-                                                           requestGeneration, std::move(query),
-                                                           resultLimit)});
+    std::vector<std::size_t> expectedEligibleIndices;
+    expectedEligibleIndices.reserve(catalog->decisions.size());
+    for (std::size_t position = 0U; position < catalog->decisions.size(); ++position) {
+        const auto &decision = catalog->decisions[position];
+        if (decision.discoveryEntryIndex != discovery.visibleEntryIndices[position] ||
+            !isKnownEligibilityReason(decision.reason)) {
+            return operationFailure<ApplicationSearchOperation>(
+                ErrorCode::validation_error, "The application search catalog is invalid.",
+                "Rebuild one immutable application catalog snapshot before searching.");
+        }
+        if (isCatalogEligible(decision.reason)) {
+            expectedEligibleIndices.push_back(decision.discoveryEntryIndex);
+        }
+    }
+    if (catalog->eligibleEntryIndices != expectedEligibleIndices) {
+        return operationFailure<ApplicationSearchOperation>(
+            ErrorCode::validation_error, "The application search catalog is invalid.",
+            "Rebuild one immutable application catalog snapshot before searching.");
+    }
+
+    return Result<ApplicationSearchOperation>::success(
+        ApplicationSearchOperation{std::make_unique<ApplicationSearchOperation::Impl>(
+            std::move(catalog), requestGeneration, std::move(query), resultLimit)});
 }
 
 Result<std::shared_ptr<const ApplicationSearchSnapshot>>
