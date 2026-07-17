@@ -1,5 +1,10 @@
 add_executable(prismdrake-session-child-fixture SessionChildFixture.cpp)
+add_executable(prismdrake-application-launch-fixture ApplicationLaunchFixture.cpp)
 
 prismdrake_configure_cpp_target(prismdrake-session-child-fixture)
 prismdrake_enable_warnings(prismdrake-session-child-fixture)
 prismdrake_enable_sanitizers(prismdrake-session-child-fixture)
+
+prismdrake_configure_cpp_target(prismdrake-application-launch-fixture)
+prismdrake_enable_warnings(prismdrake-application-launch-fixture)
+prismdrake_enable_sanitizers(prismdrake-application-launch-fixture)

@@ -159,6 +159,8 @@ prismdrake_add_format_check(
     src/launcher/DesktopEntryParser.hpp
     src/launcher/DesktopEntryVisibility.cpp
     src/launcher/DesktopEntryVisibility.hpp
+    src/launcher/DetachedApplication.cpp
+    src/launcher/DetachedApplication.hpp
     src/launcher/DesktopExecutable.cpp
     src/launcher/DesktopExecutable.hpp
     src/launcher/DesktopExec.cpp
@@ -196,6 +198,7 @@ prismdrake_add_format_check(
     tests/integration/SettingsServiceTests.cpp
     tests/integration/X11ConnectionTests.cpp
     tests/fixtures/SessionChildFixture.cpp
+    tests/fixtures/ApplicationLaunchFixture.cpp
     tests/unit/ChildProcessTests.cpp
     tests/unit/ServiceOptionsTests.cpp
     tests/unit/ServiceWorkerTests.cpp
@@ -210,6 +213,7 @@ prismdrake_add_format_check(
     tests/unit/DiagnosticsTests.cpp
     tests/unit/DesktopEntryDiscoveryTests.cpp
     tests/unit/DesktopEntryVisibilityTests.cpp
+    tests/unit/DetachedApplicationTests.cpp
     tests/unit/DesktopEntryParserTests.cpp
     tests/unit/DesktopExecutableTests.cpp
     tests/unit/DesktopExecTests.cpp

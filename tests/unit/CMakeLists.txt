@@ -72,3 +72,25 @@ gtest_discover_tests(
     PROPERTIES
         ENVIRONMENT
             "PRISMDRAKE_SESSION_CHILD_FIXTURE=$<TARGET_FILE:prismdrake-session-child-fixture>")
+
+add_executable(prismdrake-detached-application-tests
+    "${PROJECT_SOURCE_DIR}/src/launcher/DetachedApplication.cpp"
+    DetachedApplicationTests.cpp)
+target_include_directories(prismdrake-detached-application-tests
+    PRIVATE "${PROJECT_SOURCE_DIR}/src/launcher")
+target_link_libraries(prismdrake-detached-application-tests
+    PRIVATE Prismdrake::foundation GTest::gtest_main Threads::Threads)
+target_compile_definitions(prismdrake-detached-application-tests
+    PRIVATE PRISMDRAKE_DETACHED_APPLICATION_TEST_HOOK=1)
+
+prismdrake_configure_cpp_target(prismdrake-detached-application-tests)
+prismdrake_enable_warnings(prismdrake-detached-application-tests)
+prismdrake_enable_sanitizers(prismdrake-detached-application-tests)
+
+add_dependencies(prismdrake-detached-application-tests prismdrake-application-launch-fixture)
+gtest_discover_tests(
+    prismdrake-detached-application-tests
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES
+        ENVIRONMENT
+            "PRISMDRAKE_APPLICATION_LAUNCH_FIXTURE=$<TARGET_FILE:prismdrake-application-launch-fixture>")
