@@ -63,8 +63,10 @@ carry a verified or observed version.
   bounded isolated-WM lane for protocol readiness and WM-applied work-area
   verification; neither is a runtime dependency. These observed versions are
   not supported minima. Checked standard window-manager requests and dock/strut
-  publication are implemented. The bounded EWMH task mirror and stale-record
-  removal remain unresolved PD1 scope.
+  publication are implemented. The bounded EWMH task mirror, metadata decoder,
+  immutable model generations, stale-record removal, and observation-based
+  request confirmation are also implemented without another link dependency.
+  The production task-strip UI remains unresolved PD1 scope.
 - `prismdrake-session` and `prismdrake-shell` remain planned component
   manifests. The Qt and XCB versions come from the 2026-07-16 Gentoo reference
   VM evidence and remain observations rather than supported minima.
