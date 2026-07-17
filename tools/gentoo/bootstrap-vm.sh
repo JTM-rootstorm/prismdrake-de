@@ -225,7 +225,13 @@ install_project_file "$USE_FILE" "$USE_CONTENT"
 install_project_file "$KEYWORDS_FILE" "$KEYWORDS_CONTENT"
 
 runuser -u "$WORKSPACE_USER" -- pkgdev manifest "$PORTAGE_REPO"
-runuser -u "$WORKSPACE_USER" -- pkgcheck scan "$PORTAGE_REPO"
+PKGCHECK_CACHE=$(mktemp -d /tmp/prismdrake-pkgcheck.XXXXXX)
+chown "$WORKSPACE_OWNER:$(stat -c '%g' "$WORKSPACE")" "$PKGCHECK_CACHE"
+trap 'rm -rf "$PKGCHECK_CACHE"' EXIT HUP INT TERM
+runuser -u "$WORKSPACE_USER" -- pkgcheck scan \
+	--cache-dir "$PKGCHECK_CACHE" "$PORTAGE_REPO"
+rm -rf "$PKGCHECK_CACHE"
+trap - EXIT HUP INT TERM
 
 pretend_combination() {
 	LABEL=$1

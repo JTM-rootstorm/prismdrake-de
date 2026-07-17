@@ -127,12 +127,16 @@ export PRISMDRAKE_WORKSPACE=/mnt/shared/prismdrake-de
 export PRISMDRAKE_PORTAGE_REPO="$PRISMDRAKE_WORKSPACE/packaging/gentoo/repository"
 
 pkgdev manifest "$PRISMDRAKE_PORTAGE_REPO"
-pkgcheck scan "$PRISMDRAKE_PORTAGE_REPO"
+PRISMDRAKE_PKGCHECK_CACHE=$(mktemp -d /tmp/prismdrake-pkgcheck.XXXXXX)
+pkgcheck scan --cache-dir "$PRISMDRAKE_PKGCHECK_CACHE" \
+  "$PRISMDRAKE_PORTAGE_REPO"
+rm -rf "$PRISMDRAKE_PKGCHECK_CACHE"
 ```
 
 Metapackages without distfiles normally produce no Manifest, but `pkgdev`
 remains the authoritative generator if one becomes necessary. Never hand-edit
-a generated Manifest.
+a generated Manifest. Keeping pkgcheck's disposable caches outside the overlay
+also prevents a read-only scan from dirtying the shared checkout.
 
 Run a reviewed pretend before every install or feature combination:
 

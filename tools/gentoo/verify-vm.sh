@@ -205,11 +205,15 @@ fi
 
 printf '\nRepository QA\n'
 if command -v pkgcheck >/dev/null 2>&1; then
-	if pkgcheck scan "$PORTAGE_REPO"; then
+	PKGCHECK_CACHE=$(mktemp -d /tmp/prismdrake-pkgcheck.XXXXXX)
+	trap 'rm -rf "$PKGCHECK_CACHE"' EXIT HUP INT TERM
+	if pkgcheck scan --cache-dir "$PKGCHECK_CACHE" "$PORTAGE_REPO"; then
 		pass 'pkgcheck scan passed'
 	else
 		fail 'pkgcheck scan reported repository findings'
 	fi
+	rm -rf "$PKGCHECK_CACHE"
+	trap - EXIT HUP INT TERM
 else
 	fail 'pkgcheck is unavailable; enable prismdrake-dev-env[portage-qa]'
 fi
