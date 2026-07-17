@@ -73,14 +73,15 @@ class ApplicationCatalogOperation final {
     pull(std::size_t maximumWorkUnits, const foundation::CancellationToken &cancellation);
 
   private:
+    using DiscoverySnapshot = std::shared_ptr<const DesktopEntryDiscoverySnapshot>;
+
     struct Impl;
     explicit ApplicationCatalogOperation(std::unique_ptr<Impl> implementation) noexcept;
 
     std::unique_ptr<Impl> implementation_;
 
     friend foundation::Result<ApplicationCatalogOperation>
-    createApplicationCatalog(std::shared_ptr<const DesktopEntryDiscoverySnapshot>,
-                             DesktopExecutableLookupContext, std::uint64_t);
+    createApplicationCatalog(DiscoverySnapshot, DesktopExecutableLookupContext, std::uint64_t);
 };
 
 /// Creates a catalog operation after validating the immutable discovery shape,
