@@ -95,6 +95,12 @@ Window {
                 Accessible.description: "Dismiss with Escape or the close button"
                 Accessible.role: Accessible.Pane
 
+                onVisibleChanged: {
+                    if (visible && root.presentationModel.launcherVisible) {
+                        closeLauncherButton.forceActiveFocus(Qt.TabFocusReason)
+                    }
+                }
+
                 Behavior on opacity {
                     NumberAnimation { duration: root.presentationModel.motionDurationMs }
                 }
@@ -260,9 +266,7 @@ Window {
         target: root.presentationModel
 
         function onLauncherVisibleChanged() {
-            if (root.presentationModel.launcherVisible) {
-                closeLauncherButton.forceActiveFocus(Qt.TabFocusReason)
-            } else if (closeLauncherButton.activeFocus) {
+            if (!root.presentationModel.launcherVisible && closeLauncherButton.activeFocus) {
                 launcherButton.forceActiveFocus(Qt.BacktabFocusReason)
             }
         }
