@@ -17,22 +17,24 @@ verified lower bound.
 
 The PD1 production build contains internal foundation, configuration, theme,
 settings, launcher, notification, X11, shell-presentation, and session targets.
-The Experimental shell presentation now includes an immutable Qt Core and GUI
-projection of one complete settings/theme generation, a passive Qt Core task
-bridge over authoritative task snapshots, a passive notification bridge over
-synthetic notification snapshots, and one compiled QML notification module.
-The adapters emit typed presentation intents; none mutates its authoritative
-model or implements window-manager or notification-service policy. These
-targets are not installed libraries or stable C++ ABIs. The isolated toolkit
-experiment remains a separate CMake project and is not linked into production
-targets.
+The Experimental shell presentation now includes immutable Qt projections of
+one complete settings/theme generation, authoritative task snapshots, matching
+launcher catalog/search snapshots, and synthetic notification snapshots. It
+also contains compiled panel and notification QML modules plus a Qt/X11 panel
+window host that publishes standard dock and strut state through the existing
+X11 adapter. The adapters emit typed presentation intents; none mutates its
+authoritative model or implements window-manager or notification-service
+policy. These targets are not installed libraries or stable C++ ABIs. The
+isolated toolkit experiment remains a separate CMake project and is not linked
+into production targets.
 
 Shell presentation requires system Qt Core, GUI, QML, Quick, and Quick Controls
 6.4 or newer through the Qt CMake packages; tests also require Quick Test.
 Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested component version;
 current host and Gentoo component evidence use Qt 6.11.1. The complete shell
-executable, live settings-snapshot client, and panel QML remain later PD1
-integration.
+executable, live settings-snapshot client, and runtime wiring among the panel,
+launcher, task model, notification fixture, and session remain later PD1
+integration. See the [panel-shell evidence](../research/pd1-panel-shell-evidence.md).
 
 ## Canonical developer builds
 

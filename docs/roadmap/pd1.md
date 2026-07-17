@@ -37,6 +37,17 @@ fallback behavior.
     candidate native `GW_*` protocols remain unimplemented until separately
     Accepted by Glasswyrm.
 
+## Current implementation boundary
+
+The Experimental tree now contains the shared Lustre/Forge theme projection,
+passive launcher/task/notification presentation adapters, one token-driven and
+keyboard-operable panel component, and a Qt/X11 window host that applies the
+documented primary-output bottom-dock policy through standard EWMH properties.
+This is a development prototype, not a complete shell: the installed
+`prismdrake-shell` executable, live settings client, end-to-end model wiring,
+reviewed visual baselines, and live assistive-technology evidence remain open
+PD1 work.
+
 ## Activation gate
 
 PD1 may begin only when:

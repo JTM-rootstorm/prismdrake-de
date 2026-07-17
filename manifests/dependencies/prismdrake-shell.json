@@ -22,7 +22,7 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental immutable settings/theme projection directly uses system Qt Core and GUI, while the passive task and notification presentation adapters use Qt Core. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1 supplies current reference evidence."
+      "reason": "The Experimental immutable settings/theme projection and panel window host directly use system Qt Core and GUI, while the passive launcher, task, and notification presentation adapters use Qt Core. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1 supplies current reference evidence."
     },
     {
       "name": "qtdeclarative",
@@ -40,15 +40,15 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental notification card and list module directly use system QML, Qt Quick, and Quick Controls. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1-r1 supplies current reference evidence."
+      "reason": "The Experimental panel and notification modules directly use system QML, Qt Quick, and Quick Controls. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1-r1 supplies current reference evidence."
     },
     {
       "name": "libxcb",
       "gentoo_atom": "x11-libs/libxcb",
       "scope": "mandatory_runtime",
-      "relationship": "direct",
+      "relationship": "transitive",
       "feature": "x11_shell_surface",
-      "requirement_status": "planned",
+      "requirement_status": "implemented",
       "version": {
         "declared_minimum": null,
         "verified_minimum": null,
@@ -58,13 +58,13 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The passive notification presentation adapter deliberately has no X11 dependency; production shell-window linkage remains unimplemented and unmeasured."
+      "reason": "The Experimental Qt panel host consumes the internal standards-only X11 adapter, which links system libxcb for the dedicated event connection, RandR topology, and checked EWMH dock publication. The complete shell runtime closure remains unmeasured."
     }
   ],
   "unresolved": [
     {
       "area": "runtime_closure",
-      "reason": "The typed theme, task, and notification adapters and visible synthetic-card QML module are implemented, but the complete shell executable, live settings-snapshot client, panel surface, and direct and transitive runtime closure still require measurement."
+      "reason": "The typed theme, launcher, task, and notification adapters, panel and notification QML modules, and panel window host are implemented, but the complete shell executable, live settings-snapshot client, runtime wiring, and direct and transitive closure still require measurement."
     },
     {
       "area": "accessibility_runtime",

@@ -183,11 +183,12 @@ The root build declares Qt 6.4 as a common-API configure constraint. Ubuntu
 24.04 CI verifies Qt 6.4.2 as the oldest tested component version, while the
 Gentoo reference environment supplies Qt 6.11.1. The shell dependency manifest
 remains
-`planned_unmeasured`: the complete shell executable, production theme adapter,
-AT-SPI runtime linkage, installation shape, and direct and transitive runtime
-closure have not been measured. The slice adds no GTK, GNOME Shell, Mutter,
-GNOME settings/control-center, libadwaita, Xlib, Glasswyrm-native, or image-loader
-dependency.
+`planned_unmeasured`: the complete shell executable, AT-SPI runtime linkage,
+installation shape, and direct and transitive runtime closure have not been
+measured. The later [panel-shell evidence](pd1-panel-shell-evidence.md) records
+the implemented complete-generation theme adapter and shared panel component.
+The notification slice adds no GTK, GNOME Shell, Mutter, GNOME settings/control-center,
+libadwaita, Xlib, Glasswyrm-native, or image-loader dependency.
 
 Fallback behavior is local and explicit:
 
@@ -201,8 +202,8 @@ Fallback behavior is local and explicit:
   surface input; and
 - Lustre and Forge use the same component with different resolved values.
 
-The production settings/theme adapter still must prove that these QML token
-inputs arrive as one validated generation rather than mixed individual values.
+The later panel-shell work proves that these QML token inputs arrive from one
+validated settings/theme generation rather than mixed individual values.
 
 ## Implemented test inventory
 
@@ -295,7 +296,6 @@ to PD1-WP13 or later integration:
 - full shell focus integration, per-output placement, mixed scaling, and a
   production font baseline;
 - rendering and accessibility policy for validated icon or image content;
-- connection to one resolved immutable settings/theme generation;
 - real `prismdrake-shell` startup, installation, and runtime-closure evidence;
   and
 - the separately owned `prismdrake-notifyd` freedesktop service, persistence,
