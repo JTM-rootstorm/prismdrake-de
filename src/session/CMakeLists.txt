@@ -1,10 +1,14 @@
 add_library(prismdrake-session-core STATIC
+    ChildProcess.cpp
+    ChildProcess.hpp
     RestartPolicy.cpp
     RestartPolicy.hpp
     SessionEnvironment.cpp
     SessionEnvironment.hpp
     SessionOptions.cpp
     SessionOptions.hpp
+    SessionRuntime.cpp
+    SessionRuntime.hpp
     SettingsReadiness.cpp
     SettingsReadiness.hpp)
 add_library(Prismdrake::session-core ALIAS prismdrake-session-core)

@@ -115,15 +115,21 @@ prismdrake_add_format_check(
     src/settingsd/SettingsService.cpp
     src/settingsd/SettingsService.hpp
     src/settingsd/main.cpp
+    src/session/ChildProcess.cpp
+    src/session/ChildProcess.hpp
     src/session/RestartPolicy.cpp
     src/session/RestartPolicy.hpp
     src/session/SessionEnvironment.cpp
     src/session/SessionEnvironment.hpp
     src/session/SessionOptions.cpp
     src/session/SessionOptions.hpp
+    src/session/SessionRuntime.cpp
+    src/session/SessionRuntime.hpp
     src/session/SettingsReadiness.cpp
     src/session/SettingsReadiness.hpp
     tests/integration/SettingsServiceTests.cpp
+    tests/fixtures/SessionChildFixture.cpp
+    tests/unit/ChildProcessTests.cpp
     tests/unit/ServiceOptionsTests.cpp
     tests/unit/ServiceWorkerTests.cpp
     tests/unit/AtomicFileTests.cpp
@@ -137,6 +143,7 @@ prismdrake_add_format_check(
     tests/unit/RestartPolicyTests.cpp
     tests/unit/SessionEnvironmentTests.cpp
     tests/unit/SessionOptionsTests.cpp
+    tests/unit/SessionRuntimeTests.cpp
     tests/unit/SettingsReadinessTests.cpp
     tests/unit/SettingsEngineTests.cpp
     tests/unit/ThemeParserTests.cpp

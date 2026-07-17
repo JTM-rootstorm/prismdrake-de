@@ -11,5 +11,6 @@ add_test(
 set_tests_properties(GentooVmToolsTest PROPERTIES
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 
+add_subdirectory(fixtures)
 add_subdirectory(unit)
 add_subdirectory(integration)

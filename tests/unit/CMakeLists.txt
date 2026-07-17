@@ -5,6 +5,7 @@ add_executable(prismdrake-foundation-tests
     AtomicFileTests.cpp
     BoundedFileTests.cpp
     BuildInfoTests.cpp
+    ChildProcessTests.cpp
     ConfigurationLoaderTests.cpp
     ConfigurationParserTests.cpp
     DiagnosticsTests.cpp
@@ -13,6 +14,7 @@ add_executable(prismdrake-foundation-tests
     RestartPolicyTests.cpp
     SessionEnvironmentTests.cpp
     SessionOptionsTests.cpp
+    SessionRuntimeTests.cpp
     SettingsReadinessTests.cpp
     ServiceOptionsTests.cpp
     ServiceWorkerTests.cpp
@@ -39,4 +41,10 @@ prismdrake_configure_cpp_target(prismdrake-foundation-tests)
 prismdrake_enable_warnings(prismdrake-foundation-tests)
 prismdrake_enable_sanitizers(prismdrake-foundation-tests)
 
-gtest_discover_tests(prismdrake-foundation-tests DISCOVERY_MODE PRE_TEST)
+add_dependencies(prismdrake-foundation-tests prismdrake-session-child-fixture)
+gtest_discover_tests(
+    prismdrake-foundation-tests
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES
+        ENVIRONMENT
+            "PRISMDRAKE_SESSION_CHILD_FIXTURE=$<TARGET_FILE:prismdrake-session-child-fixture>")
