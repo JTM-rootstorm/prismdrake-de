@@ -154,6 +154,8 @@ dbus-run-session -- bash -euo pipefail -c '
     python3 "${PRISMDRAKE_SPIKE_SOURCE_DIR}/tests/inspect_atspi.py" \
         --expect-focused "Close launcher" \
         >"${PRISMDRAKE_SPIKE_OUTPUT_DIR}/atspi-launcher-open.json"
+    xwd -silent -id "${window_id}" \
+        -out "${PRISMDRAKE_SPIKE_OUTPUT_DIR}/window-launcher-open.xwd"
     xdotool key --window "${window_id}" Escape
     python3 "${PRISMDRAKE_SPIKE_SOURCE_DIR}/tests/inspect_atspi.py" \
         --expect-focused "Open launcher" \
