@@ -56,7 +56,7 @@ template <typename Object, Object *(*Unref)(Object *)> class UniqueHandle final 
     Object *object_ = nullptr;
 };
 
-using Bus = UniqueHandle<sd_bus, sd_bus_unref>;
+using Bus = UniqueHandle<sd_bus, sd_bus_flush_close_unref>;
 using Slot = UniqueHandle<sd_bus_slot, sd_bus_slot_unref>;
 using Message = UniqueHandle<sd_bus_message, sd_bus_message_unref>;
 using Credentials = UniqueHandle<sd_bus_creds, sd_bus_creds_unref>;

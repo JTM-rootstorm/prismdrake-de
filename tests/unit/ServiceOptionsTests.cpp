@@ -6,11 +6,20 @@
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace prismdrake::settingsd {
 namespace {
+
+template <typename T> [[nodiscard]] T requireOptional(std::optional<T> value) {
+    if (!value) {
+        throw std::logic_error("required test optional is empty");
+    }
+    return std::move(value).value();
+}
 
 class EnvironmentValue final {
   public:
@@ -76,16 +85,17 @@ TEST(ServiceOptionsTest, ResolvesFixedPackagedAndXdgLocationsForRun) {
     const std::array arguments{std::string_view{"--foreground"}};
     const ServicePathDefaults defaults{"/usr/share/prismdrake/defaults/config.toml",
                                        "/usr/share/prismdrake/themes"};
-    const auto options = parseServiceOptions(arguments, defaults);
+    auto options = parseServiceOptions(arguments, defaults);
 
     ASSERT_TRUE(options);
     ASSERT_TRUE(options.value().runtime);
     EXPECT_TRUE(options.value().foreground);
-    EXPECT_EQ(options.value().runtime->settingsEngine.configurationLocations.packagedDefault,
+    const auto runtimeOptions = requireOptional(std::move(options.value().runtime));
+    EXPECT_EQ(runtimeOptions.settingsEngine.configurationLocations.packagedDefault,
               defaults.packagedConfiguration);
-    EXPECT_EQ(options.value().runtime->settingsEngine.configurationLocations.user,
+    EXPECT_EQ(runtimeOptions.settingsEngine.configurationLocations.user,
               root / "config/prismdrake/config.toml");
-    EXPECT_EQ(options.value().runtime->settingsEngine.themeDirectory, defaults.themeDirectory);
+    EXPECT_EQ(runtimeOptions.settingsEngine.themeDirectory, defaults.themeDirectory);
 }
 
 } // namespace

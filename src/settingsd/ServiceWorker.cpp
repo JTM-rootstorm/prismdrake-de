@@ -133,8 +133,11 @@ void ServiceWorker::run() {
             return;
         }
 
-        auto job = std::move(*pending_job_);
-        pending_job_.reset();
+        auto pendingJob = std::exchange(pending_job_, std::nullopt);
+        if (!pendingJob) {
+            continue;
+        }
+        auto job = std::move(pendingJob).value();
         processing_ = true;
         lock.unlock();
 

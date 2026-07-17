@@ -28,47 +28,44 @@ using foundation::Error;
 using foundation::ErrorCode;
 using foundation::Result;
 
-constexpr std::string_view serviceName = "org.prismdrake.Settings1";
-constexpr std::string_view objectPath = "/org/prismdrake/Settings1";
-constexpr std::string_view settingsInterface = "org.prismdrake.Settings1";
-constexpr std::string_view snapshotInterface = "org.prismdrake.SettingsSnapshot1";
+constexpr char serviceName[] = "org.prismdrake.Settings1";
+constexpr char objectPath[] = "/org/prismdrake/Settings1";
+constexpr char settingsInterface[] = "org.prismdrake.Settings1";
+constexpr char snapshotInterface[] = "org.prismdrake.SettingsSnapshot1";
 constexpr std::size_t maximumProfileBytes = 64U;
 
-constexpr std::string_view invalidProfileError = "org.prismdrake.Settings1.Error.InvalidProfile";
-constexpr std::string_view validationFailedError =
-    "org.prismdrake.Settings1.Error.ValidationFailed";
-constexpr std::string_view tooLargeError = "org.prismdrake.Settings1.Error.TooLarge";
-constexpr std::string_view unsupportedSnapshotVersionError =
+constexpr char invalidProfileError[] = "org.prismdrake.Settings1.Error.InvalidProfile";
+constexpr char validationFailedError[] = "org.prismdrake.Settings1.Error.ValidationFailed";
+constexpr char tooLargeError[] = "org.prismdrake.Settings1.Error.TooLarge";
+constexpr char unsupportedSnapshotVersionError[] =
     "org.prismdrake.Settings1.Error.UnsupportedSnapshotVersion";
-constexpr std::string_view noSnapshotError = "org.prismdrake.Settings1.Error.NoSnapshot";
-constexpr std::string_view busyError = "org.prismdrake.Settings1.Error.Busy";
-constexpr std::string_view notAuthorizedError = "org.prismdrake.Settings1.Error.NotAuthorized";
-constexpr std::string_view serviceStoppingError = "org.prismdrake.Settings1.Error.ServiceStopping";
-constexpr std::string_view internalError = "org.prismdrake.Settings1.Error.Internal";
+constexpr char noSnapshotError[] = "org.prismdrake.Settings1.Error.NoSnapshot";
+constexpr char busyError[] = "org.prismdrake.Settings1.Error.Busy";
+constexpr char notAuthorizedError[] = "org.prismdrake.Settings1.Error.NotAuthorized";
+constexpr char serviceStoppingError[] = "org.prismdrake.Settings1.Error.ServiceStopping";
+constexpr char internalError[] = "org.prismdrake.Settings1.Error.Internal";
 
-constexpr std::string_view invalidProfileMessage = "The requested profile is not supported.";
-constexpr std::string_view validationFailedMessage = "The settings candidate was rejected.";
-constexpr std::string_view tooLargeMessage = "The bounded request or reply is too large.";
-constexpr std::string_view unsupportedSnapshotVersionMessage =
+constexpr char invalidProfileMessage[] = "The requested profile is not supported.";
+constexpr char validationFailedMessage[] = "The settings candidate was rejected.";
+constexpr char tooLargeMessage[] = "The bounded request or reply is too large.";
+constexpr char unsupportedSnapshotVersionMessage[] =
     "The requested snapshot schema version is not supported.";
-constexpr std::string_view noSnapshotMessage = "No complete settings snapshot is available.";
-constexpr std::string_view busyMessage = "The settings service worker is busy.";
-constexpr std::string_view notAuthorizedMessage = "The settings request is not authorized.";
-constexpr std::string_view serviceStoppingMessage = "The settings service is stopping.";
-constexpr std::string_view internalMessage = "The settings service could not complete the request.";
+constexpr char noSnapshotMessage[] = "No complete settings snapshot is available.";
+constexpr char busyMessage[] = "The settings service worker is busy.";
+constexpr char notAuthorizedMessage[] = "The settings request is not authorized.";
+constexpr char serviceStoppingMessage[] = "The settings service is stopping.";
+constexpr char internalMessage[] = "The settings service could not complete the request.";
 
 [[nodiscard]] Error serviceError(ErrorCode code, std::string message, std::string recovery) {
     return {code, std::move(message), std::move(recovery)};
 }
 
-[[nodiscard]] int setBusError(sd_bus_error *error, std::string_view name,
-                              std::string_view message) {
-    return sd_bus_error_set_const(error, name.data(), message.data());
+[[nodiscard]] int setBusError(sd_bus_error *error, const char *name, const char *message) {
+    return sd_bus_error_set_const(error, name, message);
 }
 
-[[nodiscard]] int replyBusError(sd_bus_message *call, std::string_view name,
-                                std::string_view message) {
-    return sd_bus_reply_method_errorf(call, name.data(), "%s", message.data());
+[[nodiscard]] int replyBusError(sd_bus_message *call, const char *name, const char *message) {
+    return sd_bus_reply_method_errorf(call, name, "%s", message);
 }
 
 enum class PendingOperation : std::uint8_t {
@@ -84,8 +81,8 @@ struct PendingCall final {
 };
 
 struct ErrorReply final {
-    std::string_view name;
-    std::string_view message;
+    const char *name;
+    const char *message;
 };
 
 [[nodiscard]] ErrorReply mapWorkerError(PendingOperation operation, const Error &error) {
@@ -108,14 +105,13 @@ struct ErrorReply final {
 }
 
 [[nodiscard]] int appendStringArray(sd_bus_message *message,
-                                    const std::vector<std::string_view> &values) {
+                                    const std::vector<std::string> &values) {
     int result = sd_bus_message_open_container(message, SD_BUS_TYPE_ARRAY, "s");
     if (result < 0) {
         return result;
     }
-    for (const auto value : values) {
-        const char *data = value.data();
-        result = sd_bus_message_append_basic(message, SD_BUS_TYPE_STRING, data);
+    for (const auto &value : values) {
+        result = sd_bus_message_append_basic(message, SD_BUS_TYPE_STRING, value.c_str());
         if (result < 0) {
             return result;
         }
@@ -128,15 +124,15 @@ class SettingsService final {
     SettingsService(sd_bus *bus, ServiceWorker &worker) : bus_(bus), worker_(worker) {}
 
     [[nodiscard]] Result<void> attach() {
-        int result = sd_bus_add_object_vtable(bus_, settings_slot_.put(), objectPath.data(),
-                                              settingsInterface.data(), settingsVtable(), this);
+        int result = sd_bus_add_object_vtable(bus_, settings_slot_.put(), objectPath,
+                                              settingsInterface, settingsVtable(), this);
         if (result < 0) {
             return Result<void>::failure(serviceError(
                 ErrorCode::io_error, "Could not register the Experimental settings interface.",
                 "Reconnect to the session bus and retry."));
         }
-        result = sd_bus_add_object_vtable(bus_, snapshot_slot_.put(), objectPath.data(),
-                                          snapshotInterface.data(), snapshotVtable(), this);
+        result = sd_bus_add_object_vtable(bus_, snapshot_slot_.put(), objectPath, snapshotInterface,
+                                          snapshotVtable(), this);
         if (result < 0) {
             return Result<void>::failure(serviceError(
                 ErrorCode::io_error, "Could not register the Experimental snapshot interface.",
@@ -255,8 +251,8 @@ class SettingsService final {
         if (!snapshot) {
             return setBusError(error, noSnapshotError, noSnapshotMessage);
         }
-        const auto profile = settings::profileId(snapshot->candidate.configuration.profile);
-        return sd_bus_reply_method_return(message, "st", profile.data(),
+        const std::string profile{settings::profileId(snapshot->candidate.configuration.profile)};
+        return sd_bus_reply_method_return(message, "st", profile.c_str(),
                                           snapshot->generation.value());
     }
 
@@ -407,32 +403,32 @@ class SettingsService final {
 
     [[nodiscard]] int emitGenerationChanged(const settings::PublicationOutcome &outcome) const {
         sdbus::Message signal;
-        int result =
-            sd_bus_message_new_signal(bus_, signal.put(), objectPath.data(),
-                                      settingsInterface.data(), "SettingsGenerationChanged");
+        int result = sd_bus_message_new_signal(bus_, signal.put(), objectPath, settingsInterface,
+                                               "SettingsGenerationChanged");
         if (result >= 0) {
             result = sd_bus_message_append(signal.get(), "t", outcome.snapshot->generation.value());
         }
 
-        std::vector<std::string_view> domains;
+        std::vector<std::string> domains;
         domains.reserve(outcome.changedDomains.size());
         for (const auto domain : outcome.changedDomains) {
-            domains.push_back(settings::settingsDomainId(domain));
+            domains.emplace_back(settings::settingsDomainId(domain));
         }
         if (result >= 0) {
             result = appendStringArray(signal.get(), domains);
         }
-        const auto profile = settings::profileId(outcome.snapshot->candidate.configuration.profile);
+        const std::string profile{
+            settings::profileId(outcome.snapshot->candidate.configuration.profile)};
         constexpr int restartRequired = 0;
         if (result >= 0) {
-            result = sd_bus_message_append(signal.get(), "sb", profile.data(), restartRequired);
+            result = sd_bus_message_append(signal.get(), "sb", profile.c_str(), restartRequired);
         }
 
-        std::vector<std::string_view> warnings;
+        std::vector<std::string> warnings;
         warnings.reserve(outcome.snapshot->candidate.warnings.size() +
                          outcome.operationWarnings.size());
         const auto appendWarning = [&warnings](settings::SettingsWarning warning) {
-            const auto id = settings::settingsWarningId(warning);
+            const std::string id{settings::settingsWarningId(warning)};
             if (std::find(warnings.begin(), warnings.end(), id) == warnings.end()) {
                 warnings.push_back(id);
             }
@@ -490,7 +486,7 @@ Result<ServiceEpochOutcome> runServiceEpoch(const settings::SettingsEngineOption
     if (!attached) {
         return Result<ServiceEpochOutcome>::failure(attached.error());
     }
-    const int nameResult = sd_bus_request_name(bus.get(), serviceName.data(), 0);
+    const int nameResult = sd_bus_request_name(bus.get(), serviceName, 0);
     if (nameResult == -EEXIST) {
         return Result<ServiceEpochOutcome>::failure(serviceError(
             ErrorCode::invalid_environment, "The settings service name is already owned.",
@@ -538,7 +534,7 @@ Result<ServiceEpochOutcome> runServiceEpoch(const settings::SettingsEngineOption
 
     service.rejectPendingForShutdown();
     worker.value()->stop();
-    (void)sd_bus_release_name(bus.get(), serviceName.data());
+    (void)sd_bus_release_name(bus.get(), serviceName);
     (void)sd_bus_flush(bus.get());
     return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::stopped);
 }

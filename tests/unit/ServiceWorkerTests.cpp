@@ -8,11 +8,20 @@
 #include <memory>
 #include <optional>
 #include <poll.h>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 
 namespace prismdrake::settingsd {
 namespace {
+
+template <typename T> [[nodiscard]] T requireOptional(std::optional<T> value) {
+    if (!value) {
+        throw std::logic_error("required test optional is empty");
+    }
+    return std::move(value).value();
+}
 
 class WorkerTemporaryDirectory final {
   public:
@@ -62,8 +71,9 @@ TEST(ServiceWorkerTest, SerializesOneJobAndPublishesItsImmutableSnapshot) {
 
     auto completion = waitForCompletion(*worker.value());
     ASSERT_TRUE(completion);
-    EXPECT_EQ(completion->requestId, 1U);
-    const auto *publication = std::get_if<PublicationResult>(&completion->result);
+    auto completionValue = requireOptional(std::move(completion));
+    EXPECT_EQ(completionValue.requestId, 1U);
+    const auto *publication = std::get_if<PublicationResult>(&completionValue.result);
     ASSERT_NE(publication, nullptr);
     ASSERT_TRUE(*publication);
     EXPECT_EQ(publication->value().snapshot->generation.value(), 2U);
@@ -73,7 +83,8 @@ TEST(ServiceWorkerTest, SerializesOneJobAndPublishesItsImmutableSnapshot) {
         WorkerJob{2U, CandidateValidationJob{"schema_version = 1\nunknown = true\n"}}));
     completion = waitForCompletion(*worker.value());
     ASSERT_TRUE(completion);
-    const auto *validation = std::get_if<CandidateValidationResult>(&completion->result);
+    completionValue = requireOptional(std::move(completion));
+    const auto *validation = std::get_if<CandidateValidationResult>(&completionValue.result);
     ASSERT_NE(validation, nullptr);
     ASSERT_TRUE(*validation);
     EXPECT_FALSE(validation->value().valid);

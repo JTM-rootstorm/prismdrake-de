@@ -13,6 +13,7 @@
 #include <fstream>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -32,11 +33,18 @@ using prismdrake::settingsd::sdbus::Bus;
 using prismdrake::settingsd::sdbus::Message;
 using prismdrake::settingsd::sdbus::Slot;
 
-constexpr std::string_view serviceName = "org.prismdrake.Settings1";
-constexpr std::string_view objectPath = "/org/prismdrake/Settings1";
-constexpr std::string_view settingsInterface = "org.prismdrake.Settings1";
-constexpr std::string_view snapshotInterface = "org.prismdrake.SettingsSnapshot1";
+constexpr char serviceName[] = "org.prismdrake.Settings1";
+constexpr char objectPath[] = "/org/prismdrake/Settings1";
+constexpr char settingsInterface[] = "org.prismdrake.Settings1";
+constexpr char snapshotInterface[] = "org.prismdrake.SettingsSnapshot1";
 constexpr std::size_t maximumCandidateBytes = std::size_t{1024} * 1024U;
+
+template <typename T> [[nodiscard]] T requireOptional(std::optional<T> value) {
+    if (!value) {
+        throw std::logic_error("required test optional is empty");
+    }
+    return std::move(value).value();
+}
 
 struct ErrorCapture final {
     sd_bus_error value{};
@@ -67,7 +75,8 @@ struct SignalCapture final {
         return values;
     }
     const char *value = nullptr;
-    while (sd_bus_message_read_basic(message, SD_BUS_TYPE_STRING, &value) > 0) {
+    while (sd_bus_message_read_basic(message, SD_BUS_TYPE_STRING, static_cast<void *>(&value)) >
+           0) {
         if (value != nullptr) {
             values += value;
             values.push_back(' ');
@@ -191,9 +200,8 @@ class SettingsServiceFixture : public ::testing::Test {
     [[nodiscard]] std::optional<ProfileReply> currentProfile() {
         ErrorCapture error;
         Message reply;
-        if (sd_bus_call_method(bus_.get(), serviceName.data(), objectPath.data(),
-                               settingsInterface.data(), "GetCurrentProfile", &error.value,
-                               reply.put(), "") < 0) {
+        if (sd_bus_call_method(bus_.get(), serviceName, objectPath, settingsInterface,
+                               "GetCurrentProfile", &error.value, reply.put(), "") < 0) {
             return std::nullopt;
         }
         const char *profile = nullptr;
@@ -208,9 +216,10 @@ class SettingsServiceFixture : public ::testing::Test {
     [[nodiscard]] std::uint64_t requestProfile(std::string_view profile) {
         ErrorCapture error;
         Message reply;
-        if (sd_bus_call_method(bus_.get(), serviceName.data(), objectPath.data(),
-                               settingsInterface.data(), "RequestProfileChange", &error.value,
-                               reply.put(), "s", profile.data()) < 0) {
+        const std::string profileString{profile};
+        if (sd_bus_call_method(bus_.get(), serviceName, objectPath, settingsInterface,
+                               "RequestProfileChange", &error.value, reply.put(), "s",
+                               profileString.c_str()) < 0) {
             ADD_FAILURE() << "profile request failed: "
                           << (error.value.name == nullptr ? "unknown" : error.value.name);
             return 0;
@@ -223,9 +232,8 @@ class SettingsServiceFixture : public ::testing::Test {
     [[nodiscard]] std::uint64_t reload() {
         ErrorCapture error;
         Message reply;
-        if (sd_bus_call_method(bus_.get(), serviceName.data(), objectPath.data(),
-                               settingsInterface.data(), "Reload", &error.value, reply.put(),
-                               "") < 0) {
+        if (sd_bus_call_method(bus_.get(), serviceName, objectPath, settingsInterface, "Reload",
+                               &error.value, reply.put(), "") < 0) {
             ADD_FAILURE() << "reload failed: "
                           << (error.value.name == nullptr ? "unknown" : error.value.name);
             return 0;
@@ -239,9 +247,8 @@ class SettingsServiceFixture : public ::testing::Test {
     currentSnapshot(std::uint32_t version = 1U) {
         ErrorCapture error;
         Message reply;
-        if (sd_bus_call_method(bus_.get(), serviceName.data(), objectPath.data(),
-                               snapshotInterface.data(), "GetCurrentSnapshot", &error.value,
-                               reply.put(), "u", version) < 0) {
+        if (sd_bus_call_method(bus_.get(), serviceName, objectPath, snapshotInterface,
+                               "GetCurrentSnapshot", &error.value, reply.put(), "u", version) < 0) {
             ADD_FAILURE() << "snapshot request failed: "
                           << (error.value.name == nullptr ? "unknown" : error.value.name);
             return {};
@@ -254,20 +261,22 @@ class SettingsServiceFixture : public ::testing::Test {
         return {generation, std::string{static_cast<const char *>(bytes), size}};
     }
 
-    [[nodiscard]] std::string callErrorName(const char *interface, const char *member,
-                                            const char *signature, const void *value) {
+    [[nodiscard]] std::string callStringErrorName(const char *interface, const char *member,
+                                                  const char *value) {
         ErrorCapture error;
         Message reply;
-        int result = 0;
-        if (std::string_view{signature} == "s") {
-            result = sd_bus_call_method(bus_.get(), serviceName.data(), objectPath.data(),
-                                        interface, member, &error.value, reply.put(), signature,
-                                        static_cast<const char *>(value));
-        } else {
-            result = sd_bus_call_method(bus_.get(), serviceName.data(), objectPath.data(),
-                                        interface, member, &error.value, reply.put(), signature,
-                                        *static_cast<const std::uint32_t *>(value));
-        }
+        const int result = sd_bus_call_method(bus_.get(), serviceName, objectPath, interface,
+                                              member, &error.value, reply.put(), "s", value);
+        EXPECT_LT(result, 0);
+        return error.value.name == nullptr ? std::string{} : std::string{error.value.name};
+    }
+
+    [[nodiscard]] std::string callVersionErrorName(const char *interface, const char *member,
+                                                   std::uint32_t value) {
+        ErrorCapture error;
+        Message reply;
+        const int result = sd_bus_call_method(bus_.get(), serviceName, objectPath, interface,
+                                              member, &error.value, reply.put(), "u", value);
         EXPECT_LT(result, 0);
         return error.value.name == nullptr ? std::string{} : std::string{error.value.name};
     }
@@ -275,10 +284,11 @@ class SettingsServiceFixture : public ::testing::Test {
     [[nodiscard]] std::pair<bool, std::string> validateCandidate(std::string_view candidate,
                                                                  std::string *errorName = nullptr) {
         Message call;
-        EXPECT_GE(sd_bus_message_new_method_call(bus_.get(), call.put(), serviceName.data(),
-                                                 objectPath.data(), settingsInterface.data(),
-                                                 "ValidateCandidate"),
+        EXPECT_GE(sd_bus_message_new_method_call(bus_.get(), call.put(), serviceName, objectPath,
+                                                 settingsInterface, "ValidateCandidate"),
                   0);
+        // append_array consumes exactly candidate.size() bytes; no C-string terminator is needed.
+        // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
         EXPECT_GE(sd_bus_message_append_array(call.get(), SD_BUS_TYPE_BYTE, candidate.data(),
                                               candidate.size()),
                   0);
@@ -336,8 +346,9 @@ class SettingsServiceFixture : public ::testing::Test {
 TEST_F(SettingsServiceFixture, PublishesCompleteInitialSnapshotAndNoOpReload) {
     const auto profile = currentProfile();
     ASSERT_TRUE(profile.has_value());
-    EXPECT_EQ(profile->profile, "lustre");
-    EXPECT_EQ(profile->generation, 1U);
+    const auto profileValue = requireOptional(profile);
+    EXPECT_EQ(profileValue.profile, "lustre");
+    EXPECT_EQ(profileValue.generation, 1U);
 
     const auto [generation, snapshot] = currentSnapshot();
     EXPECT_EQ(generation, 1U);
@@ -350,18 +361,19 @@ TEST_F(SettingsServiceFixture, PublishesCompleteInitialSnapshotAndNoOpReload) {
 
 TEST_F(SettingsServiceFixture, ProfileRequestsAreAtomicAndTyped) {
     const char *invalid = "invalid-profile";
-    EXPECT_EQ(callErrorName(settingsInterface.data(), "RequestProfileChange", "s", invalid),
+    EXPECT_EQ(callStringErrorName(settingsInterface, "RequestProfileChange", invalid),
               "org.prismdrake.Settings1.Error.InvalidProfile");
     EXPECT_EQ(requestProfile("lustre"), 1U);
     EXPECT_EQ(requestProfile("forge"), 2U);
 
     const auto profile = currentProfile();
     ASSERT_TRUE(profile.has_value());
-    EXPECT_EQ(profile->profile, "forge");
-    EXPECT_EQ(profile->generation, 2U);
+    const auto profileValue = requireOptional(profile);
+    EXPECT_EQ(profileValue.profile, "forge");
+    EXPECT_EQ(profileValue.generation, 2U);
 
     const std::uint32_t unsupported = 2U;
-    EXPECT_EQ(callErrorName(snapshotInterface.data(), "GetCurrentSnapshot", "u", &unsupported),
+    EXPECT_EQ(callVersionErrorName(snapshotInterface, "GetCurrentSnapshot", unsupported),
               "org.prismdrake.Settings1.Error.UnsupportedSnapshotVersion");
 }
 
@@ -386,7 +398,7 @@ TEST_F(SettingsServiceFixture, CandidateValidationIsBoundedAndRedacted) {
 
     const auto profile = currentProfile();
     ASSERT_TRUE(profile.has_value());
-    EXPECT_EQ(profile->generation, 1U);
+    EXPECT_EQ(requireOptional(profile).generation, 1U);
 }
 
 TEST_F(SettingsServiceFixture, EmitsOneStructuredSignalOnlyForARealPublication) {

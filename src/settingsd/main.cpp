@@ -8,8 +8,10 @@
 #include <csignal>
 #include <iostream>
 #include <span>
+#include <stdexcept>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -20,7 +22,7 @@ extern "C" void requestStop(int) { stopRequested = 1; }
 
 } // namespace
 
-int main(int argc, char **argv) {
+[[nodiscard]] int runMain(int argc, char **argv) {
     using prismdrake::foundation::ExitStatus;
     using prismdrake::foundation::processExitCode;
     using namespace prismdrake::settingsd;
@@ -46,13 +48,15 @@ int main(int argc, char **argv) {
         std::cout << serviceVersionText();
         return processExitCode(ExitStatus::success);
     }
-    if (!options.value().runtime) {
+    auto serviceOptions = std::move(options).value();
+    if (!serviceOptions.runtime) {
         std::cerr << "prismdrake-settingsd: Runtime options are unavailable.\n";
         return processExitCode(ExitStatus::unavailable);
     }
+    auto runtimeOptions = std::move(serviceOptions.runtime).value();
 
-    const auto runtimeBoundary = prismdrake::foundation::validateCurrentProcessRuntimeDirectory(
-        options.value().runtime->xdgPaths);
+    const auto runtimeBoundary =
+        prismdrake::foundation::validateCurrentProcessRuntimeDirectory(runtimeOptions.xdgPaths);
     if (!runtimeBoundary) {
         std::cerr << "prismdrake-settingsd: " << runtimeBoundary.error().message << '\n';
         return processExitCode(prismdrake::foundation::exitStatusFor(runtimeBoundary.error()));
@@ -64,7 +68,7 @@ int main(int argc, char **argv) {
     auto reconnectDelay = std::chrono::milliseconds{100};
     constexpr auto maximumReconnectDelay = std::chrono::milliseconds{2000};
     while (stopRequested == 0) {
-        auto epoch = runServiceEpoch(options.value().runtime->settingsEngine, stopRequested);
+        auto epoch = runServiceEpoch(runtimeOptions.settingsEngine, stopRequested);
         if (!epoch) {
             std::cerr << "prismdrake-settingsd: " << epoch.error().message << '\n';
             return processExitCode(prismdrake::foundation::exitStatusFor(epoch.error()));
@@ -76,4 +80,16 @@ int main(int argc, char **argv) {
         reconnectDelay = std::min(reconnectDelay * 2, maximumReconnectDelay);
     }
     return processExitCode(ExitStatus::success);
+}
+
+int main(int argc, char **argv) {
+    try {
+        return runMain(argc, argv);
+    } catch (const std::exception &) {
+        std::cerr << "prismdrake-settingsd: An unexpected bounded startup failure occurred.\n";
+    } catch (...) {
+        std::cerr << "prismdrake-settingsd: An unexpected internal failure occurred.\n";
+    }
+    return prismdrake::foundation::processExitCode(
+        prismdrake::foundation::ExitStatus::general_failure);
 }
