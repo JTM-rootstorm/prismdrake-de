@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import re
 import sys
 import tomllib
@@ -156,11 +157,41 @@ class Validation:
             self.error(location, message)
 
 
+class DuplicateJsonKeyError(ValueError):
+    """Raised when strict JSON loading encounters a repeated object key."""
+
+
+def reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for name, value in pairs:
+        if name in result:
+            raise DuplicateJsonKeyError("duplicate object key")
+        result[name] = value
+    return result
+
+
+def reject_json_constant(value: str) -> Any:
+    del value
+    raise ValueError("non-finite JSON number")
+
+
+def parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("non-finite JSON number")
+    return parsed
+
+
 def load_json(path: Path, validation: Validation) -> Any | None:
     try:
         with path.open(encoding="utf-8") as stream:
-            return json.load(stream)
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            return json.load(
+                stream,
+                object_pairs_hook=reject_duplicate_json_keys,
+                parse_constant=reject_json_constant,
+                parse_float=parse_finite_json_float,
+            )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
         validation.error(path.relative_to(ROOT).as_posix(), f"invalid JSON: {error}")
         return None
 
@@ -192,9 +223,18 @@ def is_json_type(instance: Any, expected: str) -> bool:
     if expected == "boolean":
         return isinstance(instance, bool)
     if expected == "integer":
-        return isinstance(instance, int) and not isinstance(instance, bool)
+        return (
+            isinstance(instance, (int, float))
+            and not isinstance(instance, bool)
+            and (not isinstance(instance, float) or math.isfinite(instance))
+            and (not isinstance(instance, float) or instance.is_integer())
+        )
     if expected == "number":
-        return isinstance(instance, (int, float)) and not isinstance(instance, bool)
+        return (
+            isinstance(instance, (int, float))
+            and not isinstance(instance, bool)
+            and (not isinstance(instance, float) or math.isfinite(instance))
+        )
     if expected == "string":
         return isinstance(instance, str)
     if expected == "array":
@@ -218,6 +258,15 @@ def validate_schema(
             return [f"{location}: invalid schema reference: {error}"]
 
     errors: list[str] = []
+    alternatives = schema.get("oneOf")
+    if isinstance(alternatives, list):
+        matches = sum(
+            not validate_schema(instance, alternative, root_schema, location)
+            for alternative in alternatives
+            if isinstance(alternative, dict)
+        )
+        if matches != 1:
+            errors.append(f"{location}: expected exactly one documented schema alternative")
     expected = schema.get("type")
     if expected is not None:
         expected_types = expected if isinstance(expected, list) else [expected]
@@ -247,6 +296,20 @@ def validate_schema(
         minimum_properties = schema.get("minProperties")
         if minimum_properties is not None and len(instance) < minimum_properties:
             errors.append(f"{location}: expected at least {minimum_properties} keys")
+        maximum_properties = schema.get("maxProperties")
+        if maximum_properties is not None and len(instance) > maximum_properties:
+            errors.append(f"{location}: exceeds maximum of {maximum_properties} keys")
+        property_name_schema = schema.get("propertyNames")
+        if isinstance(property_name_schema, dict):
+            for name in instance:
+                errors.extend(
+                    validate_schema(
+                        name,
+                        property_name_schema,
+                        root_schema,
+                        f"{location} property name",
+                    )
+                )
 
     if isinstance(instance, list):
         item_schema = schema.get("items")
@@ -720,6 +783,166 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
     del missing_fallback["semantic"]["materials"]["panel"]["fallback"]
     cases.append(("missing blur fallback", missing_fallback, schemas["theme-tokens"], "fallback"))
 
+    invalid_token_name = copy.deepcopy(theme)
+    invalid_token_name["primitive"]["colors"]["Bad-Key"] = "#000000FF"
+    cases.append(
+        (
+            "invalid primitive token name",
+            invalid_token_name,
+            schemas["theme-tokens"],
+            "property name",
+        )
+    )
+
+    oversized_token_map = copy.deepcopy(theme)
+    oversized_token_map["primitive"]["colors"] = {
+        f"color_{index:03d}": "#000000FF" for index in range(257)
+    }
+    cases.append(
+        (
+            "oversized primitive token map",
+            oversized_token_map,
+            schemas["theme-tokens"],
+            "exceeds maximum",
+        )
+    )
+
+    oversized_font_list = copy.deepcopy(theme)
+    oversized_font_list["primitive"]["font_families"] = ["sans-serif"] * 65
+    cases.append(
+        (
+            "oversized font family list",
+            oversized_font_list,
+            schemas["theme-tokens"],
+            "exceeds maximum",
+        )
+    )
+
+    oversized_font_name = copy.deepcopy(theme)
+    oversized_font_name["semantic"]["typography"]["body_family"] = "f" * 257
+    cases.append(
+        (
+            "oversized font family name",
+            oversized_font_name,
+            schemas["theme-tokens"],
+            "string exceeds",
+        )
+    )
+
+    missing_focus_metric = copy.deepcopy(theme)
+    del missing_focus_metric["semantic"]["focus"]["width_px"]
+    cases.append(
+        (
+            "missing exact focus metric",
+            missing_focus_metric,
+            schemas["theme-tokens"],
+            "missing required",
+        )
+    )
+
+    extra_focus_metric = copy.deepcopy(theme)
+    extra_focus_metric["semantic"]["focus"]["extra_px"] = 1
+    cases.append(
+        (
+            "extra exact focus metric",
+            extra_focus_metric,
+            schemas["theme-tokens"],
+            "unknown key",
+        )
+    )
+
+    invalid_opacity_name = copy.deepcopy(theme)
+    invalid_opacity_name["primitive"]["opacity"]["Bad-Key"] = 0.5
+    cases.append(
+        (
+            "invalid opacity token name",
+            invalid_opacity_name,
+            schemas["theme-tokens"],
+            "property name",
+        )
+    )
+
+    oversized_opacity_map = copy.deepcopy(theme)
+    oversized_opacity_map["primitive"]["opacity"] = {
+        f"opacity_{index:03d}": 0.5 for index in range(257)
+    }
+    cases.append(
+        (
+            "oversized opacity token map",
+            oversized_opacity_map,
+            schemas["theme-tokens"],
+            "exceeds maximum",
+        )
+    )
+
+    invalid_layer_identity = copy.deepcopy(theme)
+    invalid_layer_identity["layer"] = "base"
+    cases.append(
+        (
+            "non-null base profile identity",
+            invalid_layer_identity,
+            schemas["theme-tokens"],
+            "exactly one documented schema alternative",
+        )
+    )
+
+    mismatched_profile_identity = copy.deepcopy(theme)
+    mismatched_profile_identity["profile_display_name"] = "Prismdrake Forge"
+    cases.append(
+        (
+            "mismatched profile identity",
+            mismatched_profile_identity,
+            schemas["theme-tokens"],
+            "exactly one documented schema alternative",
+        )
+    )
+
+    invalid_opaque_fallback = copy.deepcopy(theme)
+    invalid_opaque_fallback["semantic"]["materials"]["panel"]["fallback"]["opacity"] = 0.75
+    cases.append(
+        (
+            "invalid opaque fallback",
+            invalid_opaque_fallback,
+            schemas["theme-tokens"],
+            "exactly one documented schema alternative",
+        )
+    )
+
+    invisible_focus = copy.deepcopy(theme)
+    invisible_focus["semantic"]["focus"]["width_px"] = 0
+    cases.append(
+        (
+            "invisible focus width",
+            invisible_focus,
+            schemas["theme-tokens"],
+            "below minimum",
+        )
+    )
+
+    unbounded_metric = copy.deepcopy(theme)
+    unbounded_metric["primitive"]["spacing_px"]["unit"] = 1e308
+    cases.append(
+        (
+            "unbounded primitive metric",
+            unbounded_metric,
+            schemas["theme-tokens"],
+            "exceeds maximum",
+        )
+    )
+
+    nonzero_reduced_motion = copy.deepcopy(theme)
+    nonzero_reduced_motion["accessibility_overrides"]["reduced_motion"][
+        "duration_scale"
+    ] = 0.5
+    cases.append(
+        (
+            "nonzero reduced motion override",
+            nonzero_reduced_motion,
+            schemas["theme-tokens"],
+            "expected constant",
+        )
+    )
+
     unknown_manifest_key = copy.deepcopy(foundation_manifest)
     unknown_manifest_key["implicit_dependencies"] = []
     cases.append(
@@ -779,6 +1002,23 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
             "wrong D-Bus namespace fixture was not rejected",
         )
 
+    strict_json_cases = (
+        '{"schema_version": 1, "schema_version": 1}',
+        '{"value": NaN}',
+        '{"value": 1e999}',
+    )
+    for document in strict_json_cases:
+        try:
+            json.loads(
+                document,
+                object_pairs_hook=reject_duplicate_json_keys,
+                parse_constant=reject_json_constant,
+                parse_float=parse_finite_json_float,
+            )
+        except (ValueError, json.JSONDecodeError):
+            continue
+        validation.error("self-test", "strict JSON loader accepted an invalid document")
+
 
 def main() -> int:
     if sys.version_info < (3, 11):
@@ -805,7 +1045,7 @@ def main() -> int:
     print("  JSON/TOML/XML/SVG: parsed and structurally validated")
     print("  profiles/themes/fallbacks: consistent")
     print("  ADRs/namespaces/local links/assets: consistent")
-    print("  negative self-tests: 10 rejection paths passed")
+    print("  negative self-tests: 27 rejection paths passed")
     return 0
 
 

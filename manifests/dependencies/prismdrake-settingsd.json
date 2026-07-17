@@ -25,6 +25,24 @@
       "reason": "The display-free PD1 configuration module directly uses the system toml++ library for strict version-1 parsing; no supported minimum has been measured."
     },
     {
+      "name": "nlohmann-json",
+      "gentoo_atom": "dev-cpp/nlohmann_json",
+      "scope": "build",
+      "relationship": "direct",
+      "feature": "theme_token_parsing",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": "3.11",
+        "verified_minimum": null,
+        "observed": "3.12.0-r1",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The display-free PD1 theme parser directly includes the system nlohmann JSON header; the header-only dependency is compiled into the internal theme target and is not an installed runtime library."
+    },
+    {
       "name": "dbus",
       "gentoo_atom": "sys-apps/dbus",
       "scope": "mandatory_runtime",
@@ -62,10 +80,6 @@
     }
   ],
   "unresolved": [
-    {
-      "area": "theme_token_parser",
-      "reason": "The JSON implementation library for the later theme-token resolver remains unselected."
-    },
     {
       "area": "atomic_storage",
       "reason": "The implementation must establish whether standard-library facilities are sufficient before declaring another dependency."

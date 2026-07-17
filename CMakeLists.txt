@@ -46,6 +46,15 @@ if(NOT tomlplusplus_FOUND)
 endif()
 add_subdirectory(src/config)
 
+find_package(nlohmann_json 3.11 CONFIG QUIET)
+if(NOT nlohmann_json_FOUND)
+    message(FATAL_ERROR
+        "Prismdrake theme support requires system-packaged nlohmann-json. Install "
+        "dev-cpp/nlohmann_json on Gentoo or the equivalent development package. "
+        "Prismdrake does not download or vendor JSON parsers.")
+endif()
+add_subdirectory(src/theme)
+
 if(BUILD_TESTING)
     find_package(GTest QUIET)
     if(NOT GTest_FOUND)
@@ -79,6 +88,11 @@ prismdrake_add_format_check(
     src/foundation/Result.hpp
     src/foundation/XdgPaths.cpp
     src/foundation/XdgPaths.hpp
+    src/theme/Theme.hpp
+    src/theme/ThemeParser.cpp
+    src/theme/ThemeParser.hpp
+    src/theme/ThemeResolver.cpp
+    src/theme/ThemeResolver.hpp
     tests/unit/AtomicFileTests.cpp
     tests/unit/BoundedFileTests.cpp
     tests/unit/BuildInfoTests.cpp
@@ -87,4 +101,6 @@ prismdrake_add_format_check(
     tests/unit/DiagnosticsTests.cpp
     tests/unit/FoundationPrimitivesTests.cpp
     tests/unit/ResultTests.cpp
+    tests/unit/ThemeParserTests.cpp
+    tests/unit/ThemeResolverTests.cpp
     tests/unit/XdgPathsTests.cpp)

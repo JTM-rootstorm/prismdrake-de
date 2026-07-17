@@ -10,11 +10,14 @@ add_executable(prismdrake-foundation-tests
     DiagnosticsTests.cpp
     FoundationPrimitivesTests.cpp
     ResultTests.cpp
+    ThemeParserTests.cpp
+    ThemeResolverTests.cpp
     XdgPathsTests.cpp)
 target_link_libraries(prismdrake-foundation-tests
     PRIVATE
         Prismdrake::foundation
         Prismdrake::config
+        Prismdrake::theme
         GTest::gtest_main
         Threads::Threads)
 target_compile_definitions(prismdrake-foundation-tests PRIVATE

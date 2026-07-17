@@ -31,17 +31,52 @@
       "additionalProperties": false,
       "required": ["blur", "thumbnails"],
       "properties": {
-        "blur": { "type": "string", "minLength": 1 },
-        "thumbnails": { "type": "string", "minLength": 1 }
+        "blur": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "thumbnails": { "type": "string", "minLength": 1, "maxLength": 256 }
       }
     }
   },
+  "oneOf": [
+    {
+      "properties": {
+        "layer": { "const": "base" },
+        "profile_id": { "const": null },
+        "profile_display_name": { "const": null }
+      }
+    },
+    {
+      "properties": {
+        "layer": { "const": "accessibility" },
+        "profile_id": { "const": null },
+        "profile_display_name": { "const": null }
+      }
+    },
+    {
+      "properties": {
+        "layer": { "const": "profile" },
+        "profile_id": { "const": "lustre" },
+        "profile_display_name": { "const": "Prismdrake Lustre" }
+      }
+    },
+    {
+      "properties": {
+        "layer": { "const": "profile" },
+        "profile_id": { "const": "forge" },
+        "profile_display_name": { "const": "Prismdrake Forge" }
+      }
+    }
+  ],
   "$defs": {
     "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{8}$" },
     "number_map": {
       "type": "object",
       "minProperties": 1,
-      "additionalProperties": { "type": "number", "minimum": 0 }
+      "maxProperties": 256,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      },
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 65535 }
     },
     "primitive": {
       "type": "object",
@@ -51,23 +86,35 @@
         "colors": {
           "type": "object",
           "minProperties": 4,
+          "maxProperties": 256,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
           "additionalProperties": { "$ref": "#/$defs/color" }
         },
         "spacing_px": { "$ref": "#/$defs/number_map" },
         "font_families": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
+          "maxItems": 64,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
         },
         "font_size_px": { "$ref": "#/$defs/number_map" },
         "duration_ms": { "$ref": "#/$defs/number_map" },
         "radius_px": { "$ref": "#/$defs/number_map" },
-        "opacity": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
-        }
+        "opacity": { "$ref": "#/$defs/opacity_map" }
       }
+    },
+    "opacity_map": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      },
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
     },
     "material": {
       "type": "object",
@@ -94,7 +141,17 @@
             "kind": { "enum": ["alpha", "opaque"] },
             "color": { "$ref": "#/$defs/color" },
             "opacity": { "type": "number", "minimum": 0.75, "maximum": 1 }
-          }
+          },
+          "oneOf": [
+            { "properties": { "kind": { "const": "alpha" } } },
+            {
+              "properties": {
+                "kind": { "const": "opaque" },
+                "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}[Ff]{2}$" },
+                "opacity": { "const": 1 }
+              }
+            }
+          ]
         }
       }
     },
@@ -157,18 +214,18 @@
           "additionalProperties": false,
           "required": ["body_family", "body_size_px", "title_size_px", "weight_normal", "weight_emphasis"],
           "properties": {
-            "body_family": { "type": "string", "minLength": 1 },
+            "body_family": { "type": "string", "minLength": 1, "maxLength": 256 },
             "body_size_px": { "type": "number", "minimum": 8, "maximum": 48 },
             "title_size_px": { "type": "number", "minimum": 8, "maximum": 64 },
             "weight_normal": { "type": "integer", "minimum": 100, "maximum": 900 },
             "weight_emphasis": { "type": "integer", "minimum": 100, "maximum": 900 }
           }
         },
-        "spacing": { "$ref": "#/$defs/metric_group" },
-        "panel": { "$ref": "#/$defs/metric_group" },
-        "decoration": { "$ref": "#/$defs/metric_group" },
-        "icon": { "$ref": "#/$defs/metric_group" },
-        "focus": { "$ref": "#/$defs/metric_group" },
+        "spacing": { "$ref": "#/$defs/spacing_metrics" },
+        "panel": { "$ref": "#/$defs/panel_metrics" },
+        "decoration": { "$ref": "#/$defs/decoration_metrics" },
+        "icon": { "$ref": "#/$defs/icon_metrics" },
+        "focus": { "$ref": "#/$defs/focus_metrics" },
         "motion": {
           "type": "object",
           "additionalProperties": false,
@@ -179,22 +236,72 @@
             "easing": { "enum": ["linear", "ease_out", "ease_in_out", "crisp"] }
           }
         },
-        "targets": { "$ref": "#/$defs/metric_group" }
+        "targets": { "$ref": "#/$defs/target_metrics" }
       }
     },
-    "metric_group": {
+    "spacing_metrics": {
       "type": "object",
-      "minProperties": 1,
-      "additionalProperties": { "type": "number", "minimum": 0 }
+      "additionalProperties": false,
+      "required": ["unit_px", "control_gap_px", "content_margin_px"],
+      "properties": {
+        "unit_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "control_gap_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "content_margin_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "panel_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["height_px", "icon_size_px"],
+      "properties": {
+        "height_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "icon_size_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "decoration_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["titlebar_height_px", "border_width_px"],
+      "properties": {
+        "titlebar_height_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "border_width_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "icon_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["small_px", "medium_px", "large_px"],
+      "properties": {
+        "small_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "medium_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "large_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "focus_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width_px", "offset_px"],
+      "properties": {
+        "width_px": { "type": "number", "minimum": 1, "maximum": 65535 },
+        "offset_px": { "type": "number", "minimum": 0, "maximum": 65535 }
+      }
+    },
+    "target_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_px"],
+      "properties": {
+        "minimum_px": { "type": "number", "minimum": 24, "maximum": 65535 }
+      }
     },
     "component_style": {
       "type": "object",
       "additionalProperties": false,
       "required": ["radius_px", "padding_px", "border_width_px"],
       "properties": {
-        "radius_px": { "type": "number", "minimum": 0 },
-        "padding_px": { "type": "number", "minimum": 0 },
-        "border_width_px": { "type": "number", "minimum": 0 }
+        "radius_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "padding_px": { "type": "number", "minimum": 0, "maximum": 65535 },
+        "border_width_px": { "type": "number", "minimum": 0, "maximum": 65535 }
       }
     },
     "components": {
@@ -220,13 +327,13 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["duration_scale"],
-          "properties": { "duration_scale": { "type": "number", "minimum": 0, "maximum": 1 } }
+          "properties": { "duration_scale": { "const": 0 } }
         },
         "transparency_disabled": {
           "type": "object",
           "additionalProperties": false,
           "required": ["force_opaque"],
-          "properties": { "force_opaque": { "type": "boolean" } }
+          "properties": { "force_opaque": { "const": true } }
         },
         "high_contrast": {
           "type": "object",

@@ -27,9 +27,9 @@
       "border_inactive": "#B8B8B8FF",
       "text_primary": "#FFFFFFFF",
       "text_muted": "#E0E0E0FF",
-      "selection": "#006BFFFF",
+      "selection": "#75A7FFFF",
       "focus_ring": "#FFF200FF",
-      "danger": "#FF4D64FF",
+      "danger": "#FF7585FF",
       "warning": "#FFD000FF",
       "success": "#41D97DFF"
     },
