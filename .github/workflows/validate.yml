@@ -46,7 +46,7 @@ jobs:
       - name: Install system build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends ninja-build libgtest-dev ${{ matrix.packages }}
+          sudo apt-get install --no-install-recommends ninja-build libgtest-dev libtomlplusplus-dev ${{ matrix.packages }}
 
       - name: Configure
         run: >-
@@ -72,7 +72,7 @@ jobs:
       - name: Install formatter
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends ninja-build clang-format-18
+          sudo apt-get install --no-install-recommends ninja-build clang-format-18 libtomlplusplus-dev
 
       - name: Configure without tests
         run: >-

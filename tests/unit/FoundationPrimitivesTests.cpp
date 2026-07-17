@@ -85,6 +85,8 @@ TEST(CancellationTest, SharesOneExplicitThreadSafeState) {
 
 TEST(ExitStatusTest, MapsEveryFoundationErrorToAStableProcessStatus) {
     EXPECT_EQ(exitStatusFor(ErrorCode::invalid_argument), ExitStatus::invalid_usage);
+    EXPECT_EQ(exitStatusFor(ErrorCode::syntax_error), ExitStatus::invalid_usage);
+    EXPECT_EQ(exitStatusFor(ErrorCode::validation_error), ExitStatus::invalid_usage);
     EXPECT_EQ(exitStatusFor(ErrorCode::invalid_environment), ExitStatus::unavailable);
     EXPECT_EQ(exitStatusFor(ErrorCode::not_found), ExitStatus::unavailable);
     EXPECT_EQ(exitStatusFor(ErrorCode::permission_denied), ExitStatus::permission_denied);

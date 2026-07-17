@@ -5,6 +5,8 @@ add_executable(prismdrake-foundation-tests
     AtomicFileTests.cpp
     BoundedFileTests.cpp
     BuildInfoTests.cpp
+    ConfigurationLoaderTests.cpp
+    ConfigurationParserTests.cpp
     DiagnosticsTests.cpp
     FoundationPrimitivesTests.cpp
     ResultTests.cpp
@@ -12,9 +14,11 @@ add_executable(prismdrake-foundation-tests
 target_link_libraries(prismdrake-foundation-tests
     PRIVATE
         Prismdrake::foundation
+        Prismdrake::config
         GTest::gtest_main
         Threads::Threads)
 target_compile_definitions(prismdrake-foundation-tests PRIVATE
+    PRISMDRAKE_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     PRISMDRAKE_TEST_DEVELOPER_OVERRIDES=$<BOOL:${PRISMDRAKE_ENABLE_DEVELOPER_OVERRIDES}>
     PRISMDRAKE_TEST_VERSION="${PRISMDRAKE_VERSION}")
 

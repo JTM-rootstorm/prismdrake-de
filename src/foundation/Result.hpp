@@ -10,6 +10,8 @@ namespace prismdrake::foundation {
 
 enum class ErrorCode : std::uint8_t {
     invalid_argument,
+    syntax_error,
+    validation_error,
     invalid_environment,
     not_found,
     permission_denied,

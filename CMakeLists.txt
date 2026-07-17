@@ -37,6 +37,15 @@ set_target_properties(prismdrake-cpp-policy PROPERTIES
 
 add_subdirectory(src/foundation)
 
+find_package(tomlplusplus CONFIG QUIET)
+if(NOT tomlplusplus_FOUND)
+    message(FATAL_ERROR
+        "Prismdrake configuration support requires system-packaged toml++. Install "
+        "dev-cpp/tomlplusplus on Gentoo or the equivalent development package. "
+        "Prismdrake does not download or vendor TOML parsers.")
+endif()
+add_subdirectory(src/config)
+
 if(BUILD_TESTING)
     find_package(GTest QUIET)
     if(NOT GTest_FOUND)
@@ -49,6 +58,11 @@ if(BUILD_TESTING)
 endif()
 
 prismdrake_add_format_check(
+    src/config/Configuration.hpp
+    src/config/ConfigurationLoader.cpp
+    src/config/ConfigurationLoader.hpp
+    src/config/ConfigurationParser.cpp
+    src/config/ConfigurationParser.hpp
     src/foundation/AtomicFile.cpp
     src/foundation/AtomicFile.hpp
     src/foundation/BoundedFile.cpp
@@ -68,6 +82,8 @@ prismdrake_add_format_check(
     tests/unit/AtomicFileTests.cpp
     tests/unit/BoundedFileTests.cpp
     tests/unit/BuildInfoTests.cpp
+    tests/unit/ConfigurationParserTests.cpp
+    tests/unit/ConfigurationLoaderTests.cpp
     tests/unit/DiagnosticsTests.cpp
     tests/unit/FoundationPrimitivesTests.cpp
     tests/unit/ResultTests.cpp

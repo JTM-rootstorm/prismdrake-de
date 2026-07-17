@@ -7,6 +7,24 @@
   "runtime_dependency_state": "planned_unmeasured",
   "dependencies": [
     {
+      "name": "tomlplusplus",
+      "gentoo_atom": "dev-cpp/tomlplusplus",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "configuration_parsing",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "3.4.0",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The display-free PD1 configuration module directly uses the system toml++ library for strict version-1 parsing; no supported minimum has been measured."
+    },
+    {
       "name": "dbus",
       "gentoo_atom": "sys-apps/dbus",
       "scope": "mandatory_runtime",
@@ -45,8 +63,8 @@
   ],
   "unresolved": [
     {
-      "area": "configuration_parsers",
-      "reason": "The TOML and JSON implementation libraries remain unselected; schema acceptance does not select parser packages."
+      "area": "theme_token_parser",
+      "reason": "The JSON implementation library for the later theme-token resolver remains unselected."
     },
     {
       "area": "atomic_storage",

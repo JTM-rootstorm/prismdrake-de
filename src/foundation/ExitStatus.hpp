@@ -25,6 +25,8 @@ enum class ExitStatus : int {
 [[nodiscard]] constexpr ExitStatus exitStatusFor(ErrorCode code) noexcept {
     switch (code) {
     case ErrorCode::invalid_argument:
+    case ErrorCode::syntax_error:
+    case ErrorCode::validation_error:
         return ExitStatus::invalid_usage;
     case ErrorCode::invalid_environment:
     case ErrorCode::not_found:

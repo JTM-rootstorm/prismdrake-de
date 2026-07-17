@@ -6,7 +6,7 @@ option(PRISMDRAKE_ENABLE_LTO "Enable interprocedural optimization on project-own
 option(PRISMDRAKE_ENABLE_CLANG_TIDY "Run Clang-Tidy on project-owned targets" OFF)
 option(PRISMDRAKE_WARNINGS_AS_ERRORS "Treat project-owned target warnings as errors" OFF)
 option(PRISMDRAKE_ENABLE_DEVELOPER_OVERRIDES
-    "Enable non-production developer overrides in diagnostic metadata" OFF)
+    "Enable non-production diagnostics and mock-capability overrides" OFF)
 
 set(PRISMDRAKE_CLANG_FORMAT_EXECUTABLE "" CACHE FILEPATH
     "Path to the clang-format executable used by the format-check target")
