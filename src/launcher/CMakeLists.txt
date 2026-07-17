@@ -8,6 +8,8 @@ add_library(prismdrake-launcher-model STATIC
     DesktopEntryParser.hpp
     DesktopEntryVisibility.cpp
     DesktopEntryVisibility.hpp
+    DesktopExec.cpp
+    DesktopExec.hpp
     DesktopFileId.cpp
     DesktopFileId.hpp)
 add_library(Prismdrake::launcher-model ALIAS prismdrake-launcher-model)

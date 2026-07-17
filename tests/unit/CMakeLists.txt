@@ -13,6 +13,7 @@ add_executable(prismdrake-foundation-tests
     DesktopEntryDiscoveryTests.cpp
     DesktopEntryVisibilityTests.cpp
     DesktopEntryParserTests.cpp
+    DesktopExecTests.cpp
     DesktopFileIdTests.cpp
     DockPropertiesTests.cpp
     EwmhTaskListTests.cpp
