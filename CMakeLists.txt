@@ -149,6 +149,8 @@ prismdrake_add_format_check(
     src/launcher/ApplicationPaths.cpp
     src/launcher/ApplicationPaths.hpp
     src/launcher/DesktopEntry.hpp
+    src/launcher/DesktopEntryDiscovery.cpp
+    src/launcher/DesktopEntryDiscovery.hpp
     src/launcher/DesktopEntryParser.cpp
     src/launcher/DesktopEntryParser.hpp
     src/launcher/DesktopEntryVisibility.cpp
@@ -194,6 +196,7 @@ prismdrake_add_format_check(
     tests/unit/ConfigurationParserTests.cpp
     tests/unit/ConfigurationLoaderTests.cpp
     tests/unit/DiagnosticsTests.cpp
+    tests/unit/DesktopEntryDiscoveryTests.cpp
     tests/unit/DesktopEntryVisibilityTests.cpp
     tests/unit/DesktopEntryParserTests.cpp
     tests/unit/DesktopFileIdTests.cpp
