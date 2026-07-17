@@ -21,6 +21,7 @@ add_executable(prismdrake-foundation-tests
     SettingsEngineTests.cpp
     ThemeParserTests.cpp
     ThemeResolverTests.cpp
+    X11ConnectionTests.cpp
     XdgPathsTests.cpp)
 target_link_libraries(prismdrake-foundation-tests
     PRIVATE
@@ -30,6 +31,7 @@ target_link_libraries(prismdrake-foundation-tests
         Prismdrake::settings-core
         Prismdrake::config
         Prismdrake::theme
+        Prismdrake::x11
         GTest::gtest_main
         Threads::Threads)
 target_compile_definitions(prismdrake-foundation-tests PRIVATE

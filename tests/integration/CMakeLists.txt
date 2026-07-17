@@ -24,3 +24,27 @@ add_test(
 set_tests_properties(SettingsServiceIntegrationTest PROPERTIES
     RUN_SERIAL TRUE
     TIMEOUT 60)
+
+add_executable(prismdrake-x11-integration-tests X11ConnectionTests.cpp)
+target_link_libraries(prismdrake-x11-integration-tests
+    PRIVATE
+        GTest::gtest_main
+        Prismdrake::x11)
+
+prismdrake_configure_cpp_target(prismdrake-x11-integration-tests)
+prismdrake_enable_warnings(prismdrake-x11-integration-tests)
+prismdrake_enable_sanitizers(prismdrake-x11-integration-tests)
+
+find_program(PRISMDRAKE_XVFB_EXECUTABLE NAMES Xvfb)
+if(PRISMDRAKE_XVFB_EXECUTABLE)
+    add_test(
+        NAME X11ConnectionIntegrationTest
+        COMMAND
+            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_with_xvfb.py"
+            "${PRISMDRAKE_XVFB_EXECUTABLE}"
+            "$<TARGET_FILE:prismdrake-x11-integration-tests>")
+    set_tests_properties(X11ConnectionIntegrationTest PROPERTIES TIMEOUT 30)
+else()
+    message(STATUS
+        "Xvfb is unavailable; the X11 connection integration test is not registered")
+endif()

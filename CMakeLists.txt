@@ -57,6 +57,7 @@ endif()
 add_subdirectory(src/theme)
 add_subdirectory(src/settings)
 add_subdirectory(src/ipc)
+add_subdirectory(src/x11)
 add_subdirectory(src/settingsd)
 add_subdirectory(src/session)
 
@@ -100,6 +101,10 @@ prismdrake_add_format_check(
     src/theme/ThemeParser.hpp
     src/theme/ThemeResolver.cpp
     src/theme/ThemeResolver.hpp
+    src/x11/X11Connection.cpp
+    src/x11/X11Connection.hpp
+    src/x11/X11Types.cpp
+    src/x11/X11Types.hpp
     src/settings/SettingsEngine.cpp
     src/settings/SettingsEngine.hpp
     src/settings/RuntimeSnapshot.cpp
@@ -128,6 +133,7 @@ prismdrake_add_format_check(
     src/session/SettingsReadiness.cpp
     src/session/SettingsReadiness.hpp
     tests/integration/SettingsServiceTests.cpp
+    tests/integration/X11ConnectionTests.cpp
     tests/fixtures/SessionChildFixture.cpp
     tests/unit/ChildProcessTests.cpp
     tests/unit/ServiceOptionsTests.cpp
@@ -148,4 +154,5 @@ prismdrake_add_format_check(
     tests/unit/SettingsEngineTests.cpp
     tests/unit/ThemeParserTests.cpp
     tests/unit/ThemeResolverTests.cpp
+    tests/unit/X11ConnectionTests.cpp
     tests/unit/XdgPathsTests.cpp)
