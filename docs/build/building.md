@@ -26,9 +26,12 @@ X11 adapter. An event-driven task controller owns a separate X11 connection,
 publishes complete EWMH task observations, and sends only checked standard WM
 requests tied to the current task lifetime and generation. The presentation
 adapters emit typed intents; none becomes authoritative for window or
-notification state. These targets are not installed libraries or stable C++
-ABIs. The isolated toolkit experiment remains a separate CMake project and is
-not linked into production targets.
+notification state. The launcher controller schedules replaceable discovery
+and search on one worker and safe single-flight process launch on a separate
+worker, so neither filesystem indexing nor the bounded detached-launch
+handshake blocks the UI thread. These targets are not installed libraries or
+stable C++ ABIs. The isolated toolkit experiment remains a separate CMake
+project and is not linked into production targets.
 
 The shell settings client integrates the selected sd-bus provider with Qt's
 socket and monotonic-timeout event sources. It treats generation signals as

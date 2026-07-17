@@ -69,12 +69,13 @@ carry a verified or observed version.
   The production task-strip UI remains unresolved PD1 scope.
 - `prismdrake-session` remains a planned component manifest.
   `prismdrake-shell` is Experimental. Its immutable settings/theme projection
-  directly uses Qt Core and GUI; its passive launcher, task, and notification
-  adapters use Qt Core; and its compiled panel and notification modules use QML,
-  Quick, and Quick Controls. The panel window host and event-driven task
-  controller use Qt GUI/Core and the internal standards-only X11 adapter; Quick
-  Test is test-only. The live snapshot client directly uses the selected sd-bus
-  provider and session D-Bus, while its canonical inverse parser includes the
+  directly uses Qt Core and GUI; its asynchronous launcher controller and
+  passive launcher, task, and notification adapters use Qt Core; and its
+  compiled panel and notification modules use QML, Quick, and Quick Controls.
+  The panel window host and event-driven task controller use Qt GUI/Core and the
+  internal standards-only X11 adapter; Quick Test is test-only. The live
+  snapshot client directly uses the selected sd-bus provider and session D-Bus,
+  while its canonical inverse parser includes the
   system nlohmann JSON header. Ubuntu 24.04 CI verifies
   Qt 6.4.2 as the oldest tested common-API component version, while Qt 6.11.1 is
   the currently observed host component version and Gentoo supplies

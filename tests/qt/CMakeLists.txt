@@ -118,3 +118,4 @@ set_tests_properties(PanelSurfaceQmlTest PROPERTIES
 add_subdirectory(window)
 add_subdirectory(taskcontroller)
 add_subdirectory(settings)
+add_subdirectory(launchercontroller)

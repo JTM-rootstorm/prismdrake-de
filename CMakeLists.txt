@@ -225,6 +225,8 @@ prismdrake_add_format_check(
     src/shell/theme/ShellThemeSnapshotAdapter.hpp
     src/shell/launcher/LauncherPresentationModel.cpp
     src/shell/launcher/LauncherPresentationModel.hpp
+    src/shell/launcher/controller/LauncherController.cpp
+    src/shell/launcher/controller/LauncherController.hpp
     tests/integration/DockPropertiesTests.cpp
     tests/integration/EwmhCapabilitiesTests.cpp
     tests/integration/EwmhTaskSourceTests.cpp
@@ -271,6 +273,8 @@ prismdrake_add_format_check(
     tests/qt/settings/SettingsSnapshotClientTests.cpp
     tests/qt/ShellThemeSnapshotAdapterTests.cpp
     tests/qt/LauncherPresentationModelTests.cpp
+    tests/qt/launchercontroller/LauncherControllerTests.cpp
+    tests/qt/launchercontroller/TestMain.cpp
     tests/qt/TaskPresentationModelTests.cpp
     tests/qt/taskcontroller/TaskControllerCoreTests.cpp
     tests/qt/taskcontroller/TaskControllerX11Tests.cpp

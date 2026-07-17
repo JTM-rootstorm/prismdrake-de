@@ -21,6 +21,11 @@ Qt Quick Test lane uses the offscreen platform and software renderer to verify
 literal text, keyboard order, accessible metadata, non-color urgency text,
 reduced motion, high contrast, and opaque resolved token inputs. GoogleTest and
 Qt are obtained only from the system package manager and are never downloaded.
+Focused launcher-controller tests verify worker-thread execution, replacement
+cancellation, stale-generation rejection even when a backend ignores
+cancellation, initial error/recovery presentation, typed launch-intent gating,
+literal metacharacter handling, exact `%k` provenance, and rejection of forged
+provenance without starting a process.
 
 The checked-in Clang path is:
 

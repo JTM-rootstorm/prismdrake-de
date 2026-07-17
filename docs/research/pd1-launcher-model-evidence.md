@@ -187,6 +187,16 @@ point the bounded handshake reaches a definite exec or failure outcome. Success
 means that the close-on-exec handshake observed `execve()` acceptance, not that
 the launched application later created a window or remained healthy.
 
+The Experimental shell launcher controller owns two bounded background workers.
+One replaceable index worker runs discovery, catalog construction, and search;
+newer refresh or query generations cancel pending work and stale completions
+cannot publish. A separate single-flight launch worker revalidates the typed
+desktop-file identity and retained provenance before it expands `Exec`, builds
+the inert process plan, and reaches the detached `execve()` boundary. Concurrent
+launch requests fail closed instead of creating an unbounded queue. Initial
+catalog failures publish the model's redacted error state, and a later refresh
+can replace it with one complete current generation.
+
 ## Controlled launch fixture
 
 The test-only `prismdrake-application-launch-fixture` serializes its exact argv,
