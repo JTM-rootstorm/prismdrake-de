@@ -22,6 +22,46 @@ from live_atspi import (
 
 
 class AccessibilityEvidenceContractTests(unittest.TestCase):
+    def test_keyboard_xtest_requires_exact_owned_focused_window(self) -> None:
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        focus = SimpleNamespace(returncode=0, stdout="")
+        observed = SimpleNamespace(returncode=0, stdout="17\n")
+        sent = SimpleNamespace(returncode=0, stdout="")
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[owner, focus, observed, sent]
+        ) as run_checked:
+            live_atspi._focus_and_send_key(
+                Path("/usr/bin/xdotool"), "shift+Tab", "17", 42
+            )
+        self.assertEqual(
+            run_checked.call_args_list,
+            [
+                mock.call(["/usr/bin/xdotool", "getwindowpid", "17"]),
+                mock.call(["/usr/bin/xdotool", "windowfocus", "--sync", "17"]),
+                mock.call(["/usr/bin/xdotool", "getwindowfocus"]),
+                mock.call(["/usr/bin/xdotool", "key", "--clearmodifiers", "shift+Tab"]),
+            ],
+        )
+
+    def test_keyboard_xtest_rejects_foreign_unfocused_or_failed_delivery(self) -> None:
+        xdotool = Path("/usr/bin/xdotool")
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        foreign_owner = SimpleNamespace(returncode=0, stdout="41\n")
+        failed = SimpleNamespace(returncode=1, stdout="")
+        focused = SimpleNamespace(returncode=0, stdout="17\n")
+        wrong_focus = SimpleNamespace(returncode=0, stdout="19\n")
+        scenarios = (
+            ([foreign_owner], "ownership changed"),
+            ([owner, failed], "focus request failed"),
+            ([owner, focused, wrong_focus], "focus did not converge"),
+            ([owner, focused, focused, failed], "keyboard injection failed"),
+        )
+        for results, message in scenarios:
+            with self.subTest(message=message):
+                with mock.patch.object(live_atspi, "_run_checked", side_effect=results):
+                    with self.assertRaisesRegex(EvidenceError, message):
+                        live_atspi._focus_and_send_key(xdotool, "Tab", "17", 42)
+
     def test_probe_converts_command_failures_to_categorical_status(self) -> None:
         with mock.patch.object(
             live_atspi,
@@ -549,6 +589,10 @@ class AccessibilityEvidenceContractTests(unittest.TestCase):
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
+        self.assertEqual(
+            schema["properties"]["environment"]["properties"]["keyboard_injection"]["const"],
+            "xdotool",
+        )
         self.assertEqual(schema["properties"]["phases"]["minItems"], 7)
         self.assertEqual(schema["properties"]["phases"]["maxItems"], 7)
         self.assertFalse(schema["$defs"]["phase"]["additionalProperties"])

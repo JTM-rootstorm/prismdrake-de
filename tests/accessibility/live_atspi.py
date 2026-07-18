@@ -843,6 +843,24 @@ def _send_key(xdotool: Path, key: str, window: str) -> None:
     _require(result.returncode == 0, f"keyboard injection failed for {key}")
 
 
+def _focus_and_send_key(
+    xdotool: Path, key: str, window: str, expected_process_id: int
+) -> None:
+    _require(
+        _window_process_matches(xdotool, window, expected_process_id),
+        "keyboard target ownership changed",
+    )
+    focused = _run_checked([str(xdotool), "windowfocus", "--sync", window])
+    _require(focused.returncode == 0, "keyboard target focus request failed")
+    observed = _run_checked([str(xdotool), "getwindowfocus"])
+    _require(
+        observed.returncode == 0 and observed.stdout.strip() == window,
+        "keyboard target focus did not converge",
+    )
+    sent = _run_checked([str(xdotool), "key", "--clearmodifiers", key])
+    _require(sent.returncode == 0, f"keyboard injection failed for {key}")
+
+
 def _phase(atspi: Any, phase_id: str, focused: str | None,
            specs: tuple[tuple[str, str], ...]) -> dict[str, Any]:
     observed: dict[str, Any] | None = None
@@ -1020,11 +1038,11 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
             )
             raise EvidenceError(f"{error}; {summary}") from error
         phases.append(_phase(Atspi, PHASE_IDS[1], PHASE_FOCUS[1], launcher_specs))
-        _send_key(arguments.xdotool, "Tab", launcher)
+        _focus_and_send_key(arguments.xdotool, "Tab", launcher, shell.pid)
         phases.append(_phase(Atspi, PHASE_IDS[2], PHASE_FOCUS[2], result_specs))
-        _send_key(arguments.xdotool, "shift+Tab", launcher)
+        _focus_and_send_key(arguments.xdotool, "shift+Tab", launcher, shell.pid)
         phases.append(_phase(Atspi, PHASE_IDS[3], PHASE_FOCUS[3], result_specs))
-        _send_key(arguments.xdotool, "Escape", launcher)
+        _focus_and_send_key(arguments.xdotool, "Escape", launcher, shell.pid)
         phases.append(_phase(Atspi, PHASE_IDS[4], PHASE_FOCUS[4], panel_specs))
         _send_key(arguments.xdotool, "Tab", panel)
         phases.append(_phase(Atspi, PHASE_IDS[5], PHASE_FOCUS[5], panel_specs))
