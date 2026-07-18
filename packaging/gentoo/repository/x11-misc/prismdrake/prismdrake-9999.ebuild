@@ -71,13 +71,26 @@ src_configure() {
 }
 
 src_test() {
+	# The product build must retain packaged /usr paths, which do not exist
+	# before src_install. Exercise the source tree in a separate test build
+	# instead of weakening the installed binary's path contract.
+	local BUILD_DIR="${WORKDIR}/${P}_test_build"
+	local mycmakeargs=(
+		-DBUILD_TESTING=ON
+		-DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=ON
+		-DPRISMDRAKE_USE_INSTALL_PATHS=OFF
+	)
+	cmake_src_configure
+	cmake_src_compile
+
 	# Two exact-child-environment tests reject Portage's required
-	# LD_PRELOAD/SANDBOX_* injection. The Openbox lane is also incompatible:
-	# libsandbox's LD_PRELOAD changes Openbox strut handling. All three are
-	# exercised outside the sandbox by the upstream and VM validation suites.
+	# LD_PRELOAD/SANDBOX_* injection. The two Openbox lanes are also
+	# incompatible: libsandbox's LD_PRELOAD changes Openbox client and strut
+	# handling. All four are exercised outside the sandbox by the VM suite.
 	local sandbox_incompatible_tests="(DetachedApplicationTest.ExecutesExactArgvWorkingDirectoryAndEnvironmentWithoutShell"
 	sandbox_incompatible_tests+="|LauncherPipelineTest.ExpandsPlansAndLaunchesLiteralArgumentsWithoutAShell"
-	sandbox_incompatible_tests+="|X11DockOpenboxIntegrationTest)"
+	sandbox_incompatible_tests+="|X11DockOpenboxIntegrationTest"
+	sandbox_incompatible_tests+="|TaskControllerOpenboxStabilizationIntegrationTest)"
 	ctest --test-dir "${BUILD_DIR}" --output-on-failure --parallel 1 \
 		--exclude-regex "${sandbox_incompatible_tests}" ||
 		die "CTest failed"

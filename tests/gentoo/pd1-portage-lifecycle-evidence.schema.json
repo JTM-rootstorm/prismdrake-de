@@ -72,8 +72,8 @@
         "executed_test_count": { "type": "integer", "minimum": 1, "maximum": 10000 },
         "excluded_tests": {
           "type": "array",
-          "minItems": 3,
-          "maxItems": 3,
+          "minItems": 4,
+          "maxItems": 4,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/excluded_test_id" }
         }
@@ -167,8 +167,8 @@
     },
     "sandbox_exclusions": {
       "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
+      "minItems": 4,
+      "maxItems": 4,
       "items": { "$ref": "#/$defs/sandbox_exclusion" }
     },
     "unmerge": {
@@ -246,7 +246,8 @@
       "enum": [
         "DetachedApplicationTest.ExecutesExactArgvWorkingDirectoryAndEnvironmentWithoutShell",
         "LauncherPipelineTest.ExpandsPlansAndLaunchesLiteralArgumentsWithoutAShell",
-        "X11DockOpenboxIntegrationTest"
+        "X11DockOpenboxIntegrationTest",
+        "TaskControllerOpenboxStabilizationIntegrationTest"
       ]
     },
     "resolution": {

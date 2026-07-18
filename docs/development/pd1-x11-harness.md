@@ -241,7 +241,7 @@ python3 tests/gentoo/portage_lifecycle_evidence.py \
 The contract binds the exact source revision, ebuild and tested artifact,
 default and `USE=test` pretend graphs, package tests, installed ownership and
 executable hashes, AT-SPI and version-three demonstration results, runtime
-linkage, the three reviewed sandbox exclusions, unmerge preservation, and the
+linkage, the four reviewed sandbox exclusions, unmerge preservation, and the
 ordinary reinstall. It contains no pre-filled result and cannot establish a
 pass until every phase was actually observed.
 

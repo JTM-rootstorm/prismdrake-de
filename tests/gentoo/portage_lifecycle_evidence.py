@@ -36,10 +36,12 @@ EXCLUDED_TESTS = (
     "DetachedApplicationTest.ExecutesExactArgvWorkingDirectoryAndEnvironmentWithoutShell",
     "LauncherPipelineTest.ExpandsPlansAndLaunchesLiteralArgumentsWithoutAShell",
     "X11DockOpenboxIntegrationTest",
+    "TaskControllerOpenboxStabilizationIntegrationTest",
 )
 EXCLUSION_REASONS = (
     "exact_child_environment",
     "exact_child_environment",
+    "openbox_preload_interference",
     "openbox_preload_interference",
 )
 PRIVATE_MARKERS = (
@@ -368,8 +370,8 @@ def example_evidence_document() -> dict[str, Any]:
                 "artifact_sha256": artifact_hash,
                 "execution_context": "outside_portage_sandbox",
                 "result": "passed",
-                "attempts": 5 if index == 2 else 1,
-                "passes": 5 if index == 2 else 1,
+                "attempts": 5 if index >= 2 else 1,
+                "passes": 5 if index >= 2 else 1,
             }
             for index, (test_id, reason) in enumerate(zip(EXCLUDED_TESTS, EXCLUSION_REASONS))
         ],

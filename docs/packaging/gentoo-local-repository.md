@@ -181,7 +181,7 @@ unit fixture is not lifecycle evidence. A real record must bind one exact
 40-character source revision and ebuild hash to both pretend resolutions, the
 single tested artifact, installed file ownership and executable hashes,
 installed AT-SPI and version-three complete-demonstration evidence, normalized
-runtime linkage, all three reviewed outside-sandbox tests, unmerge with
+runtime linkage, all four reviewed outside-sandbox tests, unmerge with
 byte-identical user configuration/state preservation, and an ordinary
 non-`USE=test` reinstall. Unknown, partial, mismatched, private, build-tree, or
 caller-asserted installed data fails closed.
@@ -262,17 +262,19 @@ USE=test emerge --ask --verbose --newuse x11-misc/prismdrake
 ```
 
 Portage's mandatory libsandbox injects `LD_PRELOAD` and `SANDBOX_*` entries into
-executed children. The ebuild therefore excludes exactly three upstream tests:
+executed children. The ebuild therefore excludes exactly four upstream tests:
 
 - `DetachedApplicationTest.ExecutesExactArgvWorkingDirectoryAndEnvironmentWithoutShell`
   and
   `LauncherPipelineTest.ExpandsPlansAndLaunchesLiteralArgumentsWithoutAShell`
   require byte-exact child environments and reject the injected variables.
-- `X11DockOpenboxIntegrationTest` remains an exact Prismdrake X11 contract, but
-  libsandbox's preload changes the third-party Openbox process's strut handling.
+- `X11DockOpenboxIntegrationTest` and
+  `TaskControllerOpenboxStabilizationIntegrationTest` remain exact Prismdrake
+  X11 contracts, but libsandbox's preload changes the third-party Openbox
+  process's client/strut behavior.
 
-Run all three separately outside the Portage sandbox on the same source
-revision. Run the exact Openbox test at least five consecutive times against
+Run all four separately outside the Portage sandbox on the same source
+revision. Run both exact Openbox tests at least five consecutive times against
 the same built artifact. No other test exclusion is permitted by this policy.
 
 Before updating the ebuild, verify its installed file list and dynamic linkage,
