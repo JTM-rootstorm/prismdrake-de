@@ -7,12 +7,9 @@ import copy
 import json
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest import mock
-
-import live_atspi
 from live_atspi import (
     EvidenceError,
+    _grab_focus,
     example_evidence_document,
     validate_evidence_document,
     validate_evidence_schema,
@@ -20,6 +17,27 @@ from live_atspi import (
 
 
 class AccessibilityEvidenceContractTests(unittest.TestCase):
+    def test_grab_focus_rejects_missing_component_interface(self) -> None:
+        class NodeWithoutComponent:
+            @staticmethod
+            def get_component_iface() -> None:
+                return None
+
+        self.assertFalse(_grab_focus(NodeWithoutComponent()))
+
+    def test_grab_focus_returns_component_result(self) -> None:
+        class AcceptingComponent:
+            @staticmethod
+            def grab_focus() -> bool:
+                return True
+
+        class NodeWithComponent:
+            @staticmethod
+            def get_component_iface() -> AcceptingComponent:
+                return AcceptingComponent()
+
+        self.assertTrue(_grab_focus(NodeWithComponent()))
+
     def test_example_satisfies_semantic_contract(self) -> None:
         evidence = example_evidence_document()
         validate_evidence_schema(evidence)
@@ -72,79 +90,6 @@ class AccessibilityEvidenceContractTests(unittest.TestCase):
         evidence["phases"][0]["controls"][0]["actions"] = []
         with self.assertRaisesRegex(EvidenceError, "button has no Press action"):
             validate_evidence_document(evidence)
-
-    def test_parses_bounded_xdotool_window_geometry(self) -> None:
-        completed = SimpleNamespace(
-            returncode=0,
-            stdout="WINDOW=17\nX=90\nY=80\nWIDTH=300\nHEIGHT=240\nSCREEN=0\n",
-        )
-        with mock.patch.object(live_atspi, "_run_checked", return_value=completed):
-            self.assertEqual(
-                live_atspi._window_geometry(Path("/usr/bin/xdotool"), "17"),
-                (90, 80, 300, 240),
-            )
-
-    def test_selects_unique_shell_window_containing_accessible_center(self) -> None:
-        search = SimpleNamespace(returncode=0, stdout="11\n17\n")
-        first = SimpleNamespace(
-            returncode=0,
-            stdout="WINDOW=11\nX=0\nY=0\nWIDTH=50\nHEIGHT=50\nSCREEN=0\n",
-        )
-        second = SimpleNamespace(
-            returncode=0,
-            stdout="WINDOW=17\nX=90\nY=80\nWIDTH=300\nHEIGHT=240\nSCREEN=0\n",
-        )
-        node = mock.Mock()
-        node.get_process_id.return_value = 42
-        node.get_component_iface.return_value.get_extents.return_value = SimpleNamespace(
-            x=100, y=100, width=20, height=20
-        )
-        atspi = SimpleNamespace(CoordType=SimpleNamespace(SCREEN=1))
-        with mock.patch.object(
-            live_atspi, "_run_checked", side_effect=[search, first, second]
-        ):
-            self.assertEqual(
-                live_atspi._window_for_accessible(
-                    atspi, Path("/usr/bin/xdotool"), node
-                ),
-                "17",
-            )
-
-    def test_accepts_only_a_non_panel_active_window_owned_by_the_shell(self) -> None:
-        active = SimpleNamespace(returncode=0, stdout="17\n")
-        owner = SimpleNamespace(returncode=0, stdout="42\n")
-        with mock.patch.object(
-            live_atspi, "_run_checked", side_effect=[active, owner]
-        ):
-            self.assertEqual(
-                live_atspi._active_shell_window(
-                    Path("/usr/bin/xdotool"), 42, "11"
-                ),
-                "17",
-            )
-        with mock.patch.object(live_atspi, "_run_checked", return_value=active):
-            self.assertIsNone(
-                live_atspi._active_shell_window(
-                    Path("/usr/bin/xdotool"), 42, "17"
-                )
-            )
-
-    def test_fallback_requires_one_visible_non_panel_shell_tool_window(self) -> None:
-        completed = SimpleNamespace(returncode=0, stdout="11\n17\n")
-        with mock.patch.object(live_atspi, "_run_checked", return_value=completed):
-            self.assertEqual(
-                live_atspi._visible_shell_tool_window(
-                    Path("/usr/bin/xdotool"), "11"
-                ),
-                "17",
-            )
-        duplicate = SimpleNamespace(returncode=0, stdout="11\n17\n19\n")
-        with mock.patch.object(live_atspi, "_run_checked", return_value=duplicate):
-            self.assertIsNone(
-                live_atspi._visible_shell_tool_window(
-                    Path("/usr/bin/xdotool"), "11"
-                )
-            )
 
 
 if __name__ == "__main__":

@@ -495,89 +495,16 @@ def _window_id(xdotool: Path, title: str) -> str | None:
     return identifiers[0] if len(identifiers) == 1 else None
 
 
-def _window_geometry(xdotool: Path, window: str) -> tuple[int, int, int, int] | None:
-    result = _run_checked([str(xdotool), "getwindowgeometry", "--shell", window])
-    if result.returncode != 0:
-        return None
-    fields: dict[str, int] = {}
-    try:
-        for line in result.stdout.splitlines():
-            key, value = line.split("=", 1)
-            if key in {"X", "Y", "WIDTH", "HEIGHT"}:
-                fields[key] = int(value, 10)
-    except (ValueError, TypeError):
-        return None
-    if set(fields) != {"X", "Y", "WIDTH", "HEIGHT"}:
-        return None
-    if fields["WIDTH"] <= 0 or fields["HEIGHT"] <= 0:
-        return None
-    return fields["X"], fields["Y"], fields["WIDTH"], fields["HEIGHT"]
-
-
-def _window_for_accessible(atspi: Any, xdotool: Path, node: Any) -> str | None:
-    process_id = node.get_process_id()
-    if not isinstance(process_id, int) or process_id <= 0:
-        return None
+def _grab_focus(node: Any) -> bool:
     component = node.get_component_iface()
     if component is None:
-        return None
-    extents = component.get_extents(atspi.CoordType.SCREEN)
-    if extents.width <= 0 or extents.height <= 0:
-        return None
-    center_x = extents.x + extents.width // 2
-    center_y = extents.y + extents.height // 2
-    result = _run_checked([str(xdotool), "search", "--pid", str(process_id)])
-    if result.returncode != 0:
-        return None
-    identifiers = [
-        line for line in result.stdout.splitlines() if line.isascii() and line.isdecimal()
-    ]
-    if len(identifiers) > 16:
-        raise EvidenceError("the shell X11 window count exceeds the bound")
-    matches = []
-    for identifier in identifiers:
-        geometry = _window_geometry(xdotool, identifier)
-        if geometry is None:
-            continue
-        x, y, width, height = geometry
-        if x <= center_x < x + width and y <= center_y < y + height:
-            matches.append(identifier)
-    return matches[0] if len(matches) == 1 else None
+        return False
+    return bool(component.grab_focus())
 
 
-def _active_shell_window(
-    xdotool: Path, process_id: int, excluded_window: str
-) -> str | None:
-    active = _run_checked([str(xdotool), "getactivewindow"])
-    if active.returncode != 0:
-        return None
-    identifier = active.stdout.strip()
-    if not identifier.isascii() or not identifier.isdecimal() or identifier == excluded_window:
-        return None
-    owner = _run_checked([str(xdotool), "getwindowpid", identifier])
-    if owner.returncode != 0 or owner.stdout.strip() != str(process_id):
-        return None
-    return identifier
-
-
-def _visible_shell_tool_window(xdotool: Path, excluded_window: str) -> str | None:
-    result = _run_checked(
-        [str(xdotool), "search", "--onlyvisible", "--class", "^prismdrake-shell$"]
-    )
-    if result.returncode != 0:
-        return None
-    identifiers = [
-        line
-        for line in result.stdout.splitlines()
-        if line.isascii() and line.isdecimal() and line != excluded_window
-    ]
-    if len(identifiers) > 16:
-        raise EvidenceError("the visible shell X11 window count exceeds the bound")
-    return identifiers[0] if len(identifiers) == 1 else None
-
-
-def _send_key(xdotool: Path, window: str, key: str) -> None:
-    result = _run_checked([str(xdotool), "key", "--window", window, key])
+def _send_key(xdotool: Path, key: str, window: str) -> None:
+    command = [str(xdotool), "key", "--window", window, key]
+    result = _run_checked(command)
     _require(result.returncode == 0, f"keyboard injection failed for {key}")
 
 
@@ -732,22 +659,21 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
             ),
             "the Prismdrake launcher accessible tree",
         )
+        _require(_grab_focus(launcher_search), "launcher search focus request was rejected")
         launcher = _wait_until(
-            lambda: _active_shell_window(arguments.xdotool, shell.pid, panel)
-            or _window_for_accessible(Atspi, arguments.xdotool, launcher_search)
-            or _visible_shell_tool_window(arguments.xdotool, panel),
-            "the X11 window owning the launcher search control",
+            lambda: _window_id(arguments.xdotool, "Prismdrake Launcher"),
+            "the Prismdrake launcher window",
         )
         phases.append(_phase(Atspi, PHASE_IDS[1], PHASE_FOCUS[1], launcher_specs))
-        _send_key(arguments.xdotool, launcher, "Tab")
+        _send_key(arguments.xdotool, "Tab", launcher)
         phases.append(_phase(Atspi, PHASE_IDS[2], PHASE_FOCUS[2], result_specs))
-        _send_key(arguments.xdotool, launcher, "shift+Tab")
+        _send_key(arguments.xdotool, "shift+Tab", launcher)
         phases.append(_phase(Atspi, PHASE_IDS[3], PHASE_FOCUS[3], result_specs))
-        _send_key(arguments.xdotool, launcher, "Escape")
+        _send_key(arguments.xdotool, "Escape", launcher)
         phases.append(_phase(Atspi, PHASE_IDS[4], PHASE_FOCUS[4], panel_specs))
-        _send_key(arguments.xdotool, panel, "Tab")
+        _send_key(arguments.xdotool, "Tab", panel)
         phases.append(_phase(Atspi, PHASE_IDS[5], PHASE_FOCUS[5], panel_specs))
-        _send_key(arguments.xdotool, panel, "shift+Tab")
+        _send_key(arguments.xdotool, "shift+Tab", panel)
         phases.append(_phase(Atspi, PHASE_IDS[6], PHASE_FOCUS[6], panel_specs))
 
         evidence = {
