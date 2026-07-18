@@ -112,6 +112,35 @@ snapshotWithSemantic(const settings::SettingsSnapshot &source,
 }
 
 [[nodiscard]] std::shared_ptr<const settings::SettingsSnapshot>
+snapshotWithMenuItem(const settings::SettingsSnapshot &source,
+                     prismdrake::theme::ComponentStyle menuItem) {
+    const auto &resolved = source.candidate.theme;
+    const auto &components = resolved.component;
+    prismdrake::theme::ComponentTokens replacementComponents{
+        components.taskButton,       components.launcherTile, components.titlebarButton,
+        components.notificationCard, components.quickSetting, components.tooltip,
+        std::move(menuItem)};
+    prismdrake::theme::ResolvedThemeCandidate replacementTheme{resolved.schemaVersion,
+                                                               resolved.profile,
+                                                               resolved.profileDisplayName,
+                                                               resolved.sources,
+                                                               resolved.primitive,
+                                                               resolved.semantic,
+                                                               std::move(replacementComponents),
+                                                               resolved.accessibility,
+                                                               resolved.capabilityFallbacks,
+                                                               resolved.materials,
+                                                               resolved.thumbnails,
+                                                               resolved.warnings};
+    settings::SettingsCandidate candidate{source.candidate.configuration,
+                                          source.candidate.provenance, std::move(replacementTheme),
+                                          source.candidate.warnings};
+    return std::make_shared<const settings::SettingsSnapshot>(
+        settings::SettingsSnapshot{source.snapshotSchemaVersion, source.generation,
+                                   std::move(candidate), source.serializedJson});
+}
+
+[[nodiscard]] std::shared_ptr<const settings::SettingsSnapshot>
 snapshotWithConfiguration(const settings::SettingsSnapshot &source,
                           config::Configuration configuration,
                           std::uint32_t schemaVersion = settings::runtimeSnapshotSchemaVersion) {
@@ -167,6 +196,35 @@ TEST(ShellThemeSnapshotAdapterTest, ProjectsRealLustreAndForgeSettingsSnapshots)
     EXPECT_DOUBLE_EQ(forgeGeneration->panel()->panelHeight(), 44.0);
     EXPECT_DOUBLE_EQ(forgeGeneration->panel()->taskBorderWidth(), 2.0);
     EXPECT_EQ(forgeGeneration->panel()->fastMotionMs(), 45);
+}
+
+TEST(ShellThemeSnapshotAdapterTest, ProjectsMenuItemTokensForEverySupportedPresentationProfile) {
+    constexpr prismdrake::theme::ThemeResolveOptions capabilities{{true, true}, false};
+    EngineFixture lustre(readFixture("examples/config/lustre.toml"), capabilities);
+    EngineFixture forge(readFixture("examples/config/forge.toml"), capabilities);
+    EngineFixture accessible(readFixture("examples/config/accessible.toml"), capabilities);
+    ShellThemeSnapshotAdapter lustreAdapter;
+    ShellThemeSnapshotAdapter forgeAdapter;
+    ShellThemeSnapshotAdapter accessibleAdapter;
+
+    ASSERT_TRUE(lustreAdapter.applySnapshot(lustre.engine().current()));
+    ASSERT_TRUE(forgeAdapter.applySnapshot(forge.engine().current()));
+    ASSERT_TRUE(accessibleAdapter.applySnapshot(accessible.engine().current()));
+
+    ASSERT_NE(lustreAdapter.current(), nullptr);
+    EXPECT_DOUBLE_EQ(lustreAdapter.current()->panel()->menuItemRadius(), 6.0);
+    EXPECT_DOUBLE_EQ(lustreAdapter.current()->panel()->menuItemPadding(), 9.0);
+    EXPECT_DOUBLE_EQ(lustreAdapter.current()->panel()->menuItemBorderWidth(), 1.0);
+
+    ASSERT_NE(forgeAdapter.current(), nullptr);
+    EXPECT_DOUBLE_EQ(forgeAdapter.current()->panel()->menuItemRadius(), 2.0);
+    EXPECT_DOUBLE_EQ(forgeAdapter.current()->panel()->menuItemPadding(), 7.0);
+    EXPECT_DOUBLE_EQ(forgeAdapter.current()->panel()->menuItemBorderWidth(), 1.0);
+
+    ASSERT_NE(accessibleAdapter.current(), nullptr);
+    EXPECT_DOUBLE_EQ(accessibleAdapter.current()->panel()->menuItemRadius(), 6.0);
+    EXPECT_DOUBLE_EQ(accessibleAdapter.current()->panel()->menuItemPadding(), 9.0);
+    EXPECT_DOUBLE_EQ(accessibleAdapter.current()->panel()->menuItemBorderWidth(), 2.0);
 }
 
 TEST(ShellThemeSnapshotAdapterTest, AppliesProfileSwitchAsOneCompleteGeneration) {
@@ -320,6 +378,29 @@ TEST(ShellThemeSnapshotAdapterTest, RejectsNonFiniteAndUnmappableUsedTokens) {
     ASSERT_FALSE(unmappable);
     EXPECT_EQ(unmappable.error().code, foundation::ErrorCode::validation_error);
     EXPECT_EQ(adapter.currentGeneration(), retained);
+}
+
+TEST(ShellThemeSnapshotAdapterTest, RejectsMalformedMenuItemTokensWithoutReplacingGeneration) {
+    EngineFixture fixture(readFixture("examples/config/lustre.toml"));
+    ShellThemeSnapshotAdapter adapter;
+    const auto valid = fixture.engine().current();
+    ASSERT_TRUE(adapter.applySnapshot(valid));
+    const auto retained = adapter.currentGeneration();
+    const auto menuItem = valid->candidate.theme.component.menuItem;
+    constexpr auto invalid = std::numeric_limits<double>::quiet_NaN();
+
+    const prismdrake::theme::ComponentStyle malformedMenuItems[]{
+        {invalid, menuItem.paddingPx, menuItem.borderWidthPx},
+        {menuItem.radiusPx, invalid, menuItem.borderWidthPx},
+        {menuItem.radiusPx, menuItem.paddingPx, invalid},
+    };
+    for (const auto &malformedMenuItem : malformedMenuItems) {
+        const auto rejected =
+            adapter.applySnapshot(snapshotWithMenuItem(*valid, malformedMenuItem));
+        ASSERT_FALSE(rejected);
+        EXPECT_EQ(rejected.error().code, foundation::ErrorCode::validation_error);
+        EXPECT_EQ(adapter.currentGeneration(), retained);
+    }
 }
 
 TEST(ShellThemeSnapshotAdapterTest, RejectsStaleAndCrossThreadCallsWithoutMutation) {

@@ -43,6 +43,9 @@ class PanelThemeTokens final : public QObject {
     Q_PROPERTY(double launcherRadius READ launcherRadius CONSTANT)
     Q_PROPERTY(double launcherPadding READ launcherPadding CONSTANT)
     Q_PROPERTY(double launcherBorderWidth READ launcherBorderWidth CONSTANT)
+    Q_PROPERTY(double menuItemRadius READ menuItemRadius CONSTANT)
+    Q_PROPERTY(double menuItemPadding READ menuItemPadding CONSTANT)
+    Q_PROPERTY(double menuItemBorderWidth READ menuItemBorderWidth CONSTANT)
 
   public:
     [[nodiscard]] const QColor &surfaceColor() const noexcept { return surface_color_; }
@@ -75,6 +78,9 @@ class PanelThemeTokens final : public QObject {
     [[nodiscard]] double launcherRadius() const noexcept { return launcher_radius_; }
     [[nodiscard]] double launcherPadding() const noexcept { return launcher_padding_; }
     [[nodiscard]] double launcherBorderWidth() const noexcept { return launcher_border_width_; }
+    [[nodiscard]] double menuItemRadius() const noexcept { return menu_item_radius_; }
+    [[nodiscard]] double menuItemPadding() const noexcept { return menu_item_padding_; }
+    [[nodiscard]] double menuItemBorderWidth() const noexcept { return menu_item_border_width_; }
 
   private:
     explicit PanelThemeTokens(const prismdrake::settings::SettingsSnapshot &snapshot,
@@ -108,6 +114,9 @@ class PanelThemeTokens final : public QObject {
     double launcher_radius_;
     double launcher_padding_;
     double launcher_border_width_;
+    double menu_item_radius_;
+    double menu_item_padding_;
+    double menu_item_border_width_;
 
     friend class ShellThemeGeneration;
 };

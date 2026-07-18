@@ -149,7 +149,8 @@ validateSnapshot(const prismdrake::settings::SettingsSnapshot &snapshot) {
         !finitePositive(semantic.border.thicknessPx) ||
         !validComponent(resolved.component.taskButton) ||
         !validComponent(resolved.component.launcherTile) ||
-        !validComponent(resolved.component.notificationCard)) {
+        !validComponent(resolved.component.notificationCard) ||
+        !validComponent(resolved.component.menuItem)) {
         return Result<void>::failure(invalidSnapshot("presentation token value"));
     }
 
@@ -214,7 +215,10 @@ PanelThemeTokens::PanelThemeTokens(const prismdrake::settings::SettingsSnapshot 
       task_border_width_(snapshot.candidate.theme.component.taskButton.borderWidthPx),
       launcher_radius_(snapshot.candidate.theme.component.launcherTile.radiusPx),
       launcher_padding_(snapshot.candidate.theme.component.launcherTile.paddingPx),
-      launcher_border_width_(snapshot.candidate.theme.component.launcherTile.borderWidthPx) {}
+      launcher_border_width_(snapshot.candidate.theme.component.launcherTile.borderWidthPx),
+      menu_item_radius_(snapshot.candidate.theme.component.menuItem.radiusPx),
+      menu_item_padding_(snapshot.candidate.theme.component.menuItem.paddingPx),
+      menu_item_border_width_(snapshot.candidate.theme.component.menuItem.borderWidthPx) {}
 
 LauncherThemeTokens::LauncherThemeTokens(const prismdrake::settings::SettingsSnapshot &snapshot,
                                          QObject *parent)
