@@ -1,6 +1,8 @@
 include(GoogleTest)
 
 add_executable(prismdrake-session-supervisor-child-fixture SupervisorChildFixture.cpp)
+target_link_libraries(prismdrake-session-supervisor-child-fixture
+    PRIVATE Prismdrake::foundation)
 prismdrake_configure_cpp_target(prismdrake-session-supervisor-child-fixture)
 prismdrake_enable_warnings(prismdrake-session-supervisor-child-fixture)
 prismdrake_enable_sanitizers(prismdrake-session-supervisor-child-fixture)

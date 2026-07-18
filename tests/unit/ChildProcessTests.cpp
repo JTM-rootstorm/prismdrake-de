@@ -16,6 +16,7 @@
 #include <utility>
 
 #include <pthread.h>
+#include <sys/eventfd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -286,6 +287,15 @@ TEST(ChildProcessTest, RejectsMalformedAndOversizedLaunchesBeforeFork) {
         launchChildProcess(ChildLaunch{fixture, {"fixture", "--exit", "0"}}, malformedEnvironment);
     ASSERT_FALSE(malformed);
     EXPECT_EQ(malformed.error().message.find("SENTINEL"), std::string::npos);
+
+    const int unboundedDescriptor = ::eventfd(0U, EFD_NONBLOCK);
+    ASSERT_GE(unboundedDescriptor, 0);
+    ChildLaunch unboundedLaunch{fixture, {"fixture", "--exit", "0"}};
+    unboundedLaunch.inheritedDescriptor = unboundedDescriptor;
+    const auto unbounded = launchChildProcess(unboundedLaunch, childEnvironment());
+    static_cast<void>(::close(unboundedDescriptor));
+    ASSERT_FALSE(unbounded);
+    EXPECT_EQ(unbounded.error().code, ErrorCode::invalid_argument);
 }
 
 } // namespace

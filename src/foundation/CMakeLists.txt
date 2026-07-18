@@ -20,6 +20,7 @@ add_library(prismdrake-foundation STATIC
     Generation.hpp
     MonotonicClock.hpp
     Result.hpp
+    SessionReadinessProtocol.hpp
     XdgPaths.cpp
     XdgPaths.hpp
     "${prismdrake_foundation_generated_dir}/BuildInfoConfig.hpp")

@@ -18,6 +18,8 @@ namespace prismdrake::session {
 inline constexpr auto sessionMonitorInterval = std::chrono::milliseconds{25};
 inline constexpr auto sessionSettingsReadinessTimeout = std::chrono::seconds{5};
 inline constexpr auto sessionSettingsReadinessAttemptTimeout = std::chrono::milliseconds{100};
+inline constexpr auto sessionShellReadinessTimeout = std::chrono::seconds{5};
+inline constexpr auto sessionShellReadinessAttemptTimeout = std::chrono::milliseconds{100};
 inline constexpr auto sessionTerminateGrace = std::chrono::seconds{2};
 inline constexpr auto sessionKillReapGrace = std::chrono::seconds{1};
 
@@ -44,6 +46,8 @@ class SessionSupervisorPlatform {
 
     [[nodiscard]] virtual foundation::Result<void>
     waitForSettingsReadiness(std::chrono::milliseconds timeout) = 0;
+    [[nodiscard]] virtual foundation::Result<void>
+    waitForShellReadiness(std::chrono::milliseconds timeout) = 0;
     [[nodiscard]] virtual foundation::Result<void> markReady() = 0;
     [[nodiscard]] virtual foundation::Result<void> markSafeMode() = 0;
 

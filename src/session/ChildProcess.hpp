@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <sys/types.h>
@@ -24,8 +25,16 @@ inline constexpr auto maximumChildExecHandshakeDuration = std::chrono::seconds{2
 /// Explicit executable and argv passed directly to execve without a shell.
 /// argv must include a non-empty argv[0].
 struct ChildLaunch final {
+    ChildLaunch() = default;
+    ChildLaunch(std::filesystem::path executableValue, std::vector<std::string> argvValue,
+                std::optional<int> inheritedDescriptorValue = std::nullopt)
+        : executable(std::move(executableValue)), argv(std::move(argvValue)),
+          inheritedDescriptor(inheritedDescriptorValue) {}
+
     std::filesystem::path executable;
     std::vector<std::string> argv;
+    /// Optional close-on-exec descriptor made inheritable only in this exact forked child.
+    std::optional<int> inheritedDescriptor;
 };
 
 enum class ChildExitKind : std::uint8_t {
@@ -81,7 +90,8 @@ class ChildProcess final {
 };
 
 /// Forks and synchronously confirms execve through a close-on-exec error pipe.
-/// Only launch.executable, launch.argv, and environment.entries reach the child.
+/// launch.inheritedDescriptor is the only caller-selected close-on-exec descriptor made
+/// inheritable in the exact child before execve.
 [[nodiscard]] foundation::Result<ChildProcess>
 launchChildProcess(const ChildLaunch &launch, const PreparedSessionEnvironment &environment);
 

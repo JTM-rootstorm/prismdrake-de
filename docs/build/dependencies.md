@@ -74,11 +74,13 @@ carry a verified or observed version.
 - `prismdrake-session` is an Experimental init-neutral supervisor. It directly
   uses the selected sd-bus provider for bounded settings readiness and the
   internal X11 adapter for display readiness, then owns only the exact settings
-  and shell PIDs it launches. Gentoo selects basu; the development harness
-  supplies D-Bus. Supported minimum versions, the complete installed closure,
-  harness-owned isolated-bus lifecycle, and post-exec shell readiness remain
-  open. A standard X11 session entry and all three Experimental process targets
-  now share one CMake install contract.
+  and shell PIDs it launches. A dependency-free private Linux event-descriptor
+  contract now bounds post-exec shell readiness to each exact child and one
+  complete panel presentation epoch. Gentoo selects basu; the development
+  harness supplies D-Bus. Supported minimum versions, the complete installed
+  closure, and harness-owned isolated-bus lifecycle remain open. A standard X11
+  session entry and all three Experimental process targets now share one CMake
+  install contract.
   `prismdrake-shell` is Experimental. Its immutable settings/theme projection
   directly uses Qt Core and GUI; its asynchronous launcher controller and
   passive launcher, task, and notification adapters use Qt Core; and its

@@ -48,6 +48,23 @@ using foundation::Result;
                           "Provide a non-empty argv[0] and a bounded argument vector."));
     }
 
+    if (launch.inheritedDescriptor) {
+        if (*launch.inheritedDescriptor < 3) {
+            return Result<void>::failure(invalidLaunch(
+                "The inherited child descriptor is invalid.",
+                "Use one valid close-on-exec private descriptor above standard streams."));
+        }
+        int descriptorFlags = -1;
+        do {
+            descriptorFlags = ::fcntl(*launch.inheritedDescriptor, F_GETFD);
+        } while (descriptorFlags < 0 && errno == EINTR);
+        if (descriptorFlags < 0 || (descriptorFlags & FD_CLOEXEC) == 0) {
+            return Result<void>::failure(invalidLaunch(
+                "The inherited child descriptor is not safely bounded.",
+                "Create the private descriptor close-on-exec before the exact child launch."));
+        }
+    }
+
     std::size_t argumentBytes = 0U;
     for (const auto &argument : launch.argv) {
         if (containsNull(argument) || argument.size() > maximumChildArgumentBytes - argumentBytes) {
@@ -373,6 +390,22 @@ Result<ChildProcess> launchChildProcess(const ChildLaunch &launch,
     }
     if (pid == 0) {
         closeDescriptor(errorPipe[0]);
+        if (launch.inheritedDescriptor) {
+            int flags = -1;
+            do {
+                flags = ::fcntl(*launch.inheritedDescriptor, F_GETFD);
+            } while (flags < 0 && errno == EINTR);
+            int inherited = -1;
+            do {
+                inherited =
+                    flags < 0 ? -1
+                              : ::fcntl(*launch.inheritedDescriptor, F_SETFD, flags & ~FD_CLOEXEC);
+            } while (inherited < 0 && errno == EINTR);
+            if (inherited < 0) {
+                const int errorNumber = errno;
+                writeExecErrorAndExit(errorPipe[1], errorNumber);
+            }
+        }
         ::execve(executable.c_str(), argv.data(), envp.data());
         const int errorNumber = errno;
         writeExecErrorAndExit(errorPipe[1], errorNumber);

@@ -1,13 +1,21 @@
 #include "SessionSupervisor.hpp"
 
+#include "SessionReadinessProtocol.hpp"
 #include "SettingsReadiness.hpp"
 
 #include <algorithm>
-#include <array>
+#include <cerrno>
 #include <csignal>
 #include <iostream>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
+
+#include <fcntl.h>
+#include <poll.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
 
 namespace prismdrake::session {
 namespace {
@@ -53,6 +61,35 @@ extern "C" void requestSessionShutdown(int) { sessionShutdownRequested = 1; }
             "Stop the development session and inspect fixed settings-service diagnostics."};
 }
 
+[[nodiscard]] Error shellReadinessContractFailure() {
+    return {ErrorCode::validation_error, "The shell published an invalid readiness contract.",
+            "Stop the development session and verify matching Prismdrake components."};
+}
+
+void closeDescriptor(int &descriptor) noexcept {
+    if (descriptor >= 0) {
+        static_cast<void>(::close(descriptor));
+        descriptor = -1;
+    }
+}
+
+[[nodiscard]] bool environmentEntryNamed(std::string_view entry, std::string_view name) noexcept {
+    return entry.size() > name.size() && entry[name.size()] == '=' && entry.starts_with(name);
+}
+
+[[nodiscard]] Result<int> createShellReadinessDescriptor() {
+    int descriptor = -1;
+    do {
+        descriptor = ::eventfd(0U, EFD_CLOEXEC | EFD_NONBLOCK);
+    } while (descriptor < 0 && errno == EINTR);
+    if (descriptor < 0) {
+        return Result<int>::failure(
+            {ErrorCode::io_error, "The shell readiness channel could not be created.",
+             "Retry the session after checking process descriptor limits."});
+    }
+    return Result<int>::success(descriptor);
+}
+
 [[nodiscard]] constexpr bool permanentReadinessError(ErrorCode code) noexcept {
     return code == ErrorCode::invalid_argument || code == ErrorCode::validation_error ||
            code == ErrorCode::unsupported;
@@ -79,6 +116,10 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
                                         SessionRuntime &runtime)
         : options_(std::move(options)), environment_(std::move(environment)), runtime_(&runtime) {}
 
+    ~ProductionSessionSupervisorPlatform() override {
+        closeDescriptor(shell_readiness_descriptor_);
+    }
+
     Result<void> launch(ComponentRole component, bool safeMode) override {
         auto &child = process(component);
         if (child && child->waitable()) {
@@ -88,6 +129,11 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
         }
 
         ChildLaunch launch;
+        auto childEnvironment = environment_;
+        std::erase_if(childEnvironment.entries, [](const std::string &entry) {
+            return environmentEntryNamed(entry, foundation::sessionReadinessDescriptorEnvironment);
+        });
+        int readinessDescriptor = -1;
         if (component == ComponentRole::settingsd) {
             launch.executable = options_.settingsdExecutable;
             launch.argv = {"prismdrake-settingsd", "--foreground"};
@@ -95,16 +141,30 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
                 launch.argv.emplace_back("--safe-mode");
             }
         } else {
+            closeDescriptor(shell_readiness_descriptor_);
+            auto readiness = createShellReadinessDescriptor();
+            if (!readiness) {
+                return Result<void>::failure(readiness.error());
+            }
+            readinessDescriptor = readiness.value();
             launch.executable = options_.shellExecutable;
             launch.argv = {"prismdrake-shell"};
+            launch.inheritedDescriptor = readinessDescriptor;
+            childEnvironment.entries.emplace_back(
+                std::string{foundation::sessionReadinessDescriptorEnvironment} + '=' +
+                std::to_string(readinessDescriptor));
         }
 
-        auto launched = launchChildProcess(launch, environment_);
+        auto launched = launchChildProcess(launch, childEnvironment);
         if (!launched) {
+            closeDescriptor(readinessDescriptor);
             return Result<void>::failure(launched.error());
         }
         child.reset();
         child.emplace(std::move(launched).value());
+        if (component == ComponentRole::shell) {
+            shell_readiness_descriptor_ = std::exchange(readinessDescriptor, -1);
+        }
         return Result<void>::success();
     }
 
@@ -127,6 +187,9 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
         }
         if (status.value()) {
             child.reset();
+            if (component == ComponentRole::shell) {
+                closeDescriptor(shell_readiness_descriptor_);
+            }
         }
         return status;
     }
@@ -160,6 +223,57 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
         return Result<void>::success();
     }
 
+    Result<void> waitForShellReadiness(std::chrono::milliseconds timeout) override {
+        if (timeout <= std::chrono::milliseconds::zero() ||
+            timeout > sessionShellReadinessTimeout || shell_readiness_descriptor_ < 0 ||
+            !running(ComponentRole::shell)) {
+            return Result<void>::failure(
+                {ErrorCode::invalid_argument, "The shell readiness wait is invalid.",
+                 "Wait only for the current exact shell child within the bounded deadline."});
+        }
+
+        pollfd state{shell_readiness_descriptor_, POLLIN, 0};
+        int result = -1;
+        do {
+            result = ::poll(&state, 1U, static_cast<int>(timeout.count()));
+        } while (result < 0 && errno == EINTR && !shutdownRequested());
+        if (result == 0 || (result < 0 && errno == EINTR)) {
+            return Result<void>::failure(
+                {ErrorCode::not_found, "The shell is not ready yet.",
+                 "Continue the bounded readiness wait for the current shell child."});
+        }
+        if (result < 0) {
+            closeDescriptor(shell_readiness_descriptor_);
+            return Result<void>::failure(
+                {ErrorCode::io_error, "The shell readiness channel could not be monitored.",
+                 "Restart the exact shell child through bounded recovery."});
+        }
+
+        if ((state.revents & POLLIN) != 0) {
+            std::uint64_t message = 0U;
+            ssize_t received = -1;
+            do {
+                received = ::read(shell_readiness_descriptor_, &message, sizeof(message));
+            } while (received < 0 && errno == EINTR);
+            closeDescriptor(shell_readiness_descriptor_);
+            if (received == static_cast<ssize_t>(sizeof(message)) &&
+                message == foundation::sessionReadinessMessage) {
+                return Result<void>::success();
+            }
+            if (received > 0) {
+                return Result<void>::failure(shellReadinessContractFailure());
+            }
+            return Result<void>::failure(
+                {ErrorCode::io_error, "The shell readiness channel closed before readiness.",
+                 "Restart the exact shell child through bounded recovery."});
+        }
+
+        closeDescriptor(shell_readiness_descriptor_);
+        return Result<void>::failure({ErrorCode::io_error,
+                                      "The shell readiness channel closed before readiness.",
+                                      "Restart the exact shell child through bounded recovery."});
+    }
+
     Result<void> markReady() override { return runtime_->markReady(); }
     Result<void> markSafeMode() override { return runtime_->markSafeMode(); }
 
@@ -188,6 +302,7 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
     SessionRuntime *runtime_;
     std::optional<ChildProcess> settingsd_;
     std::optional<ChildProcess> shell_;
+    int shell_readiness_descriptor_{-1};
 };
 
 } // namespace
@@ -358,11 +473,13 @@ Result<SessionSupervisor::Progress> SessionSupervisor::startUntilStable(Componen
             continue;
         }
 
-        if (component != ComponentRole::settingsd) {
-            return Result<Progress>::success(Progress::running);
-        }
-
-        const auto readinessDeadline = platform_->now() + sessionSettingsReadinessTimeout;
+        const auto readinessTimeout = component == ComponentRole::settingsd
+                                          ? sessionSettingsReadinessTimeout
+                                          : sessionShellReadinessTimeout;
+        const auto readinessAttemptTimeout = component == ComponentRole::settingsd
+                                                 ? sessionSettingsReadinessAttemptTimeout
+                                                 : sessionShellReadinessAttemptTimeout;
+        const auto readinessDeadline = platform_->now() + readinessTimeout;
         for (;;) {
             if (platform_->shutdownRequested()) {
                 auto stopped = stopComponent(component);
@@ -385,8 +502,8 @@ Result<SessionSupervisor::Progress> SessionSupervisor::startUntilStable(Componen
                 break;
             }
 
-            const auto attemptTimeout = waitSliceUntil(readinessDeadline, platform_->now(),
-                                                       sessionSettingsReadinessAttemptTimeout);
+            const auto attemptTimeout =
+                waitSliceUntil(readinessDeadline, platform_->now(), readinessAttemptTimeout);
             if (attemptTimeout == std::chrono::milliseconds::zero()) {
                 auto stopped = stopComponent(component);
                 if (!stopped) {
@@ -402,7 +519,9 @@ Result<SessionSupervisor::Progress> SessionSupervisor::startUntilStable(Componen
                 break;
             }
 
-            auto ready = platform_->waitForSettingsReadiness(attemptTimeout);
+            auto ready = component == ComponentRole::settingsd
+                             ? platform_->waitForSettingsReadiness(attemptTimeout)
+                             : platform_->waitForShellReadiness(attemptTimeout);
             if (ready) {
                 return Result<Progress>::success(Progress::running);
             }
@@ -412,7 +531,9 @@ Result<SessionSupervisor::Progress> SessionSupervisor::startUntilStable(Componen
                     return Result<Progress>::failure(stopped.error());
                 }
                 if (permanentReadinessError(ready.error().code)) {
-                    return Result<Progress>::failure(settingsReadinessContractFailure());
+                    return Result<Progress>::failure(component == ComponentRole::settingsd
+                                                         ? settingsReadinessContractFailure()
+                                                         : shellReadinessContractFailure());
                 }
                 const auto launchObservation = launchedAt.value_or(platform_->now());
                 launchedAt.reset();
@@ -423,11 +544,14 @@ Result<SessionSupervisor::Progress> SessionSupervisor::startUntilStable(Componen
                 break;
             }
 
-            const auto retryDelay = waitSliceUntil(readinessDeadline, platform_->now());
-            if (retryDelay > std::chrono::milliseconds::zero() && !waitInterruptibly(retryDelay)) {
-                auto stopped = stopComponent(component);
-                return stopped ? Result<Progress>::success(Progress::shutdown_requested)
-                               : Result<Progress>::failure(stopped.error());
+            if (component == ComponentRole::settingsd) {
+                const auto retryDelay = waitSliceUntil(readinessDeadline, platform_->now());
+                if (retryDelay > std::chrono::milliseconds::zero() &&
+                    !waitInterruptibly(retryDelay)) {
+                    auto stopped = stopComponent(component);
+                    return stopped ? Result<Progress>::success(Progress::shutdown_requested)
+                                   : Result<Progress>::failure(stopped.error());
+                }
             }
         }
     }

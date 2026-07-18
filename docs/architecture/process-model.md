@@ -79,15 +79,25 @@ The Experimental PD1 supervisor gives settingsd one normal restart after 500
 ms and the shell three normal restarts after 250 ms, 500 ms, and 1 second in a
 rolling 30-second window. Thirty seconds of healthy runtime clears that
 component's history. Exhaustion permits one final safe-mode launch of both
-components; any further failure is terminal. Settings readiness has a 5-second
-bound. SIGINT or SIGTERM interrupts backoff, then shutdown sends SIGTERM to the
-exact shell and settingsd PIDs in that order, waits up to 2 seconds per child,
-and reports a SIGKILL escalation with a further 1-second reap bound.
+components; any further failure is terminal. Settings and shell readiness each
+have a 5-second bound. SIGINT or SIGTERM interrupts readiness waits and
+backoff, then shutdown sends SIGTERM to the exact shell and settingsd PIDs in
+that order, waits up to 2 seconds per child, and reports a SIGKILL escalation
+with a further 1-second reap bound.
 
 PD1 currently consumes a validated inherited session bus rather than spawning
-one. The settings service has an explicit D-Bus readiness probe; shell startup
-is confirmed by the bounded fork-to-exec handshake, while a distinct post-exec
-shell-ready IPC contract remains open development-harness work.
+one. The settings service has an explicit D-Bus readiness probe. For each shell
+launch, the supervisor creates a new private Linux event descriptor, passes it
+only across that exact fork/exec, and waits for one fixed post-exec value. The
+shell adopts the descriptor close-on-exec, removes its private environment
+entry from application launch environments, and publishes once only after the
+initial complete settings generation has created the QML views and
+standards-only panel window host. Success therefore means that a complete panel
+presentation epoch exists; it does not claim that a frame has been exposed,
+composited, or reviewed visually. Invalid messages are rejected without
+rendering payload bytes, and timeout, child closure or exit, restart, and
+shutdown all discard that launch's channel. This is private session plumbing,
+not a public Prismdrake IPC interface.
 
 ## Shutdown order
 

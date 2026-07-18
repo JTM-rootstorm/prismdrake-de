@@ -10,7 +10,7 @@ leaves only the affected optional feature unavailable.
 - **Purpose:** establish the session environment, order startup and shutdown,
   supervise components, coordinate logout, and enter safe mode.
 - **Inputs:** XDG/session environment, packaged component metadata, component
-  readiness and failure events.
+  readiness and failure events, and exact-child private readiness channels.
 - **Outputs:** child process lifecycle, readiness and diagnostics, orderly
   shutdown requests.
 - **Owned state:** supervision state, retry budget, safe-mode state, session
@@ -20,8 +20,9 @@ leaves only the affected optional feature unavailable.
 - **Dependencies/package:** toolkit-neutral process and D-Bus facilities in a
   core package; no mandatory systemd dependency.
 - **Crash/restart/security:** an external session entry point must retain a basic
-  exit path; restart is environment-specific. Child arguments and environment
-  are untrusted and logs exclude secrets.
+  exit path; restart is environment-specific. Each shell launch receives a new
+  bounded private readiness channel. Child arguments and environment are
+  untrusted and logs exclude secrets.
 
 ## `prismdrake-shell`
 
@@ -29,7 +30,8 @@ leaves only the affected optional feature unavailable.
   notifications, and on-screen displays as logical modules.
 - **Inputs:** immutable settings/theme generations, mirrored WM state,
   notification models, typed external-service adapters, user input.
-- **Outputs:** UI, accessibility tree, narrow commands and effect requests.
+- **Outputs:** UI, accessibility tree, narrow commands and effect requests, and
+  one private readiness message after the initial panel epoch exists.
 - **Owned state:** transient view state and caches only.
 - **Forbidden responsibilities:** authoritative focus, stacking, workspace,
   composition, capture, settings, notification-history, or privilege policy.

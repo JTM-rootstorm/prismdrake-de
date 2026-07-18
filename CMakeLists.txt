@@ -142,6 +142,7 @@ prismdrake_add_format_check(
     src/foundation/Generation.hpp
     src/foundation/MonotonicClock.hpp
     src/foundation/Result.hpp
+    src/foundation/SessionReadinessProtocol.hpp
     src/foundation/XdgPaths.cpp
     src/foundation/XdgPaths.hpp
     src/theme/Theme.hpp

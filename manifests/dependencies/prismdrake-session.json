@@ -68,7 +68,7 @@
     },
     {
       "area": "development_harness",
-      "reason": "PD1 inherits a validated session bus. Harness-owned isolated bus startup and teardown and an explicit post-exec shell-ready IPC signal remain open; the standard X11 session entry is installed."
+      "reason": "PD1 inherits a validated session bus. Harness-owned isolated bus startup and teardown remain open; exact-child post-exec shell readiness and the standard X11 session entry are implemented without an additional runtime dependency."
     }
   ]
 }

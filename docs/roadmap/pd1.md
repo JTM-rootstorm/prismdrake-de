@@ -54,15 +54,17 @@ panel window host. Settings-owner loss removes only the presentation epoch; a
 later complete owner epoch rebuilds it without terminating the shell process.
 An init-neutral Experimental session executable validates its environment and
 display, starts settingsd before the shell, waits for bounded settings
-readiness, applies component-specific restart budgets, enters one observable
-safe-mode launch, and performs exact-PID reverse bounded shutdown without
-touching the window manager or unrelated applications.
+readiness, then waits on a private exact-child channel until the shell has one
+complete panel presentation epoch. It applies component-specific restart
+budgets, enters one observable safe-mode launch, and performs exact-PID reverse
+bounded shutdown without touching the window manager or unrelated
+applications.
 The three Experimental processes, their read-only data, and a standard X11
 session entry now share one CMake install contract. This is still a development
 prototype, not a complete shell: Portage-installed end-to-end evidence,
 reviewed visual baselines, live assistive-technology evidence, a global
-launcher-entry contract, harness-owned isolated D-Bus lifecycle, and post-exec
-shell readiness remain open PD1 work.
+launcher-entry contract, and harness-owned isolated D-Bus lifecycle remain open
+PD1 work.
 
 ## Activation gate
 

@@ -308,6 +308,11 @@ Result<void> ShellRuntime::createPresentationEpoch(
     }
     panel_host_ = std::move(host).value();
     positionLauncher();
+    auto ready = options_.sessionReadiness.publish();
+    if (!ready) {
+        destroyPresentationEpoch();
+        return ready;
+    }
     return Result<void>::success();
 }
 

@@ -75,14 +75,20 @@ class RuntimeFixture final {
     return path;
 }
 
-[[nodiscard]] PreparedSessionEnvironment productionChildEnvironment() {
-    return PreparedSessionEnvironment{
+[[nodiscard]] PreparedSessionEnvironment
+productionChildEnvironment(std::string_view readinessMode = {}) {
+    PreparedSessionEnvironment environment{
         {"DISPLAY=:77", "XDG_RUNTIME_DIR=/tmp", "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/bus",
          "SUPERVISOR_FIXTURE=exact-value", "XDG_CURRENT_DESKTOP=Prismdrake",
          "XDG_SESSION_DESKTOP=prismdrake", "DESKTOP_SESSION=prismdrake"},
         ":77",
         "/tmp",
         "unix:path=/tmp/bus"};
+    if (!readinessMode.empty()) {
+        environment.entries.emplace_back("SUPERVISOR_FIXTURE_READY_MODE=" +
+                                         std::string{readinessMode});
+    }
+    return environment;
 }
 
 [[nodiscard]] ChildExitStatus waitForProductionChild(SessionSupervisorPlatform &platform,
@@ -130,8 +136,10 @@ class FakePlatform final : public SessionSupervisorPlatform {
                 {ErrorCode::io_error, "private-poll-failure", "private-poll-recovery"});
         }
         auto &exits = component == ComponentRole::settingsd ? settingsExits : shellExits;
-        const bool exitEligible = component != ComponentRole::settingsd ||
-                                  !settingsExitsAfterReadyOnly || readyMarks > 0U;
+        const bool exitEligible =
+            (component == ComponentRole::settingsd &&
+             (!settingsExitsAfterReadyOnly || readyMarks > 0U)) ||
+            (component == ComponentRole::shell && (!shellExitsAfterReadyOnly || readyMarks > 0U));
         if (exitEligible && !exits.empty()) {
             auto status = exits.front();
             exits.pop_front();
@@ -189,6 +197,29 @@ class FakePlatform final : public SessionSupervisorPlatform {
         return Result<void>::success();
     }
 
+    Result<void> waitForShellReadiness(std::chrono::milliseconds timeout) override {
+        shellReadinessTimeouts.push_back(timeout);
+        if (shutdownAfterShellReadinessCalls &&
+            shellReadinessTimeouts.size() >= *shutdownAfterShellReadinessCalls) {
+            requestShutdown = true;
+        }
+        const auto shellLaunches = static_cast<std::size_t>(
+            std::count_if(launches.begin(), launches.end(), [](const auto &launch) {
+                return launch.component == ComponentRole::shell;
+            }));
+        if (shellLaunches <= readinessUnavailableThroughShellLaunch) {
+            currentTime += timeout;
+            return Result<void>::failure(
+                {ErrorCode::not_found, "fixture shell readiness unavailable", "retry fixture"});
+        }
+        if (shellReadinessFailures > 0U) {
+            --shellReadinessFailures;
+            return Result<void>::failure(
+                {shellReadinessFailureCode, "fixture shell readiness failure", "retry fixture"});
+        }
+        return Result<void>::success();
+    }
+
     Result<void> markReady() override {
         ++readyMarks;
         if (shutdownOnReady) {
@@ -220,11 +251,15 @@ class FakePlatform final : public SessionSupervisorPlatform {
     std::size_t settingsLaunchFailures{0U};
     std::size_t shellLaunchFailures{0U};
     std::size_t settingsReadinessFailures{0U};
+    std::size_t shellReadinessFailures{0U};
     std::size_t readinessUnavailableThroughSettingsLaunch{0U};
+    std::size_t readinessUnavailableThroughShellLaunch{0U};
     std::size_t pollFailures{0U};
     ErrorCode settingsReadinessFailureCode{ErrorCode::not_found};
+    ErrorCode shellReadinessFailureCode{ErrorCode::not_found};
     bool pollFailuresAfterReadyOnly{false};
     bool settingsExitsAfterReadyOnly{false};
+    bool shellExitsAfterReadyOnly{true};
     bool settingsRunning{false};
     bool shellRunning{false};
     bool settingsIgnoreTerminate{false};
@@ -237,6 +272,7 @@ class FakePlatform final : public SessionSupervisorPlatform {
     bool shutdownOnReady{false};
     std::optional<std::size_t> shutdownAfterLaunches;
     std::optional<std::size_t> shutdownAfterReadinessCalls;
+    std::optional<std::size_t> shutdownAfterShellReadinessCalls;
     std::optional<std::size_t> shutdownAfterWaits;
     std::deque<ChildExitStatus> settingsExits;
     std::deque<ChildExitStatus> shellExits;
@@ -247,6 +283,7 @@ class FakePlatform final : public SessionSupervisorPlatform {
     std::vector<ComponentRole> forced;
     std::vector<std::chrono::milliseconds> waits;
     std::vector<std::chrono::milliseconds> readinessTimeouts;
+    std::vector<std::chrono::milliseconds> shellReadinessTimeouts;
     std::vector<DiagnosticEventId> diagnostics;
     std::size_t readyMarks{0U};
     std::size_t safeModeMarks{0U};
@@ -290,8 +327,85 @@ TEST(SessionSupervisorTest, StartsInDependencyOrderMarksReadyAndTreatsCleanShell
     EXPECT_FALSE(platform.launches[0].safeMode);
     EXPECT_EQ(platform.readinessTimeouts,
               (std::vector<std::chrono::milliseconds>{sessionSettingsReadinessAttemptTimeout}));
+    EXPECT_EQ(platform.shellReadinessTimeouts,
+              (std::vector<std::chrono::milliseconds>{sessionShellReadinessAttemptTimeout}));
     EXPECT_EQ(platform.readyMarks, 1U);
     EXPECT_EQ(platform.stopOrder, (std::vector<ComponentRole>{ComponentRole::settingsd}));
+}
+
+TEST(SessionSupervisorTest, ShellReadinessTimeoutRestartsOnlyShellWithinTheBound) {
+    FakePlatform platform;
+    platform.readinessUnavailableThroughShellLaunch = 1U;
+    platform.shutdownOnReady = true;
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_TRUE(outcome);
+    EXPECT_EQ(outcome.value(), SessionTermination::shutdown_requested);
+    ASSERT_EQ(platform.launches.size(), 3U);
+    EXPECT_EQ(platform.launches[0].component, ComponentRole::settingsd);
+    EXPECT_EQ(platform.launches[1].component, ComponentRole::shell);
+    EXPECT_EQ(platform.launches[2].component, ComponentRole::shell);
+    ASSERT_GT(platform.shellReadinessTimeouts.size(), 1U);
+    EXPECT_LE(*std::max_element(platform.shellReadinessTimeouts.begin(),
+                                platform.shellReadinessTimeouts.end()),
+              sessionShellReadinessAttemptTimeout);
+    EXPECT_EQ(std::accumulate(platform.waits.begin(), platform.waits.end(), 0ms), 250ms);
+    EXPECT_EQ(
+        std::count(platform.stopOrder.begin(), platform.stopOrder.end(), ComponentRole::settingsd),
+        1);
+}
+
+TEST(SessionSupervisorTest, ShellCrashBeforeReadinessRecoversWithoutMarkingTheSessionReady) {
+    FakePlatform platform;
+    platform.shellExitsAfterReadyOnly = false;
+    platform.shellExits.push_back({ChildExitKind::exited, 17, false});
+    platform.shutdownOnReady = true;
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_TRUE(outcome);
+    EXPECT_EQ(outcome.value(), SessionTermination::shutdown_requested);
+    EXPECT_EQ(
+        std::count_if(platform.launches.begin(), platform.launches.end(),
+                      [](const auto &launch) { return launch.component == ComponentRole::shell; }),
+        2);
+    EXPECT_EQ(platform.shellReadinessTimeouts.size(), 1U);
+    EXPECT_EQ(platform.readyMarks, 1U);
+}
+
+TEST(SessionSupervisorTest, ShutdownInterruptsShellReadinessAndStopsInReverseOrder) {
+    FakePlatform platform;
+    platform.readinessUnavailableThroughShellLaunch = 10U;
+    platform.shutdownAfterShellReadinessCalls = 1U;
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_TRUE(outcome);
+    EXPECT_EQ(outcome.value(), SessionTermination::shutdown_requested);
+    EXPECT_EQ(platform.shellReadinessTimeouts.size(), 1U);
+    EXPECT_EQ(platform.stopOrder,
+              (std::vector<ComponentRole>{ComponentRole::shell, ComponentRole::settingsd}));
+}
+
+TEST(SessionSupervisorTest, InvalidShellReadinessIsTerminalAndRedacted) {
+    FakePlatform platform;
+    platform.shellReadinessFailures = 1U;
+    platform.shellReadinessFailureCode = ErrorCode::validation_error;
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_FALSE(outcome);
+    EXPECT_EQ(outcome.error().code, ErrorCode::validation_error);
+    EXPECT_EQ(outcome.error().message.find("fixture"), std::string::npos);
+    EXPECT_EQ(outcome.error().recovery.find("fixture"), std::string::npos);
+    EXPECT_EQ(platform.shellReadinessTimeouts.size(), 1U);
+    EXPECT_EQ(platform.stopOrder,
+              (std::vector<ComponentRole>{ComponentRole::shell, ComponentRole::settingsd}));
 }
 
 TEST(SessionSupervisorTest, RestartsCrashedShellWithBoundedBackoffWithoutStoppingSettings) {
@@ -538,6 +652,15 @@ TEST(SessionSupervisorTest, ProductionBackendUsesExactArgvEnvironmentAndPidOwner
                                                 productionChildEnvironment(), runtime.value());
 
     ASSERT_TRUE(platform->launch(ComponentRole::shell, false));
+    auto firstReady = platform->waitForShellReadiness(sessionShellReadinessAttemptTimeout);
+    ASSERT_TRUE(firstReady) << firstReady.error().message;
+    EXPECT_EQ(waitForProductionChild(*platform, ComponentRole::shell),
+              (ChildExitStatus{ChildExitKind::exited, 0, false}));
+    EXPECT_FALSE(platform->running(ComponentRole::shell));
+
+    ASSERT_TRUE(platform->launch(ComponentRole::shell, false));
+    auto secondReady = platform->waitForShellReadiness(sessionShellReadinessAttemptTimeout);
+    ASSERT_TRUE(secondReady) << secondReady.error().message;
     EXPECT_EQ(waitForProductionChild(*platform, ComponentRole::shell),
               (ChildExitStatus{ChildExitKind::exited, 0, false}));
     EXPECT_FALSE(platform->running(ComponentRole::shell));
@@ -550,6 +673,34 @@ TEST(SessionSupervisorTest, ProductionBackendUsesExactArgvEnvironmentAndPidOwner
     ASSERT_TRUE(platform->markReady());
     EXPECT_TRUE(std::filesystem::is_regular_file(runtime.value().safeModeMarkerPath()));
     EXPECT_TRUE(std::filesystem::is_regular_file(runtime.value().readyMarkerPath()));
+    EXPECT_TRUE(runtime.value().cleanup());
+}
+
+TEST(SessionSupervisorTest, ProductionBackendRejectsClosedAndMalformedPerLaunchChannels) {
+    RuntimeFixture fixture;
+    auto runtime = SessionRuntime::prepare(fixture.paths());
+    ASSERT_TRUE(runtime);
+    const auto executable = productionChildFixture();
+
+    auto closed = makeProductionSessionSupervisorPlatform(
+        SessionRuntimeOptions{executable, executable}, productionChildEnvironment("close"),
+        runtime.value());
+    ASSERT_TRUE(closed->launch(ComponentRole::shell, false));
+    auto closedReady = closed->waitForShellReadiness(sessionShellReadinessAttemptTimeout);
+    ASSERT_FALSE(closedReady);
+    EXPECT_EQ(closedReady.error().code, ErrorCode::not_found);
+    EXPECT_EQ(waitForProductionChild(*closed, ComponentRole::shell),
+              (ChildExitStatus{ChildExitKind::exited, 0, false}));
+
+    auto malformed = makeProductionSessionSupervisorPlatform(
+        SessionRuntimeOptions{executable, executable}, productionChildEnvironment("wrong-message"),
+        runtime.value());
+    ASSERT_TRUE(malformed->launch(ComponentRole::shell, false));
+    auto malformedReady = malformed->waitForShellReadiness(sessionShellReadinessAttemptTimeout);
+    ASSERT_FALSE(malformedReady);
+    EXPECT_EQ(malformedReady.error().code, ErrorCode::validation_error);
+    EXPECT_EQ(waitForProductionChild(*malformed, ComponentRole::shell),
+              (ChildExitStatus{ChildExitKind::exited, 0, false}));
     EXPECT_TRUE(runtime.value().cleanup());
 }
 
