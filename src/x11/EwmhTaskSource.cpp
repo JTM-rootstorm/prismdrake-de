@@ -424,7 +424,7 @@ Result<TaskModelObservation> EwmhTaskSource::refresh(X11Connection &connection) 
         return invalidSource<TaskModelObservation>();
     }
 
-    for (std::size_t attempt = 0U; attempt < maximumTaskRefreshAttempts; ++attempt) {
+    for (std::size_t attempt = 0U; taskSnapshotAttemptAllowed(attempt); ++attempt) {
         const auto capabilities = discoverEwmhCapabilities(connection);
         if (!capabilities) {
             return Result<TaskModelObservation>::failure(capabilities.error());

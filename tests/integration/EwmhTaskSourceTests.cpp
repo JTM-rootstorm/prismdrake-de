@@ -26,6 +26,33 @@ namespace {
 
 using namespace std::chrono_literals;
 
+static_assert(maximumTaskRefreshAttempts == 4U,
+              "Task snapshot retries must remain at the reviewed small bound.");
+
+TEST(EwmhTaskSourceRetryPolicyTest, DockMapBurstCanSettleOnExactFinalAttempt) {
+    constexpr std::array coherentAttempts{false, false, false, true};
+    bool coherent = false;
+    std::size_t attempts = 0U;
+    while (taskSnapshotAttemptAllowed(attempts)) {
+        coherent = coherentAttempts[attempts];
+        ++attempts;
+        if (coherent) {
+            break;
+        }
+    }
+    EXPECT_TRUE(coherent);
+    EXPECT_EQ(attempts, maximumTaskRefreshAttempts);
+}
+
+TEST(EwmhTaskSourceRetryPolicyTest, MalformedSnapshotsExhaustExactBound) {
+    std::size_t attempts = 0U;
+    while (taskSnapshotAttemptAllowed(attempts)) {
+        ++attempts;
+    }
+    EXPECT_EQ(attempts, maximumTaskRefreshAttempts);
+    EXPECT_FALSE(taskSnapshotAttemptAllowed(attempts));
+}
+
 struct FreeDeleter final {
     void operator()(void *pointer) const noexcept { std::free(pointer); }
 };

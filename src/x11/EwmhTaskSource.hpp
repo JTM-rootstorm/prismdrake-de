@@ -15,7 +15,13 @@ namespace prismdrake::x11 {
 
 class X11Connection;
 
-inline constexpr std::size_t maximumTaskRefreshAttempts = 2U;
+/// Exact small bound for reconstructing one coherent snapshot while a window
+/// manager publishes the short root-property burst around a client map.
+inline constexpr std::size_t maximumTaskRefreshAttempts = 4U;
+
+[[nodiscard]] constexpr bool taskSnapshotAttemptAllowed(std::size_t zeroBasedAttempt) noexcept {
+    return zeroBasedAttempt < maximumTaskRefreshAttempts;
+}
 
 /// Connection-proven, bounded reader for one WM-owned EWMH task snapshot.
 ///
@@ -32,7 +38,8 @@ class EwmhTaskSource final {
     EwmhTaskSource &operator=(EwmhTaskSource &&) = delete;
 
     /// Reads one coherent root snapshot and one bounded client observation for
-    /// every advertised XID. Torn root observations are retried once.
+    /// every advertised XID. Torn root observations are retried within the
+    /// fixed attempt bound so a short window-manager mapping burst can settle.
     [[nodiscard]] foundation::Result<TaskModelObservation> refresh(X11Connection &connection);
 
     /// Invalidates one observed incarnation after the sole event stream reports
