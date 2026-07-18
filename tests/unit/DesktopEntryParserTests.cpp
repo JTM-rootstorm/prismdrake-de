@@ -30,6 +30,7 @@ Categories=Settings;Utility;
 Exec=prismdrake-tool --open %U
 TryExec=/usr/bin/prismdrake-tool
 Path=/var/lib/prismdrake data
+StartupWMClass=PrismdrakeTool
 Terminal=true
 Hidden=false
 NoDisplay=true
@@ -51,6 +52,7 @@ NotShowIn=Other;
     EXPECT_EQ(entry.exec, "prismdrake-tool --open %U");
     EXPECT_EQ(entry.tryExec, "/usr/bin/prismdrake-tool");
     EXPECT_EQ(entry.path, "/var/lib/prismdrake data");
+    EXPECT_EQ(entry.startupWmClass, "PrismdrakeTool");
     EXPECT_TRUE(entry.terminal);
     EXPECT_FALSE(entry.hidden);
     EXPECT_TRUE(entry.noDisplay);

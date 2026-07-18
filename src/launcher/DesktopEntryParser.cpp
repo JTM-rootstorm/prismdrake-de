@@ -38,6 +38,7 @@ struct ParsedFields final {
     std::optional<std::string> exec;
     std::optional<std::string> tryExec;
     std::optional<std::string> path;
+    std::optional<std::string> startupWmClass;
     bool terminal{false};
     bool hidden{false};
     bool noDisplay{false};
@@ -430,23 +431,18 @@ template <typename Value>
 }
 
 [[nodiscard]] bool isKnownIgnoredKey(std::string_view key) noexcept {
-    constexpr std::array keys{"Version",
-                              "Actions",
-                              "MimeType",
-                              "Implements",
-                              "StartupNotify",
-                              "StartupWMClass",
-                              "PrefersNonDefaultGPU",
-                              "SingleMainWindow",
-                              "URL"};
+    constexpr std::array keys{"Version",          "Actions",
+                              "MimeType",         "Implements",
+                              "StartupNotify",    "PrefersNonDefaultGPU",
+                              "SingleMainWindow", "URL"};
     return std::ranges::find(keys, key) != keys.end();
 }
 
 [[nodiscard]] bool isKnownKey(std::string_view key) noexcept {
-    constexpr std::array keys{"Type",    "Name",   "GenericName", "NoDisplay", "Comment",
-                              "Icon",    "Hidden", "OnlyShowIn",  "NotShowIn", "DBusActivatable",
-                              "TryExec", "Exec",   "Path",        "Terminal",  "Categories",
-                              "Keywords"};
+    constexpr std::array keys{
+        "Type",   "Name",           "GenericName", "NoDisplay",       "Comment", "Icon",
+        "Hidden", "OnlyShowIn",     "NotShowIn",   "DBusActivatable", "TryExec", "Exec",
+        "Path",   "StartupWMClass", "Terminal",    "Categories",      "Keywords"};
     return std::ranges::find(keys, key) != keys.end() || isKnownIgnoredKey(key);
 }
 
@@ -531,12 +527,20 @@ template <typename Value>
         return Result<void>::failure(std::move(decoded).error());
     }
     auto text = std::move(decoded).value();
-    if ((key.base == "Exec" || key.base == "TryExec" || key.base == "Path") &&
+    if ((key.base == "Exec" || key.base == "TryExec" || key.base == "Path" ||
+         key.base == "StartupWMClass") &&
         hasUnsafeControl(text)) {
         return Result<void>::failure(
             {ErrorCode::validation_error,
              "A desktop-entry command or path contains unsafe control content.",
-             "Remove control characters from Exec, TryExec, and Path values."});
+             "Remove control characters from command, path, and StartupWMClass values."});
+    }
+    if (key.base == "StartupWMClass" &&
+        (text.empty() || text.size() > maximumStartupWmClassBytes)) {
+        return Result<void>::failure(
+            {text.empty() ? ErrorCode::validation_error : ErrorCode::too_large,
+             "The desktop-entry StartupWMClass value is invalid or too large.",
+             "Use a nonempty bounded StartupWMClass value."});
     }
     if (key.base == "Type") {
         fields.type = std::move(text);
@@ -574,6 +578,8 @@ template <typename Value>
         fields.tryExec = std::move(text);
     } else if (key.base == "Path") {
         fields.path = std::move(text);
+    } else if (key.base == "StartupWMClass") {
+        fields.startupWmClass = std::move(text);
     }
     return Result<void>::success();
 }
@@ -802,6 +808,7 @@ Result<DesktopEntry> parseDesktopEntry(std::string_view contents,
     entry.exec = std::move(fields.exec);
     entry.tryExec = std::move(fields.tryExec);
     entry.path = std::move(fields.path);
+    entry.startupWmClass = std::move(fields.startupWmClass);
     entry.terminal = fields.terminal;
     entry.hidden = fields.hidden;
     entry.noDisplay = fields.noDisplay;

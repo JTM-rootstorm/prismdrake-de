@@ -22,6 +22,7 @@ struct DesktopEntry final {
     std::optional<std::string> exec;
     std::optional<std::string> tryExec;
     std::optional<std::string> path;
+    std::optional<std::string> startupWmClass;
     bool terminal{false};
     bool hidden{false};
     bool noDisplay{false};

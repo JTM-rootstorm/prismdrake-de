@@ -20,6 +20,7 @@ inline constexpr std::size_t maximumDesktopEntryListItems = 1024U;
 inline constexpr std::size_t maximumDesktopEntryCodepoints = 256U * 1024U;
 inline constexpr std::size_t maximumDesktopEntryValueCodepoints = 32U * 1024U;
 inline constexpr std::size_t maximumDesktopEntryLocaleBytes = 128U;
+inline constexpr std::size_t maximumStartupWmClassBytes = 255U;
 
 /// Caller-supplied locale used only to resolve localized desktop-entry values.
 struct DesktopEntryParseContext final {
