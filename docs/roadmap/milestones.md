@@ -1,11 +1,11 @@
 # Prismdrake milestones and PD1 status
 
 Milestone labels organize work; they are not release versions or promises of a
-date. The project is currently in **PD1: X11 shell skeleton and settings
-foundation**. PD1 was activated by maintainer approval on 2026-07-16 after the
-PD0 decisions, dependency boundary, milestone scope, and non-goals were
-reviewed. This roadmap follows the project-wide specification's PD0–PD7
-sequence.
+date. **PD1: X11 shell skeleton and settings foundation completed on
+2026-07-18; PD2 has not yet been activated.** PD1 was activated by maintainer
+approval on 2026-07-16 after the PD0 decisions, dependency boundary, milestone
+scope, and non-goals were reviewed. This roadmap follows the project-wide
+specification's PD0–PD7 sequence.
 
 ## Milestone sequence
 
@@ -80,9 +80,28 @@ The accepted decisions authorize prototype implementation; they do not make
 Prismdrake usable, stabilize draft interfaces, accept candidate Glasswyrm
 protocols, or waive PD1 validation requirements.
 
-## Continuing owner review
+## PD1 completion record
 
-These items remain reviewable during PD1 and do not block activation:
+- [x] The Experimental session, settings daemon, and shell configure and build
+  with GCC and Clang under the Accepted C++20 warnings policy.
+- [x] The full reference suite passes under Qt 6.11, including isolated X11,
+  D-Bus, accessibility, visual-candidate, failure, and performance lanes.
+- [x] The exact Gentoo package passes QA, both USE resolutions, package tests,
+  installed AT-SPI and end-to-end replay, unmerge preservation, and ordinary
+  reinstall with byte-identical executables.
+- [x] The standard X11/freedesktop boundary remains authoritative; no native
+  Glasswyrm protocol or shell-side compositor behavior is claimed.
+- [x] PD2 behavior and the remaining Experimental limitations stay explicitly
+  deferred.
+
+The exact revision, artifact hashes, measured runtime linkage, and privacy
+boundary are recorded in the
+[PD1 Gentoo package lifecycle evidence](../research/pd1-portage-lifecycle-evidence.md).
+
+## Continuing owner review after PD1
+
+These items remain owner-review concerns for later milestones. They did not
+block PD1 activation or completion:
 
 - [ ] Review the visible distinction and accessibility defaults for Lustre and
   Forge.

@@ -101,10 +101,6 @@
     {
       "area": "minimum_versions",
       "reason": "Supported minimum core libxcb, xcb-randr, Xorg server, Openbox, and xprop versions remain unmeasured; the recorded versions are component observations rather than supported minima."
-    },
-    {
-      "area": "remaining_adapter_scope",
-      "reason": "The bounded EWMH task mirror and its stale-record removal remain later PD1 work; this slice supplies only the checked request and dock-property boundaries it will consume."
     }
   ]
 }

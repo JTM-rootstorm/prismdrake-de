@@ -202,8 +202,10 @@ exposed to QML.
 
 ## Explicit remaining gaps
 
-- The built `prismdrake-shell` executable is not installed by the Experimental
-  Gentoo package yet, and its complete installed package closure is unmeasured.
+- The Experimental Gentoo package now installs `prismdrake-shell` and the exact
+  PD1 lifecycle measures its ownership, direct dynamic linkage, installed
+  AT-SPI and end-to-end behavior, unmerge, and ordinary reinstall. This is
+  reference evidence, not a supported daily-use package claim.
 - The wired launcher is reachable through the panel's accessible Applications
   action, which is the bounded PD1 entry contract. No global shortcut is claimed;
   that PD2 behavior requires authoritative-WM coordination under `PD-INPUT-002`.
@@ -218,5 +220,6 @@ exposed to QML.
   and covers RTL layout. Approved goldens and real mixed-scale/multi-output
   captures remain later visual-system work, while the reference VM now covers
   bounded live AT-SPI task actions.
-- Complete dynamic runtime closure and installed-package behavior remain WP15
-  work.
+- Supported lower dependency versions and later production packaging hardening
+  remain outside PD1; the exact installed-package behavior and dynamic boundary
+  are complete for the reference environment.

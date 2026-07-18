@@ -99,7 +99,7 @@
   ],
   "unresolved": [
     {
-      "area": "runtime_closure",
+      "area": "minimum_versions",
       "reason": "The complete Gentoo basu dynamic closure is recorded, but supported minimum provider and broker versions remain unmeasured."
     }
   ]

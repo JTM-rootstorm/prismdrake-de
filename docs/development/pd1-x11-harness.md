@@ -180,8 +180,8 @@ across profile changes, cover every profile/fallback/accessibility visual
 matrix, or replace the full 18-step installed exit demonstration. Use the
 [live accessibility lane](accessibility-testing.md) and
 [deterministic visual baselines](../testing/visual-baselines.md) for their
-automated contracts. The complete installed replay remains pending in the next
-section.
+automated contracts. The next section preserves the completed installed replay
+procedure.
 
 The structured supervisor events are in `PRISMDRAKE_DEMO_LOG`; interpret them
 using [PD1 diagnostics](diagnostics.md). Do not publish the whole log until it
@@ -190,10 +190,12 @@ format.
 
 ## Installed-artifact demonstration
 
-**Evidence status:** the command below is the exact operator path, but the
-Portage install, repeated lifecycle, and installed-artifact results remain
-pending until the maintainer records them from the reference Gentoo VM. Do not
-describe this section as passed merely because the build-tree lane succeeds.
+**Evidence status:** the exact operator path below passed for revision
+`e747480ad6a8b2d6ea59beb931d0d80797881ca9` in the reference Gentoo VM. The
+normalized results and hashes are recorded in the
+[PD1 Portage lifecycle evidence](../research/pd1-portage-lifecycle-evidence.md).
+A future revision must rerun this procedure; a build-tree lane alone is not an
+installed-artifact pass.
 
 After `x11-misc/prismdrake` is installed from the matching source revision,
 reuse the interactive command above with only these path exports changed:
@@ -226,8 +228,8 @@ from the exact matching source revision as documented in
 An installed lifecycle result is complete only after the reference-VM record
 includes install, all required package tests, this standards/fallback/keyboard
 check, the synthetic notification action, bounded shutdown, uninstall state
-verification, and ordinary reinstall. Those results intentionally are not
-pre-filled here.
+verification, and ordinary reinstall. The PD1 record satisfies those fields;
+the procedure intentionally contains no pre-filled success output.
 
 Only after the demonstration, unmerge, and ordinary reinstall should the
 operator finalize and validate the strict tracked lifecycle record. The

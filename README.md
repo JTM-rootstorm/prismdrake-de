@@ -5,10 +5,11 @@ X11. It aims for a polished, expressive, accessible desktop with a
 standards-based baseline and optional, capability-negotiated enhancements when
 running with Glasswyrm.
 
-Prismdrake is currently in **PD1: X11 shell skeleton and settings foundation**.
+Prismdrake has completed **PD1: X11 shell skeleton and settings foundation**.
 The PD0 architecture decisions and PD1 scope were approved on 2026-07-16, and
-prototype implementation is active. This repository does not yet contain a
-usable desktop shell or production-ready desktop environment.
+the exact Gentoo reference lifecycle passed on 2026-07-18. PD2 has not yet been
+activated. This repository does not yet contain a usable desktop shell or
+production-ready desktop environment.
 
 ## Profiles
 

@@ -115,6 +115,10 @@ formatting jobs. These results validate the blocker candidate; they do not by
 themselves close the broader PD1 exit gate or its remaining installed-artifact
 requirements.
 
+This paragraph is the historical conclusion for that exact checkpoint. The
+later [Portage lifecycle evidence](pd1-portage-lifecycle-evidence.md) closes the
+installed-artifact and final PD1 validation gates at the completed revision.
+
 ## In-process measurements
 
 The runner measures five narrow operations. Each operation validates its

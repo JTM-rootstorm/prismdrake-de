@@ -106,7 +106,8 @@ The launcher-specific build-tree and installed-artifact commands, dependency
 behavior, schema, and remaining limitations are documented in
 [Live accessibility testing](../development/accessibility-testing.md). The
 integrated task-action build-tree command is documented there as well;
-installed-artifact replay remains part of the pending Portage lifecycle.
+installed-artifact replay passed as part of the exact
+[PD1 Portage lifecycle](pd1-portage-lifecycle-evidence.md).
 
 ## Remaining limitations
 
@@ -116,9 +117,10 @@ installed-artifact replay remains part of the pending Portage lifecycle.
   so this lane does not make a live notification accessibility claim.
 - The deterministic desktop entry does not expose private user application
   names or exercise arbitrary localized content.
-- Multi-output, mixed-scale, alternate-WM, non-English, complete screen-reader,
-  and installed-package replay remain separate evidence requirements. RTL has a
-  deterministic visual candidate but no live AT-SPI replay.
+- Multi-output, mixed-scale, alternate-WM, non-English, and complete
+  screen-reader workflows remain separate later-milestone evidence
+  requirements. The exact installed package passed the bounded live AT-SPI
+  replay. RTL has a deterministic visual candidate but no live AT-SPI replay.
 - Visible focus, contrast, motion, text scale, target sizes, profile parity, and
   non-color cues remain covered by the QML and visual lanes rather than inferred
   from AT-SPI state.

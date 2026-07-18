@@ -1,8 +1,8 @@
 # Prismdrake documentation
 
-Prismdrake is in PD1. Prototype implementation is active under the Accepted
-architecture decisions and approved PD1 scope, but these documents do not
-describe a usable or production-ready desktop release.
+Prismdrake completed PD1 on the Gentoo reference environment on 2026-07-18.
+PD2 has not yet been activated, and these documents do not describe a usable
+or production-ready desktop release.
 
 ## Governing material
 
@@ -51,6 +51,7 @@ describe a usable or production-ready desktop release.
 - [PD1 panel-shell evidence](research/pd1-panel-shell-evidence.md)
 - [PD1 production-shell accessibility evidence](research/pd1-accessibility-evidence.md)
 - [PD1 performance-evidence method](research/pd1-performance-evidence-method.md)
+- [PD1 Gentoo package lifecycle evidence](research/pd1-portage-lifecycle-evidence.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
 

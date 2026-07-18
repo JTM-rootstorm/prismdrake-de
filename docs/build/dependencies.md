@@ -87,7 +87,9 @@ carry a verified or observed version.
   complete panel presentation epoch. Gentoo selects basu; the development
   harness supplies an isolated D-Bus lifecycle, including supervised settings
   owner loss and recovery. Supported minimum versions and the complete
-  installed closure remain open. A standard X11 session entry and all three
+  installed closure were separate concerns; the exact PD1 package lifecycle now
+  measures the installed session boundary. Supported provider and broker minima
+  remain open. A standard X11 session entry and all three
   Experimental process targets now share one CMake install contract.
   `prismdrake-shell` is Experimental. Its immutable settings/theme projection
   directly uses Qt Core and GUI; its asynchronous launcher controller, passive
@@ -104,14 +106,14 @@ carry a verified or observed version.
   qtdeclarative 6.11.1-r1. Older hosted Qt versions do not provide product
   compatibility evidence. The Experimental shell executable composes those
   existing typed boundaries without another mandatory library dependency.
-  Its built-target dynamic links are measured on Gentoo. Accessibility runtime
-  closure and the complete installed package graph remain explicitly
-  unresolved. Exact host and VM coverage is recorded in the
-  [panel-shell evidence](../research/pd1-panel-shell-evidence.md).
+  Its installed dynamic links, package ownership, AT-SPI behavior, unmerge, and
+  ordinary reinstall are measured on Gentoo. Exact host and VM coverage is
+  recorded in the [panel-shell evidence](../research/pd1-panel-shell-evidence.md)
+  and [package lifecycle evidence](../research/pd1-portage-lifecycle-evidence.md).
 - The settings service uses a mutex-protected immutable snapshot pointer and a
-  single bounded worker; it introduced no atomic-storage dependency. Production
-  runtime-closure evidence and accessibility linkage remain explicit unresolved
-  areas rather than invented package claims.
+  single bounded worker; it introduced no atomic-storage dependency. Its
+  installed Gentoo boundary is measured, while supported lower provider and
+  broker versions remain explicitly unresolved rather than invented claims.
 
 Mandatory core runtime entries may not name GNOME Shell, Mutter,
 `gnome-settings-daemon`, `gnome-control-center`, or libadwaita. GTK itself is

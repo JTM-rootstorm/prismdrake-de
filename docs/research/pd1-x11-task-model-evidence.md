@@ -187,6 +187,10 @@ Clang 18, repository-contract, and C++/QML formatting jobs. These results close
 the task-stabilization blocker; they do not claim that the broader PD1 exit gate
 or its installed-artifact requirements are complete.
 
+This paragraph is the historical conclusion for that exact checkpoint. The
+later [Portage lifecycle evidence](pd1-portage-lifecycle-evidence.md) closes the
+installed-artifact and final PD1 validation gates at the completed revision.
+
 ### Bounded task-action integration
 
 The later production-panel integration adds a generic code-native task glyph

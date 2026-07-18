@@ -99,6 +99,12 @@ so a package test cannot silently convert the required lane into a skip.
 
 ## Installed-artifact command
 
+This command passed for the exact PD1 Gentoo lifecycle at revision `e747480`.
+The private result remains untracked; its normalized hash and package binding
+are recorded in the
+[PD1 Portage lifecycle evidence](../research/pd1-portage-lifecycle-evidence.md).
+Rerun the complete attested procedure for any different installed revision.
+
 The same driver accepts installed executable paths. Run it from an exact source
 revision matching the installed package:
 

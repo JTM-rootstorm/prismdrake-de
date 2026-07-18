@@ -1,6 +1,6 @@
 # PD1 build and toolchain evidence
 
-- **Status:** Observed production-foundation evidence; PD1 packaging and runtime work remain incomplete
+- **Status:** Historical production-foundation evidence; PD1 closure is recorded separately
 - **Date:** 2026-07-16
 - **Repository checkpoint:** `d1e2972b6e955076f82012e328cb42e966cd090f`
 - **Reference environment:** `prismdrake-vm`, protected by snapshot `prismdrake-pd1-stage0-20260716`
@@ -10,6 +10,11 @@ It covers `PD-DEP-005` through `PD-DEP-008`, `PD-TEST-001`, `PD-TEST-007`,
 `PD-TEST-008`, `PD-OBS-001`, and `PD-SEC-009`. It does not claim a usable
 desktop, an installed runtime, a public C++ ABI, or a verified lower-bound tool
 version.
+
+The later full compiler, packaging, and installed-runtime closure is recorded
+in the [PD1 Gentoo package lifecycle evidence](pd1-portage-lifecycle-evidence.md).
+The remaining boundary below is retained as the historical state of this first
+foundation checkpoint rather than a current PD1 status claim.
 
 ## Observed environment
 

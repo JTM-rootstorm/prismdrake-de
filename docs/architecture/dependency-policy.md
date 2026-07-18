@@ -65,8 +65,11 @@ The implemented foundation manifest records current repository and build/test
 tools. Settings records its implemented service slice, session is Experimental
 for its init-neutral exact-PID supervisor, and shell is Experimental for its Qt
 composition root, presentation modules, and standards-only panel window host.
-All three complete installed runtime closures remain unmeasured: observed
-Gentoo VM versions are evidence, not supported minima or proof of a production
-runtime closure. Declared constraints remain distinct from tested lower bounds.
+The exact Gentoo package lifecycle measures all three installed executable
+boundaries and binds them to Portage ownership, runtime linkage, installed
+AT-SPI and complete-demonstration evidence, unmerge, and ordinary reinstall.
+Observed Gentoo VM versions remain reference evidence rather than supported
+minima or a production-support claim. Declared constraints remain distinct from
+tested lower bounds.
 Validation rejects the forbidden GNOME desktop stack in mandatory core runtime
 scope and rejects verified minima that lack component evidence.

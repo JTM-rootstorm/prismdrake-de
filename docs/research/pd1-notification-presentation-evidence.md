@@ -190,11 +190,11 @@ The root build declares Qt 6.11 as the minimum supported toolkit version. The
 Gentoo reference environment verifies Qt 6.11.1 and qtdeclarative 6.11.1-r1.
 Ubuntu 24.04's Qt 6.4.2 packages are below the supported floor and no longer
 provide product compatibility evidence. The shell dependency manifest remains
-Experimental with `runtime_dependency_state` set to `measured`: the later
-Gentoo panel-shell work records the built executable's direct and transitive
-closure. Installed package closure, installed AT-SPI replay, and final package
-ownership remain unmeasured. The later
-[panel-shell evidence](pd1-panel-shell-evidence.md) also records the implemented
+Experimental with `runtime_dependency_state` set to `measured`. The final
+[Portage lifecycle evidence](pd1-portage-lifecycle-evidence.md) records the
+installed executable closure, installed AT-SPI replay, package ownership,
+unmerge, and ordinary reinstall. The earlier
+[panel-shell evidence](pd1-panel-shell-evidence.md) records the implemented
 complete-generation theme adapter and shared panel component.
 The notification slice adds no GTK, GNOME Shell, Mutter, GNOME settings/control-center,
 libadwaita, Xlib, Glasswyrm-native, or image-loader dependency.
@@ -306,25 +306,25 @@ minimum on 2026-07-18; those rows are not current compatibility claims.
 
 ## Explicitly unresolved evidence
 
-WP12's model and functional presentation code does not close the visual and
-assistive-technology acceptance gate by itself. The following remain assigned
-to PD1-WP13 or later integration:
+WP12's model and functional presentation code did not close the visual and
+assistive-technology acceptance gate by itself. The final installed lifecycle
+later closed the PD1 AT-SPI requirement. The following remain assigned to PD3
+visual-system work or later integration:
 
 - intentionally reviewed deterministic visual baselines for Lustre, Forge,
   high contrast, reduced motion, disabled transparency, missing blur, large
   text, and RTL layout;
 - contrast evaluation over controlled wallpaper and opaque fallback material;
-- a live AT-SPI accessibility-tree and screen-reader smoke procedure;
+- broader screen-reader and assistive-technology coverage beyond the installed
+  AT-SPI smoke fixture;
 - per-output placement beyond the panel host's selected output, mixed scaling,
   and a production font baseline;
-- rendering and accessibility policy for validated icon or image content;
-- a recorded installed-session demonstration of the fixed runtime fixture and
-  runtime-closure evidence;
-  and
+- rendering and accessibility policy for validated icon or image content; and
 - the separately owned `prismdrake-notifyd` freedesktop service, persistence,
   privacy, do-not-disturb, restart-continuity, and lock-surface policy.
 
 This record closes the functional implementation and validation portion of
-`PD1-014`. WP13 still owns reviewed visual baselines and live accessibility
-evidence, so this document does not claim the complete PD1 notification visual
-gate or the complete PD1 milestone is closed.
+`PD1-014`. The later installed lifecycle closes the PD1 runtime and AT-SPI
+evidence assigned to WP13. Intentionally reviewed visual baselines remain a PD3
+visual-system concern, and the production notification service remains outside
+this presentation slice.

@@ -1,11 +1,10 @@
-# PD1 active milestone tracker
+# PD1 completed milestone tracker
 
 PD1 is an X11 shell skeleton and settings foundation, not a daily-use desktop.
-The maintainer activated this milestone on 2026-07-16 after accepting the build,
-component, toolkit, configuration, and token decisions and approving the
-dependency boundary, scope, and non-goals. Each work package must cite `PD-*`
-requirements and include testable acceptance criteria, fault behavior, and
-fallback behavior.
+The maintainer activated this milestone on 2026-07-16 and its exact Gentoo
+reference lifecycle completed on 2026-07-18. PD2 has not yet been activated.
+The archived execution plan and the package-lifecycle evidence retain the
+requirement, test, fault, and fallback record for each completed work package.
 
 Qt 6.11 is the minimum supported visible-shell toolkit version. The Gentoo
 reference environment supplies the authoritative Qt-bound build, compiler,
@@ -74,12 +73,13 @@ budgets, enters one observable safe-mode launch, and performs exact-PID reverse
 bounded shutdown without touching the window manager or unrelated
 applications.
 The three Experimental processes, their read-only data, and a standard X11
-session entry now share one CMake install contract. This is still a development
-prototype, not a complete shell: Portage-installed end-to-end and AT-SPI replay
-evidence remains open PD1 work. The production build tree now has bounded live AT-SPI metadata,
-forward/reverse focus, exact task activation, minimization, and close evidence,
-plus supervised settings-owner loss and complete presentation-epoch recovery on
-the reference guest.
+session entry now share one CMake install contract. The exact Portage-installed
+artifact passed package tests, installed AT-SPI and end-to-end replay, unmerge
+preservation, and an ordinary byte-identical reinstall. The production build
+tree also has bounded live AT-SPI metadata, forward/reverse focus, exact task
+activation, minimization, and close evidence, plus supervised settings-owner
+loss and complete presentation-epoch recovery on the reference guest. This is
+still a development prototype, not a complete or daily-use shell.
 
 The deterministic visual candidate suites satisfy the PD1 harness outcome;
 promotion to reviewed golden images and a cross-version tolerance policy remain
@@ -112,6 +112,17 @@ PD1 may begin only when:
 The activation gate is complete. Completion of the gate authorizes prototype
 implementation; it does not satisfy the PD1 exit criteria or convert
 experimental evidence into production support.
+
+## Completion record
+
+PD1's exit gate passed at
+`e747480ad6a8b2d6ea59beb931d0d80797881ca9`. GCC 15.3.0 and Clang 22.1.8
+warnings-as-errors builds each passed 565 registrations; formatting, all three
+Qt 6.11 QML lint targets, repository validation, `pkgcheck`, both Portage
+resolutions, package tests, installed runtime demonstrations, unmerge
+preservation, and ordinary reinstall passed. The detailed hashes and remaining
+later-milestone boundary are recorded in the
+[PD1 Gentoo package lifecycle evidence](../research/pd1-portage-lifecycle-evidence.md).
 
 ## Required PD1 validation posture
 

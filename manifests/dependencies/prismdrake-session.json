@@ -63,8 +63,8 @@
   ],
   "unresolved": [
     {
-      "area": "runtime_closure",
-      "reason": "The direct Gentoo basu, D-Bus, and libxcb boundaries are measured, but supported minimum versions and the complete installed dynamic closure remain unmeasured."
+      "area": "minimum_versions",
+      "reason": "The exact installed Gentoo basu, D-Bus, and libxcb boundary is measured, but supported minimum versions remain unmeasured."
     },
     {
       "area": "development_harness",
