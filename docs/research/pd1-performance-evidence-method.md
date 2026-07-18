@@ -55,6 +55,44 @@ nanosecond samples plus minimum, median, p95, and maximum summaries. Its fixed
 fixture sizes are 16, 64, and 256. Closed error identifiers are printed on
 failure. Successful JSON contains neither fixture paths nor fixture content.
 
+## Reference VM observations
+
+One clean `RelWithDebInfo` collection from source revision
+`1b4b3538da9bc090a31469cb21988470b13ffc46` completed in the maintained
+`gentoo-amd64-qemu-system` guest. These are prototype observations from one
+controlled collection, not release budgets, cross-machine baselines, or claims
+about physical-output performance.
+
+The startup endpoint completed in `105802112` ns. The ready marker appeared at
+`95697489` ns, the one owned mapped dock was the later endpoint, and no child
+restart, safe mode, duplicate dock, or foreign dock was observed. The redacted
+artifact SHA-256 is
+`ec9fe1d07d1b9a189f5cf16033c8c14d467f9e9149769d3b401b055bb46d1f77`.
+
+The idle collector observed `60117005555` ns after the fixed five-second
+settling interval. Thread counts remained stable. Received scheduler wakeups
+were 2392 for `prismdrake-session`, 599 for `prismdrake-settingsd`, and 0 for
+`prismdrake-shell`; all were `sched_wakeup` events and no `sched_wakeup_new`
+event was counted. The redacted artifact SHA-256 is
+`d80c46f980a5d46daba90abd5405b20a9c8aa56c86cb6703243113411992dfda`.
+
+The deterministic software cadence collection produced these summaries; every
+series contained 240 measured intervals and zero intervals above 25 ms:
+
+| Scenario | Median ns | p95 ns | Maximum ns |
+|---|---:|---:|---:|
+| Lustre | 5227935 | 5339076 | 5404156 |
+| Forge | 5177014 | 5285764 | 5409507 |
+| Reduced motion | 5217755 | 5287067 | 5316116 |
+| Disabled transparency | 5146855 | 5228885 | 5303365 |
+| Missing blur | 5149104 | 5253305 | 5397106 |
+
+The cadence artifact SHA-256 is
+`c3d271ce2ee0bb012ee8b50b6219904293fbf9042299bca913c5899ede8e7156`.
+All three documents passed the strict external schema and semantic validator
+after transfer through the VM shared artifact boundary. They remain untracked
+review artifacts rather than repository source.
+
 ## In-process measurements
 
 The runner measures five narrow operations. Each operation validates its
@@ -160,8 +198,9 @@ or unbounded shutdown. It emits no PIDs, XIDs, paths, or diagnostic payloads.
 The live validation wrapper forwards an exact fixed collector failure identifier
 but replaces malformed, unknown, multiline, or otherwise open stderr with its
 own `collector_failed` identifier.
-Live reference numbers remain pending VM collection; earlier process durations
-are not substituted.
+The collected reference observation and its claim boundary are recorded in
+[Reference VM observations](#reference-vm-observations); earlier process
+durations are not substituted.
 
 ## Idle wakeups
 
@@ -222,9 +261,11 @@ The explicit 80-second harness bound covers the five-second settling interval,
 ordinary Openbox harness default or the startup-only CTest lane.
 
 Tracepoint or permission unavailability remains a reported blocker, not a
-reason to substitute another metric. Production evidence is exactly 60 seconds; short test-mode collector
-output records `contract_eligible=false` and is rejected by the production
-schema. Live reference results remain pending VM collection.
+reason to substitute another metric. Production evidence is exactly 60 seconds;
+short test-mode collector output records `contract_eligible=false` and is
+rejected by the production schema. The collected reference observation and its
+claim boundary are recorded in
+[Reference VM observations](#reference-vm-observations).
 
 ## Deterministic visual cadence
 
@@ -267,7 +308,8 @@ The collector runs separate Lustre, Forge, reduced-motion,
 disabled-transparency, and missing-blur series. It rejects Qt/QML warnings,
 font or backend drift, non-monotonic timestamps, and incomplete frame series.
 Still-image completion time remains a separate non-cadence quantity. Live
-reference results remain pending VM collection.
+reference results and their claim boundary are recorded in
+[Reference VM observations](#reference-vm-observations).
 
 Validate each external JSON document with:
 
