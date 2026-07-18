@@ -65,7 +65,22 @@ the Qt 6.11 floor also passed.
   zero-failure baseline.
 - [x] Post-sharding format check, all three QML lint targets, and a
   `BUILD_TESTING=OFF` runtime-only build passed.
-- [ ] PD2 configuration, state, and Experimental IPC contracts are frozen.
+- [x] PD2 configuration, state, and Experimental IPC contracts are frozen.
+
+The Wave 0 contract freeze is recorded by Accepted ADR 0009 and the strict
+configuration-v2, runtime-snapshot-v2, pin-state-v1, notification-history-v1,
+and notification-state-v1 schemas. Experimental `Shell1`, `Session1`, and
+`NotificationCenter1` use fixed same-user methods, generation or transaction
+guards, bounded payloads, and redacted typed errors. One shared fail-closed
+peer-credential helper now supplies the EUID policy used by settingsd and by
+the PD2 services that follow.
+
+The exact post-freeze source was replayed in the Gentoo VM with GCC 15.3.0 and
+Clang 22.1.8. Both warnings-as-errors builds registered 571 tests and passed
+570 with zero failures; the same root-only permission test remained the sole
+documented skip. Formatting, 61 contract-negative paths, and `pkgcheck` also
+passed. The local immutable branch `codex/pd2-wave1-base` identifies this
+reviewed worker base; it is not pushed.
 
 ## Active workstreams
 
