@@ -77,17 +77,18 @@ carry a verified or observed version.
   publication are implemented. The bounded EWMH task mirror, metadata decoder,
   immutable model generations, stale-record removal, and observation-based
   request confirmation are also implemented without another link dependency.
-  The production task-strip UI remains unresolved PD1 scope.
+  The bounded production task presentation now provides activation, minimize,
+  and close actions; pinned/grouped task policy remains outside this PD1 slice.
 - `prismdrake-session` is an Experimental init-neutral supervisor. It directly
   uses the selected sd-bus provider for bounded settings readiness and the
   internal X11 adapter for display readiness, then owns only the exact settings
   and shell PIDs it launches. A dependency-free private Linux event-descriptor
   contract now bounds post-exec shell readiness to each exact child and one
   complete panel presentation epoch. Gentoo selects basu; the development
-  harness supplies D-Bus. Supported minimum versions, the complete installed
-  closure, and harness-owned isolated-bus lifecycle remain open. A standard X11
-  session entry and all three Experimental process targets now share one CMake
-  install contract.
+  harness supplies an isolated D-Bus lifecycle, including supervised settings
+  owner loss and recovery. Supported minimum versions and the complete
+  installed closure remain open. A standard X11 session entry and all three
+  Experimental process targets now share one CMake install contract.
   `prismdrake-shell` is Experimental. Its immutable settings/theme projection
   directly uses Qt Core and GUI; its asynchronous launcher controller, passive
   launcher and notification adapters, and actionable task adapter use Qt Core;

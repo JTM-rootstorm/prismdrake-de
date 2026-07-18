@@ -11,6 +11,13 @@ add_test(
 set_tests_properties(GentooVmToolsTest PROPERTIES
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 
+add_test(
+    NAME GentooPortageLifecycleEvidenceTest
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/gentoo/test_portage_lifecycle_evidence.py")
+set_tests_properties(GentooPortageLifecycleEvidenceTest PROPERTIES
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+
 add_subdirectory(fixtures)
 add_subdirectory(accessibility)
 add_subdirectory(unit)

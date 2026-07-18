@@ -190,10 +190,12 @@ The root build declares Qt 6.11 as the minimum supported toolkit version. The
 Gentoo reference environment verifies Qt 6.11.1 and qtdeclarative 6.11.1-r1.
 Ubuntu 24.04's Qt 6.4.2 packages are below the supported floor and no longer
 provide product compatibility evidence. The shell dependency manifest remains
-`planned_unmeasured`: the complete shell executable, AT-SPI runtime linkage,
-installation shape, and direct and transitive runtime closure have not been
-measured. The later [panel-shell evidence](pd1-panel-shell-evidence.md) records
-the implemented complete-generation theme adapter and shared panel component.
+Experimental with `runtime_dependency_state` set to `measured`: the later
+Gentoo panel-shell work records the built executable's direct and transitive
+closure. Installed package closure, installed AT-SPI replay, and final package
+ownership remain unmeasured. The later
+[panel-shell evidence](pd1-panel-shell-evidence.md) also records the implemented
+complete-generation theme adapter and shared panel component.
 The notification slice adds no GTK, GNOME Shell, Mutter, GNOME settings/control-center,
 libadwaita, Xlib, Glasswyrm-native, or image-loader dependency.
 

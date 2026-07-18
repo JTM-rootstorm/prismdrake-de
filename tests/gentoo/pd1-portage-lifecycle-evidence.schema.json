@@ -1,0 +1,378 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/test/pd1-portage-lifecycle-evidence-v1.json",
+  "title": "Prismdrake PD1 Portage product lifecycle evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence_kind",
+    "source",
+    "resolutions",
+    "tested_artifact",
+    "package_test",
+    "installed",
+    "runtime_validation",
+    "sandbox_exclusions",
+    "unmerge",
+    "ordinary_reinstall"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evidence_kind": { "const": "pd1_portage_product_lifecycle" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "repository_uri",
+        "repository_name",
+        "atom",
+        "version",
+        "ebuild_path",
+        "ebuild_sha256"
+      ],
+      "properties": {
+        "revision": { "$ref": "#/$defs/revision" },
+        "repository_uri": { "const": "https://github.com/JTM-rootstorm/prismdrake-de.git" },
+        "repository_name": { "const": "prismdrake-local" },
+        "atom": { "const": "x11-misc/prismdrake" },
+        "version": { "const": "9999" },
+        "ebuild_path": {
+          "const": "x11-misc/prismdrake/prismdrake-9999.ebuild"
+        },
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "resolutions": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/resolution" }
+    },
+    "tested_artifact": { "$ref": "#/$defs/tested_artifact" },
+    "package_test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "ebuild_sha256",
+        "artifact_sha256",
+        "features_test",
+        "result",
+        "executed_test_count",
+        "excluded_tests"
+      ],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "features_test": { "const": true },
+        "result": { "const": "passed" },
+        "executed_test_count": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "excluded_tests": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/excluded_test_id" }
+        }
+      }
+    },
+    "installed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "artifact_sha256",
+        "provenance",
+        "data_prefix",
+        "executables",
+        "ownership"
+      ],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "provenance": { "const": "portage_installed" },
+        "data_prefix": { "const": "/usr/share/prismdrake" },
+        "executables": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/executable" }
+        },
+        "ownership": { "$ref": "#/$defs/ownership" }
+      }
+    },
+    "runtime_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "artifact_sha256",
+        "atspi",
+        "complete_demo",
+        "linkage"
+      ],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "atspi": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["result", "complete", "evidence_schema_version", "evidence_sha256"],
+          "properties": {
+            "result": { "const": "passed" },
+            "complete": { "const": true },
+            "evidence_schema_version": { "const": 1 },
+            "evidence_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "complete_demo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "result",
+            "complete",
+            "artifact_provenance",
+            "evidence_schema_version",
+            "evidence_sha256",
+            "driver_sha256"
+          ],
+          "properties": {
+            "result": { "const": "passed" },
+            "complete": { "const": true },
+            "artifact_provenance": { "const": "portage_installed" },
+            "evidence_schema_version": { "const": 3 },
+            "evidence_sha256": { "$ref": "#/$defs/sha256" },
+            "driver_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "linkage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tool", "capture_sha256", "entries"],
+          "properties": {
+            "tool": { "const": "scanelf" },
+            "capture_sha256": { "$ref": "#/$defs/sha256" },
+            "entries": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": { "$ref": "#/$defs/linkage_entry" }
+            }
+          }
+        }
+      }
+    },
+    "sandbox_exclusions": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/sandbox_exclusion" }
+    },
+    "unmerge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "artifact_sha256",
+        "atom",
+        "result",
+        "installed_executables_absent",
+        "user_data"
+      ],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "atom": { "const": "x11-misc/prismdrake" },
+        "result": { "const": "passed" },
+        "installed_executables_absent": { "const": true },
+        "user_data": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/user_data_preservation" }
+        }
+      }
+    },
+    "ordinary_reinstall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "ebuild_sha256",
+        "artifact_sha256",
+        "provenance",
+        "use_test",
+        "result",
+        "executables",
+        "ownership_atom"
+      ],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "provenance": { "const": "portage_installed" },
+        "use_test": { "const": false },
+        "result": { "const": "passed" },
+        "executables": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/executable" }
+        },
+        "ownership_atom": { "const": "x11-misc/prismdrake-9999" }
+      }
+    }
+  },
+  "$defs": {
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "installed_executable_path": {
+      "enum": [
+        "/usr/bin/prismdrake-session",
+        "/usr/bin/prismdrake-settingsd",
+        "/usr/bin/prismdrake-shell"
+      ]
+    },
+    "excluded_test_id": {
+      "enum": [
+        "DetachedApplicationTest.ExecutesExactArgvWorkingDirectoryAndEnvironmentWithoutShell",
+        "LauncherPipelineTest.ExpandsPlansAndLaunchesLiteralArgumentsWithoutAShell",
+        "X11DockOpenboxIntegrationTest"
+      ]
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "source_revision",
+        "ebuild_sha256",
+        "use_test",
+        "result",
+        "dependency_graph_sha256"
+      ],
+      "properties": {
+        "mode": { "enum": ["default", "use_test"] },
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" },
+        "use_test": { "type": "boolean" },
+        "result": { "const": "resolved" },
+        "dependency_graph_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "tested_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "ebuild_sha256",
+        "atom",
+        "provenance",
+        "use_test",
+        "artifact_sha256"
+      ],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" },
+        "atom": { "const": "x11-misc/prismdrake-9999" },
+        "provenance": { "const": "portage_installed" },
+        "use_test": { "const": true },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "executable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "regular_executable"],
+      "properties": {
+        "path": { "$ref": "#/$defs/installed_executable_path" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "regular_executable": { "const": true }
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool", "owner_atom", "owned_file_count", "file_list_sha256", "paths"],
+      "properties": {
+        "tool": { "const": "equery" },
+        "owner_atom": { "const": "x11-misc/prismdrake-9999" },
+        "owned_file_count": { "type": "integer", "minimum": 13, "maximum": 10000 },
+        "file_list_sha256": { "$ref": "#/$defs/sha256" },
+        "paths": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/installed_executable_path" }
+        }
+      }
+    },
+    "linkage_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "executable_sha256", "needed"],
+      "properties": {
+        "path": { "$ref": "#/$defs/installed_executable_path" },
+        "executable_sha256": { "$ref": "#/$defs/sha256" },
+        "needed": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._+\\-]*$"
+          }
+        }
+      }
+    },
+    "sandbox_exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "test_id",
+        "reason",
+        "source_revision",
+        "artifact_sha256",
+        "execution_context",
+        "result",
+        "attempts",
+        "passes"
+      ],
+      "properties": {
+        "test_id": { "$ref": "#/$defs/excluded_test_id" },
+        "reason": {
+          "enum": ["exact_child_environment", "openbox_preload_interference"]
+        },
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "execution_context": { "const": "outside_portage_sandbox" },
+        "result": { "const": "passed" },
+        "attempts": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "passes": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "user_data_preservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "before_sha256", "after_sha256", "byte_identical"],
+      "properties": {
+        "kind": { "enum": ["xdg_config", "xdg_state"] },
+        "before_sha256": { "$ref": "#/$defs/sha256" },
+        "after_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_identical": { "const": true }
+      }
+    }
+  }
+}

@@ -54,6 +54,15 @@ case. The CTest command supplies a per-test outer cap, while the live harnesses
 apply their own narrower operation deadlines and cleanup bounds. A skipped
 optional case is not a pass and must not be reported as completed evidence.
 
+`Pd1DevelopmentDemonstrationTest` also performs two deliberate, exact-child
+failure injections. It first restarts the shell, then kills only the supervised
+settings daemon. The latter must remove the presentation epoch while preserving
+the shell, window-manager owner, and fixture windows; a distinct settingsd child
+must restore owner-epoch generation one, accessibility overrides, one valid
+panel, and the task presentation. The version-three evidence represents
+generation identity as `[[1, 2, 3], [1]]` because numeric generations are local
+to each settings-owner epoch.
+
 ## Interactive build-tree demonstration
 
 First export the exact build-tree paths. Keeping them absolute is required by
@@ -209,6 +218,21 @@ includes install, all required package tests, this standards/fallback/keyboard
 check, the synthetic notification action, bounded shutdown, uninstall state
 verification, and ordinary reinstall. Those results intentionally are not
 pre-filled here.
+
+The lifecycle result must validate against the strict tracked contract rather
+than relying on the demonstration's caller-supplied provenance label:
+
+```bash
+python3 tests/gentoo/portage_lifecycle_evidence.py \
+  /absolute/private/evidence/pd1-portage-lifecycle.json
+```
+
+The contract binds the exact source revision, ebuild and tested artifact,
+default and `USE=test` pretend graphs, package tests, installed ownership and
+executable hashes, AT-SPI and version-three demonstration results, runtime
+linkage, the three reviewed sandbox exclusions, unmerge preservation, and the
+ordinary reinstall. It contains no pre-filled result and cannot establish a
+pass until every phase was actually observed.
 
 ## Failure interpretation and cleanup
 

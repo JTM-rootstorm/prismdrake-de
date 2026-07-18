@@ -37,6 +37,16 @@ cmake --build --preset clang-debug
 ctest --preset clang-debug
 ```
 
+The final Gentoo package lifecycle has a separate strict evidence contract.
+`GentooPortageLifecycleEvidenceTest` exercises only synthetic positive and
+negative fixtures; it does not claim that Portage installation ran. Validate a
+real private result after the complete lifecycle with:
+
+```sh
+python3 tests/gentoo/portage_lifecycle_evidence.py \
+  /absolute/private/evidence/pd1-portage-lifecycle.json
+```
+
 To exercise sanitizers without changing ordinary build artifacts:
 
 ```sh

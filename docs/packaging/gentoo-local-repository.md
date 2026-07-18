@@ -134,6 +134,26 @@ These are narrow local-package exceptions, not permission to enable unstable
 keywords globally, accept unkeyworded transitive dependencies, or unmask
 anything outside the project-owned repository.
 
+## Product lifecycle evidence contract
+
+The tracked version-one lifecycle schema and semantic validator define the
+success record for the final `x11-misc/prismdrake-9999` exercise:
+
+```bash
+python3 tests/gentoo/portage_lifecycle_evidence.py \
+  /absolute/private/evidence/pd1-portage-lifecycle.json
+```
+
+The validator is read-only. It does not run Portage and a passing synthetic
+unit fixture is not lifecycle evidence. A real record must bind one exact
+40-character source revision and ebuild hash to both pretend resolutions, the
+single tested artifact, installed file ownership and executable hashes,
+installed AT-SPI and version-three complete-demonstration evidence, normalized
+runtime linkage, all three reviewed outside-sandbox tests, unmerge with
+byte-identical user configuration/state preservation, and an ordinary
+non-`USE=test` reinstall. Unknown, partial, mismatched, private, build-tree, or
+caller-asserted installed data fails closed.
+
 ## Resolution and QA
 
 Generate manifests and scan from the guest after installing the default QA
