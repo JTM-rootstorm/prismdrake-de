@@ -516,6 +516,35 @@ def _window_geometry(xdotool: Path, window: str) -> tuple[int, int, int, int] | 
     return fields["X"], fields["Y"], fields["WIDTH"], fields["HEIGHT"]
 
 
+def _window_process_matches(xdotool: Path, window: str, expected_process_id: int) -> bool:
+    owner = _run_checked([str(xdotool), "getwindowpid", window])
+    return owner.returncode == 0 and owner.stdout.strip() == str(expected_process_id)
+
+
+def _focused_window_for_accessible(
+    atspi: Any, xdotool: Path, node: Any, panel: str, expected_process_id: int
+) -> str | None:
+    if node.get_process_id() != expected_process_id:
+        return None
+    if not _has_state(node, atspi.StateType.FOCUSED):
+        return None
+    focused = _run_checked([str(xdotool), "getwindowfocus"])
+    identifier = focused.stdout.strip()
+    if (
+        focused.returncode != 0
+        or not identifier.isascii()
+        or not identifier.isdecimal()
+        or identifier == panel
+    ):
+        return None
+    if not _window_process_matches(xdotool, identifier, expected_process_id):
+        return None
+    window_class = _run_checked([str(xdotool), "getwindowclassname", identifier])
+    if window_class.returncode != 0 or window_class.stdout.strip() != APPLICATION_NAME:
+        return None
+    return identifier
+
+
 def _window_for_accessible(
     atspi: Any, xdotool: Path, node: Any, panel: str, expected_process_id: int
 ) -> str | None:
@@ -543,6 +572,8 @@ def _window_for_accessible(
         raise EvidenceError("the shell X11 window count exceeds the bound")
     matches = []
     for identifier in identifiers:
+        if not _window_process_matches(xdotool, identifier, expected_process_id):
+            continue
         geometry = _window_geometry(xdotool, identifier)
         if geometry is None:
             continue
@@ -718,7 +749,10 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
         )
         _require(_grab_focus(launcher_search), "launcher search focus request was rejected")
         launcher = _wait_until(
-            lambda: _window_for_accessible(
+            lambda: _focused_window_for_accessible(
+                Atspi, arguments.xdotool, launcher_search, panel, shell.pid
+            )
+            or _window_for_accessible(
                 Atspi, arguments.xdotool, launcher_search, panel, shell.pid
             ),
             "the Prismdrake launcher window",

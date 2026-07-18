@@ -21,16 +21,104 @@ from live_atspi import (
 
 
 class AccessibilityEvidenceContractTests(unittest.TestCase):
+    def test_selects_focused_surface_for_exact_accessible_and_x11_owner(self) -> None:
+        focused = SimpleNamespace(returncode=0, stdout="17\n")
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        window_class = SimpleNamespace(returncode=0, stdout="prismdrake-shell\n")
+        node = mock.Mock()
+        node.get_process_id.return_value = 42
+        node.get_state_set.return_value.contains.return_value = True
+        atspi = SimpleNamespace(StateType=SimpleNamespace(FOCUSED=1))
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[focused, owner, window_class]
+        ) as run_checked:
+            self.assertEqual(
+                live_atspi._focused_window_for_accessible(
+                    atspi, Path("/usr/bin/xdotool"), node, "11", 42
+                ),
+                "17",
+            )
+        self.assertEqual(
+            run_checked.call_args_list,
+            [
+                mock.call(["/usr/bin/xdotool", "getwindowfocus"]),
+                mock.call(["/usr/bin/xdotool", "getwindowpid", "17"]),
+                mock.call(["/usr/bin/xdotool", "getwindowclassname", "17"]),
+            ],
+        )
+
+    def test_focused_surface_rejects_unfocused_or_foreign_accessible(self) -> None:
+        atspi = SimpleNamespace(StateType=SimpleNamespace(FOCUSED=1))
+        node = mock.Mock()
+        node.get_process_id.return_value = 41
+        with mock.patch.object(live_atspi, "_run_checked") as run_checked:
+            self.assertIsNone(
+                live_atspi._focused_window_for_accessible(
+                    atspi, Path("/usr/bin/xdotool"), node, "11", 42
+                )
+            )
+        run_checked.assert_not_called()
+
+        node.get_process_id.return_value = 42
+        node.get_state_set.return_value.contains.return_value = False
+        with mock.patch.object(live_atspi, "_run_checked") as run_checked:
+            self.assertIsNone(
+                live_atspi._focused_window_for_accessible(
+                    atspi, Path("/usr/bin/xdotool"), node, "11", 42
+                )
+            )
+        run_checked.assert_not_called()
+
+    def test_focused_surface_rejects_panel_owner_or_class_mismatch(self) -> None:
+        node = mock.Mock()
+        node.get_process_id.return_value = 42
+        node.get_state_set.return_value.contains.return_value = True
+        atspi = SimpleNamespace(StateType=SimpleNamespace(FOCUSED=1))
+
+        panel = SimpleNamespace(returncode=0, stdout="11\n")
+        with mock.patch.object(live_atspi, "_run_checked", return_value=panel):
+            self.assertIsNone(
+                live_atspi._focused_window_for_accessible(
+                    atspi, Path("/usr/bin/xdotool"), node, "11", 42
+                )
+            )
+
+        focused = SimpleNamespace(returncode=0, stdout="17\n")
+        foreign_owner = SimpleNamespace(returncode=0, stdout="41\n")
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[focused, foreign_owner]
+        ):
+            self.assertIsNone(
+                live_atspi._focused_window_for_accessible(
+                    atspi, Path("/usr/bin/xdotool"), node, "11", 42
+                )
+            )
+
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        foreign_class = SimpleNamespace(returncode=0, stdout="other-shell\n")
+        with mock.patch.object(
+            live_atspi,
+            "_run_checked",
+            side_effect=[focused, owner, foreign_class],
+        ):
+            self.assertIsNone(
+                live_atspi._focused_window_for_accessible(
+                    atspi, Path("/usr/bin/xdotool"), node, "11", 42
+                )
+            )
+
     def test_selects_exact_class_surface_containing_accessible_center(self) -> None:
         search = SimpleNamespace(returncode=0, stdout="11\n17\n19\n")
         launcher = SimpleNamespace(
             returncode=0,
             stdout="WINDOW=17\nX=0\nY=52\nWIDTH=560\nHEIGHT=620\nSCREEN=0\n",
         )
+        launcher_owner = SimpleNamespace(returncode=0, stdout="42\n")
         other = SimpleNamespace(
             returncode=0,
             stdout="WINDOW=19\nX=800\nY=40\nWIDTH=300\nHEIGHT=200\nSCREEN=0\n",
         )
+        other_owner = SimpleNamespace(returncode=0, stdout="42\n")
         node = mock.Mock()
         node.get_process_id.return_value = 42
         node.get_component_iface.return_value.get_extents.return_value = SimpleNamespace(
@@ -38,7 +126,9 @@ class AccessibilityEvidenceContractTests(unittest.TestCase):
         )
         atspi = SimpleNamespace(CoordType=SimpleNamespace(SCREEN=1))
         with mock.patch.object(
-            live_atspi, "_run_checked", side_effect=[search, launcher, other]
+            live_atspi,
+            "_run_checked",
+            side_effect=[search, launcher_owner, launcher, other_owner, other],
         ):
             self.assertEqual(
                 live_atspi._window_for_accessible(
