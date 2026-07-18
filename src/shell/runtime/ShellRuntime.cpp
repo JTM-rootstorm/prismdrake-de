@@ -78,6 +78,13 @@ Result<std::unique_ptr<ShellRuntime>> ShellRuntime::create(ShellRuntimeOptions o
 }
 
 Result<void> ShellRuntime::initialize() {
+    auto notificationOwner =
+        DevelopmentNotificationOwner::create(std::make_shared<foundation::SystemMonotonicClock>());
+    if (!notificationOwner) {
+        return Result<void>::failure(notificationOwner.error());
+    }
+    notification_owner_ = std::move(notificationOwner).value();
+
     auto launcher = launcher::controller::LauncherController::create(std::move(options_.launcher));
     if (!launcher) {
         return Result<void>::failure(launcher.error());
@@ -106,6 +113,12 @@ Result<void> ShellRuntime::initialize() {
             &ShellRuntime::handleSettingsSnapshotChanged);
     connect(&settings_client_, &settings::SettingsSnapshotClient::stateChanged, this,
             &ShellRuntime::handleSettingsStateChanged);
+    connect(notification_owner_->presentation(),
+            &shell::notifications::NotificationPresentationModel::actionRequested, this,
+            &ShellRuntime::handleDevelopmentNotificationAction);
+    connect(notification_owner_->presentation(),
+            &shell::notifications::NotificationPresentationModel::dismissRequested, this,
+            &ShellRuntime::handleDevelopmentNotificationDismissal);
     connect(
         launcher_controller_.get(), &launcher::controller::LauncherController::catalogRefreshFailed,
         this, [this]() {
@@ -308,6 +321,8 @@ Result<void> ShellRuntime::createPresentationEpoch(
     }
     panel_host_ = std::move(host).value();
     positionLauncher();
+    positionNotification();
+    showRetainedNotification();
     auto ready = options_.sessionReadiness.publish();
     if (!ready) {
         destroyPresentationEpoch();
@@ -355,11 +370,13 @@ Result<void> ShellRuntime::updatePresentationEpoch(
         return published;
     }
     positionLauncher();
+    positionNotification();
     return Result<void>::success();
 }
 
 Result<void> ShellRuntime::createViews() {
-    if (!theme_adapter_ || !theme_adapter_->current() || !launcher_controller_) {
+    if (!theme_adapter_ || !theme_adapter_->current() || !launcher_controller_ ||
+        !notification_owner_) {
         return Result<void>::failure(missingPresentationError());
     }
 
@@ -369,7 +386,8 @@ Result<void> ShellRuntime::createViews() {
     panel_view_->setResizeMode(QQuickView::SizeRootObjectToView);
     panel_view_->setInitialProperties(
         {{QStringLiteral("themeGeneration"), objectVariant(theme_adapter_->current())},
-         {QStringLiteral("taskModel"), objectVariant(&task_model_)}});
+         {QStringLiteral("taskModel"), objectVariant(&task_model_)},
+         {QStringLiteral("notificationAffordanceVisible"), true}});
     panel_view_->setSource(
         QUrl(QStringLiteral("qrc:/qt/qml/org/prismdrake/shell/panel/PanelSurface.qml")));
     if (panel_view_->status() == QQuickView::Error || panel_view_->rootObject() == nullptr) {
@@ -392,17 +410,42 @@ Result<void> ShellRuntime::createViews() {
     }
     launcher_view_->hide();
 
+    notification_view_ = std::make_unique<QQuickView>();
+    notification_view_->setTitle(tr("Prismdrake Test Notification"));
+    notification_view_->setFlags(Qt::Tool | Qt::FramelessWindowHint);
+    notification_view_->setColor(Qt::transparent);
+    notification_view_->setResizeMode(QQuickView::SizeViewToRootObject);
+    notification_view_->setInitialProperties(
+        {{QStringLiteral("themeGeneration"), objectVariant(theme_adapter_->current())},
+         {QStringLiteral("presentationModel"),
+          objectVariant(notification_owner_->presentation())}});
+    notification_view_->setSource(
+        QUrl(QStringLiteral("qrc:/qt/qml/org/prismdrake/shell/notifications/"
+                            "NotificationSurface.qml")));
+    if (notification_view_->status() == QQuickView::Error ||
+        notification_view_->rootObject() == nullptr) {
+        return Result<void>::failure(surfaceError());
+    }
+    notification_view_->hide();
+
     auto *panel = panel_view_->rootObject();
     auto *launcher = launcher_view_->rootObject();
+    auto *notification = notification_view_->rootObject();
     const bool connected =
         connect(panel, SIGNAL(launcherRequested()), this, SLOT(openLauncher())) &&
+        connect(panel, SIGNAL(notificationRequested()), this,
+                SLOT(showDevelopmentNotification())) &&
         connect(panel, SIGNAL(focusExitForward()), this, SLOT(leavePanelKeyboardNavigation())) &&
         connect(panel, SIGNAL(focusExitBackward()), this, SLOT(leavePanelKeyboardNavigation())) &&
         connect(launcher, SIGNAL(searchRequested(QString)), this,
                 SLOT(handleLauncherSearch(QString))) &&
         connect(launcher, SIGNAL(dismissRequested()), this, SLOT(dismissLauncherToPanel())) &&
         connect(launcher, SIGNAL(focusExitForward()), this, SLOT(dismissLauncherToPanel())) &&
-        connect(launcher, SIGNAL(focusExitBackward()), this, SLOT(dismissLauncherToPanel()));
+        connect(launcher, SIGNAL(focusExitBackward()), this, SLOT(dismissLauncherToPanel())) &&
+        connect(notification, SIGNAL(focusExitForward()), this,
+                SLOT(returnNotificationFocusToPanel())) &&
+        connect(notification, SIGNAL(focusExitBackward()), this,
+                SLOT(returnNotificationFocusToPanel()));
     if (!connected) {
         return Result<void>::failure(connectionError());
     }
@@ -421,12 +464,14 @@ Result<void> ShellRuntime::createViews() {
 
 Result<void> ShellRuntime::publishThemeProperties() {
     if (!theme_adapter_ || !theme_adapter_->current() || !panel_view_ || !launcher_view_ ||
-        !panel_view_->rootObject() || !launcher_view_->rootObject()) {
+        !notification_view_ || !panel_view_->rootObject() || !launcher_view_->rootObject() ||
+        !notification_view_->rootObject()) {
         return Result<void>::failure(missingPresentationError());
     }
     const auto value = objectVariant(theme_adapter_->current());
     if (!panel_view_->rootObject()->setProperty("themeGeneration", value) ||
-        !launcher_view_->rootObject()->setProperty("themeGeneration", value)) {
+        !launcher_view_->rootObject()->setProperty("themeGeneration", value) ||
+        !notification_view_->rootObject()->setProperty("themeGeneration", value)) {
         return Result<void>::failure(surfaceError());
     }
     return Result<void>::success();
@@ -462,12 +507,49 @@ void ShellRuntime::positionLauncher() {
                                 static_cast<int>(width), static_cast<int>(height));
 }
 
+void ShellRuntime::positionNotification() {
+    if (!notification_view_ || !panel_host_ || !panel_host_->placement()) {
+        return;
+    }
+    const auto &placement = *panel_host_->placement();
+    const auto &output = placement.output;
+    const auto &panel = placement.dock.panel;
+    const auto width = std::min<std::uint32_t>(
+        static_cast<std::uint32_t>(std::max(1, notification_view_->width())), output.widthPx());
+    const auto availableHeight = static_cast<std::uint32_t>(
+        std::max<std::int64_t>(1, static_cast<std::int64_t>(panel.y) - output.yPx()));
+    const auto height = std::min<std::uint32_t>(
+        static_cast<std::uint32_t>(std::max(1, notification_view_->height())), availableHeight);
+    const auto x = static_cast<std::int64_t>(output.xPx()) + output.widthPx() - width;
+    notification_view_->setGeometry(static_cast<int>(x),
+                                    static_cast<int>(panel.y - static_cast<std::int32_t>(height)),
+                                    static_cast<int>(width), static_cast<int>(height));
+}
+
+void ShellRuntime::showRetainedNotification() {
+    if (!notification_owner_ || !notification_owner_->hasCard() || !notification_view_ ||
+        !notification_view_->rootObject()) {
+        return;
+    }
+    positionNotification();
+    notification_view_->show();
+    notification_view_->raise();
+    notification_view_->requestActivate();
+    QMetaObject::invokeMethod(this, [this]() { positionNotification(); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(notification_view_->rootObject(), "focusFirstCard",
+                              Qt::QueuedConnection);
+}
+
 void ShellRuntime::destroyPresentationEpoch() noexcept {
     panel_host_.reset();
     if (launcher_view_) {
         launcher_view_->hide();
     }
     launcher_view_.reset();
+    if (notification_view_) {
+        notification_view_->hide();
+    }
+    notification_view_.reset();
     panel_view_.reset();
     theme_adapter_.reset();
     launcher_was_active_ = false;
@@ -510,6 +592,62 @@ void ShellRuntime::leavePanelKeyboardNavigation() {
     if (!applied) {
         reportRecoverable("panel focus exit", applied.error());
     }
+}
+
+void ShellRuntime::showDevelopmentNotification() {
+    if (!notification_owner_ || !notification_view_) {
+        reportRecoverable("development notification", missingPresentationError());
+        return;
+    }
+    auto published = notification_owner_->publishFixture();
+    if (!published) {
+        reportRecoverable("development notification", published.error());
+        return;
+    }
+    if (panel_host_) {
+        auto released = panel_host_->releaseKeyboardAccess();
+        if (!released) {
+            reportRecoverable("development notification focus", released.error());
+        }
+    }
+    showRetainedNotification();
+}
+
+void ShellRuntime::handleDevelopmentNotificationAction(
+    prismdrake::notifications::NotificationId notificationId,
+    foundation::Generation contentGeneration, const QString &actionId) {
+    auto activated = notification_owner_->activate(notificationId, contentGeneration, actionId);
+    if (!activated) {
+        reportRecoverable("development notification action", activated.error());
+        return;
+    }
+    returnNotificationFocusToPanel();
+}
+
+void ShellRuntime::handleDevelopmentNotificationDismissal(
+    prismdrake::notifications::NotificationId notificationId,
+    foundation::Generation contentGeneration) {
+    auto dismissed = notification_owner_->dismiss(notificationId, contentGeneration);
+    if (!dismissed) {
+        reportRecoverable("development notification dismissal", dismissed.error());
+        return;
+    }
+    returnNotificationFocusToPanel();
+}
+
+void ShellRuntime::returnNotificationFocusToPanel() {
+    if (notification_view_) {
+        notification_view_->hide();
+    }
+    if (!panel_host_ || !panel_view_ || !panel_view_->rootObject()) {
+        return;
+    }
+    auto access = panel_host_->requestKeyboardAccess();
+    if (!access) {
+        reportRecoverable("development notification focus return", access.error());
+        return;
+    }
+    QMetaObject::invokeMethod(panel_view_->rootObject(), "focusNotification", Qt::QueuedConnection);
 }
 
 void ShellRuntime::handleX11Loss(const Error &error) {

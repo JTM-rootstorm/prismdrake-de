@@ -17,12 +17,18 @@ and timeout behavior, typed action and dismissal intents, keyboard traversal,
 accessible metadata, and presentation inputs for Prismdrake Lustre, Prismdrake
 Forge, high contrast, reduced motion, and opaque fallback operation.
 
-This is not a production notification service. It does not own
+The Experimental shell runtime now wires one fixed, bounded development
+fixture from the panel to this model and presentation boundary. The runtime
+keeps the synthetic owner outside settings-owned QML view epochs, so an active
+card can be presented again after a settings-owner loss and complete-generation
+rebuild. The card can be traversed, acknowledged, or dismissed by keyboard;
+completion hides the card surface and returns focus to the panel affordance.
+
+This is still not a production notification service. It does not own
 `org.freedesktop.Notifications`, accept D-Bus sender input, persist history,
 implement do-not-disturb policy, fetch remote images, load sender-selected local
 paths, play sounds, retain notifications across sessions, or define lock-surface
-behavior. It also does not install or launch a complete `prismdrake-shell`
-process. The production `prismdrake-notifyd` authority and its service contract
+behavior. The production `prismdrake-notifyd` authority and its service contract
 remain PD2-or-later work under the controlling PD1 plan.
 
 The implementation preserves the Accepted component boundary in
@@ -43,10 +49,10 @@ candidate native protocols.
 | Requirement | Implemented PD1 evidence | Remaining boundary |
 |---|---|---|
 | `PD-NOTIFY-002` | Synthetic cards have model-owned stable identifiers, typed urgency, ordered actions, deterministic identifier replacement, configured/default/never timeouts, an injected monotonic clock, and generation-checked action and dismissal intents. | These semantics have not been connected to a freedesktop notification-service owner or real sender lifecycle. |
-| `PD-NOTIFY-005` | The card exposes a notification role, name, description, and focus state. Actions and dismissal expose button metadata. Keyboard order is card, enabled actions in source order, then dismissal; reverse traversal, Escape dismissal, list-to-list traversal, and focus recovery after replacement, dismissal, or timeout are represented in the QML tests. | Live AT-SPI and screen-reader behavior, large-text layout, RTL behavior, and the final accessibility-tree smoke lane remain WP13 work. |
+| `PD-NOTIFY-005` | The card exposes a notification role, name, description, and focus state. Actions and dismissal expose button metadata. Keyboard order is card, enabled actions in source order, then dismissal; reverse traversal, Escape dismissal, list-to-list traversal, and focus recovery after replacement, dismissal, or timeout are represented in the QML tests. The Experimental shell enters the fixed fixture from the panel and returns focus there after completion. | Live AT-SPI and screen-reader behavior, large-text layout, RTL behavior, and the final accessibility-tree smoke lane remain WP13 work. |
 | `PD-NOTIFY-006` | Text, identifiers, actions, icon names, image metadata and pixels, timeouts, generations, and aggregate publication size are validated before publication and revalidated at the Qt boundary. QML renders sender text with `Text.PlainText`. | A future D-Bus service must repeat validation at its process boundary and define sender, image-decoding, and transport policy. |
 | `PD-A11Y-001` through `PD-A11Y-009` | The component has explicit keyboard traversal, visible focus borders, accessible roles and labels, token-supplied minimum target dimensions, a textual and shaped urgency indicator, and zero-duration reduced-motion behavior. The same card implementation consumes Lustre and Forge token values. | This slice does not establish real wallpaper contrast, mixed scaling, text expansion, platform-bridge behavior, or complete shell focus integration. |
-| `PD-THEME-003`, `PD-THEME-008`, `PD-THEME-009` | The QML component consumes high-contrast, reduced-motion, opaque-fallback, focus, urgency, and minimum-target values through one typed token input instead of profile-specific component forks. Urgency remains available as text and shape, not hue alone. | The token input is not yet connected to the production resolved settings/theme snapshot. Contrast and final rendering still require deterministic baselines. |
+| `PD-THEME-003`, `PD-THEME-008`, `PD-THEME-009` | The QML component consumes high-contrast, reduced-motion, opaque-fallback, focus, urgency, and minimum-target values through one typed token input instead of profile-specific component forks. The installed surface projects those values from one complete resolved settings/theme generation. Urgency remains available as text and shape, not hue alone. | Contrast and final rendering still require deterministic baselines. |
 | `PD-SEC-001`, `PD-SEC-011`, `PD-SEC-012` | The model rejects malformed, oversized, unsafe-control, non-UTF-8, path-like icon, inconsistent image, invalid enum, stale-generation, and capacity-exceeding inputs. Negative unit tests exercise these boundaries. No rich-text, script, file, URI, or command execution path exists. | Scheduled fuzzing and the production service's process-boundary validation remain outside WP12. |
 | `PD-PERF-001`, `PD-PERF-004`, `PD-PERF-009` | The synthetic authority and passive adapter perform no disk, network, D-Bus, X11, image-decoding, or polling work. Time is injected and publications are bounded. Reduced-motion duration is deterministic. | No frame-time, input-latency, allocation, startup, or wakeup budget is measured here. |
 
@@ -258,6 +264,15 @@ unaffected action focus when an earlier row is removed, presentation-object
 identity when multiple cards have identical visible content, and focus exit
 when the focused list becomes empty.
 
+`tests/qt/qml-real/tst_NotificationSurface.qml` instantiates the shell-facing
+surface with the real model fixture and a complete theme-generation projection.
+It verifies that one critical card reaches the view, respects the minimum target
+envelope, and accepts programmatic keyboard focus. Three display-free
+`DevelopmentNotificationOwnerTest` cases cover fixed-card publication and
+replacement, stale identity and unknown-action rejection, exact acknowledge and
+dismiss behavior, and retention of the presentation publication across QML view
+epochs.
+
 Both QML targets are configured for the offscreen platform, software rendering,
 and the Basic Quick Controls style. That configuration makes component behavior
 deterministic enough for functional tests; it is not a visual-baseline result.
@@ -293,10 +308,11 @@ to PD1-WP13 or later integration:
   text, and RTL layout;
 - contrast evaluation over controlled wallpaper and opaque fallback material;
 - a live AT-SPI accessibility-tree and screen-reader smoke procedure;
-- full shell focus integration, per-output placement, mixed scaling, and a
-  production font baseline;
+- per-output placement beyond the panel host's selected output, mixed scaling,
+  and a production font baseline;
 - rendering and accessibility policy for validated icon or image content;
-- real `prismdrake-shell` startup, installation, and runtime-closure evidence;
+- a recorded installed-session demonstration of the fixed runtime fixture and
+  runtime-closure evidence;
   and
 - the separately owned `prismdrake-notifyd` freedesktop service, persistence,
   privacy, do-not-disturb, restart-continuity, and lock-surface policy.

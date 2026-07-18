@@ -32,6 +32,13 @@ FocusScope {
         launcher.forceActiveFocus(Qt.TabFocusReason)
     }
 
+    function focusNotification() {
+        if (notificationAffordanceVisible)
+            notification.forceActiveFocus(Qt.OtherFocusReason)
+        else
+            diagnostics.forceActiveFocus(Qt.OtherFocusReason)
+    }
+
     function focusTask(index, backward) {
         const candidate = taskRepeater.itemAt(index)
         if (candidate !== null) {

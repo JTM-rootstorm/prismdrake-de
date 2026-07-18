@@ -11,7 +11,8 @@ qt_add_qml_module(prismdrake-shell-notification-qml
     QML_FILES
         NotificationCard.qml
         NotificationList.qml
-        NotificationPresentationTokens.qml)
+        NotificationPresentationTokens.qml
+        NotificationSurface.qml)
 add_library(Prismdrake::shell-notification-qml ALIAS
     prismdrake-shell-notification-qml)
 target_link_libraries(prismdrake-shell-notification-qml

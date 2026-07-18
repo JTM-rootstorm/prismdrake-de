@@ -9,6 +9,8 @@ prismdrake_enable_warnings(prismdrake-shell-runtime-state)
 prismdrake_enable_sanitizers(prismdrake-shell-runtime-state)
 
 add_library(prismdrake-shell-runtime STATIC
+    DevelopmentNotificationOwner.cpp
+    DevelopmentNotificationOwner.hpp
     ShellRuntime.cpp
     ShellRuntime.hpp
     ShellRuntimeOptions.cpp
@@ -23,6 +25,7 @@ target_link_libraries(prismdrake-shell-runtime
     PUBLIC
         Prismdrake::shell-runtime-state
         Prismdrake::shell-launcher-controller
+        Prismdrake::shell-notification-presentation
         Prismdrake::shell-panel-window
         Prismdrake::shell-settings-client
         Prismdrake::shell-task-controller
@@ -41,6 +44,7 @@ target_link_libraries(prismdrake-shell
     PRIVATE
         Prismdrake::shell-runtime
         Prismdrake::shell-launcher-qml
+        Prismdrake::shell-notification-qml
         Prismdrake::shell-panel-qml
         Qt6::Gui
         Qt6::Quick)
@@ -68,6 +72,7 @@ if(BUILD_TESTING)
         prismdrake_enable_sanitizers(prismdrake-shell-runtime-state-tests)
 
         add_executable(prismdrake-shell-runtime-tests
+            tests/DevelopmentNotificationOwnerTests.cpp
             tests/ShellRuntimeOptionsTests.cpp
             tests/TerminationSignalBridgeTests.cpp)
         target_link_libraries(prismdrake-shell-runtime-tests

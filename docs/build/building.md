@@ -48,8 +48,12 @@ Shell presentation requires system Qt Core, GUI, QML, Quick, and Quick Controls
 Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested component version;
 current host and Gentoo component evidence use Qt 6.11.1. The Experimental shell
 composition root wires the settings client, panel, launcher, task controller,
-and session boundary. Synthetic notifications remain harness-owned rather than
-a production notification service. See the
+development-only synthetic-notification owner, and session boundary. The fixed
+bounded notification fixture is available from the panel and survives a
+settings-owned QML view rebuild because its model and passive presentation
+mirror remain runtime-owned. Its action and dismissal affordances return focus
+to the panel. This harness performs no notification D-Bus work and never claims
+`org.freedesktop.Notifications`; a production service remains later work. See the
 [panel-shell evidence](../research/pd1-panel-shell-evidence.md).
 
 ## Installation contract

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DevelopmentNotificationOwner.hpp"
 #include "LauncherController.hpp"
 #include "PanelWindowHost.hpp"
 #include "Result.hpp"
@@ -48,6 +49,15 @@ class ShellRuntime final : public QObject {
     void dismissLauncherWithoutPanelFocus();
     void handleLauncherSearch(const QString &query);
     void leavePanelKeyboardNavigation();
+    void showDevelopmentNotification();
+    void
+    handleDevelopmentNotificationAction(prismdrake::notifications::NotificationId notificationId,
+                                        foundation::Generation contentGeneration,
+                                        const QString &actionId);
+    void
+    handleDevelopmentNotificationDismissal(prismdrake::notifications::NotificationId notificationId,
+                                           foundation::Generation contentGeneration);
+    void returnNotificationFocusToPanel();
 
   private:
     explicit ShellRuntime(ShellRuntimeOptions options);
@@ -66,6 +76,8 @@ class ShellRuntime final : public QObject {
     [[nodiscard]] foundation::Result<void> publishThemeProperties();
     [[nodiscard]] foundation::Result<std::uint32_t> projectedPanelHeight() const;
     void positionLauncher();
+    void positionNotification();
+    void showRetainedNotification();
     void destroyPresentationEpoch() noexcept;
     void handleX11Loss(const foundation::Error &error);
     void reportRecoverable(const char *context, const foundation::Error &error);
@@ -74,12 +86,14 @@ class ShellRuntime final : public QObject {
     ShellRuntimeOptions options_;
     ShellRuntimeState state_;
     tasks::TaskPresentationModel task_model_;
+    std::unique_ptr<DevelopmentNotificationOwner> notification_owner_;
     std::unique_ptr<launcher::controller::LauncherController> launcher_controller_;
     std::unique_ptr<taskcontroller::TaskController> task_controller_;
     settings::SettingsSnapshotClient settings_client_;
     std::unique_ptr<theme::ShellThemeSnapshotAdapter> theme_adapter_;
     std::unique_ptr<QQuickView> panel_view_;
     std::unique_ptr<QQuickView> launcher_view_;
+    std::unique_ptr<QQuickView> notification_view_;
     std::unique_ptr<window::PanelWindowHost> panel_host_;
     bool started_{false};
     bool launcher_was_active_{false};
