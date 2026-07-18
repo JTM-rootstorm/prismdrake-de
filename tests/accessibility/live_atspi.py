@@ -495,6 +495,22 @@ def _window_id(xdotool: Path, title: str) -> str | None:
     return identifiers[0] if len(identifiers) == 1 else None
 
 
+def _launcher_window(xdotool: Path, panel: str) -> str | None:
+    result = _run_checked(
+        [str(xdotool), "search", "--all", "--class", "^prismdrake-shell$"]
+    )
+    if result.returncode != 0:
+        return None
+    identifiers = [
+        line
+        for line in result.stdout.splitlines()
+        if line.isascii() and line.isdecimal() and line != panel
+    ]
+    if len(identifiers) > 16:
+        raise EvidenceError("the shell X11 window count exceeds the bound")
+    return identifiers[0] if len(identifiers) == 1 else None
+
+
 def _grab_focus(node: Any) -> bool:
     component = node.get_component_iface()
     if component is None:
@@ -661,7 +677,7 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
         )
         _require(_grab_focus(launcher_search), "launcher search focus request was rejected")
         launcher = _wait_until(
-            lambda: _window_id(arguments.xdotool, "Prismdrake Launcher"),
+            lambda: _launcher_window(arguments.xdotool, panel),
             "the Prismdrake launcher window",
         )
         phases.append(_phase(Atspi, PHASE_IDS[1], PHASE_FOCUS[1], launcher_specs))

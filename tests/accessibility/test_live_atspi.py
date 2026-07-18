@@ -7,6 +7,10 @@ import copy
 import json
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+import live_atspi
 from live_atspi import (
     EvidenceError,
     _grab_focus,
@@ -17,6 +21,20 @@ from live_atspi import (
 
 
 class AccessibilityEvidenceContractTests(unittest.TestCase):
+    def test_launcher_window_is_the_sole_non_panel_shell_surface(self) -> None:
+        completed = SimpleNamespace(returncode=0, stdout="11\n17\n")
+        with mock.patch.object(live_atspi, "_run_checked", return_value=completed):
+            self.assertEqual(
+                live_atspi._launcher_window(Path("/usr/bin/xdotool"), "11"), "17"
+            )
+
+    def test_launcher_window_rejects_ambiguous_shell_surfaces(self) -> None:
+        completed = SimpleNamespace(returncode=0, stdout="11\n17\n19\n")
+        with mock.patch.object(live_atspi, "_run_checked", return_value=completed):
+            self.assertIsNone(
+                live_atspi._launcher_window(Path("/usr/bin/xdotool"), "11")
+            )
+
     def test_grab_focus_rejects_missing_component_interface(self) -> None:
         class NodeWithoutComponent:
             @staticmethod
