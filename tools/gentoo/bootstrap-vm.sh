@@ -233,8 +233,10 @@ dev-qt/qtbase:6 X accessibility dbus gui opengl -gtk
 dev-qt/qtdeclarative:6 accessibility opengl qmlls
 dev-qt/qttools:6 opengl qdbus qtdiag qtplugininfo"
 
-KEYWORDS_CONTENT="# The project-owned development metapackage is intentionally testing-only.
-dev-util/prismdrake-dev-env ~amd64"
+KEYWORDS_CONTENT="# Project-owned packages use package-local keyword exceptions only.
+# The development metapackage is testing-only; the live product ebuild is intentionally unkeyworded.
+dev-util/prismdrake-dev-env ~amd64
+x11-misc/prismdrake **"
 
 prismdrake_install_project_file "$REPOS_FILE" "$REPOS_CONTENT" "$BACKUP_DIR"
 prismdrake_install_project_file "$USE_FILE" "$USE_CONTENT" "$BACKUP_DIR"

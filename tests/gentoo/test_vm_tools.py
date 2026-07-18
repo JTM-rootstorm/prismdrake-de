@@ -275,6 +275,12 @@ class ScriptPolicyTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
 
+    def test_bootstrap_accepts_only_the_project_owned_package_keywords(self) -> None:
+        source = BOOTSTRAP.read_text(encoding="utf-8")
+        self.assertIn("dev-util/prismdrake-dev-env ~amd64", source)
+        self.assertIn("x11-misc/prismdrake **", source)
+        self.assertNotIn("*/* **", source)
+
     def test_verifier_contains_no_apply_commands(self) -> None:
         source = VERIFY.read_text(encoding="utf-8")
         for forbidden in ("--ask", "pkgdev manifest", "emaint sync", "emerge --sync"):

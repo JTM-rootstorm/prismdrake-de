@@ -173,8 +173,9 @@ Omit the option when source-only evidence is required. The apply path:
    `/etc/portage/prismdrake-backups`, outside Portage's active configuration
    directories, using collision-resistant names;
 5. writes `prismdrake-local.conf`, `package.use/prismdrake-dev`, and the narrow
-   `package.accept_keywords/prismdrake-dev` exception atomically with mode
-   `0644`, including when existing content already matches;
+   `package.accept_keywords/prismdrake-dev` exceptions for the project-owned
+   testing metapackage and unkeyworded live ebuild atomically with mode `0644`,
+   including when existing content already matches;
 6. confirms with both `portageq` and `eselect` that Portage resolves the live
    shared overlay rather than a stale copy;
 7. runs `pkgdev manifest` and `pkgcheck scan` before local package resolution;

@@ -118,15 +118,21 @@ Do not add Wayland, WebEngine, multimedia, printing, SQL backends, or unrelated
 Qt modules without a demonstrated PD1 use.
 
 The project-owned metapackage is testing-only and therefore uses `~amd64`.
-Permit only that atom through `/etc/portage/package.accept_keywords/prismdrake-dev`:
+The live product ebuild deliberately has no architecture keyword while it
+remains Experimental, so Portage requires `**` for that exact atom. Permit only
+these two project-owned atoms through
+`/etc/portage/package.accept_keywords/prismdrake-dev`:
 
 ```text
-# The project-owned development metapackage is intentionally testing-only.
+# Project-owned packages use package-local keyword exceptions only.
+# The development metapackage is testing-only; the live product ebuild is intentionally unkeyworded.
 dev-util/prismdrake-dev-env ~amd64
+x11-misc/prismdrake **
 ```
 
-This is a narrow local-package exception, not permission to enable unstable
-keywords globally or to unmask transitive dependencies.
+These are narrow local-package exceptions, not permission to enable unstable
+keywords globally, accept unkeyworded transitive dependencies, or unmask
+anything outside the project-owned repository.
 
 ## Resolution and QA
 
