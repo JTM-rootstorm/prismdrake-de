@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +22,16 @@ from live_atspi import (
 
 
 class AccessibilityEvidenceContractTests(unittest.TestCase):
+    def test_probe_converts_command_failures_to_categorical_status(self) -> None:
+        with mock.patch.object(
+            live_atspi,
+            "_run_checked",
+            side_effect=subprocess.TimeoutExpired(["private-command"], 0.5),
+        ):
+            completed = live_atspi._run_probe(["private-command"], timeout=0.5)
+        self.assertEqual(completed.returncode, 124)
+        self.assertEqual(completed.stdout, "")
+
     def test_launcher_probe_is_bounded_categorical_and_redacted(self) -> None:
         node = mock.Mock()
         node.get_process_id.return_value = 42

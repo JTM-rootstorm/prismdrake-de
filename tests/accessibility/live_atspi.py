@@ -533,12 +533,19 @@ def _probe_window_ids(result: subprocess.CompletedProcess[str]) -> tuple[bool, i
     return shape_valid, count, lines if shape_valid else []
 
 
+def _run_probe(command: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+    try:
+        return _run_checked(command, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return subprocess.CompletedProcess(command, 124, "", "")
+
+
 def _probe_owned_windows(
     xdotool: Path, identifiers: list[str], expected_process_id: int
 ) -> tuple[int, bool]:
     owned = 0
     for identifier in identifiers[:4]:
-        owner = _run_checked(
+        owner = _run_probe(
             [str(xdotool), "getwindowpid", identifier], timeout=0.5
         )
         if owner.returncode == 0 and owner.stdout.strip() == str(expected_process_id):
@@ -551,16 +558,24 @@ def _launcher_probe_summary(
 ) -> str:
     """Return bounded categorical diagnostics without runtime identifiers."""
 
-    accessible_owner_matches = node.get_process_id() == expected_process_id
-    accessible_focused = _has_state(node, atspi.StateType.FOCUSED)
-    component = node.get_component_iface()
+    try:
+        accessible_owner_matches = node.get_process_id() == expected_process_id
+        accessible_focused = _has_state(node, atspi.StateType.FOCUSED)
+        component = node.get_component_iface()
+    except Exception:  # The remote AT-SPI node can disappear while diagnosing a timeout.
+        accessible_owner_matches = False
+        accessible_focused = False
+        component = None
     component_available = component is not None
     extents_positive = False
     if component_available:
-        extents = component.get_extents(atspi.CoordType.SCREEN)
-        extents_positive = extents.width > 0 and extents.height > 0
+        try:
+            extents = component.get_extents(atspi.CoordType.SCREEN)
+            extents_positive = extents.width > 0 and extents.height > 0
+        except Exception:  # Keep diagnostics categorical if the remote node vanishes.
+            extents_positive = False
 
-    titled = _run_checked(
+    titled = _run_probe(
         [str(xdotool), "search", "--all", "--name", f"^{LAUNCHER_TITLE}$"],
         timeout=1,
     )
@@ -570,7 +585,7 @@ def _launcher_probe_summary(
         xdotool, titled_non_panel, expected_process_id
     )
 
-    shell_windows = _run_checked(
+    shell_windows = _run_probe(
         [str(xdotool), "search", "--all", "--class", f"^{APPLICATION_NAME}$"],
         timeout=1,
     )
@@ -580,7 +595,7 @@ def _launcher_probe_summary(
         xdotool, shell_non_panel, expected_process_id
     )
 
-    visible = _run_checked(
+    visible = _run_probe(
         [
             str(xdotool),
             "search",
@@ -597,7 +612,7 @@ def _launcher_probe_summary(
         xdotool, visible_non_panel, expected_process_id
     )
 
-    focused = _run_checked([str(xdotool), "getwindowfocus"], timeout=1)
+    focused = _run_probe([str(xdotool), "getwindowfocus"], timeout=1)
     focused_identifier = focused.stdout.strip()
     focused_shape = (
         focused.returncode == 0
@@ -610,7 +625,7 @@ def _launcher_probe_summary(
     )
     focused_class_matches = False
     if focused_owned:
-        window_class = _run_checked(
+        window_class = _run_probe(
             [str(xdotool), "getwindowclassname", focused_identifier], timeout=0.5
         )
         focused_class_matches = (
