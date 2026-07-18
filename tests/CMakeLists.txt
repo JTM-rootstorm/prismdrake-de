@@ -12,6 +12,13 @@ set_tests_properties(GentooVmToolsTest PROPERTIES
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 
 add_test(
+    NAME GentooProductEbuildTest
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/gentoo/test_product_ebuild.py")
+set_tests_properties(GentooProductEbuildTest PROPERTIES
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+
+add_test(
     NAME GentooPortageLifecycleEvidenceTest
     COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/gentoo/test_portage_lifecycle_evidence.py")

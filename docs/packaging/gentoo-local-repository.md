@@ -254,6 +254,15 @@ conditional `USE=test` build dependencies. This complete gate prevents a clean
 reference-VM package test from silently registering the live startup or AT-SPI
 lanes as skipped merely because their evidence tooling was absent.
 
+The ebuild derives `SOURCE_DATE_EPOCH` from the exact checked-out Git revision
+before every configure or compile phase. Qt's resource compiler otherwise
+stores checkout-time QML mtimes in the shell resource table, making two clean
+builds of the same revision differ even though their executable code is
+identical. The lifecycle gate therefore compares the installed executables
+from the tested and ordinary reinstall paths byte for byte. This packaging
+control does not claim reproducibility across different compiler, linker, or Qt
+versions.
+
 Run a reviewed resolution and targeted package test with:
 
 ```sh

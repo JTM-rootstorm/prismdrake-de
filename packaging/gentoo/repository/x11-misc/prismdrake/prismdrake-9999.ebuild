@@ -61,7 +61,17 @@ pkg_setup() {
 	use test && python-any-r1_pkg_setup
 }
 
+prismdrake_set_source_date_epoch() {
+	local source_date_epoch
+	source_date_epoch=$(git -C "${S}" show -s --format=%ct HEAD) ||
+		die "could not determine the source revision timestamp"
+	[[ ${source_date_epoch} =~ ^[1-9][0-9]*$ ]] ||
+		die "source revision timestamp is not a positive integer"
+	export SOURCE_DATE_EPOCH=${source_date_epoch}
+}
+
 src_configure() {
+	prismdrake_set_source_date_epoch
 	local mycmakeargs=(
 		-DBUILD_TESTING=OFF
 		-DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=OFF
@@ -70,7 +80,13 @@ src_configure() {
 	cmake_src_configure
 }
 
+src_compile() {
+	prismdrake_set_source_date_epoch
+	cmake_src_compile
+}
+
 src_test() {
+	prismdrake_set_source_date_epoch
 	# The product build must retain packaged /usr paths, which do not exist
 	# before src_install. Exercise the source tree in a separate test build
 	# instead of weakening the installed binary's path contract.

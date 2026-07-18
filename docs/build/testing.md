@@ -42,6 +42,8 @@ evidence contracts. `GentooInstalledArtifactAttestationTest`,
 `GentooPortageLifecycleCollectorTest`, and
 `GentooPortageLifecycleEvidenceTest` exercise only synthetic positive and
 negative fixtures; they do not claim that Portage installation ran. The
+`GentooProductEbuildTest` additionally pins the exact-revision timestamp
+contract used to make Qt resource metadata deterministic. The
 preflight attestation is captured after the `USE=test` install and binds the
 exact installed executable, Portage ownership, source-driver, revision, and
 ebuild hashes before either installed driver executes. The post-demonstration
