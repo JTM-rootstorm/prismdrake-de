@@ -57,11 +57,12 @@ display, starts settingsd before the shell, waits for bounded settings
 readiness, applies component-specific restart budgets, enters one observable
 safe-mode launch, and performs exact-PID reverse bounded shutdown without
 touching the window manager or unrelated applications.
-This is a development prototype, not a complete shell: installed shell/session
-artifacts, reviewed visual baselines, live assistive-technology evidence, a
-global launcher-entry contract, harness-owned isolated D-Bus lifecycle,
-post-exec shell readiness, and installed session registration remain open PD1
-work.
+The three Experimental processes, their read-only data, and a standard X11
+session entry now share one CMake install contract. This is still a development
+prototype, not a complete shell: Portage-installed end-to-end evidence,
+reviewed visual baselines, live assistive-technology evidence, a global
+launcher-entry contract, harness-owned isolated D-Bus lifecycle, and post-exec
+shell readiness remain open PD1 work.
 
 ## Activation gate
 

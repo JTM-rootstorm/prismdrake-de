@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Prismdrake Desktop Environment
+Comment=Start the Experimental Prismdrake X11 development session
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/prismdrake-session
+TryExec=@CMAKE_INSTALL_FULL_BINDIR@/prismdrake-session

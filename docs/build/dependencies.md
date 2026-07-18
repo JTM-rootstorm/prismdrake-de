@@ -72,7 +72,9 @@ carry a verified or observed version.
   internal X11 adapter for display readiness, then owns only the exact settings
   and shell PIDs it launches. Gentoo selects basu; the development harness
   supplies D-Bus. Supported minimum versions, the complete installed closure,
-  harness-owned isolated-bus lifecycle, and session registration remain open.
+  harness-owned isolated-bus lifecycle, and post-exec shell readiness remain
+  open. A standard X11 session entry and all three Experimental process targets
+  now share one CMake install contract.
   `prismdrake-shell` is Experimental. Its immutable settings/theme projection
   directly uses Qt Core and GUI; its asynchronous launcher controller and
   passive launcher, task, and notification adapters use Qt Core; and its

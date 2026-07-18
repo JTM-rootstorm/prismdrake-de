@@ -47,6 +47,11 @@ prismdrake_configure_cpp_target(prismdrake-session)
 prismdrake_enable_warnings(prismdrake-session)
 prismdrake_enable_sanitizers(prismdrake-session)
 
+install(
+    TARGETS prismdrake-session
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    COMPONENT Runtime)
+
 if(BUILD_TESTING)
     find_package(GTest QUIET)
     if(GTest_FOUND)

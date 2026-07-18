@@ -19,6 +19,7 @@ project(
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(CTest)
+include(GNUInstallDirs)
 include(PrismdrakeOptions)
 include(PrismdrakeCompiler)
 include(PrismdrakeWarnings)
@@ -76,6 +77,39 @@ add_subdirectory(src/x11)
 add_subdirectory(src/shell)
 add_subdirectory(src/settingsd)
 add_subdirectory(src/session)
+
+configure_file(
+    data/xsessions/prismdrake.desktop.in
+    "${CMAKE_CURRENT_BINARY_DIR}/data/xsessions/prismdrake.desktop"
+    @ONLY)
+
+install(
+    FILES data/defaults/config.toml
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake/defaults"
+    COMPONENT Runtime)
+install(
+    FILES
+        themes/accessibility.tokens.json
+        themes/base.tokens.json
+        themes/forge.tokens.json
+        themes/lustre.tokens.json
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake/themes"
+    COMPONENT Runtime)
+install(
+    FILES
+        schemas/prismdrake-config.schema.json
+        schemas/prismdrake-runtime-snapshot.schema.json
+        schemas/prismdrake-theme-tokens.schema.json
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake/schemas"
+    COMPONENT Runtime)
+install(
+    FILES interfaces/dbus/org.prismdrake.Settings1.xml
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/dbus-1/interfaces"
+    COMPONENT Runtime)
+install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/data/xsessions/prismdrake.desktop"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/xsessions"
+    COMPONENT Runtime)
 
 if(BUILD_TESTING)
     find_package(GTest QUIET)

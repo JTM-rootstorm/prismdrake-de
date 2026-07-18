@@ -49,6 +49,11 @@ prismdrake_enable_warnings(prismdrake-shell)
 prismdrake_enable_sanitizers(prismdrake-shell)
 qt_finalize_executable(prismdrake-shell)
 
+install(
+    TARGETS prismdrake-shell
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    COMPONENT Runtime)
+
 if(BUILD_TESTING)
     find_package(GTest QUIET)
     if(GTest_FOUND)

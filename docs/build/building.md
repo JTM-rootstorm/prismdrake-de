@@ -29,9 +29,11 @@ presentation adapters emit typed intents; none becomes authoritative for window 
 notification state. The launcher controller schedules replaceable discovery
 and search on one worker and safe single-flight process launch on a separate
 worker, so neither filesystem indexing nor the bounded detached-launch
-handshake blocks the UI thread. These targets are not installed libraries or
-stable C++ ABIs. The isolated toolkit experiment remains a separate CMake
-project and is not linked into production targets.
+handshake blocks the UI thread. These internal libraries are not installed or
+exposed as stable C++ ABIs. The three Experimental process targets and their
+read-only runtime data have a single CMake install contract. The isolated
+toolkit experiment remains a separate CMake project and is not linked into
+production targets.
 
 The shell settings client integrates the selected sd-bus provider with Qt's
 socket and monotonic-timeout event sources. It treats generation signals as
@@ -44,10 +46,35 @@ shape, and verifies an exact canonical serializer round trip before publication.
 Shell presentation requires system Qt Core, GUI, QML, Quick, and Quick Controls
 6.4 or newer through the Qt CMake packages; tests also require Quick Test.
 Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested component version;
-current host and Gentoo component evidence use Qt 6.11.1. The complete shell
-executable and runtime wiring among the settings client, panel, launcher, task
-controller, notification fixture, and session remain later PD1 integration. See
-the [panel-shell evidence](../research/pd1-panel-shell-evidence.md).
+current host and Gentoo component evidence use Qt 6.11.1. The Experimental shell
+composition root wires the settings client, panel, launcher, task controller,
+and session boundary. Synthetic notifications remain harness-owned rather than
+a production notification service. See the
+[panel-shell evidence](../research/pd1-panel-shell-evidence.md).
+
+## Installation contract
+
+Configure the final prefix before building; distribution staging must use
+`DESTDIR` rather than changing the prefix during installation. A runtime-only
+staging build is:
+
+```sh
+cmake -S . -B build-package \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr \
+  -DBUILD_TESTING=OFF \
+  -DPRISMDRAKE_USE_INSTALL_PATHS=ON
+cmake --build build-package --parallel
+DESTDIR="$PWD/package-root" cmake --install build-package
+```
+
+The install contract contains `prismdrake-settingsd`, `prismdrake-shell`, and
+`prismdrake-session`; packaged defaults, theme tokens, schemas, and the
+Experimental settings interface; and one validated X11 session entry under
+`share/xsessions`. The session entry starts the init-neutral supervisor. The
+supervisor itself publishes the canonical Prismdrake desktop identity to its
+children and requires an inherited X display, private runtime directory, and
+session bus. Installation never creates or modifies user configuration.
 
 ## Canonical developer builds
 
@@ -80,6 +107,7 @@ All optional behavior is disabled unless selected explicitly:
 | `PRISMDRAKE_ENABLE_CLANG_TIDY` | `OFF` | Run Clang-Tidy on project-owned targets |
 | `PRISMDRAKE_WARNINGS_AS_ERRORS` | `OFF` | Promote project-owned warnings to errors |
 | `PRISMDRAKE_ENABLE_DEVELOPER_OVERRIDES` | `OFF` | Compile non-production diagnostics and mock-capability override support; callers must also request developer policy |
+| `PRISMDRAKE_USE_INSTALL_PATHS` | `OFF` | Embed configured read-only install locations instead of source-tree development data; distribution packages must enable this |
 
 Warnings, sanitizers, LTO, and Clang-Tidy apply only to project-owned targets.
 Warnings-as-errors is enabled in controlled development and CI configurations,
