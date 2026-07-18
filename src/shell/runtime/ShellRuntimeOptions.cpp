@@ -191,7 +191,8 @@ sessionReadinessSignalFromEnvironment(std::span<const std::string_view> inherite
     do {
         descriptorFlags = ::fcntl(*descriptor, F_GETFD);
     } while (descriptorFlags < 0 && errno == EINTR);
-    struct stat descriptorState{};
+    using DescriptorState = struct stat;
+    DescriptorState descriptorState{};
     int descriptorResult = -1;
     do {
         descriptorResult = ::fstat(*descriptor, &descriptorState);
