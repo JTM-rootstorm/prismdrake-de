@@ -173,6 +173,12 @@ bool PanelSurfaceQmlFixture::resetFromConfigurationText(
     connect(nextTaskPresentation.get(),
             &prismdrake::shell::tasks::TaskPresentationModel::activationRequested, this,
             &PanelSurfaceQmlFixture::captureActivation);
+    connect(nextTaskPresentation.get(),
+            &prismdrake::shell::tasks::TaskPresentationModel::minimizationRequested, this,
+            &PanelSurfaceQmlFixture::captureMinimization);
+    connect(nextTaskPresentation.get(),
+            &prismdrake::shell::tasks::TaskPresentationModel::closeRequested, this,
+            &PanelSurfaceQmlFixture::captureClose);
 
     const auto previousTemporaryDirectory = std::move(temporary_directory_);
     auto previousSettings = std::move(settings_);
@@ -189,9 +195,17 @@ bool PanelSurfaceQmlFixture::resetFromConfigurationText(
     activation_count_ = 0;
     last_activation_title_.clear();
     last_activation_generation_.clear();
+    minimization_count_ = 0;
+    last_minimization_title_.clear();
+    last_minimization_generation_.clear();
+    close_count_ = 0;
+    last_close_title_.clear();
+    last_close_generation_.clear();
     emit themeGenerationChanged();
     emit taskModelChanged();
     emit activationCaptured();
+    emit minimizationCaptured();
+    emit closeCaptured();
 
     previousTaskPresentation.reset();
     previousTaskSource.reset();
@@ -213,7 +227,7 @@ bool PanelSurfaceQmlFixture::publishForge() {
 }
 
 bool PanelSurfaceQmlFixture::publishRepresentativeTasks() {
-    tasks_ = {{101U, 1001U, "Editor", "org.prismdrake.Editor.desktop", "text-editor"},
+    tasks_ = {{101U, 1001U, "Editor", "org.prismdrake.Editor.desktop", "application-x-executable"},
               {202U, 2002U, "Terminal", "org.prismdrake.Terminal.desktop", "utilities-terminal",
                false, false, false},
               {303U, 3003U, "Urgent dialog", "org.prismdrake.Dialog.desktop", "dialog-warning",
@@ -234,6 +248,14 @@ bool PanelSurfaceQmlFixture::removeTask(int row) {
         return false;
     }
     tasks_.erase(tasks_.begin() + row);
+    return publishTasks();
+}
+
+bool PanelSurfaceQmlFixture::setTaskMinimized(int row, bool minimized) {
+    if (row < 0 || static_cast<std::size_t>(row) >= tasks_.size()) {
+        return false;
+    }
+    tasks_[static_cast<std::size_t>(row)].minimized = minimized;
     return publishTasks();
 }
 
@@ -297,6 +319,40 @@ void PanelSurfaceQmlFixture::captureActivation(prismdrake::x11::TaskLifetimeId l
             last_activation_title_ = QString::fromUtf8(task.title());
             last_activation_generation_ = QString::number(generation.value());
             emit activationCaptured();
+            return;
+        }
+    }
+}
+
+void PanelSurfaceQmlFixture::captureMinimization(prismdrake::x11::TaskLifetimeId lifetime,
+                                                 prismdrake::x11::TaskModelGeneration generation) {
+    const auto snapshot = task_presentation_ ? task_presentation_->currentSnapshot() : nullptr;
+    if (!snapshot || snapshot->generation() != generation) {
+        return;
+    }
+    for (const auto &task : snapshot->tasks()) {
+        if (task.lifetime() == lifetime) {
+            ++minimization_count_;
+            last_minimization_title_ = QString::fromUtf8(task.title());
+            last_minimization_generation_ = QString::number(generation.value());
+            emit minimizationCaptured();
+            return;
+        }
+    }
+}
+
+void PanelSurfaceQmlFixture::captureClose(prismdrake::x11::TaskLifetimeId lifetime,
+                                          prismdrake::x11::TaskModelGeneration generation) {
+    const auto snapshot = task_presentation_ ? task_presentation_->currentSnapshot() : nullptr;
+    if (!snapshot || snapshot->generation() != generation) {
+        return;
+    }
+    for (const auto &task : snapshot->tasks()) {
+        if (task.lifetime() == lifetime) {
+            ++close_count_;
+            last_close_title_ = QString::fromUtf8(task.title());
+            last_close_generation_ = QString::number(generation.value());
+            emit closeCaptured();
             return;
         }
     }

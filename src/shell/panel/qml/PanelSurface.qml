@@ -24,8 +24,8 @@ FocusScope {
     signal focusExitForward
     signal focusExitBackward
 
-    function taskAt(index) {
-        return taskRepeater.itemAt(index)
+    function taskAt(index: int): TaskButton {
+        return taskRepeater.itemAt(index) as TaskButton
     }
 
     function focusLauncher() {
@@ -40,7 +40,7 @@ FocusScope {
     }
 
     function focusTask(index, backward) {
-        const candidate = taskRepeater.itemAt(index)
+        const candidate = root.taskAt(index)
         if (candidate !== null) {
             candidate.forceActiveFocus(backward ? Qt.BacktabFocusReason : Qt.TabFocusReason)
             return
@@ -53,8 +53,9 @@ FocusScope {
 
     function captureFocusRecovery() {
         for (let index = 0; index < taskRepeater.count; ++index) {
-            const candidate = taskRepeater.itemAt(index)
-            if (candidate !== null && candidate.activeFocus) {
+            const candidate = root.taskAt(index)
+            if (candidate !== null
+                    && (candidate.activeFocus || candidate.actionMenuOpen)) {
                 pendingFocusRecovery = {
                     "index": index,
                     "item": candidate
@@ -65,6 +66,22 @@ FocusScope {
         pendingFocusRecovery = null
     }
 
+    function prepareTaskActionMenu(originIndex) {
+        for (let index = 0; index < taskRepeater.count; ++index) {
+            const candidate = root.taskAt(index)
+            if (candidate !== null && index !== originIndex)
+                candidate.closeActionMenu(false)
+        }
+    }
+
+    function closeTaskActionMenus() {
+        for (let index = 0; index < taskRepeater.count; ++index) {
+            const candidate = root.taskAt(index)
+            if (candidate !== null)
+                candidate.closeActionMenu(false)
+        }
+    }
+
     function recoverFocus() {
         const recovery = pendingFocusRecovery
         pendingFocusRecovery = null
@@ -72,7 +89,7 @@ FocusScope {
             return
 
         for (let index = 0; index < taskRepeater.count; ++index) {
-            const candidate = taskRepeater.itemAt(index)
+            const candidate = root.taskAt(index)
             if (candidate !== null && candidate === recovery.item) {
                 candidate.forceActiveFocus(Qt.OtherFocusReason)
                 return
@@ -80,8 +97,8 @@ FocusScope {
         }
 
         if (taskRepeater.count > 0) {
-            const fallback = taskRepeater.itemAt(Math.min(recovery.index,
-                                                          taskRepeater.count - 1))
+            const fallback = root.taskAt(Math.min(recovery.index,
+                                                  taskRepeater.count - 1))
             if (fallback !== null) {
                 fallback.forceActiveFocus(Qt.OtherFocusReason)
                 return
@@ -105,6 +122,7 @@ FocusScope {
         target: root.taskModel
         function onPublicationReconciliationStarted() {
             root.captureFocusRecovery()
+            root.closeTaskActionMenus()
         }
         function onPublicationApplied() {
             focusRecoveryTimer.restart()
@@ -206,6 +224,7 @@ FocusScope {
                         tokens: root.themeGeneration.panel
                         onFocusExitForward: root.focusTask(index + 1, false)
                         onFocusExitBackward: root.focusTask(index - 1, true)
+                        onActionMenuOpening: root.prepareTaskActionMenu(index)
                     }
                 }
             }

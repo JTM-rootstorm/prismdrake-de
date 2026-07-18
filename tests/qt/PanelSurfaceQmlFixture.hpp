@@ -29,6 +29,13 @@ class PanelSurfaceQmlFixture final : public QObject {
     Q_PROPERTY(
         QString lastActivationGeneration READ lastActivationGeneration NOTIFY activationCaptured)
     Q_PROPERTY(QString taskGeneration READ taskGeneration NOTIFY taskModelChanged)
+    Q_PROPERTY(int minimizationCount READ minimizationCount NOTIFY minimizationCaptured)
+    Q_PROPERTY(QString lastMinimizationTitle READ lastMinimizationTitle NOTIFY minimizationCaptured)
+    Q_PROPERTY(QString lastMinimizationGeneration READ lastMinimizationGeneration NOTIFY
+                   minimizationCaptured)
+    Q_PROPERTY(int closeCount READ closeCount NOTIFY closeCaptured)
+    Q_PROPERTY(QString lastCloseTitle READ lastCloseTitle NOTIFY closeCaptured)
+    Q_PROPERTY(QString lastCloseGeneration READ lastCloseGeneration NOTIFY closeCaptured)
 
   public:
     explicit PanelSurfaceQmlFixture(QObject *parent = nullptr);
@@ -44,6 +51,18 @@ class PanelSurfaceQmlFixture final : public QObject {
         return last_activation_generation_;
     }
     [[nodiscard]] QString taskGeneration() const;
+    [[nodiscard]] int minimizationCount() const noexcept { return minimization_count_; }
+    [[nodiscard]] const QString &lastMinimizationTitle() const noexcept {
+        return last_minimization_title_;
+    }
+    [[nodiscard]] const QString &lastMinimizationGeneration() const noexcept {
+        return last_minimization_generation_;
+    }
+    [[nodiscard]] int closeCount() const noexcept { return close_count_; }
+    [[nodiscard]] const QString &lastCloseTitle() const noexcept { return last_close_title_; }
+    [[nodiscard]] const QString &lastCloseGeneration() const noexcept {
+        return last_close_generation_;
+    }
 
     Q_INVOKABLE bool resetLustre();
     Q_INVOKABLE bool resetLustreMissingBlur();
@@ -54,11 +73,14 @@ class PanelSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool publishRepresentativeTasks();
     Q_INVOKABLE bool swapFirstTwoTasks();
     Q_INVOKABLE bool removeTask(int row);
+    Q_INVOKABLE bool setTaskMinimized(int row, bool minimized);
 
   signals:
     void themeGenerationChanged();
     void taskModelChanged();
     void activationCaptured();
+    void minimizationCaptured();
+    void closeCaptured();
 
   private:
     struct FixtureTask final {
@@ -81,6 +103,10 @@ class PanelSurfaceQmlFixture final : public QObject {
     [[nodiscard]] bool publishTasks();
     void captureActivation(prismdrake::x11::TaskLifetimeId lifetime,
                            prismdrake::x11::TaskModelGeneration generation);
+    void captureMinimization(prismdrake::x11::TaskLifetimeId lifetime,
+                             prismdrake::x11::TaskModelGeneration generation);
+    void captureClose(prismdrake::x11::TaskLifetimeId lifetime,
+                      prismdrake::x11::TaskModelGeneration generation);
     void removeTemporaryDirectory();
 
     std::filesystem::path temporary_directory_;
@@ -92,6 +118,12 @@ class PanelSurfaceQmlFixture final : public QObject {
     int activation_count_{0};
     QString last_activation_title_;
     QString last_activation_generation_;
+    int minimization_count_{0};
+    QString last_minimization_title_;
+    QString last_minimization_generation_;
+    int close_count_{0};
+    QString last_close_title_;
+    QString last_close_generation_;
 };
 
 class PanelSurfaceQmlSetup final : public QObject {
