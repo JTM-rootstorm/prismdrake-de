@@ -68,6 +68,9 @@ TEST(ConfigurationParserTest, ParsesEveryCommittedCompleteConfiguration) {
         const auto result = parseConfigurationToml(readFixture(fixture));
         ASSERT_TRUE(result) << fixture << ": " << result.error().message;
         EXPECT_EQ(result.value().schemaVersion, 2U);
+        if (fixture != std::string_view{"examples/config/legacy-v1.toml"}) {
+            EXPECT_FALSE(result.value().desktop.iconsEnabled) << fixture;
+        }
     }
 }
 

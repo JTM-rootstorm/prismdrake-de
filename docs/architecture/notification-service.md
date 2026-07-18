@@ -63,10 +63,13 @@ These rules implement `PD-NOTIFY-001`, `PD-NOTIFY-002`, `PD-NOTIFY-006`,
 
 The freedesktop return value and `replaces_id` use unsigned 32-bit live
 notification IDs. ID zero means no replacement request and is never allocated
-as a live ID. A valid replacement retains its live ID and sender ownership while
-atomically replacing content. An unknown or sender-ineligible replacement ID is
-handled according to the standard contract without exposing another sender's
-content.
+as a live ID. Any current live ID is a valid replacement target, regardless of
+which session-bus caller supplied it. A successful replacement retains the live
+ID and history `record_id`, atomically replaces the content, advances
+`content_generation`, and transfers sender/action routing to the replacing
+caller's unique name. It emits no close signal for the replaced content. An
+unknown or expired nonzero ID creates a new notification with a newly allocated
+live ID, as required by the standard contract.
 
 History uses a separate unsigned 64-bit `record_id`. The two ID spaces are not
 interchangeable. Each record also has a `content_generation`; a successful
@@ -91,8 +94,10 @@ otherwise stale content returns a typed redacted error and has no side effect.
 
 Expiration uses a monotonic clock. Non-expiring notifications remain live until
 closed or dismissed. `NotificationClosed` uses the standard close-reason
-semantics. The daemon never replays an uncertain action or close signal after an
-owner restart.
+semantics. The daemon removes the unsigned 32-bit ID from its live lookup before
+emitting `NotificationClosed`, so a reentrant use of that ID cannot replace
+already-closed content. The daemon never replays an uncertain action or close
+signal after an owner restart.
 
 ## Do-not-disturb and urgency
 

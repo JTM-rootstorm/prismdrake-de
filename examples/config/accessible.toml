@@ -36,7 +36,7 @@ do_not_disturb = false
 wallpaper_source = ""
 background_color = "#182033"
 wallpaper_mode = "solid"
-icons_enabled = true
+icons_enabled = false
 
 [integration]
 export_gtk = true

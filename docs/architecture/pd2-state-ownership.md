@@ -15,7 +15,7 @@ workers. The file and IPC formats remain Experimental compatibility contracts.
 | Live notifications and freedesktop IDs | `prismdrake-notifyd` | memory only | shell transient presentation | shell |
 | Notification history, record IDs, and history generation | `prismdrake-notifyd` | disabled, session-only, or private persistent history | shell notification center | settingsd, shell |
 | Ordered pinned applications and pin generation | `prismdrake-shell` | private shell state | panels and launcher | settingsd |
-| Shell-surface placement and transient focus | `prismdrake-shell` | transient, reconstructed from topology and settings | individual surfaces | settingsd, WM |
+| Shell-surface placement and internal focus-routing state | `prismdrake-shell` | transient, reconstructed from topology and settings | individual surfaces | settingsd, WM |
 | Output, focus, work-area, window, and global-binding policy | active window manager | external to Prismdrake | shell X11/Qt mirrors | every Prismdrake component |
 | Application catalog identity | desktop-entry catalog plus deterministic shell association | catalog cache only where separately documented | panel and launcher models | PID or process name |
 | Logout transaction and child shutdown | `prismdrake-session` | memory only | shell confirmation and shellctl | shell presentation |

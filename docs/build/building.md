@@ -38,7 +38,7 @@ production targets.
 The shell settings client integrates the selected sd-bus provider with Qt's
 socket and monotonic-timeout event sources. It treats generation signals as
 refetch hints, clears state on every well-known-name ownership gap, and parses
-only complete canonical version-1 snapshots into immutable typed C++ state.
+only complete canonical version-2 snapshots into immutable typed C++ state.
 The inverse parser uses the system nlohmann JSON headers, applies explicit
 depth, node, container, string, and 1 MiB limits, rejects duplicate or unknown
 shape, and verifies an exact canonical serializer round trip before publication.
