@@ -11,8 +11,6 @@ FocusScope {
     required property var launcherModel
     property int layoutDirection: Qt.locale().textDirection
     property int pendingFocusIndex: -1
-    property var pendingFocusItem: null
-    property var pendingFocusPresentation: null
     property bool focusRecoveryReady: false
 
     readonly property var tokens: themeGeneration.launcher
@@ -57,15 +55,10 @@ FocusScope {
     function captureFocusRecovery() {
         focusRecoveryReady = false
         pendingFocusIndex = -1
-        pendingFocusItem = null
-        pendingFocusPresentation = null
         for (let index = 0; index < results.count; ++index) {
             const candidate = results.itemAtIndex(index)
             if (candidate !== null && candidate.activeFocus) {
-                const resultButton = candidate as LauncherResultButton
                 pendingFocusIndex = index
-                pendingFocusItem = candidate
-                pendingFocusPresentation = resultButton.presentation
                 return
             }
         }
@@ -73,8 +66,6 @@ FocusScope {
 
     function clearFocusRecovery() {
         pendingFocusIndex = -1
-        pendingFocusItem = null
-        pendingFocusPresentation = null
     }
 
     function recoverFocus() {
@@ -85,11 +76,11 @@ FocusScope {
         for (let index = 0; index < results.count; ++index) {
             const candidate = results.itemAtIndex(index)
             const resultButton = candidate as LauncherResultButton
-            if (resultButton !== null
-                    && (candidate === pendingFocusItem
-                        || resultButton.presentation === pendingFocusPresentation)) {
+            // A retained delegate keeps focus across a valid model move. A removed
+            // delegate may briefly remain focused with a null presentation.
+            if (resultButton !== null && resultButton.presentation !== null
+                    && candidate.activeFocus) {
                 clearFocusRecovery()
-                candidate.forceActiveFocus(Qt.OtherFocusReason)
                 return
             }
         }
@@ -98,7 +89,8 @@ FocusScope {
             results.positionViewAtIndex(index, ListView.Contain)
             results.forceLayout()
             const fallback = results.itemAtIndex(index)
-            if (fallback !== null) {
+            const fallbackButton = fallback as LauncherResultButton
+            if (fallbackButton !== null && fallbackButton.presentation !== null) {
                 clearFocusRecovery()
                 fallback.forceActiveFocus(Qt.OtherFocusReason)
                 return
@@ -244,6 +236,7 @@ FocusScope {
                     onFocusNext: root.focusResult(index + 1, false)
                     onDismissRequested: root.dismissRequested()
                     Component.onCompleted: root.recoverFocus()
+                    onPresentationChanged: Qt.callLater(root.recoverFocus)
                 }
 
                 ScrollBar.vertical: ScrollBar {}

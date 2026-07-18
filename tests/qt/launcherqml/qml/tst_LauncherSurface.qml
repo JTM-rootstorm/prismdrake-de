@@ -69,6 +69,9 @@ TestCase {
 
     function test_accessibleFallbackTargetsAndPlainUntrustedText() {
         verify(launcherFixture.resetAccessible())
+        tryCompare(surface.tokens, "minimumTargetSize", 48)
+        tryCompare(surface.tokens, "reducedMotion", true)
+        tryCompare(surface, "opaqueFallbackActive", true)
         verify(launcherFixture.publishLongResult())
         tryCompare(surface, "resultCount", 1)
         const result = surface.resultAt(0)
@@ -76,10 +79,7 @@ TestCase {
         verify(result.width >= surface.tokens.minimumTargetSize)
         verify(result.height >= surface.tokens.minimumTargetSize)
         verify(search().height >= surface.tokens.minimumTargetSize)
-        compare(surface.tokens.minimumTargetSize, 48)
-        compare(surface.tokens.reducedMotion, true)
         compare(surface.motionDuration, 0)
-        compare(surface.opaqueFallbackActive, true)
         compare(surface.tokens.surfaceColor.a, 1)
         compare(result.Accessible.role, Accessible.Button)
         verify(result.Accessible.name.length > 1000)
