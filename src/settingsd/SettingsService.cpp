@@ -1,5 +1,6 @@
 #include "SettingsService.hpp"
 
+#include "PeerCredentials.hpp"
 #include "RuntimeSnapshot.hpp"
 #include "SdBusApi.hpp"
 #include "ServiceWorker.hpp"
@@ -19,7 +20,6 @@
 #include <vector>
 
 #include <poll.h>
-#include <unistd.h>
 
 namespace prismdrake::settingsd {
 namespace {
@@ -232,12 +232,7 @@ class SettingsService final {
     }
 
     [[nodiscard]] static int authorize(sd_bus_message *message, sd_bus_error *error) {
-        sdbus::Credentials credentials;
-        int result = sd_bus_query_sender_creds(message, SD_BUS_CREDS_EUID, credentials.put());
-        uid_t effectiveUserId = 0;
-        if (result < 0 || !credentials ||
-            sd_bus_creds_get_euid(credentials.get(), &effectiveUserId) < 0 ||
-            effectiveUserId != ::geteuid()) {
+        if (!ipc::isSameUserPeer(message)) {
             return setBusError(error, notAuthorizedError, notAuthorizedMessage);
         }
         return 0;

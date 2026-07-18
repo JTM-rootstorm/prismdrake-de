@@ -8,6 +8,7 @@ set_tests_properties(XvfbHarnessContractTest PROPERTIES
     TIMEOUT 10)
 
 add_executable(prismdrake-settingsd-integration-tests
+    PeerCredentialsTests.cpp
     SettingsServiceTests.cpp)
 target_link_libraries(prismdrake-settingsd-integration-tests
     PRIVATE

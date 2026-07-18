@@ -1,6 +1,8 @@
 prismdrake_configure_sd_bus_provider()
 
 add_library(prismdrake-sd-bus STATIC
+    PeerCredentials.cpp
+    PeerCredentials.hpp
     SdBusApi.cpp
     SdBusApi.hpp)
 add_library(Prismdrake::sd-bus ALIAS prismdrake-sd-bus)
