@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://prismdrake.org/schemas/pd1-demo-evidence-v2.json",
+  "$id": "https://prismdrake.org/schemas/pd1-demo-evidence-v3.json",
   "title": "Prismdrake PD1 partial bounded development demonstration evidence",
   "type": "object",
   "additionalProperties": false,
@@ -18,7 +18,7 @@
     "scope"
   ],
   "properties": {
-    "schema_version": { "const": 2 },
+    "schema_version": { "const": 3 },
     "environment": {
       "type": "object",
       "additionalProperties": false,
@@ -48,10 +48,10 @@
     "settings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile_sequence", "generation_sequence", "accessibility_survived"],
+      "required": ["profile_sequence", "owner_epoch_generations", "accessibility_survived"],
       "properties": {
-        "profile_sequence": { "const": ["lustre", "forge", "lustre"] },
-        "generation_sequence": { "const": [1, 2, 3] },
+        "profile_sequence": { "const": ["lustre", "forge", "lustre", "lustre"] },
+        "owner_epoch_generations": { "const": [[1, 2, 3], [1]] },
         "accessibility_survived": {
           "type": "object",
           "additionalProperties": false,
@@ -90,9 +90,13 @@
     "restart": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["shell_restarted", "normal_mode_preserved", "window_manager_owner_preserved", "application_windows_preserved", "task_mirror_rebuilt"],
+      "required": ["shell_restarted", "settingsd_restarted", "settings_owner_gap_observed", "shell_preserved_during_settings_restart", "presentation_epoch_rebuilt", "normal_mode_preserved", "window_manager_owner_preserved", "application_windows_preserved", "task_mirror_rebuilt"],
       "properties": {
         "shell_restarted": { "const": true },
+        "settingsd_restarted": { "const": true },
+        "settings_owner_gap_observed": { "const": true },
+        "shell_preserved_during_settings_restart": { "const": true },
+        "presentation_epoch_rebuilt": { "const": true },
         "normal_mode_preserved": { "const": true },
         "window_manager_owner_preserved": { "const": true },
         "application_windows_preserved": { "const": true },

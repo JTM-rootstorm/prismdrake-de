@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -11,6 +12,7 @@ import select
 import selectors
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -156,6 +158,54 @@ def require_distinct_process_identity(previous: ProcessIdentity,
             (current.process_id, current.start_time), "process_identity_not_replaced")
 
 
+def parse_direct_child_ids(document: str) -> list[int]:
+    require(isinstance(document, str) and document.isascii() and
+            len(document.encode("ascii")) <= 4096 and
+            re.fullmatch(r"(?:[1-9][0-9]*[ \n]*)*", document) is not None,
+            "direct_child_set_invalid")
+    values = [int(value) for value in document.split()]
+    require(len(values) <= 16 and len(values) == len(set(values)) and
+            all(1 < value <= 0x7FFFFFFF for value in values),
+            "direct_child_set_invalid")
+    return values
+
+
+def capture_exact_direct_children(parent_process_id: int,
+                                  expected_executables: Mapping[str, Path]) \
+        -> dict[str, ProcessIdentity]:
+    require(1 < parent_process_id <= 0x7FFFFFFF and
+            0 < len(expected_executables) <= 8 and
+            all(isinstance(name, str) and
+                re.fullmatch(r"[a-z][a-z0-9_]{0,31}", name) is not None and
+                isinstance(path, Path) for name, path in expected_executables.items()),
+            "direct_child_contract_invalid")
+    try:
+        expected = {name: path.resolve(strict=True)
+                    for name, path in expected_executables.items()}
+        document = Path(
+            f"/proc/{parent_process_id}/task/{parent_process_id}/children"
+        ).read_text(encoding="ascii")
+    except OSError as error:
+        raise DemoError("direct_child_set_unavailable") from error
+
+    identities: dict[str, ProcessIdentity] = {}
+    try:
+        for process_id in parse_direct_child_ids(document):
+            try:
+                executable = Path(f"/proc/{process_id}/exe").resolve(strict=True)
+            except OSError as error:
+                raise DemoError("direct_child_executable_unavailable") from error
+            matches = [name for name, path in expected.items() if executable == path]
+            require(len(matches) == 1 and matches[0] not in identities,
+                    "direct_child_executable_invalid")
+            identities[matches[0]] = capture_process_identity(process_id)
+        require(set(identities) == set(expected), "direct_child_set_incomplete")
+        return identities
+    except Exception:
+        close_identities(list(identities.values()))
+        raise
+
+
 def validate_wm_identity(root_owner: str, self_reference: str, name: str) -> None:
     require(root_owner == self_reference, "window_manager_self_reference_invalid")
     require(name == "Openbox", "window_manager_name_invalid")
@@ -170,10 +220,16 @@ def select_sole_owned_panel(panels: list[str], owner_process_id: int,
 
 
 def validate_session_log(log_text: str) -> None:
-    restart_event = ("component=prismdrake-shell severity=error "
-                     "event=component_start_failed generation=none profile=none "
-                     "recovery=restart_component")
-    require(log_text.count(restart_event) == 1, "shell_restart_diagnostic_invalid")
+    shell_restart_event = ("component=prismdrake-shell severity=error "
+                           "event=component_start_failed generation=none profile=none "
+                           "recovery=restart_component")
+    settings_restart_event = ("component=prismdrake-settingsd severity=error "
+                              "event=component_start_failed generation=none profile=none "
+                              "recovery=restart_component")
+    require(log_text.count(shell_restart_event) == 1,
+            "shell_restart_diagnostic_invalid")
+    require(log_text.count(settings_restart_event) == 1,
+            "settings_restart_diagnostic_invalid")
     require("event=fallback_selected" not in log_text and
             "event=component_restart_exhausted" not in log_text,
             "session_safe_mode_unexpected")
@@ -282,8 +338,84 @@ def write_evidence(path: Path, document: dict[str, Any]) -> None:
             os.close(descriptor)
 
 
+def sha256_regular_file(path: Path) -> str:
+    require(path.is_absolute() and not path.is_symlink(), "artifact_file_invalid")
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise DemoError("artifact_file_unavailable") from error
+    try:
+        metadata = os.fstat(descriptor)
+        require(stat.S_ISREG(metadata.st_mode) and 0 < metadata.st_size <= 256 * 1024 * 1024,
+                "artifact_file_invalid")
+        digest = hashlib.sha256()
+        total = 0
+        while True:
+            block = os.read(descriptor, 64 * 1024)
+            if not block:
+                break
+            total += len(block)
+            require(total <= metadata.st_size, "artifact_file_changed")
+            digest.update(block)
+        require(total == metadata.st_size and os.fstat(descriptor).st_size == metadata.st_size,
+                "artifact_file_changed")
+        return digest.hexdigest()
+    finally:
+        os.close(descriptor)
+
+
+def validate_artifact_provenance(arguments: argparse.Namespace) -> None:
+    lifecycle_path = arguments.portage_lifecycle_evidence
+    if arguments.artifact_provenance == "build_tree":
+        require(lifecycle_path is None, "build_tree_lifecycle_evidence_unexpected")
+        return
+    require(arguments.artifact_provenance == "portage_installed" and
+            isinstance(lifecycle_path, Path) and lifecycle_path.is_absolute() and
+            lifecycle_path.is_file() and not lifecycle_path.is_symlink(),
+            "portage_lifecycle_evidence_required")
+
+    gentoo_tests = str(Path(__file__).resolve().parents[1] / "gentoo")
+    if gentoo_tests not in sys.path:
+        sys.path.insert(0, gentoo_tests)
+    try:
+        from portage_lifecycle_evidence import (  # pylint: disable=import-outside-toplevel
+            EvidenceError,
+            load_evidence,
+            validate_evidence_document,
+        )
+    except ImportError as error:
+        raise DemoError("portage_lifecycle_evidence_invalid") from error
+    try:
+        lifecycle = load_evidence(lifecycle_path)
+        validate_evidence_document(lifecycle)
+    except EvidenceError as error:
+        raise DemoError("portage_lifecycle_evidence_invalid") from error
+
+    installed = lifecycle["installed"]
+    expected_hashes = {record["path"]: record["sha256"]
+                       for record in installed["executables"]}
+    executable_paths = {
+        "/usr/bin/prismdrake-session": arguments.session,
+        "/usr/bin/prismdrake-settingsd": arguments.settingsd,
+        "/usr/bin/prismdrake-shell": arguments.shell,
+    }
+    require(all(str(path) == expected for expected, path in executable_paths.items()),
+            "installed_executable_path_mismatch")
+    require(all(sha256_regular_file(path) == expected_hashes[expected]
+                for expected, path in executable_paths.items()),
+            "installed_executable_hash_mismatch")
+    driver_hash = lifecycle["runtime_validation"]["complete_demo"]["driver_sha256"]
+    require(sha256_regular_file(Path(__file__).resolve()) == driver_hash,
+            "installed_demo_driver_mismatch")
+
+
 def example_evidence(provenance: str = "build_tree") -> dict[str, Any]:
-    """Return the sole valid version-two semantic fixture."""
+    """Return the sole valid version-three semantic fixture."""
     require(isinstance(provenance, str) and
             provenance in {"build_tree", "portage_installed"}, "artifact_provenance_invalid")
     return {
@@ -305,11 +437,15 @@ def example_evidence(provenance: str = "build_tree") -> dict[str, Any]:
         "restart": {
             "application_windows_preserved": True,
             "normal_mode_preserved": True,
+            "presentation_epoch_rebuilt": True,
+            "settings_owner_gap_observed": True,
+            "settingsd_restarted": True,
+            "shell_preserved_during_settings_restart": True,
             "shell_restarted": True,
             "task_mirror_rebuilt": True,
             "window_manager_owner_preserved": True,
         },
-        "schema_version": 2,
+        "schema_version": 3,
         "scope": {
             "complete_multi_output_policy": False,
             "compositor_blur": False,
@@ -326,8 +462,8 @@ def example_evidence(provenance: str = "build_tree") -> dict[str, Any]:
                 "reduced_motion": True,
                 "transparency_disabled": True,
             },
-            "generation_sequence": [1, 2, 3],
-            "profile_sequence": ["lustre", "forge", "lustre"],
+            "owner_epoch_generations": [[1, 2, 3], [1]],
+            "profile_sequence": ["lustre", "forge", "lustre", "lustre"],
         },
         "shutdown": {
             "clean_exit": True,
@@ -402,6 +538,7 @@ def parse_arguments() -> argparse.Namespace:
         parser.add_argument(f"--{name}", type=Path)
     parser.add_argument("--session-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--artifact-provenance", choices=("build_tree", "portage_installed"))
+    parser.add_argument("--portage-lifecycle-evidence", type=Path)
     arguments = parser.parse_args()
     required = [
         "accessible_config", "gdbus", "openbox", "output", "session", "settingsd", "shell",
@@ -411,6 +548,13 @@ def parse_arguments() -> argparse.Namespace:
         required.extend(("dbus_run_session", "xvfb"))
     if arguments.artifact_provenance is None:
         parser.error("--artifact-provenance is required")
+    if arguments.artifact_provenance == "portage_installed":
+        if arguments.portage_lifecycle_evidence is None:
+            parser.error("--portage-lifecycle-evidence is required for installed artifacts")
+        if not arguments.portage_lifecycle_evidence.is_absolute():
+            parser.error("--portage-lifecycle-evidence must be absolute")
+    elif arguments.portage_lifecycle_evidence is not None:
+        parser.error("--portage-lifecycle-evidence is only valid for installed artifacts")
     for name in required:
         value = getattr(arguments, name)
         if value is None:
@@ -1052,6 +1196,7 @@ def run_session_child(arguments: argparse.Namespace) -> None:
 
     processes: list[subprocess.Popen[Any]] = []
     detached_identities: list[ProcessIdentity] = []
+    observation_identities: list[ProcessIdentity] = []
     session_log = root / "session.log"
     log: Any | None = None
     try:
@@ -1213,33 +1358,31 @@ def run_session_child(arguments: argparse.Namespace) -> None:
 
             new_shell_identity = wait_until(new_shell_owner, "shell_restart_atspi_timeout",
                                             timeout=12)
+            observation_identities.append(new_shell_identity)
         finally:
             os.close(old_shell_identity.pidfd)
 
-        try:
-            def sole_owned_panel() -> str | None:
-                panels = window_ids(arguments.xdotool, PANEL_TITLE)
-                if len(panels) != 1:
-                    return None
-                result = run_checked([str(arguments.xdotool), "getwindowpid", panels[0]])
-                if result.returncode != 0 or not result.stdout.strip().isdigit():
-                    return None
-                try:
-                    return select_sole_owned_panel(
-                        panels, int(result.stdout.strip()), new_shell_identity,
-                    )
-                except DemoError:
-                    return None
+        def sole_owned_panel() -> str | None:
+            panels = window_ids(arguments.xdotool, PANEL_TITLE)
+            if len(panels) != 1:
+                return None
+            result = run_checked([str(arguments.xdotool), "getwindowpid", panels[0]])
+            if result.returncode != 0 or not result.stdout.strip().isdigit():
+                return None
+            try:
+                return select_sole_owned_panel(
+                    panels, int(result.stdout.strip()), new_shell_identity,
+                )
+            except DemoError:
+                return None
 
-            new_panel = wait_until(sole_owned_panel, "shell_restart_panel_timeout", timeout=12)
-            restarted_shell_process_id = new_shell_identity.process_id
-            require_normal_ready(prismdrake_runtime)
-            restarted_snapshot = current_snapshot(arguments.gdbus)
-            require(restarted_snapshot.get("generation") == 3, "restart_generation_invalid")
-            require_normal_snapshot(restarted_snapshot)
-            validate_panel_contract(arguments.xdotool, arguments.xprop, new_panel)
-        finally:
-            os.close(new_shell_identity.pidfd)
+        new_panel = wait_until(sole_owned_panel, "shell_restart_panel_timeout", timeout=12)
+        restarted_shell_process_id = new_shell_identity.process_id
+        require_normal_ready(prismdrake_runtime)
+        restarted_snapshot = current_snapshot(arguments.gdbus)
+        require(restarted_snapshot.get("generation") == 3, "restart_generation_invalid")
+        require_normal_snapshot(restarted_snapshot)
+        validate_panel_contract(arguments.xdotool, arguments.xprop, new_panel)
         require(window_id(arguments.xdotool, APP_TITLES[0]) == first and
                 window_id(arguments.xdotool, APP_TITLES[1]) == second,
                 "application_state_lost_on_restart")
@@ -1253,11 +1396,76 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                 task_has_generic_icon_semantics(Atspi, APP_TITLES[1]),
                 "task_generic_icon_semantics_invalid")
 
-        materials = final_snapshot["theme"]["resolved_materials"]
-        require("thumbnail_fallback_active" in final_snapshot["theme"]["warnings"] and
+        expected_children = {"settingsd": arguments.settingsd, "shell": arguments.shell}
+        pre_settings_restart = capture_exact_direct_children(session.pid, expected_children)
+        observation_identities.extend(pre_settings_restart.values())
+        old_settings_identity = pre_settings_restart["settingsd"]
+        observed_shell_identity = pre_settings_restart["shell"]
+        require((observed_shell_identity.process_id, observed_shell_identity.start_time) ==
+                (new_shell_identity.process_id, new_shell_identity.start_time),
+                "direct_shell_identity_mismatch")
+
+        signal.pidfd_send_signal(old_settings_identity.pidfd, signal.SIGKILL)
+        wait_until(lambda: not process_identity_alive(old_settings_identity),
+                   "old_settings_exit_timeout", timeout=12)
+        wait_until(lambda: window_id(arguments.xdotool, PANEL_TITLE) is None,
+                   "settings_presentation_gap_timeout", timeout=12)
+        require(process_identity_alive(new_shell_identity),
+                "shell_lost_during_settings_restart")
+        require(window_id(arguments.xdotool, APP_TITLES[0]) == first and
+                window_id(arguments.xdotool, APP_TITLES[1]) == second,
+                "application_state_lost_on_settings_restart")
+        require(wm_identity(arguments.xprop) == initial_wm_identity,
+                "window_manager_owner_changed")
+        require_normal_ready(prismdrake_runtime)
+
+        def recovered_settings_snapshot() -> dict[str, Any] | None:
+            snapshot = current_snapshot(arguments.gdbus)
+            if snapshot.get("generation") != 1 or snapshot.get("profile_id") != "lustre":
+                return None
+            return snapshot
+
+        recovered_snapshot = wait_until(
+            recovered_settings_snapshot, "settings_owner_recovery_timeout", timeout=12,
+        )
+        require_normal_snapshot(recovered_snapshot)
+        recovered_effective = recovered_snapshot.get("theme", {}).get(
+            "effective_accessibility", {}
+        )
+        require(recovered_effective.get("high_contrast") is True and
+                recovered_effective.get("reduced_motion") is True and
+                recovered_effective.get("transparency_disabled") is True,
+                "accessibility_override_lost_on_settings_restart")
+
+        post_settings_restart = wait_until(
+            lambda: capture_exact_direct_children(session.pid, expected_children),
+            "settings_restart_child_set_timeout", timeout=12,
+        )
+        observation_identities.extend(post_settings_restart.values())
+        require_distinct_process_identity(
+            old_settings_identity, post_settings_restart["settingsd"],
+        )
+        require((post_settings_restart["shell"].process_id,
+                 post_settings_restart["shell"].start_time) ==
+                (new_shell_identity.process_id, new_shell_identity.start_time),
+                "shell_replaced_during_settings_restart")
+        new_panel = wait_until(sole_owned_panel, "settings_restart_panel_timeout", timeout=12)
+        validate_panel_contract(arguments.xdotool, arguments.xprop, new_panel)
+        wait_until(
+            lambda: len(showing_named_action_nodes(Atspi, APP_TITLES[0], "Press")) == 1 and
+            len(showing_named_action_nodes(Atspi, APP_TITLES[1], "Press")) == 1,
+            "settings_restart_task_mirror_timeout", timeout=12,
+        )
+        require(process_identity_alive(new_shell_identity) and
+                task_has_generic_icon_semantics(Atspi, APP_TITLES[0]) and
+                task_has_generic_icon_semantics(Atspi, APP_TITLES[1]),
+                "settings_restart_presentation_invalid")
+
+        materials = recovered_snapshot["theme"]["resolved_materials"]
+        require("thumbnail_fallback_active" in recovered_snapshot["theme"]["warnings"] and
                 all(material["used_fallback"] and material["opacity"] == 1.0
                     for material in materials.values()), "opaque_fallback_invalid")
-        thumbnail = final_snapshot["theme"]["thumbnail_presentation"]
+        thumbnail = recovered_snapshot["theme"]["thumbnail_presentation"]
 
         close_task_from_pointer_context_menu(
             Atspi, arguments.xdotool, new_panel, restarted_shell_process_id, APP_TITLES[1],
@@ -1333,6 +1541,7 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                 cleanup_error = error
             finally:
                 close_identities(detached_identities)
+        close_identities(observation_identities)
         if log is not None:
             log.close()
         for process in reversed(processes):
@@ -1342,6 +1551,7 @@ def run_session_child(arguments: argparse.Namespace) -> None:
 
 
 def run_parent(arguments: argparse.Namespace) -> None:
+    validate_artifact_provenance(arguments)
     executable_names = (
         "dbus_run_session", "gdbus", "openbox", "session", "settingsd", "shell", "test_app",
         "xdotool", "xprop", "xvfb",

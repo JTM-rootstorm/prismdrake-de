@@ -87,6 +87,29 @@ the still-running daemon reacquire as Lustre generation one. This demonstrates
 that an observed disconnect or ownership gap, not comparison of textual unique
 owner names alone, resets the client epoch.
 
+The integrated production-process demonstration now exercises the complementary
+supervisor boundary. After first proving a shell crash and restart, it binds the
+session's exact direct settingsd and shell children through `/proc`, executable
+identity, start time, and pidfds. It kills only settingsd, observes the panel
+presentation epoch disappear, and then requires the supervisor's single 500 ms
+restart to create a distinct settingsd child. The same shell, Openbox owner, and
+two application windows survive. The recovered owner publishes Lustre
+generation one with all three accessibility overrides intact, and the shell
+rebuilds exactly one standards-valid panel and both task presentations.
+
+The exact source archive
+`prismdrake-pd1-settings-restart-final-v2.tar.gz` has SHA-256
+`cedb64d903770f9d51adb649aef8084ca12f92ff3f5e7474b9a2b843eebebc03`.
+Clean Gentoo GCC 15.3.0 and Clang 22.1.8 warnings-as-errors builds each passed
+all 562 test registrations, with only the documented root-inapplicable
+permission fixture skipped. The exact GCC artifact then passed 10/10
+consecutive live repetitions in 31.86 seconds. The final mode-0600
+version-three evidence document has SHA-256
+`f6932998e4cdb5aaf95657c6a2cb1577854f8606b2c6e55da2816ae10fa9f437`.
+It contains only closed booleans and owner-epoch generation sequences; process
+IDs, XIDs, executable paths, bus addresses, window titles, and log text remain
+excluded.
+
 ## Gentoo guest validation
 
 Guest-local source and build directories under `/var/tmp` used the content now

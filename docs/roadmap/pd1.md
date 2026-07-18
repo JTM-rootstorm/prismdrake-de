@@ -76,10 +76,11 @@ applications.
 The three Experimental processes, their read-only data, and a standard X11
 session entry now share one CMake install contract. This is still a development
 prototype, not a complete shell: Portage-installed end-to-end and AT-SPI replay
-evidence, reviewed visual baselines, a global launcher-entry contract, and
-harness-owned isolated D-Bus lifecycle remain open PD1 work. The production
-build tree now has bounded live AT-SPI metadata, forward/reverse focus, and
-exact task activation, minimization, and close evidence on the reference guest.
+evidence, reviewed visual baselines, and a global launcher-entry contract remain
+open PD1 work. The production build tree now has bounded live AT-SPI metadata,
+forward/reverse focus, exact task activation, minimization, and close evidence,
+plus supervised settings-owner loss and complete presentation-epoch recovery on
+the reference guest.
 
 ## Activation gate
 

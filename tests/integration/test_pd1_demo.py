@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pd1_demo import (
     APP_TITLES,
     accept_first_result_from_focused_search,
+    capture_exact_direct_children,
     DemoError,
     ProcessIdentity,
     capture_process_identity,
@@ -34,6 +35,7 @@ from pd1_demo import (
     open_task_context_menu_from_pointer,
     parse_atom_list,
     parse_cardinals,
+    parse_direct_child_ids,
     parse_optional_atom_list,
     parse_utf8_property,
     parse_window_property,
@@ -47,6 +49,7 @@ from pd1_demo import (
     select_current_workarea,
     task_screen_center,
     validate_cleanup_identities,
+    validate_artifact_provenance,
     validate_evidence,
     validate_output_target,
     validate_process_group_target,
@@ -74,6 +77,58 @@ class EvidenceContractTests(unittest.TestCase):
         validate_evidence(document)
         validate_schema(document)
 
+    def test_build_tree_provenance_rejects_lifecycle_record(self) -> None:
+        arguments = mock.Mock(
+            artifact_provenance="build_tree", portage_lifecycle_evidence=None,
+        )
+        validate_artifact_provenance(arguments)
+        arguments.portage_lifecycle_evidence = Path("/private/evidence.json")
+        with self.assertRaisesRegex(
+            DemoError, "^build_tree_lifecycle_evidence_unexpected$",
+        ):
+            validate_artifact_provenance(arguments)
+
+    def test_installed_provenance_requires_valid_bound_lifecycle_record(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "lifecycle.json"
+            gentoo_tests = Path(__file__).resolve().parents[1] / "gentoo"
+            sys.path.insert(0, str(gentoo_tests))
+            try:
+                from portage_lifecycle_evidence import example_evidence_document
+            finally:
+                sys.path.remove(str(gentoo_tests))
+            lifecycle = example_evidence_document()
+            path.write_text(json.dumps(lifecycle), encoding="utf-8")
+            arguments = mock.Mock(
+                artifact_provenance="portage_installed",
+                portage_lifecycle_evidence=path,
+                session=Path("/usr/bin/prismdrake-session"),
+                settingsd=Path("/usr/bin/prismdrake-settingsd"),
+                shell=Path("/usr/bin/prismdrake-shell"),
+            )
+            hashes = {
+                "/usr/bin/prismdrake-session": "c" * 64,
+                "/usr/bin/prismdrake-settingsd": "d" * 64,
+                "/usr/bin/prismdrake-shell": "e" * 64,
+                str(Path(pd1_demo.__file__).resolve()): "7" * 64,
+            }
+            with mock.patch.object(
+                pd1_demo, "sha256_regular_file", side_effect=lambda value: hashes[str(value)],
+            ):
+                validate_artifact_provenance(arguments)
+
+            arguments.shell = Path("/usr/local/bin/prismdrake-shell")
+            with self.assertRaisesRegex(DemoError, "^installed_executable_path_mismatch$"):
+                validate_artifact_provenance(arguments)
+
+    def test_installed_provenance_rejects_missing_lifecycle_record(self) -> None:
+        arguments = mock.Mock(
+            artifact_provenance="portage_installed",
+            portage_lifecycle_evidence=None,
+        )
+        with self.assertRaisesRegex(DemoError, "^portage_lifecycle_evidence_required$"):
+            validate_artifact_provenance(arguments)
+
     def test_rejects_unknown_provenance(self) -> None:
         with self.assertRaises(DemoError):
             example_evidence("local")
@@ -95,8 +150,26 @@ class EvidenceContractTests(unittest.TestCase):
 
     def test_rejects_partial_profile_sequence(self) -> None:
         document = example_evidence()
-        document["settings"]["generation_sequence"] = [1, 2]
+        document["settings"]["owner_epoch_generations"] = [[1, 2, 3]]
         self.assert_rejected(document)
+
+    def test_rejects_false_or_missing_settings_restart_claims(self) -> None:
+        for field in (
+            "settingsd_restarted",
+            "settings_owner_gap_observed",
+            "shell_preserved_during_settings_restart",
+            "presentation_epoch_rebuilt",
+        ):
+            for mutation in ("false", "missing"):
+                with self.subTest(field=field, mutation=mutation):
+                    document = example_evidence()
+                    if mutation == "false":
+                        document["restart"][field] = False
+                    else:
+                        del document["restart"][field]
+                    self.assert_rejected(document)
+                    with self.assertRaises(DemoError):
+                        validate_schema(document)
 
     def test_rejects_false_or_missing_task_action_claims(self) -> None:
         for field in (
@@ -295,14 +368,85 @@ class EvidenceContractTests(unittest.TestCase):
         snapshot = {"theme": {"warnings": ["safe_mode_active"]}}
         with self.assertRaises(DemoError):
             require_normal_snapshot(snapshot)
-        restart = ("component=prismdrake-shell severity=error "
-                   "event=component_start_failed generation=none profile=none "
-                   "recovery=restart_component")
-        validate_session_log(restart)
-        for invalid in ("", restart + "\n" + restart,
-                        restart + "\nevent=fallback_selected"):
+        shell_restart = ("component=prismdrake-shell severity=error "
+                         "event=component_start_failed generation=none profile=none "
+                         "recovery=restart_component")
+        settings_restart = ("component=prismdrake-settingsd severity=error "
+                            "event=component_start_failed generation=none profile=none "
+                            "recovery=restart_component")
+        restart_log = shell_restart + "\n" + settings_restart
+        validate_session_log(restart_log)
+        for invalid in ("", shell_restart, settings_restart,
+                        restart_log + "\n" + shell_restart,
+                        restart_log + "\n" + settings_restart,
+                        restart_log + "\nevent=fallback_selected"):
             with self.assertRaises(DemoError):
                 validate_session_log(invalid)
+
+    def test_direct_child_parser_is_exact_and_bounded(self) -> None:
+        self.assertEqual(parse_direct_child_ids("42 43 \n"), [42, 43])
+        self.assertEqual(parse_direct_child_ids(""), [])
+        invalid = (
+            "1 ",
+            "42 42 ",
+            "42,43",
+            "42 extra",
+            "0 ",
+            "2147483648 ",
+            " ",
+            "\n\n",
+            " ".join(str(value) for value in range(2, 19)),
+        )
+        for document in invalid:
+            with self.subTest(document=document), self.assertRaises(DemoError):
+                parse_direct_child_ids(document)
+
+    def test_exact_direct_children_bind_expected_executables(self) -> None:
+        expected = {
+            "settingsd": Path("/expected/prismdrake-settingsd"),
+            "shell": Path("/expected/prismdrake-shell"),
+        }
+        resolved = {
+            "/expected/prismdrake-settingsd": Path("/resolved/prismdrake-settingsd"),
+            "/expected/prismdrake-shell": Path("/resolved/prismdrake-shell"),
+            "/proc/42/exe": Path("/resolved/prismdrake-settingsd"),
+            "/proc/43/exe": Path("/resolved/prismdrake-shell"),
+        }
+
+        def resolve(path: Path, strict: bool = False) -> Path:
+            self.assertTrue(strict)
+            return resolved[str(path)]
+
+        identities = {
+            42: ProcessIdentity(42, 100, 102),
+            43: ProcessIdentity(43, 101, 103),
+        }
+        with mock.patch.object(Path, "read_text", return_value="42 43 "), \
+                mock.patch.object(Path, "resolve", autospec=True, side_effect=resolve), \
+                mock.patch.object(pd1_demo, "capture_process_identity",
+                                  side_effect=lambda process_id: identities[process_id]):
+            observed = capture_exact_direct_children(41, expected)
+        self.assertEqual(observed, {
+            "settingsd": identities[42],
+            "shell": identities[43],
+        })
+
+    def test_exact_direct_children_reject_unknown_or_incomplete_set(self) -> None:
+        expected = {
+            "settingsd": Path("/expected/prismdrake-settingsd"),
+            "shell": Path("/expected/prismdrake-shell"),
+        }
+
+        def resolve(path: Path, strict: bool = False) -> Path:
+            self.assertTrue(strict)
+            if str(path).startswith("/expected/"):
+                return Path(str(path).replace("/expected/", "/resolved/"))
+            return Path("/resolved/unexpected")
+
+        with mock.patch.object(Path, "read_text", return_value="42 "), \
+                mock.patch.object(Path, "resolve", autospec=True, side_effect=resolve):
+            with self.assertRaisesRegex(DemoError, "^direct_child_executable_invalid$"):
+                capture_exact_direct_children(41, expected)
 
     def test_pidfd_identity_rejects_reuse_shape(self) -> None:
         identity = capture_process_identity(os.getpid())

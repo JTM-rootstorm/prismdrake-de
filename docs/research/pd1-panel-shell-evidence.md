@@ -125,6 +125,20 @@ AT-SPI Close, and keyboard Close. It also verifies the minimized EWMH state and
 later removal of each exact task and fixture process. Cleanup left no fixture,
 shell, settings daemon, Openbox, or Xvfb process from the isolated run.
 
+The later settings-restart extension is archived as
+`prismdrake-pd1-settings-restart-final-v2.tar.gz` with SHA-256
+`cedb64d903770f9d51adb649aef8084ca12f92ff3f5e7474b9a2b843eebebc03`.
+The exact guest artifact passed all 562 GCC and Clang test registrations, then
+passed 10/10 consecutive live repetitions in 31.86 seconds. The sole skipped
+registration in each full suite is the documented root-inapplicable permission
+fixture. The demonstration binds the supervisor's exact
+direct children, observes settings-owner loss remove the panel epoch, and
+requires a distinct settingsd process to restore Lustre generation one while
+the same shell, window-manager owner, and application windows survive. The
+rebuilt panel retains the complete dock/strut/work-area contract and both task
+presentations. Its mode-0600 version-three evidence has SHA-256
+`f6932998e4cdb5aaf95657c6a2cb1577854f8606b2c6e55da2816ae10fa9f437`.
+
 `ldd` on the validated Gentoo shell target resolved the selected `libbasu`,
 Qt 6 Core/GUI/QML/Quick/Quick Controls libraries, `libxcb`, `libxcb-randr`, and
 the system transitive graphics, font, C++ runtime, D-Bus, and Qt support
