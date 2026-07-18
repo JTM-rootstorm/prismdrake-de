@@ -67,7 +67,12 @@ carry a verified or observed version.
   immutable model generations, stale-record removal, and observation-based
   request confirmation are also implemented without another link dependency.
   The production task-strip UI remains unresolved PD1 scope.
-- `prismdrake-session` remains a planned component manifest.
+- `prismdrake-session` is an Experimental init-neutral supervisor. It directly
+  uses the selected sd-bus provider for bounded settings readiness and the
+  internal X11 adapter for display readiness, then owns only the exact settings
+  and shell PIDs it launches. Gentoo selects basu; the development harness
+  supplies D-Bus. Supported minimum versions, the complete installed closure,
+  harness-owned isolated-bus lifecycle, and session registration remain open.
   `prismdrake-shell` is Experimental. Its immutable settings/theme projection
   directly uses Qt Core and GUI; its asynchronous launcher controller and
   passive launcher, task, and notification adapters use Qt Core; and its
@@ -86,9 +91,8 @@ carry a verified or observed version.
   [panel-shell evidence](../research/pd1-panel-shell-evidence.md).
 - The settings service uses a mutex-protected immutable snapshot pointer and a
   single bounded worker; it introduced no atomic-storage dependency. Production
-  runtime-closure evidence, accessibility linkage, and the supervisor
-  executable remain explicit unresolved areas rather than invented package
-  claims.
+  runtime-closure evidence and accessibility linkage remain explicit unresolved
+  areas rather than invented package claims.
 
 Mandatory core runtime entries may not name GNOME Shell, Mutter,
 `gnome-settings-daemon`, `gnome-control-center`, or libadwaita. GTK itself is

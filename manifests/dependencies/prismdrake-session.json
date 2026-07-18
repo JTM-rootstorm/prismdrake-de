@@ -2,33 +2,73 @@
   "schema_version": 1,
   "component": "prismdrake-session",
   "component_kind": "core_service",
-  "implementation_status": "planned",
+  "implementation_status": "experimental",
   "mandatory_core_startup": true,
-  "runtime_dependency_state": "planned_unmeasured",
+  "runtime_dependency_state": "measured",
   "dependencies": [
+    {
+      "name": "basu",
+      "gentoo_atom": "sys-libs/basu",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "settings_readiness",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "0.2.1",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "Ubuntu CI uses the API-compatible libsystemd sd-bus provider; one build links exactly one provider.",
+      "reason": "The Experimental supervisor directly uses the selected system sd-bus provider for bounded settings-service readiness before starting the shell. Gentoo selects basu."
+    },
     {
       "name": "dbus",
       "gentoo_atom": "sys-apps/dbus",
       "scope": "mandatory_runtime",
-      "relationship": "direct",
+      "relationship": "tool",
       "feature": "session_bus_coordination",
-      "requirement_status": "planned",
+      "requirement_status": "implemented",
       "version": {
         "declared_minimum": null,
         "verified_minimum": null,
         "observed": "1.16.2",
-        "evidence": "observed_reference"
+        "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Accepted startup model connects to session D-Bus, but no production session target has measured its minimum version."
+      "reason": "The Experimental supervisor requires an inherited session-bus address and confirms settings readiness on that bus. Isolated tests exercise the same contract with dbus-run-session."
+    },
+    {
+      "name": "libxcb",
+      "gentoo_atom": "x11-libs/libxcb",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "display_readiness",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.17.0",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The Experimental supervisor directly consumes the internal X11 adapter to reject an unusable selected display before launching session components."
     }
   ],
   "unresolved": [
     {
-      "area": "supervisor_runtime",
-      "reason": "The init-neutral process and support-library closure must be selected and measured with the production session target."
+      "area": "runtime_closure",
+      "reason": "The direct Gentoo basu, D-Bus, and libxcb boundaries are measured, but supported minimum versions and the complete installed dynamic closure remain unmeasured."
+    },
+    {
+      "area": "development_harness",
+      "reason": "PD1 inherits a validated session bus. Harness-owned isolated bus startup and teardown, an explicit post-exec shell-ready IPC signal, and installed session registration remain open."
     }
   ]
 }

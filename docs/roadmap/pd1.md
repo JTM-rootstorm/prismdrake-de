@@ -47,10 +47,16 @@ and an event-driven controller that mirrors authoritative EWMH task state and
 sends only checked standard WM requests. A live asynchronous settings client
 now consumes complete owner-epoch-scoped snapshots through the Experimental
 internal D-Bus contract and publishes only canonical typed state.
+An init-neutral Experimental session executable validates its environment and
+display, starts settingsd before the shell, waits for bounded settings
+readiness, applies component-specific restart budgets, enters one observable
+safe-mode launch, and performs exact-PID reverse bounded shutdown without
+touching the window manager or unrelated applications.
 This is a development prototype, not a complete shell: the installed
 `prismdrake-shell` executable, end-to-end model wiring,
-reviewed visual baselines, and live assistive-technology evidence remain open
-PD1 work.
+reviewed visual baselines, live assistive-technology evidence, harness-owned
+isolated D-Bus lifecycle, post-exec shell readiness, and installed session
+registration remain open PD1 work.
 
 ## Activation gate
 

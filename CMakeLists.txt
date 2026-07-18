@@ -219,8 +219,13 @@ prismdrake_add_format_check(
     src/session/SessionOptions.hpp
     src/session/SessionRuntime.cpp
     src/session/SessionRuntime.hpp
+    src/session/SessionSupervisor.cpp
+    src/session/SessionSupervisor.hpp
     src/session/SettingsReadiness.cpp
     src/session/SettingsReadiness.hpp
+    src/session/main.cpp
+    src/session/tests/SessionSupervisorTests.cpp
+    src/session/tests/SupervisorChildFixture.cpp
     src/shell/theme/ShellThemeSnapshotAdapter.cpp
     src/shell/theme/ShellThemeSnapshotAdapter.hpp
     src/shell/launcher/LauncherPresentationModel.cpp

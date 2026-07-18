@@ -75,6 +75,20 @@ materials, reduced motion, and optional integrations disabled. A crash loop
 must preserve a basic logout path and must not restart the WM/compositor or
 destroy its authoritative window state.
 
+The Experimental PD1 supervisor gives settingsd one normal restart after 500
+ms and the shell three normal restarts after 250 ms, 500 ms, and 1 second in a
+rolling 30-second window. Thirty seconds of healthy runtime clears that
+component's history. Exhaustion permits one final safe-mode launch of both
+components; any further failure is terminal. Settings readiness has a 5-second
+bound. SIGINT or SIGTERM interrupts backoff, then shutdown sends SIGTERM to the
+exact shell and settingsd PIDs in that order, waits up to 2 seconds per child,
+and reports a SIGKILL escalation with a further 1-second reap bound.
+
+PD1 currently consumes a validated inherited session bus rather than spawning
+one. The settings service has an explicit D-Bus readiness probe; shell startup
+is confirmed by the bounded fork-to-exec handshake, while a distinct post-exec
+shell-ready IPC contract remains open development-harness work.
+
 ## Shutdown order
 
 1. Stop accepting new shell work and profile changes.
