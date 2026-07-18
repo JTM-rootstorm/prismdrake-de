@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -34,6 +35,11 @@ constexpr char settingsInterface[] = "org.prismdrake.Settings1";
 struct Response final {
     std::uint64_t generation;
     std::string bytes;
+};
+
+struct FakeSettingsServiceOptions final {
+    std::uint64_t nameFlags{0U};
+    bool holdSnapshotReply{false};
 };
 
 class TemporaryDirectory final {
@@ -93,8 +99,9 @@ void writeFile(const std::filesystem::path &path, std::string_view text) {
 
 class FakeSettingsService final {
   public:
-    explicit FakeSettingsService(std::vector<Response> responses)
-        : responses_(std::move(responses)) {
+    explicit FakeSettingsService(std::vector<Response> responses,
+                                 FakeSettingsServiceOptions options = {})
+        : responses_(std::move(responses)), options_(options) {
         if (responses_.empty()) {
             throw std::invalid_argument("fake settings service requires a response");
         }
@@ -121,6 +128,8 @@ class FakeSettingsService final {
 
     void advanceAndSignal() noexcept { advance_.store(true); }
     void emitInvalidSignal() noexcept { invalid_signal_.store(true); }
+    void releaseHeldSnapshotReply() noexcept { release_held_reply_.store(true); }
+    [[nodiscard]] bool hasHeldSnapshotReply() const noexcept { return held_reply_ready_.load(); }
 
   private:
     [[nodiscard]] static const sd_bus_vtable *snapshotVtable() {
@@ -141,7 +150,19 @@ class FakeSettingsService final {
             return sd_bus_error_set_const(error, "org.prismdrake.Settings1.Error.Unsupported",
                                           "Unsupported snapshot version.");
         }
-        const auto &response = self.responses_.at(self.index_);
+        if (self.options_.holdSnapshotReply && !self.held_reply_) {
+            self.held_reply_.reset(sd_bus_message_ref(message));
+            if (!self.held_reply_) {
+                return -ENOMEM;
+            }
+            self.held_reply_ready_.store(true);
+            return 1;
+        }
+        return self.sendSnapshotReply(message);
+    }
+
+    int sendSnapshotReply(sd_bus_message *message) noexcept {
+        const auto &response = responses_.at(index_);
         ipc::sdbus::Message reply;
         if (sd_bus_message_new_method_return(message, reply.put()) < 0 ||
             sd_bus_message_append(reply.get(), "t", response.generation) < 0 ||
@@ -149,7 +170,7 @@ class FakeSettingsService final {
                                         response.bytes.size()) < 0) {
             return -ENOMEM;
         }
-        return sd_bus_send(self.bus_, reply.get(), nullptr);
+        return sd_bus_send(bus_, reply.get(), nullptr);
     }
 
     void emitGenerationChanged(bool invalid = false) noexcept {
@@ -180,7 +201,7 @@ class FakeSettingsService final {
         ipc::sdbus::Slot object;
         if (sd_bus_add_object_vtable(bus.get(), object.put(), objectPath, snapshotInterface,
                                      snapshotVtable(), this) < 0 ||
-            sd_bus_request_name(bus.get(), serviceName, 0) < 0) {
+            sd_bus_request_name(bus.get(), serviceName, options_.nameFlags) <= 0) {
             bus_ = nullptr;
             ready.set_value(false);
             return;
@@ -188,6 +209,11 @@ class FakeSettingsService final {
         ready.set_value(true);
 
         while (running_.load()) {
+            if (release_held_reply_.exchange(false) && held_reply_) {
+                (void)sendSnapshotReply(held_reply_.get());
+                held_reply_.reset();
+                held_reply_ready_.store(false);
+            }
             if (advance_.exchange(false) && index_ + 1U < responses_.size()) {
                 ++index_;
                 emitGenerationChanged();
@@ -206,15 +232,21 @@ class FakeSettingsService final {
                               static_cast<short>(sd_bus_get_events(bus.get())), 0};
             (void)::poll(&descriptor, 1U, 10);
         }
+        held_reply_.reset();
+        held_reply_ready_.store(false);
         bus_ = nullptr;
     }
 
     const std::vector<Response> responses_;
+    const FakeSettingsServiceOptions options_;
     std::atomic_bool running_{true};
     std::atomic_bool advance_{false};
     std::atomic_bool invalid_signal_{false};
+    std::atomic_bool release_held_reply_{false};
+    std::atomic_bool held_reply_ready_{false};
     std::thread thread_;
     sd_bus *bus_{nullptr};
+    ipc::sdbus::Message held_reply_;
     std::size_t index_{0U};
 };
 
@@ -331,6 +363,44 @@ TEST(SettingsSnapshotClientTest, ClearsOnOwnerLossAndRefetchesAfterReacquisition
                client.currentSnapshot()->generation.value() == 2U;
     }));
     EXPECT_EQ(client.currentSnapshot()->candidate.configuration.profile, config::Profile::forge);
+}
+
+TEST(SettingsSnapshotClientTest, RejectsHeldStartupReplyAfterOwnerReplacement) {
+    auto responses = realProfileSnapshots();
+    constexpr auto replaceableNameFlags = static_cast<std::uint64_t>(SD_BUS_NAME_ALLOW_REPLACEMENT);
+    constexpr auto replacementNameFlags = static_cast<std::uint64_t>(SD_BUS_NAME_REPLACE_EXISTING);
+    FakeSettingsService original({responses.front()},
+                                 FakeSettingsServiceOptions{replaceableNameFlags, true});
+    SettingsSnapshotClient client;
+    ASSERT_TRUE(client.start());
+    ASSERT_TRUE(waitUntil([&]() {
+        return client.state() == SettingsSnapshotClient::State::fetching &&
+               original.hasHeldSnapshotReply();
+    }));
+
+    FakeSettingsService replacement({responses.back()},
+                                    FakeSettingsServiceOptions{replacementNameFlags, false});
+    ASSERT_TRUE(waitUntil([&]() {
+        return client.state() == SettingsSnapshotClient::State::ready &&
+               client.currentSnapshot() != nullptr &&
+               client.currentSnapshot()->generation.value() == 2U;
+    }));
+    EXPECT_EQ(client.currentSnapshot()->candidate.configuration.profile, config::Profile::forge);
+
+    original.releaseHeldSnapshotReply();
+    ASSERT_TRUE(waitUntil([&]() { return !original.hasHeldSnapshotReply(); }));
+    const auto drainDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    while (std::chrono::steady_clock::now() < drainDeadline) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    ASSERT_EQ(client.state(), SettingsSnapshotClient::State::ready);
+    ASSERT_TRUE(client.currentSnapshot());
+    EXPECT_EQ(client.currentSnapshot()->generation.value(), 2U);
+    EXPECT_EQ(client.currentSnapshot()->candidate.configuration.profile, config::Profile::forge);
+    EXPECT_FALSE(client.lastError());
+    client.stop();
 }
 
 } // namespace
