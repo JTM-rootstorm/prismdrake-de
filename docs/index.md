@@ -49,12 +49,14 @@ describe a usable or production-ready desktop release.
 - [PD1 launcher-model evidence](research/pd1-launcher-model-evidence.md)
 - [PD1 synthetic notification-presentation evidence](research/pd1-notification-presentation-evidence.md)
 - [PD1 panel-shell evidence](research/pd1-panel-shell-evidence.md)
+- [PD1 production-shell accessibility evidence](research/pd1-accessibility-evidence.md)
 - [PD1 performance-evidence method](research/pd1-performance-evidence-method.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
 
 ## Testing
 
+- [Live accessibility testing](development/accessibility-testing.md)
 - [Deterministic visual baseline candidates](testing/visual-baselines.md)
 
 ## Machine-readable contracts

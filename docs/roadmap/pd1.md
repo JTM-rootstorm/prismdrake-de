@@ -61,10 +61,11 @@ bounded shutdown without touching the window manager or unrelated
 applications.
 The three Experimental processes, their read-only data, and a standard X11
 session entry now share one CMake install contract. This is still a development
-prototype, not a complete shell: Portage-installed end-to-end evidence,
-reviewed visual baselines, live assistive-technology evidence, a global
-launcher-entry contract, and harness-owned isolated D-Bus lifecycle remain open
-PD1 work.
+prototype, not a complete shell: Portage-installed end-to-end and AT-SPI replay
+evidence, reviewed visual baselines, a global launcher-entry contract, and
+harness-owned isolated D-Bus lifecycle remain open PD1 work. The production
+build tree now has bounded live AT-SPI metadata and forward/reverse focus
+evidence on the reference guest.
 
 ## Activation gate
 

@@ -47,7 +47,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends \
-            dbus libsystemd-dev libxcb1-dev libxcb-randr0-dev ninja-build \
+            at-spi2-core dbus gir1.2-atspi-2.0 libglib2.0-bin libsystemd-dev \
+            libxcb1-dev libxcb-randr0-dev ninja-build openbox python3-gi xdotool \
             libgtest-dev libtomlplusplus-dev nlohmann-json3-dev \
             qt6-base-dev qt6-declarative-dev \
             qml6-module-qtqml qml6-module-qtqml-models \
@@ -64,6 +65,7 @@ jobs:
           cmake -S . -B build/ci -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+          -DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=ON
           -DPRISMDRAKE_WARNINGS_AS_ERRORS=ON
 
       - name: Build

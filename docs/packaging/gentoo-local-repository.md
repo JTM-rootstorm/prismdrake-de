@@ -196,8 +196,11 @@ or execute an actual automated depclean to force resolution.
 `x11-misc/prismdrake-9999` uses `git-r3` with the canonical repository URI and
 enables the upstream install-path contract. Its runtime dependency set contains
 only the libraries and broker required by the three installed Experimental
-processes. GoogleTest, Python, Xvfb, Openbox, xprop, fontconfig, and the fixed
-test font remain conditional `USE=test` build dependencies.
+processes. GoogleTest, Python, Xvfb, Openbox, X11 inspection/input tools,
+AT-SPI/PyGObject inspection support, fontconfig, and the fixed test font remain
+conditional `USE=test` build dependencies. This complete gate prevents a clean
+reference-VM package test from silently registering the live startup or AT-SPI
+lanes as skipped merely because their evidence tooling was absent.
 
 Run a reviewed resolution and targeted package test with:
 

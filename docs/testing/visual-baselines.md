@@ -53,5 +53,5 @@ the harness must never rewrite approved images merely to make CI pass.
 
 This slice exercises `PD-THEME-002`, `PD-THEME-003`, `PD-THEME-008`,
 `PD-A11Y-002`, `PD-A11Y-004` through `PD-A11Y-010`, `PD-PERF-009`, and
-`PD-TEST-006`. Live AT-SPI inspection and approved cross-version image-diff
-policy remain open WP13 work.
+`PD-TEST-006`. The production-shell AT-SPI procedure is documented separately;
+approved cross-version image-diff policy remains open WP13 work.

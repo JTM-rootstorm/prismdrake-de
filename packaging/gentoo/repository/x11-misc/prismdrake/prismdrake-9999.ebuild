@@ -21,12 +21,17 @@ BDEPEND="
 	virtual/pkgconfig
 	test? (
 		${PYTHON_DEPS}
+		app-accessibility/at-spi2-core[X,introspection]
 		dev-cpp/gtest
+		dev-libs/glib
+		dev-python/pygobject[${PYTHON_USEDEP}]
+		gnome-base/gsettings-desktop-schemas
 		media-fonts/dejavu
 		media-libs/fontconfig
 		sys-apps/dbus
 		x11-apps/xprop
 		x11-base/xorg-server[xvfb]
+		x11-misc/xdotool
 		x11-wm/openbox
 	)
 "
@@ -50,6 +55,7 @@ RDEPEND="
 src_configure() {
 	local mycmakeargs=(
 		-DBUILD_TESTING=$(usex test ON OFF)
+		-DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=$(usex test ON OFF)
 		-DPRISMDRAKE_USE_INSTALL_PATHS=ON
 	)
 	cmake_src_configure

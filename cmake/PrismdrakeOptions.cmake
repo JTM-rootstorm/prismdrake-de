@@ -9,6 +9,8 @@ option(PRISMDRAKE_ENABLE_DEVELOPER_OVERRIDES
     "Enable non-production diagnostics and mock-capability overrides" OFF)
 option(PRISMDRAKE_USE_INSTALL_PATHS
     "Embed configured install locations for packaged Prismdrake runtime data" OFF)
+option(PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST
+    "Fail configuration when the live AT-SPI test environment is incomplete" OFF)
 
 set(PRISMDRAKE_CLANG_FORMAT_EXECUTABLE "" CACHE FILEPATH
     "Path to the clang-format executable used by the format-check target")

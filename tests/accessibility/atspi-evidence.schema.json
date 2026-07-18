@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/test/atspi-evidence-v1.json",
+  "title": "Prismdrake live AT-SPI evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "application",
+    "environment",
+    "fixture",
+    "phases"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "application": {
+      "const": "prismdrake-shell"
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accessibility_bridge",
+        "display",
+        "keyboard_injection",
+        "session_bus"
+      ],
+      "properties": {
+        "accessibility_bridge": {
+          "const": "at-spi2"
+        },
+        "display": {
+          "const": "isolated-xvfb"
+        },
+        "keyboard_injection": {
+          "const": "xdotool"
+        },
+        "session_bus": {
+          "const": "isolated-dbus-run-session"
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["desktop_entry_count", "profile"],
+      "properties": {
+        "desktop_entry_count": {
+          "const": 1
+        },
+        "profile": {
+          "const": "lustre"
+        }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "$ref": "#/$defs/phase"
+      }
+    }
+  },
+  "$defs": {
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actions", "description", "name", "role", "states"],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["Press"]
+          }
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "role": {
+          "type": "string",
+          "enum": ["editable_text", "pane", "push_button"]
+        },
+        "states": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "focusable", "focused"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "focusable": {
+              "type": "boolean"
+            },
+            "focused": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["controls", "focused_control", "id"],
+      "properties": {
+        "controls": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/control"
+          }
+        },
+        "focused_control": {
+          "type": ["string", "null"],
+          "maxLength": 80
+        },
+        "id": {
+          "type": "string",
+          "enum": [
+            "panel_initial",
+            "launcher_search_focus",
+            "launcher_result_focus",
+            "launcher_reverse_focus",
+            "panel_return_focus",
+            "panel_forward_focus",
+            "panel_reverse_focus"
+          ]
+        }
+      }
+    }
+  }
+}
