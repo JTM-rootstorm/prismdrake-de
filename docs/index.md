@@ -56,6 +56,8 @@ describe a usable or production-ready desktop release.
 
 ## Testing
 
+- [PD1 X11 development harness](development/pd1-x11-harness.md)
+- [PD1 diagnostics](development/diagnostics.md)
 - [Live accessibility testing](development/accessibility-testing.md)
 - [Deterministic visual baseline candidates](testing/visual-baselines.md)
 
