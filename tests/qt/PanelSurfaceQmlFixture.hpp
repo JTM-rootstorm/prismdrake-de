@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class QQmlEngine;
@@ -47,6 +48,8 @@ class PanelSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool resetLustre();
     Q_INVOKABLE bool resetLustreMissingBlur();
     Q_INVOKABLE bool resetAccessible();
+    Q_INVOKABLE bool resetReducedMotion();
+    Q_INVOKABLE bool resetTransparencyDisabled();
     Q_INVOKABLE bool publishForge();
     Q_INVOKABLE bool publishRepresentativeTasks();
     Q_INVOKABLE bool swapFirstTwoTasks();
@@ -71,6 +74,9 @@ class PanelSurfaceQmlFixture final : public QObject {
 
     [[nodiscard]] bool resetFromConfiguration(
         const std::filesystem::path &configuration,
+        prismdrake::theme::ThemeResolveOptions capabilities = {{true, true}, false});
+    [[nodiscard]] bool resetFromConfigurationText(
+        std::string_view configuration,
         prismdrake::theme::ThemeResolveOptions capabilities = {{true, true}, false});
     [[nodiscard]] bool publishTasks();
     void captureActivation(prismdrake::x11::TaskLifetimeId lifetime,

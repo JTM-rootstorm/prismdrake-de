@@ -68,7 +68,7 @@ about the future Prismdrake runtime package.
 | USE flag | Default | Purpose |
 |---|---:|---|
 | `portage-qa` | on | Local repository QA and Portage inspection tools |
-| `debug-tools` | on | GDB, strace, Valgrind, and lsof |
+| `debug-tools` | on | GDB, strace, Valgrind, perf, and lsof |
 | `x11` | on | Xvfb, Xephyr, Openbox, X11 tools, D-Bus, AT-SPI and its schema data, Mesa, DejaVu fonts, and fontconfig inspection |
 | `qt6` | on | Qt 6 modules for the isolated visible-shell evidence spike |
 | `clang` | off | Optional compiler-matrix coverage |

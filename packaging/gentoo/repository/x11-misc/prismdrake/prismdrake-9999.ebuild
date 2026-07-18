@@ -24,11 +24,12 @@ BDEPEND="
 		app-accessibility/at-spi2-core[X,introspection]
 		dev-cpp/gtest
 		dev-libs/glib
-		dev-python/pygobject[${PYTHON_USEDEP}]
+		$(python_gen_any_dep 'dev-python/pygobject[${PYTHON_USEDEP}]')
 		gnome-base/gsettings-desktop-schemas
 		media-fonts/dejavu
 		media-libs/fontconfig
 		sys-apps/dbus
+		x11-apps/xev
 		x11-apps/xprop
 		x11-base/xorg-server[xvfb]
 		x11-misc/xdotool
@@ -51,6 +52,14 @@ RDEPEND="
 	sys-libs/basu
 	x11-libs/libxcb
 "
+
+python_check_deps() {
+	python_has_version -b "dev-python/pygobject[${PYTHON_USEDEP}]"
+}
+
+pkg_setup() {
+	use test && python-any-r1_pkg_setup
+}
 
 src_configure() {
 	local mycmakeargs=(

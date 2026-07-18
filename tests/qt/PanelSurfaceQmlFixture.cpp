@@ -7,7 +7,9 @@
 #include <QQmlEngine>
 
 #include <atomic>
+#include <fstream>
 #include <optional>
+#include <sstream>
 #include <system_error>
 #include <utility>
 
@@ -22,16 +24,40 @@ namespace {
     return prismdrake::x11::WindowIncarnationId::fromObserved(value).value();
 }
 
-[[nodiscard]] bool copyTextFile(const std::filesystem::path &source,
-                                const std::filesystem::path &destination) {
+[[nodiscard]] bool writeTextFile(const std::filesystem::path &destination,
+                                 std::string_view contents) {
     std::error_code error;
     std::filesystem::create_directories(destination.parent_path(), error);
     if (error) {
         return false;
     }
-    return std::filesystem::copy_file(source, destination,
-                                      std::filesystem::copy_options::overwrite_existing, error) &&
-           !error;
+    std::ofstream output{destination, std::ios::binary | std::ios::trunc};
+    output.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+    return output.good();
+}
+
+[[nodiscard]] std::optional<std::string> readTextFile(const std::filesystem::path &source) {
+    std::ifstream input{source, std::ios::binary};
+    if (!input) {
+        return std::nullopt;
+    }
+    std::ostringstream contents;
+    contents << input.rdbuf();
+    if (!input.good() && !input.eof()) {
+        return std::nullopt;
+    }
+    return contents.str();
+}
+
+[[nodiscard]] bool replaceOnce(std::string &document, std::string_view before,
+                               std::string_view after) {
+    const auto position = document.find(before);
+    if (position == std::string::npos ||
+        document.find(before, position + before.size()) != std::string::npos) {
+        return false;
+    }
+    document.replace(position, before.size(), after);
+    return true;
 }
 
 } // namespace
@@ -77,15 +103,44 @@ bool PanelSurfaceQmlFixture::resetAccessible() {
                                   "examples/config/accessible.toml");
 }
 
+bool PanelSurfaceQmlFixture::resetReducedMotion() {
+    const auto source =
+        std::filesystem::path(PRISMDRAKE_SOURCE_DIR) / "examples/config/lustre.toml";
+    auto document = readTextFile(source);
+    if (!document || !replaceOnce(*document, "reduced_motion = false", "reduced_motion = true") ||
+        !replaceOnce(*document, "animation_scale = 1.0", "animation_scale = 0.0")) {
+        return false;
+    }
+    return resetFromConfigurationText(*document);
+}
+
+bool PanelSurfaceQmlFixture::resetTransparencyDisabled() {
+    const auto source =
+        std::filesystem::path(PRISMDRAKE_SOURCE_DIR) / "examples/config/lustre.toml";
+    auto document = readTextFile(source);
+    if (!document ||
+        !replaceOnce(*document, "transparency_enabled = true", "transparency_enabled = false") ||
+        !replaceOnce(*document, "blur_quality = \"balanced\"", "blur_quality = \"off\"")) {
+        return false;
+    }
+    return resetFromConfigurationText(*document);
+}
+
 bool PanelSurfaceQmlFixture::resetFromConfiguration(
     const std::filesystem::path &configuration,
     prismdrake::theme::ThemeResolveOptions capabilities) {
+    const auto document = readTextFile(configuration);
+    return document && resetFromConfigurationText(*document, capabilities);
+}
+
+bool PanelSurfaceQmlFixture::resetFromConfigurationText(
+    std::string_view configuration, prismdrake::theme::ThemeResolveOptions capabilities) {
     static std::atomic_uint sequence{0U};
     const auto nextTemporaryDirectory =
         std::filesystem::temp_directory_path() /
         ("prismdrake-panel-qml-test-" + std::to_string(sequence.fetch_add(1U)));
     const auto userConfiguration = nextTemporaryDirectory / "config/config.toml";
-    if (!copyTextFile(configuration, userConfiguration)) {
+    if (!writeTextFile(userConfiguration, configuration)) {
         std::error_code error;
         std::filesystem::remove_all(nextTemporaryDirectory, error);
         return false;

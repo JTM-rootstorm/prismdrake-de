@@ -1,0 +1,358 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/pd1-external-performance-evidence.schema.json",
+  "title": "Prismdrake PD1 external performance evidence",
+  "oneOf": [
+    { "$ref": "#/$defs/startup" },
+    { "$ref": "#/$defs/idle" },
+    { "$ref": "#/$defs/cadence" }
+  ],
+  "$defs": {
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "[a-z0-9][a-z0-9._-]*"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "(?:[0-9a-f]{40}|[0-9a-f]{64})"
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contains_filesystem_paths",
+        "contains_process_or_thread_ids",
+        "contains_host_or_user_names",
+        "contains_application_or_window_content",
+        "diagnostics_are_closed_ids"
+      ],
+      "properties": {
+        "contains_filesystem_paths": { "const": false },
+        "contains_process_or_thread_ids": { "const": false },
+        "contains_host_or_user_names": { "const": false },
+        "contains_application_or_window_content": { "const": false },
+        "diagnostics_are_closed_ids": { "const": true }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "[a-z0-9][a-z0-9_]*"
+      }
+    },
+    "startup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "evidence_kind",
+        "release_budget",
+        "source_revision",
+        "reference_environment_id",
+        "method",
+        "result",
+        "limitations",
+        "redaction"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "evidence_kind": { "const": "startup_to_mapped_panel" },
+        "release_budget": { "const": false },
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "reference_environment_id": { "$ref": "#/$defs/identity" },
+        "method": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "clock",
+            "deadline_ns",
+            "fresh_private_runtime",
+            "x11_observation",
+            "filesystem_observation",
+            "x11_observer_readiness",
+            "child_restart_observation",
+            "mapped_dock_ownership",
+            "mapped_dock_inventory"
+          ],
+          "properties": {
+            "clock": { "const": "python_monotonic_ns" },
+            "deadline_ns": { "const": 10000000000 },
+            "fresh_private_runtime": { "const": true },
+            "x11_observation": { "const": "root_map_notify_with_ewmh_client_resolution" },
+            "filesystem_observation": { "const": "inotify" },
+            "x11_observer_readiness": { "const": "root_property_notify_handshake_before_timestamp" },
+            "child_restart_observation": { "const": "structured_session_diagnostics_until_endpoint" },
+            "mapped_dock_ownership": { "const": "net_wm_pid_exact_direct_shell_child_with_pidfd" },
+            "mapped_dock_inventory": { "const": "post_endpoint_net_client_list_stacking_barrier" }
+          }
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "duration_ns",
+            "ready_marker_ns",
+            "mapped_dock_ns",
+            "safe_mode",
+            "child_restart_observed",
+            "mapped_dock_count",
+            "foreign_dock_observed",
+            "duplicate_dock_observed"
+          ],
+          "properties": {
+            "duration_ns": { "type": "integer", "minimum": 1, "maximum": 10000000000 },
+            "ready_marker_ns": { "type": "integer", "minimum": 1, "maximum": 10000000000 },
+            "mapped_dock_ns": { "type": "integer", "minimum": 1, "maximum": 10000000000 },
+            "safe_mode": { "const": false },
+            "child_restart_observed": { "const": false },
+            "mapped_dock_count": { "const": 1 },
+            "foreign_dock_observed": { "const": false },
+            "duplicate_dock_observed": { "const": false }
+          }
+        },
+        "limitations": { "$ref": "#/$defs/limitations" },
+        "redaction": { "$ref": "#/$defs/redaction" }
+      }
+    },
+    "idle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "evidence_kind",
+        "release_budget",
+        "source_revision",
+        "reference_environment_id",
+        "method",
+        "results",
+        "limitations",
+        "redaction"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "evidence_kind": { "const": "idle_scheduler_wakeups" },
+        "release_budget": { "const": false },
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "reference_environment_id": { "$ref": "#/$defs/identity" },
+        "method": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "clock",
+            "requested_interval_ns",
+            "observed_interval_ns",
+            "settling_interval_ns",
+            "tracepoints",
+            "target",
+            "collection_scope",
+            "process_identity",
+            "contract_eligible",
+            "live_tree_ownership",
+            "startup_endpoint"
+          ],
+          "properties": {
+            "clock": { "const": "python_monotonic_ns" },
+            "requested_interval_ns": { "const": 60000000000 },
+            "observed_interval_ns": { "type": "integer", "minimum": 60000000000, "maximum": 70000000000 },
+            "settling_interval_ns": { "const": 5000000000 },
+            "tracepoints": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "uniqueItems": true,
+              "items": { "enum": ["sched:sched_wakeup", "sched:sched_wakeup_new"] }
+            },
+            "target": { "const": "exact_starting_thread_ids" },
+            "collection_scope": { "const": "system_wide" },
+            "process_identity": { "const": "pidfd_and_proc_executable_at_boundaries" },
+            "contract_eligible": { "const": true },
+            "live_tree_ownership": { "const": "exact_session_direct_children" },
+            "startup_endpoint": { "const": "ready_marker_and_single_owned_mapped_dock" }
+          }
+        },
+        "results": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/idle_result" }
+        },
+        "limitations": { "$ref": "#/$defs/limitations" },
+        "redaction": { "$ref": "#/$defs/redaction" }
+      }
+    },
+    "idle_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component",
+        "thread_count_start",
+        "thread_count_end",
+        "sched_wakeup_count",
+        "sched_wakeup_new_count",
+        "received_wakeup_count"
+      ],
+      "properties": {
+        "component": { "enum": ["session", "settingsd", "shell"] },
+        "thread_count_start": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "thread_count_end": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "sched_wakeup_count": { "type": "integer", "minimum": 0 },
+        "sched_wakeup_new_count": { "type": "integer", "minimum": 0 },
+        "received_wakeup_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "cadence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "evidence_kind",
+        "release_budget",
+        "source_revision",
+        "reference_environment_id",
+        "method",
+        "series",
+        "limitations",
+        "redaction"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "evidence_kind": { "const": "deterministic_visual_cadence" },
+        "release_budget": { "const": false },
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "reference_environment_id": { "$ref": "#/$defs/identity" },
+        "method": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "clock",
+            "warmup_frames",
+            "measured_intervals",
+            "qpa_platform",
+            "scenegraph_backend",
+            "render_loop",
+            "controls_style",
+            "lang_environment",
+            "lc_all_environment",
+            "timezone_environment",
+            "qt_locale_name",
+            "runtime_utc_offset_seconds",
+            "qpa_platform_actual",
+            "graphics_backend_actual",
+            "qt_graphics_api_reported",
+            "font_requested_family",
+            "font_claimed_family",
+            "font_actual_family",
+            "font_resolution_source",
+            "font_source_basename",
+            "font_source_sha256"
+          ],
+          "properties": {
+            "clock": { "const": "std_chrono_steady_clock" },
+            "warmup_frames": { "const": 2 },
+            "measured_intervals": { "const": 240 },
+            "qpa_platform": { "const": "offscreen" },
+            "scenegraph_backend": { "const": "software" },
+            "render_loop": { "const": "basic" },
+            "controls_style": { "const": "Basic" },
+            "lang_environment": { "const": "C.UTF-8" },
+            "lc_all_environment": { "const": "C.UTF-8" },
+            "timezone_environment": { "const": "UTC" },
+            "qt_locale_name": { "const": "C" },
+            "runtime_utc_offset_seconds": { "const": 0 },
+            "qpa_platform_actual": { "const": "offscreen" },
+            "graphics_backend_actual": { "const": "software" },
+            "qt_graphics_api_reported": {
+              "enum": [
+                "unknown",
+                "software",
+                "openvg",
+                "opengl",
+                "direct3d11",
+                "vulkan",
+                "metal",
+                "null",
+                "direct3d12"
+              ]
+            },
+            "font_requested_family": { "const": "sans-serif" },
+            "font_claimed_family": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "font_actual_family": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "font_resolution_source": { "const": "fontconfig_fc_match_at_configure_time" },
+            "font_source_basename": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "[A-Za-z0-9][A-Za-z0-9._+-]*"
+            },
+            "font_source_sha256": { "type": "string", "pattern": "[0-9a-f]{64}" }
+          }
+        },
+        "series": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": { "$ref": "#/$defs/cadence_series" }
+        },
+        "limitations": { "$ref": "#/$defs/limitations" },
+        "redaction": { "$ref": "#/$defs/redaction" }
+      }
+    },
+    "cadence_series": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario",
+        "profile",
+        "reduced_motion",
+        "transparency_disabled",
+        "blur_available",
+        "statistics"
+      ],
+      "properties": {
+        "scenario": {
+          "enum": ["lustre", "forge", "reduced_motion", "disabled_transparency", "missing_blur"]
+        },
+        "profile": { "enum": ["lustre", "forge"] },
+        "reduced_motion": { "type": "boolean" },
+        "transparency_disabled": { "type": "boolean" },
+        "blur_available": { "type": "boolean" },
+        "statistics": { "$ref": "#/$defs/cadence_statistics" }
+      }
+    },
+    "cadence_statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_count",
+        "minimum_ns",
+        "median_ns",
+        "p95_ns",
+        "maximum_ns",
+        "above_25000000_ns",
+        "samples_ns"
+      ],
+      "properties": {
+        "sample_count": { "const": 240 },
+        "minimum_ns": { "type": "integer", "minimum": 1 },
+        "median_ns": { "type": "integer", "minimum": 1 },
+        "p95_ns": { "type": "integer", "minimum": 1 },
+        "maximum_ns": { "type": "integer", "minimum": 1 },
+        "above_25000000_ns": { "type": "integer", "minimum": 0, "maximum": 240 },
+        "samples_ns": {
+          "type": "array",
+          "minItems": 240,
+          "maxItems": 240,
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  }
+}

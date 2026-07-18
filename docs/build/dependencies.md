@@ -48,6 +48,13 @@ carry a verified or observed version.
   `fc-match` tool only when tests are enabled. It locks and records the generic
   theme font's resolved family and source for each configured test environment;
   fontconfig is not a Prismdrake runtime dependency.
+- The PD1 performance-evidence harness reuses fontconfig and the existing Qt
+  software-rendering test stack for deterministic cadence collection. Its
+  startup collector uses test-only Xvfb, Openbox, `xev`, `xprop`, `stdbuf`, and
+  `dbus-run-session`; the event endpoint does not poll either X11 or the runtime
+  directory. The optional root-owned Gentoo VM wakeup procedure uses Linux
+  `perf` scheduler tracepoints. These are measurement tools, not Prismdrake
+  runtime dependencies, and a missing tracepoint blocks only that evidence.
 - `prismdrake-settingsd` is an Experimental implemented service. Its boundary
   records direct system toml++ 3.4.0 configuration parsing, header-only
   nlohmann JSON 3.12.0-r1 theme/runtime serialization, and the sd-bus provider.

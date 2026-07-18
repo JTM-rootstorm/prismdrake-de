@@ -19,6 +19,7 @@ RDEPEND="
 		dev-debug/gdb
 		dev-debug/strace
 		dev-debug/valgrind
+		dev-util/perf
 		sys-process/lsof
 	)
 	implementation-deps? (
