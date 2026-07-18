@@ -233,6 +233,10 @@ prismdrake_add_format_check(
     src/shell/taskcontroller/TaskController.hpp
     src/shell/taskcontroller/TaskControllerCore.cpp
     src/shell/taskcontroller/TaskControllerCore.hpp
+    src/shell/runtime/DevelopmentNotificationOwner.cpp
+    src/shell/runtime/DevelopmentNotificationOwner.hpp
+    src/shell/runtime/FatalDisplayShutdown.cpp
+    src/shell/runtime/FatalDisplayShutdown.hpp
     src/shell/runtime/ShellRuntime.cpp
     src/shell/runtime/ShellRuntime.hpp
     src/shell/runtime/ShellRuntimeOptions.cpp
@@ -242,6 +246,8 @@ prismdrake_add_format_check(
     src/shell/runtime/TerminationSignalBridge.cpp
     src/shell/runtime/TerminationSignalBridge.hpp
     src/shell/runtime/main.cpp
+    src/shell/runtime/tests/DevelopmentNotificationOwnerTests.cpp
+    src/shell/runtime/tests/FatalDisplayShutdownTests.cpp
     src/shell/runtime/tests/ShellRuntimeStateTests.cpp
     src/shell/runtime/tests/ShellRuntimeOptionsTests.cpp
     src/shell/runtime/tests/TerminationSignalBridgeTests.cpp

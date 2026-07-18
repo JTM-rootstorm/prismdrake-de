@@ -11,6 +11,8 @@ prismdrake_enable_sanitizers(prismdrake-shell-runtime-state)
 add_library(prismdrake-shell-runtime STATIC
     DevelopmentNotificationOwner.cpp
     DevelopmentNotificationOwner.hpp
+    FatalDisplayShutdown.cpp
+    FatalDisplayShutdown.hpp
     ShellRuntime.cpp
     ShellRuntime.hpp
     ShellRuntimeOptions.cpp
@@ -73,6 +75,7 @@ if(BUILD_TESTING)
 
         add_executable(prismdrake-shell-runtime-tests
             tests/DevelopmentNotificationOwnerTests.cpp
+            tests/FatalDisplayShutdownTests.cpp
             tests/ShellRuntimeOptionsTests.cpp
             tests/TerminationSignalBridgeTests.cpp)
         target_link_libraries(prismdrake-shell-runtime-tests

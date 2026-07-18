@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DevelopmentNotificationOwner.hpp"
+#include "FatalDisplayShutdown.hpp"
 #include "LauncherController.hpp"
 #include "PanelWindowHost.hpp"
 #include "Result.hpp"
@@ -88,6 +89,7 @@ class ShellRuntime final : public QObject {
     tasks::TaskPresentationModel task_model_;
     std::unique_ptr<DevelopmentNotificationOwner> notification_owner_;
     std::unique_ptr<launcher::controller::LauncherController> launcher_controller_;
+    std::unique_ptr<FatalDisplayShutdown> fatal_display_shutdown_;
     std::unique_ptr<taskcontroller::TaskController> task_controller_;
     settings::SettingsSnapshotClient settings_client_;
     std::unique_ptr<theme::ShellThemeSnapshotAdapter> theme_adapter_;

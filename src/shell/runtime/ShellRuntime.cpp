@@ -91,8 +91,16 @@ Result<void> ShellRuntime::initialize() {
     }
     launcher_controller_ = std::move(launcher).value();
 
+    auto fatalDisplayShutdown =
+        FatalDisplayShutdown::create([this](const Error &error) { handleX11Loss(error); });
+    if (!fatalDisplayShutdown) {
+        return Result<void>::failure(fatalDisplayShutdown.error());
+    }
+    fatal_display_shutdown_ = std::move(fatalDisplayShutdown).value();
+
     auto tasks = taskcontroller::TaskController::create(
-        task_model_, options_.display, [this](const Error &error) { handleX11Loss(error); },
+        task_model_, options_.display,
+        [this](const Error &error) { fatal_display_shutdown_->request(error); },
         [this](const Error &error) { reportRecoverable("task refresh", error); },
         [this](const taskcontroller::TaskRequestUpdate &update) {
             if (update.outcome == x11::TaskRequestOutcome::deliveryRejected ||
@@ -313,7 +321,7 @@ Result<void> ShellRuntime::createPresentationEpoch(
     }
     auto host = window::PanelWindowHost::create(
         *panel_view_, options_.display, height.value(),
-        [this](const Error &error) { handleX11Loss(error); },
+        [this](const Error &error) { fatal_display_shutdown_->request(error); },
         [this](const Error &error) { reportRecoverable("panel window", error); });
     if (!host) {
         destroyPresentationEpoch();

@@ -162,11 +162,13 @@ exposed to QML.
   Gentoo package yet, and its complete installed package closure is unmeasured.
 - No Accepted WM/session shortcut contract currently provides global launcher
   entry; the wired launcher remains reachable through the panel surface.
-- X-server-loss handling is implemented as notifier disable, panel hide, and a
-  queued shutdown callback, but an induced-loss test is deferred. Killing Qt's
-  sole platform X server can abort `QGuiApplication` before callback dispatch;
-  a deterministic test requires a broader transport seam and must not be
-  simulated with a misleading pass.
+- X-server-loss handling uses one internal owner-thread shutdown gate shared by
+  the task and panel X11 reporters. Deterministic tests inject sequential and
+  reentrant reports into that shared gate, proving it requests one
+  clean process shutdown. This is internal transport-loss evidence, not a claim
+  that Qt survives physical X-server termination: killing Qt's sole platform X
+  server can still abort `QGuiApplication` before application callback
+  dispatch, and the session supervisor remains the recovery boundary.
 - Reviewed visual baselines, mixed-scale captures, right-to-left evidence, and
   live AT-SPI inspection remain WP13 work.
 - Complete dynamic runtime closure and installed-package behavior remain WP15
