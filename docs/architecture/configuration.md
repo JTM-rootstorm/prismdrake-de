@@ -1,12 +1,12 @@
 # Configuration and settings contract
 
-The version-1 format is Accepted by
-[ADR 0004](../adr/0004-configuration-format.md). PD0 validated examples and the
-initial interface shape. The display-free version-1 parser, recovery loader, and
-narrow whole-document writer are implemented in PD1. The combined settings and
-theme publication core and its bounded runtime serialization are also
-implemented. The narrow settings and complete-snapshot D-Bus transport has an
-implemented Experimental PD1 contract without a stability guarantee.
+The TOML, XDG, validation, atomic-write, and immutable-snapshot model is
+Accepted by [ADR 0004](../adr/0004-configuration-format.md). Configuration and
+runtime-snapshot version 2, version-1 in-memory normalization, and PD2 state
+ownership are Accepted by
+[ADR 0009](../adr/0009-pd2-state-and-control-contracts.md). The narrow settings
+and complete-snapshot D-Bus transport remains Experimental without a stability
+guarantee.
 
 ## Locations
 
@@ -24,11 +24,36 @@ credentials or secrets.
 
 ## Version and domains
 
-`schema_version` is a positive integer; PD0 supports exactly version `1`.
+`schema_version` is a positive integer. PD2 source readers support exactly
+versions `1` and `2`; normalized typed configuration is always version 2.
 Unsupported versions fail before any state is published. `profile` is exactly
-`lustre` or `forge`. The strict [JSON schema](../../schemas/prismdrake-config.schema.json)
-defines appearance, panel, launcher, notifications, desktop, integration,
-accessibility, keyboard, and developer domains.
+`lustre` or `forge`. The strict
+[JSON schema](../../schemas/prismdrake-config.schema.json) defines appearance,
+panel, launcher, notifications, desktop, integration, accessibility, keyboard,
+and developer domains.
+
+Version 2 adds these complete fields:
+
+```toml
+[panel]
+output_policy = "primary" # "primary", "all", or "named"
+outputs = []
+
+[desktop]
+wallpaper_source = ""
+background_color = "#182033"
+wallpaper_mode = "fill"
+icons_enabled = false
+```
+
+`panel.outputs` is an ordered unique set of validated output names and is used
+only by `named`. `wallpaper_source` is empty or a bounded string of at most 128
+Unicode code points. Empty selects no image. The desktop and wallpaper
+implementation performs separately specified local-file and image validation
+before presentation.
+`background_color` is exactly `#RRGGBB`. Desktop icons remain disabled in PD2.
+The panel output and surface effects are defined in
+[surface placement](surface-placement.md).
 
 Accessibility preferences are user state independent of profile defaults.
 Switching profiles must preserve explicit text scale, high contrast, reduced
@@ -54,11 +79,21 @@ their exact kinds. A JSON Schema `number` accepts either a TOML integer through
 an explicit checked conversion or a finite TOML floating-point value. Strings
 are measured in Unicode code points, arrays preserve input order while
 rejecting duplicates, and ordinary tables, inline tables, or dotted keys are
-accepted only when toml++ produces the same closed version-1 tree. TOML date,
-time, non-finite number, unknown-key, and implicit-coercion cases are rejected.
+accepted only when toml++ produces the same closed tree for the declared source
+version. TOML date, time, non-finite number, unknown-key, and implicit-coercion
+cases are rejected.
 
-Version dispatch currently contains only an identity version-1 path. Every
-other version fails safely; no version-2 migration is implied.
+Version dispatch has two closed paths:
+
+- Version 2 validates directly.
+- Version 1 validates against its original closed shape, then normalizes in
+  memory: an empty `panel.outputs` becomes `output_policy = "primary"`; a
+  nonempty list becomes `output_policy = "named"`; `wallpaper_source` becomes
+  `""`; and `background_color` becomes `"#182033"`.
+
+The normalized value reports schema version 2. Reading or loading version 1
+never rewrites source bytes. An explicit whole-document write serializes one
+complete version-2 document. Unknown source versions fail safely.
 
 ## Loading and writes
 
@@ -95,6 +130,11 @@ result means rename committed the new document but final directory
 synchronization failed; callers must not misreport that state as an untouched
 old file.
 
+Promotion retains the exact validated source bytes, including version-1 bytes.
+Only the explicit validate-and-write path performs a migration to complete
+version 2. The original input remains available until that atomic write
+succeeds, preserving `PD-CONFIG-003`, `PD-CONFIG-006`, and `PD-PKG-010`.
+
 ## Atomic publication
 
 1. Load a candidate configuration and referenced token documents.
@@ -123,8 +163,8 @@ authority from a sequence of per-key events.
 
 The strict
 [`prismdrake-runtime-snapshot` schema](../../schemas/prismdrake-runtime-snapshot.schema.json)
-defines version 1 of the internal complete-snapshot payload. It is an
-Experimental PD1 transport contract, not a stable ABI. The canonical UTF-8 JSON
+defines version 2 of the internal complete-snapshot payload. It is an
+Experimental transport contract, not a stable ABI. The canonical UTF-8 JSON
 payload is limited to 1 MiB and contains:
 
 - one nonzero generation and the authoritative top-level profile identifier;
@@ -136,12 +176,15 @@ payload is limited to 1 MiB and contains:
   never filesystem paths; and
 - closed validation-warning and restart-domain identifiers.
 
-The serialized payload is built before publication and retained with the typed
-snapshot. Its generation is identical to the typed generation and later D-Bus
-reply. Unknown schema versions, unknown properties, inconsistent profile/theme
-identity, duplicate identifiers, and out-of-bound collections or values are
-rejected. Original TOML, rejected values, parser excerpts, and user or packaged
-filesystem paths are never serialized.
+The top-level runtime `schema_version` and nested
+`settings.schema_version` are both `2`; the independently versioned resolved
+theme remains schema version `1`. The serialized payload is built before
+publication and retained with the typed snapshot. Its generation is identical
+to the typed generation and later D-Bus reply. Unknown schema versions, unknown
+properties, inconsistent profile/theme identity, duplicate identifiers, and
+out-of-bound collections or values are rejected. Original TOML, rejected
+values, parser excerpts, and user or packaged filesystem paths are never
+serialized.
 
 ## Experimental D-Bus boundary
 
@@ -163,6 +206,11 @@ disappearance, and name reacquisition. Acceptance of ADR 0004 and implementation
 of the PD1 prototype do not stabilize either interface or guarantee wire
 compatibility.
 
+PD2 settingsd, shell clients, and session readiness request runtime snapshot
+version 2 only. Runtime version 1 and unknown transport versions are rejected;
+source configuration version 1 remains supported only through the in-memory
+normalization path above.
+
 The Experimental shell client implements this boundary without Qt D-Bus or a
 polling timer. It installs owner and generation matches before its initial
 owner query, drives the selected sd-bus provider from Qt socket notifiers and
@@ -171,5 +219,11 @@ to fetch one newer complete snapshot. Received JSON remains private to a strict
 bounded inverse parser; only an immutable typed snapshot crosses into shell
 theme and presentation adapters.
 
-Relevant requirements: `PD-CONFIG-001` through `PD-CONFIG-010` and
-`PD-API-001` through `PD-API-005`.
+The configured notifications do-not-disturb value is the settingsd-owned
+baseline. `prismdrake-notifyd` may layer an ephemeral effective override without
+writing this document, as defined in
+[PD2 state ownership](pd2-state-ownership.md#do-not-disturb-authority).
+
+Relevant requirements: `PD-CONFIG-001` through `PD-CONFIG-010`, `PD-SEC-001`,
+`PD-SEC-008`, `PD-REL-002`, `PD-REL-008`, and `PD-API-001` through
+`PD-API-005`.

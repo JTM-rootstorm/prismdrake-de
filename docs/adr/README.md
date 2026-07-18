@@ -25,8 +25,9 @@ markers.
 | [0001](0001-project-identity.md) | Accepted | Project identity |
 | [0002](0002-component-and-process-model.md) | Accepted | Components and processes |
 | [0003](0003-shell-toolkit.md) | Accepted | Shell toolkit |
-| [0004](0004-configuration-format.md) | Accepted | Configuration format |
+| [0004](0004-configuration-format.md) | Accepted; version-specific portions superseded by 0009 | Configuration format |
 | [0005](0005-standards-and-glasswyrm-integration.md) | Proposed with an Accepted naming constraint | Standards and Glasswyrm integration |
 | [0006](0006-theme-token-model.md) | Accepted | Theme tokens |
 | [0007](0007-licensing-and-original-assets.md) | Accepted | Licensing and original assets |
 | [0008](0008-build-language-and-testing-baseline.md) | Accepted | Build, language, and testing baseline |
+| [0009](0009-pd2-state-and-control-contracts.md) | Accepted | PD2 state ownership and control contracts |

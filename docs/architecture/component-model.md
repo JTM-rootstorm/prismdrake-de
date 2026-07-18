@@ -5,16 +5,23 @@ Accepted by [ADR 0002](../adr/0002-component-and-process-model.md). â€œRestartâ€
 always means bounded retry with backoff; repeated failure enters safe mode or
 leaves only the affected optional feature unavailable.
 
+PD2 state ownership, notification behavior, shell placement, control IPC, and
+application association are refined by
+[ADR 0009](../adr/0009-pd2-state-and-control-contracts.md) and its linked
+architecture contracts. These refinements do not create additional daemons.
+
 ## `prismdrake-session`
 
 - **Purpose:** establish the session environment, order startup and shutdown,
-  supervise components, coordinate logout, and enter safe mode.
+  supervise components, own the Experimental same-user logout transaction,
+  coordinate reverse-order child shutdown, and enter safe mode.
 - **Inputs:** XDG/session environment, packaged component metadata, component
   readiness and failure events, and exact-child private readiness channels.
 - **Outputs:** child process lifecycle, readiness and diagnostics, orderly
   shutdown requests.
 - **Owned state:** supervision state, retry budget, safe-mode state, session
-  lifecycle; not application or window state.
+  lifecycle, and the current logout transaction; not application or window
+  state.
 - **Forbidden responsibilities:** shell rendering, WM policy, privileged system
   operations, or editing settings behind `prismdrake-settingsd`.
 - **Dependencies/package:** toolkit-neutral process and D-Bus facilities in a
@@ -32,14 +39,32 @@ leaves only the affected optional feature unavailable.
   notification models, typed external-service adapters, user input.
 - **Outputs:** UI, accessibility tree, narrow commands and effect requests, and
   one private readiness message after the initial panel epoch exists.
-- **Owned state:** transient view state and caches only.
+- **Owned state:** transient view state and caches, ordered pin persistence, and
+  placement of shell-owned surfaces.
 - **Forbidden responsibilities:** authoritative focus, stacking, workspace,
-  composition, capture, settings, notification-history, or privilege policy.
-- **Dependencies/package:** Accepted Qt 6 Quick visible surfaces and C++ models
+  composition, capture, settings, notification history, effective
+  do-not-disturb, session shutdown, or privilege policy.
+- **Dependencies/package:** Accepted Qt 6.11 Quick visible surfaces and C++ models
   in `prismdrake-shell`; Qt remains isolated from toolkit-neutral services.
 - **Crash/restart/security:** WM state survives; session restarts shell with its
   last validated generation. All external metadata and rich content are
   untrusted and work must not block UI or D-Bus dispatch threads.
+
+### `prismdrake-shellctl`
+
+- **Purpose:** map a closed command-line grammar to Experimental Shell1 and
+  Session1 same-user calls for WM bindings and developer operation.
+- **Inputs:** fixed command verbs and an optional validated output name.
+- **Outputs:** one bounded D-Bus request, a redacted diagnostic, and a useful
+  process exit status.
+- **Owned state:** none; the client is not resident.
+- **Forbidden responsibilities:** arbitrary D-Bus access, arbitrary command
+  execution, global keyboard grabs, session authority, retries without bound,
+  or persistence.
+- **Dependencies/package:** toolkit-neutral D-Bus client support in the shell
+  package; no GUI toolkit or privileged service.
+- **Crash/restart/security:** validates arguments before connecting, uses a
+  fixed two-second monotonic call deadline, and fails promptly on owner loss.
 
 ## `prismdrake-settingsd`
 
@@ -49,8 +74,10 @@ leaves only the affected optional feature unavailable.
   capability changes.
 - **Outputs:** snapshots, narrow D-Bus replies/signals, diagnostics, atomic
   persistent writes.
-- **Owned state:** current valid settings generation and migration state.
+- **Owned state:** current valid settings generation, migration state, and the
+  configured do-not-disturb baseline.
 - **Forbidden responsibilities:** control-center UI, arbitrary-key mutation,
+  pins, notification history, effective runtime do-not-disturb, shell geometry,
   secrets, or compositor policy.
 - **Dependencies/package:** toolkit-neutral parser, filesystem, D-Bus, and X11
   settings support in the core package.
@@ -60,14 +87,19 @@ leaves only the affected optional feature unavailable.
 
 ## `prismdrake-notifyd`
 
-- **Purpose:** own the freedesktop notification service, replacement semantics,
-  routing, retention, history, and do-not-disturb policy.
+- **Purpose:** own the freedesktop Notifications 1.3 service, replacement and
+  sender lifecycle, routing, retention, history, and effective do-not-disturb
+  policy.
 - **Inputs:** untrusted notification calls and validated settings generations.
 - **Outputs:** typed presentation models to the shell and narrow history
   operations.
-- **Owned state:** notification identifiers, policy, and bounded history.
+- **Owned state:** unsigned 32-bit live notification identifiers, unsigned
+  64-bit history record identifiers, sender/action lifecycle, ephemeral
+  effective do-not-disturb override, history records, and notification-center
+  generations.
 - **Forbidden responsibilities:** shell rendering, executing notification
-  content, or storing sensitive bodies in logs.
+  content, persisting image pixels, changing configuration, or storing
+  sensitive content in logs.
 - **Dependencies/package:** toolkit-neutral D-Bus and storage support in a core
   notification package.
 - **Crash/restart/security:** shell and session continue; name reacquisition and
@@ -136,7 +168,7 @@ leaves only the affected optional feature unavailable.
 - **Purpose:** coordinate secure lock presentation only after a complete threat
   model and suitable X11/Glasswyrm primitives are Accepted.
 - **Inputs/outputs/state:** Deferred; no interface or security claim exists in
-  PD0.
+  PD2.
 - **Forbidden responsibilities:** treating an overlay as a secure lock or
   claiming input exclusion without authoritative platform support.
 - **Dependencies/package:** deferred optional component.

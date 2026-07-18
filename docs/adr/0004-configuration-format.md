@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-16
+- **Partial supersession:** 2026-07-18 by [ADR 0009](0009-pd2-state-and-control-contracts.md)
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -31,11 +32,11 @@ risks turning the interface into an unrestricted mutation API.
 
 ## Decision
 
-Use `$XDG_CONFIG_HOME/prismdrake/config.toml` with explicit
-`schema_version = 1`, strict documented domains, and profile identifiers
-`lustre` and `forge`. Use XDG state, cache, runtime, and data locations for their
-defined purposes. Validate all input and write atomically while preserving the
-last valid input and packaged defaults.
+Use `$XDG_CONFIG_HOME/prismdrake/config.toml` with an explicit schema version,
+strict documented domains, and profile identifiers `lustre` and `forge`. Use
+XDG state, cache, runtime, and data locations for their defined purposes.
+Validate all input and write atomically while preserving the last valid input
+and packaged defaults.
 
 Resolve settings and theme data into immutable snapshots with one monotonically
 increasing generation per D-Bus owner epoch. Publish only complete generations.
@@ -44,6 +45,11 @@ Implement the narrow `org.prismdrake.Settings1` interface and internal
 Experimental PD1 contracts; this decision does not stabilize either interface.
 Do not expose generic arbitrary-key mutation, consumer acknowledgement, or a
 two-phase rollback protocol.
+
+ADR 0009 supersedes only this record's version-1-only source and runtime shape.
+The TOML format, XDG locations, strict validation, recoverable migration,
+atomic writes, immutable complete snapshots, monotonically increasing
+generation semantics, and narrow IPC decisions in this record remain Accepted.
 
 ## Consequences
 

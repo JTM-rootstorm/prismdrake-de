@@ -25,7 +25,8 @@ dependency, or measured performance justification.
 4. Publish one complete settings and theme generation.
 5. Detect standard and optional native capabilities without process-name
    inference.
-6. Start `prismdrake-notifyd` and other required non-visual services.
+6. Start `prismdrake-notifyd`; a name conflict or startup failure records a
+   degraded notification state rather than failing the complete session.
 7. Start `prismdrake-shell` with the complete validated generation.
 8. Start enabled portal and toolkit adapters.
 9. Report degraded optional features and mark the session ready.
@@ -35,17 +36,21 @@ form an acyclic graph; consumers wait with bounded timeouts and useful errors.
 
 ## Experimental D-Bus ownership
 
-| Process | Owned name | Exported interfaces | PD1 status |
+| Process | Owned name | Object path and interfaces | Status |
 |---|---|---|---|
-| `prismdrake-settingsd` | `org.prismdrake.Settings1` | `org.prismdrake.Settings1`, `org.prismdrake.SettingsSnapshot1` | Experimental PD1 contract and implementation work |
-| `prismdrake-notifyd` | `org.freedesktop.Notifications` | Standard notification interface | Planned with replacement/reacquisition semantics |
-| Other components | Not assigned | A named interface requires its own reviewed contract | Deferred |
+| `prismdrake-settingsd` | `org.prismdrake.Settings1` | `/org/prismdrake/Settings1`: `org.prismdrake.Settings1`, `org.prismdrake.SettingsSnapshot1` | Implemented Experimental settings boundary; snapshot v2 is the Accepted PD2 target |
+| `prismdrake-notifyd` | `org.freedesktop.Notifications` | standard path and `org.freedesktop.Notifications` 1.3 | Accepted PD2 target; implementation pending |
+| `prismdrake-notifyd` | `org.prismdrake.NotificationCenter1` | `/org/prismdrake/NotificationCenter1`: `org.prismdrake.NotificationCenter1` | Accepted Experimental PD2 contract; implementation pending |
+| `prismdrake-shell` | `org.prismdrake.Shell1` | `/org/prismdrake/Shell1`: `org.prismdrake.Shell1` | Accepted Experimental PD2 contract; implementation pending |
+| `prismdrake-session` | `org.prismdrake.Session1` | `/org/prismdrake/Session1`: `org.prismdrake.Session1` | Accepted Experimental PD2 contract; implementation pending |
 
-Both settings interfaces are exported at `/org/prismdrake/Settings1` and are
-explicitly Experimental. `SettingsSnapshot1` is the internal complete-snapshot
-transport for Prismdrake consumers. Implementing these interfaces does not
-freeze their wire contract or provide an ABI compatibility guarantee; stability
-requires a separate Accepted decision.
+Prismdrake-native interfaces allow same-user callers only. They use typed
+redacted errors, bounded timeouts, fixed versioned methods, and no arbitrary-key,
+command, or D-Bus-forwarding operations. Implementing them does not freeze a
+wire contract or provide an ABI compatibility guarantee; stability requires a
+separate Accepted decision. The required standard `a{sv}` notification hints
+parameter remains a bounded standards exception rather than a native-interface
+pattern.
 
 ## Generation propagation
 
@@ -67,6 +72,12 @@ cannot apply an already published generation retains its local prior snapshot
 and recovers by fetching complete authoritative state rather than asking the
 service to roll back.
 
+Notification-center and pin publications use the same owner-epoch principle but
+have independent authorities and generation spaces. A generation from
+settingsd, notifyd, or shell pin state is never compared with another owner's
+generation. Notification mutations guard record content with
+`(record_id, content_generation)` in addition to the notifyd state generation.
+
 ## Supervision and safe mode
 
 Restartable components use bounded exponential backoff and a retry budget.
@@ -85,8 +96,8 @@ backoff, then shutdown sends SIGTERM to the exact shell and settingsd PIDs in
 that order, waits up to 2 seconds per child, and reports a SIGKILL escalation
 with a further 1-second reap bound.
 
-PD1 currently consumes a validated inherited session bus rather than spawning
-one. The settings service has an explicit D-Bus readiness probe. For each shell
+The current supervisor consumes a validated inherited session bus rather than
+spawning one. The settings service has an explicit D-Bus readiness probe. For each shell
 launch, the supervisor creates a new private Linux event descriptor, passes it
 only across that exact fork/exec, and waits for one fixed post-exec value. The
 shell adopts the descriptor close-on-exec, removes its private environment
@@ -99,15 +110,37 @@ rendering payload bytes, and timeout, child closure or exit, restart, and
 shutdown all discard that launch's channel. This is private session plumbing,
 not a public Prismdrake IPC interface.
 
+PD2 inserts notifyd between settingsd and shell in the supervised child order.
+Notifyd readiness is bounded. Exhaustion disables notifications while allowing
+the settings-backed shell to continue. Shell and settingsd keep their existing
+critical-readiness relationship. Name conflicts do not trigger an unbounded
+restart loop.
+
+## Logout transaction
+
+`prismdrake-session` owns one nonzero unsigned 64-bit logout transaction ID per
+active request. `RequestLogout` moves idle to confirmation requested;
+transaction-matching `ConfirmLogout` begins bounded reverse-order shutdown and
+`CancelLogout` returns a still-cancellable request to idle. Concurrent, stale,
+zero, or wrong-epoch IDs fail without changing state. The shell confirmation is
+presentation, not authorization or shutdown authority.
+
+The complete transaction and method contract is documented in
+[shell and session control](shell-control.md).
+
 ## Shutdown order
 
-1. Stop accepting new shell work and profile changes.
+1. Stop accepting new shell work and new logout transactions.
 2. Close optional adapters and portal requests with bounded cancellation.
-3. Stop shell and decoration presentation.
-4. Flush safe notification/settings state atomically.
-5. Release D-Bus names and stop non-visual services.
-6. Terminate supervision after bounded child shutdown.
+3. Stop the exact supervised shell child.
+4. Flush safe notification history atomically and stop the exact notifyd child.
+5. Complete any already committed settings write and stop the exact settingsd
+   child.
+6. Release owned D-Bus names and terminate supervision after bounded child
+   shutdown.
 
-Logout, reboot, and power actions are requested through authoritative external
+PD2 logout coordinates Prismdrake-owned children and does not claim authority
+over unrelated applications or the WM. Broader application-session logout and
+all reboot, shutdown, suspend, and hibernate actions use authoritative external
 services. Forced termination is reported and never silently discards known
 unsafe persistent work.
