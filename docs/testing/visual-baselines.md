@@ -1,23 +1,40 @@
 # Deterministic visual baseline candidates
 
-PD1-WP13 starts with a candidate-capture lane around the production panel QML
-tree. It renders the real settings/theme and task presentation adapters for
-Lustre, Forge, the accessibility layer, missing blur, and a right-to-left smoke
-layout. The test does not create a profile-specific component fork and does not
-capture or blur desktop content.
+PD1-WP13 provides candidate-capture lanes around the production panel, launcher,
+and notification QML trees. They render real settings/theme projections and the
+production task, launcher, and notification presentation adapters without
+creating profile-specific component forks. The harness does not capture or blur
+desktop content.
+
+The current candidates cover:
+
+- panel: Lustre, Forge, accessibility, missing blur, and right-to-left layout;
+- launcher: Lustre results, empty catalog, and a non-empty catalog with no query
+  results, Forge results, and the accessible opaque fallback; and
+- notifications: Lustre normal urgency, Forge critical urgency, and critical
+  urgency with the accessible opaque fallback.
+
+The launcher lane captures the same Lustre results state twice and requires
+byte-identical decoded images. This guards the locked renderer contract before
+any reviewed tolerance policy is introduced.
 
 Configure, build, and run the focused lane with:
 
 ```bash
 cmake -S . -B build/visual -DCMAKE_BUILD_TYPE=Debug
-cmake --build build/visual --target prismdrake-panel-visual-baseline-tests
-ctest --test-dir build/visual -R PanelVisualBaselineTest --output-on-failure
+cmake --build build/visual --target \
+  prismdrake-panel-visual-baseline-tests \
+  prismdrake-launcher-visual-baseline-tests \
+  prismdrake-notification-visual-baseline-tests
+ctest --test-dir build/visual \
+  -R 'PanelVisualBaselineTest|LauncherVisualBaselineTest|NotificationVisualBaselineTest' \
+  --output-on-failure
 ```
 
 The CTest definition fixes the offscreen QPA, software scene graph, basic render
 loop, Basic controls style, scale factor, C locale, and UTC timezone. Configure
 time locks the theme's generic `sans-serif` request to the family and source
-reported by fontconfig. The test fails if Qt cannot resolve that same family at
+reported by fontconfig. The tests fail if Qt cannot resolve that same family at
 render time, and each sidecar records both values for review. Generated PNGs
 and JSON sidecars are written below `build/visual/test-artifacts/visual/`.
 

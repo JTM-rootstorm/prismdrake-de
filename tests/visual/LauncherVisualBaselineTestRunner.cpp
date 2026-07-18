@@ -1,4 +1,4 @@
-#include "PanelSurfaceQmlFixture.hpp"
+#include "LauncherSurfaceQmlFixture.hpp"
 #include "PanelVisualBaselineRecorder.hpp"
 
 #include <QQmlContext>
@@ -8,14 +8,14 @@
 
 namespace prismdrake::shell::visual::test {
 
-class PanelVisualBaselineSetup final : public QObject {
+class LauncherVisualBaselineSetup final : public QObject {
     Q_OBJECT
 
   public slots:
     void qmlEngineAvailable(QQmlEngine *engine) {
         engine->rootContext()->setContextProperty(
-            QStringLiteral("panelFixture"),
-            new prismdrake::shell::panel::test::PanelSurfaceQmlFixture(engine));
+            QStringLiteral("launcherFixture"),
+            new prismdrake::shell::launcher::test::LauncherSurfaceQmlFixture(engine));
         engine->rootContext()->setContextProperty(QStringLiteral("baselineRecorder"),
                                                   new PanelVisualBaselineRecorder(engine));
     }
@@ -23,7 +23,7 @@ class PanelVisualBaselineSetup final : public QObject {
 
 } // namespace prismdrake::shell::visual::test
 
-QUICK_TEST_MAIN_WITH_SETUP(PanelVisualBaselineTest,
-                           prismdrake::shell::visual::test::PanelVisualBaselineSetup)
+QUICK_TEST_MAIN_WITH_SETUP(LauncherVisualBaselineTest,
+                           prismdrake::shell::visual::test::LauncherVisualBaselineSetup)
 
-#include "PanelVisualBaselineTestRunner.moc"
+#include "LauncherVisualBaselineTestRunner.moc"

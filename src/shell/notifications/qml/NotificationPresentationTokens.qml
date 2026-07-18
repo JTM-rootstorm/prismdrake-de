@@ -16,6 +16,7 @@ QtObject {
     required property real borderWidth
     required property real focusWidth
     required property real minimumTargetSize
+    required property string bodyFontFamily
     required property int bodyFontPixels
     required property int titleFontPixels
     required property int motionDurationMs

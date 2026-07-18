@@ -324,6 +324,10 @@ prismdrake_add_format_check(
     tests/visual/PanelVisualBaselineRecorder.cpp
     tests/visual/PanelVisualBaselineRecorder.hpp
     tests/visual/PanelVisualBaselineTestRunner.cpp
+    tests/visual/LauncherVisualBaselineTestRunner.cpp
+    tests/visual/NotificationVisualBaselineTestRunner.cpp
+    tests/visual/VisualThemeFixture.cpp
+    tests/visual/VisualThemeFixture.hpp
     tests/qt/settings/SettingsSnapshotClientTests.cpp
     tests/qt/ShellThemeSnapshotAdapterTests.cpp
     tests/qt/LauncherPresentationModelTests.cpp

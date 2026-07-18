@@ -1,6 +1,6 @@
 import QtQuick
 import QtTest
-import "../../../src/shell/panel/qml" as Panel
+import "../../../../src/shell/panel/qml" as Panel
 
 // The Quick Test setup publishes test-only real settings/theme/task fixtures and the recorder.
 // qmllint disable unqualified
@@ -46,7 +46,7 @@ TestCase {
         })
         verify(accepted)
         tryVerify(() => completed, 5000)
-        verify(recorded)
+        verify(recorded, baselineRecorder.lastError)
         verify(baselineRecorder.metadataComplete(name))
     }
 

@@ -29,6 +29,7 @@ TestCase {
         borderWidth: 2
         focusWidth: 3
         minimumTargetSize: 48
+        bodyFontFamily: "sans-serif"
         bodyFontPixels: 14
         titleFontPixels: 16
         motionDurationMs: 60

@@ -1,6 +1,5 @@
 #include "PanelVisualBaselineRecorder.hpp"
 
-#include "PanelSurfaceQmlFixture.hpp"
 #include "ShellThemeSnapshotAdapter.hpp"
 
 #include <QCryptographicHash>
@@ -14,8 +13,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
-#include <QQmlContext>
-#include <QQmlEngine>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QtGlobal>
@@ -24,6 +21,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <utility>
 
 namespace prismdrake::shell::visual::test {
 namespace {
@@ -128,16 +126,50 @@ bool PanelVisualBaselineRecorder::record(const QString &testName, QObject *theme
         qobject_cast<prismdrake::shell::theme::ShellThemeGeneration *>(themeGeneration);
     const auto image = imagePath(testName);
     const auto metadata = metadataPath(testName);
-    if (!generation || image.isEmpty() || metadata.isEmpty() || width <= 0 || height <= 0 ||
-        !std::isfinite(devicePixelRatio) || devicePixelRatio <= 0.0 ||
-        (layoutDirection != QStringLiteral("ltr") && layoutDirection != QStringLiteral("rtl")) ||
-        !expectedFontAvailable()) {
+    last_error_.clear();
+    const auto reject = [this](QString error) {
+        last_error_ = std::move(error);
         return false;
+    };
+    if (!generation) {
+        return reject(QStringLiteral("theme generation has the wrong runtime type"));
+    }
+    if (image.isEmpty() || metadata.isEmpty()) {
+        return reject(QStringLiteral("test name is not a valid artifact identifier"));
+    }
+    if (width <= 0 || height <= 0) {
+        return reject(QStringLiteral("capture dimensions are not positive"));
+    }
+    if (!std::isfinite(devicePixelRatio) || devicePixelRatio <= 0.0) {
+        return reject(QStringLiteral("device pixel ratio is not positive and finite"));
+    }
+    if (layoutDirection != QStringLiteral("ltr") && layoutDirection != QStringLiteral("rtl")) {
+        return reject(QStringLiteral("layout direction is not ltr or rtl"));
+    }
+    if (!expectedFontAvailable()) {
+        return reject(QStringLiteral("Qt did not resolve the configure-time font family"));
     }
     const auto imageHash = fileDigest(image);
     const auto &snapshot = generation->snapshot();
-    if (imageHash.isEmpty() || !snapshot || !imageHasVisualContent(QImage{image}, width, height)) {
-        return false;
+    if (imageHash.isEmpty()) {
+        return reject(QStringLiteral("encoded capture could not be hashed"));
+    }
+    if (!snapshot) {
+        return reject(QStringLiteral("theme generation has no retained snapshot"));
+    }
+    const QImage captured{image};
+    if (captured.isNull()) {
+        return reject(QStringLiteral("encoded capture could not be decoded"));
+    }
+    if (captured.width() != width || captured.height() != height) {
+        return reject(QStringLiteral("decoded capture is %1x%2; expected %3x%4")
+                          .arg(captured.width())
+                          .arg(captured.height())
+                          .arg(width)
+                          .arg(height));
+    }
+    if (!imageHasVisualContent(captured, width, height)) {
+        return reject(QStringLiteral("decoded capture has insufficient visible color content"));
     }
 
     const auto snapshotBytes = QByteArray::fromStdString(snapshot->serializedJson);
@@ -196,10 +228,13 @@ bool PanelVisualBaselineRecorder::record(const QString &testName, QObject *theme
 
     QSaveFile output(metadata);
     if (!output.open(QIODevice::WriteOnly)) {
-        return false;
+        return reject(QStringLiteral("metadata sidecar could not be opened for writing"));
     }
     const auto bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
-    return output.write(bytes) == bytes.size() && output.commit();
+    if (output.write(bytes) != bytes.size() || !output.commit()) {
+        return reject(QStringLiteral("metadata sidecar could not be committed atomically"));
+    }
+    return true;
 }
 
 bool PanelVisualBaselineRecorder::metadataComplete(const QString &testName) const {
@@ -255,14 +290,6 @@ bool PanelVisualBaselineRecorder::imagesEqual(const QString &firstTestName,
     const auto firstHash = fileDigest(first);
     return !firstHash.isEmpty() && firstHash == fileDigest(second) &&
            QImage{first} == QImage{second};
-}
-
-void PanelVisualBaselineSetup::qmlEngineAvailable(QQmlEngine *engine) {
-    engine->rootContext()->setContextProperty(
-        QStringLiteral("panelFixture"),
-        new prismdrake::shell::panel::test::PanelSurfaceQmlFixture(engine));
-    engine->rootContext()->setContextProperty(QStringLiteral("baselineRecorder"),
-                                              new PanelVisualBaselineRecorder(engine));
 }
 
 } // namespace prismdrake::shell::visual::test

@@ -28,6 +28,7 @@ class NotificationListQmlFixture final : public QObject {
 
     Q_INVOKABLE bool reset();
     Q_INVOKABLE bool addCard(const QString &summary, int timeoutMilliseconds = -1);
+    Q_INVOKABLE bool addCriticalCard(const QString &summary);
     Q_INVOKABLE bool replaceCard(int row, const QString &summary);
     Q_INVOKABLE bool dismissCard(int row);
     Q_INVOKABLE bool advanceTimeouts(int milliseconds);

@@ -217,6 +217,7 @@ Item {
                 text: root.presentationApplicationName
                 textFormat: Text.PlainText
                 color: root.tokens.textMutedColor
+                font.family: root.tokens.bodyFontFamily
                 font.pixelSize: root.tokens.bodyFontPixels
                 elide: Text.ElideRight
                 Accessible.ignored: true
@@ -245,6 +246,7 @@ Item {
                     text: root.urgencyLabel
                     textFormat: Text.PlainText
                     color: root.tokens.textPrimaryColor
+                    font.family: root.tokens.bodyFontFamily
                     font.pixelSize: root.tokens.bodyFontPixels
                     font.bold: root.presentationUrgencyId === "critical"
                     Accessible.ignored: true
@@ -260,6 +262,7 @@ Item {
             text: root.presentationSummary
             textFormat: Text.PlainText
             color: root.tokens.textPrimaryColor
+            font.family: root.tokens.bodyFontFamily
             font.pixelSize: root.tokens.titleFontPixels
             font.bold: true
             wrapMode: Text.Wrap
@@ -277,6 +280,7 @@ Item {
             text: root.presentationBody
             textFormat: Text.PlainText
             color: root.tokens.textPrimaryColor
+            font.family: root.tokens.bodyFontFamily
             font.pixelSize: root.tokens.bodyFontPixels
             wrapMode: Text.Wrap
             maximumLineCount: 6
@@ -342,6 +346,7 @@ Item {
                         text: actionButton.text
                         textFormat: Text.PlainText
                         color: root.tokens.textPrimaryColor
+                        font.family: root.tokens.bodyFontFamily
                         font.pixelSize: root.tokens.bodyFontPixels
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -404,6 +409,7 @@ Item {
                     text: dismissButton.text
                     textFormat: Text.PlainText
                     color: root.tokens.textPrimaryColor
+                    font.family: root.tokens.bodyFontFamily
                     font.pixelSize: root.tokens.bodyFontPixels
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter

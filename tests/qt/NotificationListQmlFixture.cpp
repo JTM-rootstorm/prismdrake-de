@@ -12,14 +12,17 @@ namespace {
 
 using namespace std::chrono_literals;
 
-[[nodiscard]] prismdrake::notifications::SyntheticNotificationInput input(const QString &summary,
-                                                                          int timeoutMilliseconds) {
+[[nodiscard]] prismdrake::notifications::SyntheticNotificationInput
+input(const QString &summary, int timeoutMilliseconds,
+      prismdrake::notifications::NotificationUrgency urgency =
+          prismdrake::notifications::NotificationUrgency::normal) {
     prismdrake::notifications::SyntheticNotificationInput value;
     const QByteArray encoded = summary.toUtf8();
     value.summary = std::string{encoded.constData(), static_cast<std::size_t>(encoded.size())};
     value.body = "Literal fixture body";
     value.applicationName = "Fixture App";
     value.actions = {{"open", "Open", true}};
+    value.urgency = urgency;
     if (timeoutMilliseconds < 0) {
         value.timeout = {prismdrake::notifications::NotificationTimeoutKind::never, 0ms};
     } else {
@@ -57,6 +60,19 @@ bool NotificationListQmlFixture::addCard(const QString &summary, int timeoutMill
         return false;
     }
     auto outcome = synthetic_->upsert(input(summary, timeoutMilliseconds));
+    if (!outcome) {
+        return false;
+    }
+    ids_.push_back(outcome.value().id);
+    return apply(outcome.value().snapshot);
+}
+
+bool NotificationListQmlFixture::addCriticalCard(const QString &summary) {
+    if (!synthetic_) {
+        return false;
+    }
+    auto outcome = synthetic_->upsert(
+        input(summary, -1, prismdrake::notifications::NotificationUrgency::critical));
     if (!outcome) {
         return false;
     }
