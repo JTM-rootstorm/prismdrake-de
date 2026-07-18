@@ -483,7 +483,10 @@ def _invoke_press(atspi: Any, name: str) -> bool:
 
 
 def _window_id(xdotool: Path, title: str) -> str | None:
-    result = _run_checked([str(xdotool), "search", "--onlyvisible", "--name", f"^{title}$"])
+    # AT-SPI focus is the visibility contract below. Avoid xdotool's
+    # --onlyvisible filter because some WMs publish Qt tool windows after the
+    # accessible tree becomes actionable.
+    result = _run_checked([str(xdotool), "search", "--name", f"^{title}$"])
     if result.returncode != 0:
         return None
     identifiers = [
