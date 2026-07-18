@@ -138,6 +138,67 @@ class AccessibilityEvidenceContractTests(unittest.TestCase):
             ],
         )
 
+    def test_selects_exact_titled_surface_across_all_desktops(self) -> None:
+        search = SimpleNamespace(returncode=0, stdout="17\n")
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        node = mock.Mock()
+        node.get_process_id.return_value = 42
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[search, owner]
+        ) as run_checked:
+            self.assertEqual(
+                live_atspi._titled_window_for_accessible(
+                    Path("/usr/bin/xdotool"), node, "11", 42
+                ),
+                "17",
+            )
+        self.assertEqual(
+            run_checked.call_args_list,
+            [
+                mock.call(
+                    [
+                        "/usr/bin/xdotool",
+                        "search",
+                        "--all",
+                        "--name",
+                        "^Prismdrake Launcher$",
+                    ]
+                ),
+                mock.call(["/usr/bin/xdotool", "getwindowpid", "17"]),
+            ],
+        )
+
+    def test_titled_surface_rejects_foreign_ambiguous_and_malformed_results(self) -> None:
+        node = mock.Mock()
+        node.get_process_id.return_value = 42
+        xdotool = Path("/usr/bin/xdotool")
+
+        foreign_node = mock.Mock()
+        foreign_node.get_process_id.return_value = 41
+        with mock.patch.object(live_atspi, "_run_checked") as run_checked:
+            self.assertIsNone(
+                live_atspi._titled_window_for_accessible(
+                    xdotool, foreign_node, "11", 42
+                )
+            )
+        run_checked.assert_not_called()
+
+        for output in ("", "17\n19\n", "private-window\n", "11\n"):
+            completed = SimpleNamespace(returncode=0, stdout=output)
+            with mock.patch.object(live_atspi, "_run_checked", return_value=completed):
+                self.assertIsNone(
+                    live_atspi._titled_window_for_accessible(xdotool, node, "11", 42)
+                )
+
+        search = SimpleNamespace(returncode=0, stdout="17\n")
+        foreign_owner = SimpleNamespace(returncode=0, stdout="41\n")
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[search, foreign_owner]
+        ):
+            self.assertIsNone(
+                live_atspi._titled_window_for_accessible(xdotool, node, "11", 42)
+            )
+
     def test_visible_surface_rejects_foreign_ambiguous_and_malformed_results(self) -> None:
         node = mock.Mock()
         node.get_process_id.return_value = 42

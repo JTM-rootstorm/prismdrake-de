@@ -17,6 +17,7 @@ from typing import Any, Callable
 
 
 APPLICATION_NAME = "prismdrake-shell"
+LAUNCHER_TITLE = "Prismdrake Launcher"
 FIXTURE_RESULT_NAME = "Prismdrake Evidence App"
 DIAGNOSTICS_NAME = "Prismdrake Lustre, generation 1"
 PHASE_IDS = (
@@ -545,6 +546,34 @@ def _focused_window_for_accessible(
     return identifier
 
 
+def _titled_window_for_accessible(
+    xdotool: Path, node: Any, panel: str, expected_process_id: int
+) -> str | None:
+    """Resolve Qt tool windows that Openbox publishes on every desktop."""
+
+    if node.get_process_id() != expected_process_id:
+        return None
+    result = _run_checked(
+        [str(xdotool), "search", "--all", "--name", f"^{LAUNCHER_TITLE}$"]
+    )
+    if result.returncode != 0:
+        return None
+    identifiers = result.stdout.splitlines()
+    if (
+        len(identifiers) != 1
+        or not identifiers[0].isascii()
+        or not identifiers[0].isdecimal()
+        or identifiers[0] == panel
+    ):
+        return None
+    identifier = identifiers[0]
+    return (
+        identifier
+        if _window_process_matches(xdotool, identifier, expected_process_id)
+        else None
+    )
+
+
 def _visible_window_for_accessible(
     xdotool: Path, node: Any, panel: str, expected_process_id: int
 ) -> str | None:
@@ -778,7 +807,10 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
         )
         _require(_grab_focus(launcher_search), "launcher search focus request was rejected")
         launcher = _wait_until(
-            lambda: _focused_window_for_accessible(
+            lambda: _titled_window_for_accessible(
+                arguments.xdotool, launcher_search, panel, shell.pid
+            )
+            or _focused_window_for_accessible(
                 Atspi, arguments.xdotool, launcher_search, panel, shell.pid
             )
             or _window_for_accessible(
