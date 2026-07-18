@@ -49,6 +49,7 @@ RDEPEND="
 		app-accessibility/at-spi2-core
 		gnome-base/gsettings-desktop-schemas
 		media-fonts/dejavu
+		media-libs/fontconfig
 		media-libs/mesa
 		sys-apps/dbus
 		x11-apps/xdpyinfo

@@ -44,6 +44,10 @@ carry a verified or observed version.
   records repository and build/test tooling, including system GoogleTest 1.17.0
   used by the foundation tests and the observed GCC 15.3.0 and Clang 22.1.8
   compiler packages. These entries are not installed runtime dependencies.
+- The candidate visual-baseline harness requires the system fontconfig
+  `fc-match` tool only when tests are enabled. It locks and records the generic
+  theme font's resolved family and source for each configured test environment;
+  fontconfig is not a Prismdrake runtime dependency.
 - `prismdrake-settingsd` is an Experimental implemented service. Its boundary
   records direct system toml++ 3.4.0 configuration parsing, header-only
   nlohmann JSON 3.12.0-r1 theme/runtime serialization, and the sd-bus provider.

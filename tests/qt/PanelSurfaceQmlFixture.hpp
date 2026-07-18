@@ -45,6 +45,7 @@ class PanelSurfaceQmlFixture final : public QObject {
     [[nodiscard]] QString taskGeneration() const;
 
     Q_INVOKABLE bool resetLustre();
+    Q_INVOKABLE bool resetLustreMissingBlur();
     Q_INVOKABLE bool resetAccessible();
     Q_INVOKABLE bool publishForge();
     Q_INVOKABLE bool publishRepresentativeTasks();
@@ -68,7 +69,9 @@ class PanelSurfaceQmlFixture final : public QObject {
         bool modal{false};
     };
 
-    [[nodiscard]] bool resetFromConfiguration(const std::filesystem::path &configuration);
+    [[nodiscard]] bool resetFromConfiguration(
+        const std::filesystem::path &configuration,
+        prismdrake::theme::ThemeResolveOptions capabilities = {{true, true}, false});
     [[nodiscard]] bool publishTasks();
     void captureActivation(prismdrake::x11::TaskLifetimeId lifetime,
                            prismdrake::x11::TaskModelGeneration generation);

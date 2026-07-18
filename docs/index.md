@@ -52,6 +52,10 @@ describe a usable or production-ready desktop release.
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
 
+## Testing
+
+- [Deterministic visual baseline candidates](testing/visual-baselines.md)
+
 ## Machine-readable contracts
 
 - [Configuration examples](../examples/config/lustre.toml)

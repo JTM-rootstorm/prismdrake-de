@@ -66,12 +66,20 @@ bool PanelSurfaceQmlFixture::resetLustre() {
                                   "examples/config/lustre.toml");
 }
 
+bool PanelSurfaceQmlFixture::resetLustreMissingBlur() {
+    return resetFromConfiguration(std::filesystem::path(PRISMDRAKE_SOURCE_DIR) /
+                                      "examples/config/lustre.toml",
+                                  {{false, true}, false});
+}
+
 bool PanelSurfaceQmlFixture::resetAccessible() {
     return resetFromConfiguration(std::filesystem::path(PRISMDRAKE_SOURCE_DIR) /
                                   "examples/config/accessible.toml");
 }
 
-bool PanelSurfaceQmlFixture::resetFromConfiguration(const std::filesystem::path &configuration) {
+bool PanelSurfaceQmlFixture::resetFromConfiguration(
+    const std::filesystem::path &configuration,
+    prismdrake::theme::ThemeResolveOptions capabilities) {
     static std::atomic_uint sequence{0U};
     const auto nextTemporaryDirectory =
         std::filesystem::temp_directory_path() /
@@ -87,7 +95,6 @@ bool PanelSurfaceQmlFixture::resetFromConfiguration(const std::filesystem::path 
     const config::ConfigurationLocations locations{
         userConfiguration, nextTemporaryDirectory / "state/last-known-valid-config.toml",
         source / "data/defaults/config.toml"};
-    constexpr prismdrake::theme::ThemeResolveOptions capabilities{{true, true}, false};
     auto started = prismdrake::settings::SettingsEngine::start(
         {locations, source / "themes", {}, capabilities});
     if (!started) {
