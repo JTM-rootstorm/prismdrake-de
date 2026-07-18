@@ -107,6 +107,83 @@ class AccessibilityEvidenceContractTests(unittest.TestCase):
                 )
             )
 
+    def test_selects_sole_visible_non_panel_surface_with_exact_owner(self) -> None:
+        search = SimpleNamespace(returncode=0, stdout="11\n17\n")
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        node = mock.Mock()
+        node.get_process_id.return_value = 42
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[search, owner]
+        ) as run_checked:
+            self.assertEqual(
+                live_atspi._visible_window_for_accessible(
+                    Path("/usr/bin/xdotool"), node, "11", 42
+                ),
+                "17",
+            )
+        self.assertEqual(
+            run_checked.call_args_list,
+            [
+                mock.call(
+                    [
+                        "/usr/bin/xdotool",
+                        "search",
+                        "--all",
+                        "--onlyvisible",
+                        "--class",
+                        "^prismdrake-shell$",
+                    ]
+                ),
+                mock.call(["/usr/bin/xdotool", "getwindowpid", "17"]),
+            ],
+        )
+
+    def test_visible_surface_rejects_foreign_ambiguous_and_malformed_results(self) -> None:
+        node = mock.Mock()
+        node.get_process_id.return_value = 42
+        xdotool = Path("/usr/bin/xdotool")
+
+        foreign_node = mock.Mock()
+        foreign_node.get_process_id.return_value = 41
+        with mock.patch.object(live_atspi, "_run_checked") as run_checked:
+            self.assertIsNone(
+                live_atspi._visible_window_for_accessible(
+                    xdotool, foreign_node, "11", 42
+                )
+            )
+        run_checked.assert_not_called()
+
+        malformed = SimpleNamespace(returncode=0, stdout="11\nprivate-window\n")
+        with mock.patch.object(live_atspi, "_run_checked", return_value=malformed):
+            self.assertIsNone(
+                live_atspi._visible_window_for_accessible(xdotool, node, "11", 42)
+            )
+
+        ambiguous = SimpleNamespace(returncode=0, stdout="11\n17\n19\n")
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[ambiguous, owner, owner]
+        ):
+            self.assertIsNone(
+                live_atspi._visible_window_for_accessible(xdotool, node, "11", 42)
+            )
+
+        visible = SimpleNamespace(returncode=0, stdout="11\n17\n")
+        foreign_owner = SimpleNamespace(returncode=0, stdout="41\n")
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[visible, foreign_owner]
+        ):
+            self.assertIsNone(
+                live_atspi._visible_window_for_accessible(xdotool, node, "11", 42)
+            )
+
+        oversized = SimpleNamespace(
+            returncode=0, stdout="\n".join(str(value) for value in range(17)) + "\n"
+        )
+        with mock.patch.object(live_atspi, "_run_checked", return_value=oversized):
+            with self.assertRaisesRegex(EvidenceError, "visible shell X11 window count"):
+                live_atspi._visible_window_for_accessible(xdotool, node, "99", 42)
+
     def test_selects_exact_class_surface_containing_accessible_center(self) -> None:
         search = SimpleNamespace(returncode=0, stdout="11\n17\n19\n")
         launcher = SimpleNamespace(

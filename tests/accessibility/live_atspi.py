@@ -545,6 +545,35 @@ def _focused_window_for_accessible(
     return identifier
 
 
+def _visible_window_for_accessible(
+    xdotool: Path, node: Any, panel: str, expected_process_id: int
+) -> str | None:
+    if node.get_process_id() != expected_process_id:
+        return None
+    result = _run_checked(
+        [
+            str(xdotool),
+            "search",
+            "--all",
+            "--onlyvisible",
+            "--class",
+            "^prismdrake-shell$",
+        ]
+    )
+    if result.returncode != 0:
+        return None
+    lines = result.stdout.splitlines()
+    if not lines or any(not line.isascii() or not line.isdecimal() for line in lines):
+        return None
+    if len(lines) > 16:
+        raise EvidenceError("the visible shell X11 window count exceeds the bound")
+    identifiers = [identifier for identifier in lines if identifier != panel]
+    for identifier in identifiers:
+        if not _window_process_matches(xdotool, identifier, expected_process_id):
+            return None
+    return identifiers[0] if len(identifiers) == 1 else None
+
+
 def _window_for_accessible(
     atspi: Any, xdotool: Path, node: Any, panel: str, expected_process_id: int
 ) -> str | None:
@@ -754,6 +783,9 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
             )
             or _window_for_accessible(
                 Atspi, arguments.xdotool, launcher_search, panel, shell.pid
+            )
+            or _visible_window_for_accessible(
+                arguments.xdotool, launcher_search, panel, shell.pid
             ),
             "the Prismdrake launcher window",
         )
