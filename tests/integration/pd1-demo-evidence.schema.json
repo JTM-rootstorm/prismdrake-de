@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/pd1-demo-evidence-v1.json",
+  "title": "Prismdrake PD1 partial bounded development demonstration evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "environment",
+    "startup",
+    "settings",
+    "surfaces",
+    "tasks",
+    "restart",
+    "fallback",
+    "shutdown",
+    "limitations",
+    "scope"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_provenance", "artifacts", "display", "lane", "session_bus", "window_manager"],
+      "properties": {
+        "artifact_provenance": { "enum": ["build_tree", "portage_installed"] },
+        "artifacts": { "const": "explicit-absolute-executables" },
+        "display": { "const": "isolated-xvfb-1280x720" },
+        "lane": { "const": "partial-bounded" },
+        "session_bus": { "const": "isolated-dbus-run-session" },
+        "window_manager": { "const": "openbox-ewmh" }
+      }
+    },
+    "startup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete_generation", "normal_mode", "panel_geometry", "dock_type", "strut", "workarea"],
+      "properties": {
+        "complete_generation": { "const": 1 },
+        "normal_mode": { "const": true },
+        "panel_geometry": { "const": [0, 656, 1280, 64] },
+        "dock_type": { "const": true },
+        "strut": { "const": [0, 0, 0, 64] },
+        "workarea": { "const": [0, 0, 1280, 656] }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_sequence", "generation_sequence", "accessibility_survived"],
+      "properties": {
+        "profile_sequence": { "const": ["lustre", "forge", "lustre"] },
+        "generation_sequence": { "const": [1, 2, 3] },
+        "accessibility_survived": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["high_contrast", "reduced_motion", "transparency_disabled"],
+          "properties": {
+            "high_contrast": { "const": true },
+            "reduced_motion": { "const": true },
+            "transparency_disabled": { "const": true }
+          }
+        }
+      }
+    },
+    "surfaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["launcher_keyboard_launch_count", "notification_keyboard_action", "panel_keyboard_return"],
+      "properties": {
+        "launcher_keyboard_launch_count": { "const": 2 },
+        "notification_keyboard_action": { "const": true },
+        "panel_keyboard_return": { "const": true }
+      }
+    },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["controlled_window_count", "mirror_count", "activation_through_shell"],
+      "properties": {
+        "controlled_window_count": { "const": 2 },
+        "mirror_count": { "const": 2 },
+        "activation_through_shell": { "const": true }
+      }
+    },
+    "restart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shell_restarted", "normal_mode_preserved", "window_manager_owner_preserved", "application_windows_preserved", "task_mirror_rebuilt"],
+      "properties": {
+        "shell_restarted": { "const": true },
+        "normal_mode_preserved": { "const": true },
+        "window_manager_owner_preserved": { "const": true },
+        "application_windows_preserved": { "const": true },
+        "task_mirror_rebuilt": { "const": true }
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings_policy_materials_opaque", "settings_policy_optional_capabilities", "settings_policy_thumbnail"],
+      "properties": {
+        "settings_policy_materials_opaque": { "const": true },
+        "settings_policy_optional_capabilities": { "const": "withheld" },
+        "settings_policy_thumbnail": { "const": "application_icon_title_state" }
+      }
+    },
+    "shutdown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clean_exit", "detached_descendants_reaped", "runtime_markers_removed"],
+      "properties": {
+        "clean_exit": { "const": true },
+        "detached_descendants_reaped": { "const": true },
+        "runtime_markers_removed": { "const": true }
+      }
+    },
+    "limitations": {
+      "const": [
+        "pd1_demo_task_minimize_surface_unavailable",
+        "pd1_demo_task_close_surface_unavailable",
+        "pd1_demo_task_icon_surface_unavailable",
+        "pd1_demo_complete_validation_external"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "development_harness",
+        "login_manager_session",
+        "secure_session",
+        "glasswyrm_native_protocols",
+        "compositor_blur",
+        "production_application_compatibility",
+        "production_notification_service",
+        "complete_multi_output_policy"
+      ],
+      "properties": {
+        "development_harness": { "const": true },
+        "login_manager_session": { "const": false },
+        "secure_session": { "const": false },
+        "glasswyrm_native_protocols": { "const": false },
+        "compositor_blur": { "const": false },
+        "production_application_compatibility": { "const": false },
+        "production_notification_service": { "const": false },
+        "complete_multi_output_policy": { "const": false }
+      }
+    }
+  }
+}

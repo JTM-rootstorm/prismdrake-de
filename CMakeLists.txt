@@ -285,6 +285,7 @@ prismdrake_add_format_check(
     src/shell/launcher/LauncherPresentationModel.hpp
     src/shell/launcher/controller/LauncherController.cpp
     src/shell/launcher/controller/LauncherController.hpp
+    tests/integration/ControlledWindowFixture.cpp
     tests/integration/DockPropertiesTests.cpp
     tests/integration/EwmhCapabilitiesTests.cpp
     tests/integration/EwmhTaskSourceTests.cpp

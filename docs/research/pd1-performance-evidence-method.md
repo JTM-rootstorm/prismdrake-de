@@ -202,6 +202,7 @@ after capture:
 ```bash
 dbus-run-session -- python3 tests/integration/run_with_xvfb.py \
   --openbox "$(command -v openbox)" --xprop "$(command -v xprop)" \
+  --test-timeout-seconds 80 \
   "$(command -v Xvfb)" "$(command -v python3)" -- \
   "$PWD/tests/performance/collect_live_session_performance.py" \
   --session "$PWD/build/performance-gcc/src/session/prismdrake-session" \
@@ -215,6 +216,10 @@ dbus-run-session -- python3 tests/integration/run_with_xvfb.py \
   --startup-output "$PWD/pd1-startup.json" \
   --idle-output "$PWD/pd1-idle-wakeups.json"
 ```
+
+The explicit 80-second harness bound covers the five-second settling interval,
+60-second trace window, startup, and bounded cleanup. It does not change the
+ordinary Openbox harness default or the startup-only CTest lane.
 
 Tracepoint or permission unavailability remains a reported blocker, not a
 reason to substitute another metric. Production evidence is exactly 60 seconds; short test-mode collector

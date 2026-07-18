@@ -8,16 +8,19 @@ import selectors
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 
 # A cold CI runner can take several seconds to initialize fonts and publish the
-# display number even though the server is healthy. Keep startup bounded while
-# leaving enough of CTest's 30-second envelope for the test and cleanup.
+# display number even though the server is healthy. Keep the default lanes
+# within CTest's 30-second envelope; long external workflows must opt into the
+# separately bounded harness timeout argument.
 STARTUP_TIMEOUT_SECONDS = 8
 TEST_TIMEOUT_SECONDS = 16
 OPENBOX_READY_TIMEOUT_SECONDS = 2
 OPENBOX_TEST_TIMEOUT_SECONDS = 12
+MAXIMUM_TEST_TIMEOUT_SECONDS = 90
 TERMINATE_TIMEOUT_SECONDS = 3
 KILL_TIMEOUT_SECONDS = 2
 
@@ -25,6 +28,78 @@ KILL_TIMEOUT_SECONDS = 2
 def fail(message: str) -> int:
     print(f"Xvfb test harness: {message}", file=sys.stderr)
     return 2
+
+
+class HarnessArgumentError(ValueError):
+    """One fixed harness-argument contract failure."""
+
+
+@dataclass(frozen=True)
+class HarnessArguments:
+    disable_randr: bool
+    openbox: Path | None
+    xprop: Path | None
+    executable_arguments: list[str]
+    test_timeout_seconds: int | None
+
+
+def parse_test_timeout_seconds(value: str) -> int:
+    if not value.isascii() or not value.isdecimal() or value.startswith("0"):
+        raise HarnessArgumentError("the test timeout must be a strict positive ASCII integer")
+    parsed = int(value, 10)
+    if parsed > MAXIMUM_TEST_TIMEOUT_SECONDS:
+        raise HarnessArgumentError("the test timeout exceeds the fixed 90-second bound")
+    return parsed
+
+
+def parse_harness_arguments(arguments: list[str]) -> HarnessArguments:
+    disable_randr = False
+    openbox: Path | None = None
+    xprop: Path | None = None
+    test_timeout_seconds: int | None = None
+    executable_arguments: list[str] = []
+    argument_index = 0
+    while argument_index < len(arguments):
+        argument = arguments[argument_index]
+        if argument == "--xvfb-disable-randr":
+            if disable_randr:
+                raise HarnessArgumentError("the RandR-disable option may appear only once")
+            disable_randr = True
+        elif argument in {"--openbox", "--xprop", "--test-timeout-seconds"}:
+            argument_index += 1
+            if argument_index >= len(arguments):
+                raise HarnessArgumentError(f"the {argument} option requires a value")
+            value = arguments[argument_index]
+            if argument == "--openbox":
+                if openbox is not None:
+                    raise HarnessArgumentError("the Openbox option may appear only once")
+                openbox = Path(value)
+            elif argument == "--xprop":
+                if xprop is not None:
+                    raise HarnessArgumentError("the xprop option may appear only once")
+                xprop = Path(value)
+            else:
+                if test_timeout_seconds is not None:
+                    raise HarnessArgumentError("the test timeout option may appear only once")
+                test_timeout_seconds = parse_test_timeout_seconds(value)
+        else:
+            executable_arguments.append(argument)
+        argument_index += 1
+    if test_timeout_seconds is not None and openbox is None:
+        raise HarnessArgumentError("the test timeout override requires the Openbox lane")
+    return HarnessArguments(
+        disable_randr,
+        openbox,
+        xprop,
+        executable_arguments,
+        test_timeout_seconds,
+    )
+
+
+def selected_test_timeout(options: HarnessArguments) -> int:
+    if options.test_timeout_seconds is not None:
+        return options.test_timeout_seconds
+    return OPENBOX_TEST_TIMEOUT_SECONDS if options.openbox is not None else TEST_TIMEOUT_SECONDS
 
 
 def main() -> int:
@@ -35,34 +110,14 @@ def main() -> int:
 
     harness_arguments = sys.argv[1:separator]
     test_arguments = sys.argv[separator + 1 :]
-    disable_randr = False
-    openbox: Path | None = None
-    xprop: Path | None = None
-    executable_arguments: list[str] = []
-    argument_index = 0
-    while argument_index < len(harness_arguments):
-        argument = harness_arguments[argument_index]
-        if argument == "--xvfb-disable-randr":
-            if disable_randr:
-                return fail("the RandR-disable option may appear only once")
-            disable_randr = True
-        elif argument == "--openbox":
-            if openbox is not None:
-                return fail("the Openbox option may appear only once")
-            argument_index += 1
-            if argument_index >= len(harness_arguments):
-                return fail("the Openbox option requires an executable path")
-            openbox = Path(harness_arguments[argument_index])
-        elif argument == "--xprop":
-            if xprop is not None:
-                return fail("the xprop option may appear only once")
-            argument_index += 1
-            if argument_index >= len(harness_arguments):
-                return fail("the xprop option requires an executable path")
-            xprop = Path(harness_arguments[argument_index])
-        else:
-            executable_arguments.append(argument)
-        argument_index += 1
+    try:
+        options = parse_harness_arguments(harness_arguments)
+    except HarnessArgumentError as error:
+        return fail(str(error))
+    disable_randr = options.disable_randr
+    openbox = options.openbox
+    xprop = options.xprop
+    executable_arguments = options.executable_arguments
 
     if len(executable_arguments) != 2:
         return fail("expected the Xvfb and test executable paths")
@@ -153,7 +208,7 @@ def main() -> int:
             [str(test), *test_arguments],
             stdin=subprocess.DEVNULL,
             env=environment,
-            timeout=(OPENBOX_TEST_TIMEOUT_SECONDS if openbox is not None else TEST_TIMEOUT_SECONDS),
+            timeout=selected_test_timeout(options),
             check=False,
         )
         return completed.returncode
