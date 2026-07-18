@@ -61,7 +61,7 @@ EXPECTED_DESCRIPTIONS = {
     },
     "Open applications": {"Open the application launcher"},
     FIXTURE_RESULT_NAME: {"Evidence utility. Deterministic accessibility fixture."},
-    "Search applications": {"Enter up to 256 characters"},
+    "Search applications": {"Search applications (up to 256 characters)"},
 }
 
 
@@ -159,7 +159,7 @@ def example_evidence_document() -> dict[str, Any]:
         DIAGNOSTICS_NAME: "Theme diagnostics",
         "Open applications": "Open the application launcher",
         FIXTURE_RESULT_NAME: "Evidence utility. Deterministic accessibility fixture.",
-        "Search applications": "Enter up to 256 characters",
+        "Search applications": "Search applications (up to 256 characters)",
     }
     roles = {
         "Applications": "pane",

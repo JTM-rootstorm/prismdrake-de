@@ -160,7 +160,7 @@ FocusScope {
             activeFocusOnTab: false
             maximumLength: 256
             selectByMouse: true
-            placeholderText: qsTr("Search applications")
+            placeholderText: qsTr("Search applications (up to 256 characters)")
             color: root.tokens.textPrimaryColor
             placeholderTextColor: root.tokens.textMutedColor
             font.family: root.tokens.bodyFontFamily
@@ -168,7 +168,7 @@ FocusScope {
 
             Accessible.role: Accessible.EditableText
             Accessible.name: qsTr("Search applications")
-            Accessible.description: qsTr("Enter up to 256 characters")
+            Accessible.description: placeholderText
             Accessible.focusable: true
             Accessible.focused: activeFocus
 

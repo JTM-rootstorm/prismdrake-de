@@ -212,6 +212,9 @@ TestCase {
         compare(surface.Accessible.name, "Applications")
         compare(search().Accessible.role, Accessible.EditableText)
         compare(search().Accessible.name, "Search applications")
+        compare(search().placeholderText,
+                "Search applications (up to 256 characters)")
+        compare(search().Accessible.description, search().placeholderText)
         surface.focusSearch()
         keyClick(Qt.Key_Down)
         tryCompare(surface.resultAt(0), "activeFocus", true)
