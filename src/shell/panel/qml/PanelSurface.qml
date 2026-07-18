@@ -10,7 +10,10 @@ FocusScope {
     required property var themeGeneration
     required property var taskModel
     property bool notificationAffordanceVisible: false
-    property var pendingFocusRecovery: null
+    property int pendingFocusIndex: -1
+    property double pendingFocusSerial: 0
+    property bool pendingActionMenuRecovery: false
+    property double nextTaskFocusSerial: 1
 
     readonly property int taskCount: taskRepeater.count
     readonly property string generationLabel: qsTr("%1, generation %2")
@@ -24,8 +27,8 @@ FocusScope {
     signal focusExitForward
     signal focusExitBackward
 
-    function taskAt(index: int): TaskButton {
-        return taskRepeater.itemAt(index) as TaskButton
+    function taskAt(index) {
+        return taskRepeater.itemAt(index)
     }
 
     function focusLauncher() {
@@ -52,52 +55,87 @@ FocusScope {
     }
 
     function captureFocusRecovery() {
+        pendingFocusIndex = -1
+        pendingFocusSerial = 0
+        pendingActionMenuRecovery = false
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = root.taskAt(index)
+            // qmllint disable missing-property
             if (candidate !== null
                     && (candidate.activeFocus || candidate.actionMenuOpen)) {
-                pendingFocusRecovery = {
-                    "index": index,
-                    "item": candidate
-                }
+                // qmllint enable missing-property
+                pendingFocusIndex = index
+                // qmllint disable missing-property
+                pendingFocusSerial = candidate.focusRecoverySerial
+                pendingActionMenuRecovery = candidate.actionMenuOpen
+                // qmllint enable missing-property
                 return
             }
         }
-        pendingFocusRecovery = null
+    }
+
+    function allocateTaskFocusSerial() {
+        const serial = nextTaskFocusSerial
+        // JavaScript numbers represent every integer exactly through 2^53 - 1.
+        // Exhaustion disables identity recovery instead of reusing a live serial.
+        if (serial >= 9007199254740991)
+            return 0
+        nextTaskFocusSerial += 1
+        return serial
     }
 
     function prepareTaskActionMenu(originIndex) {
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = root.taskAt(index)
-            if (candidate !== null && index !== originIndex)
+            if (candidate !== null && index !== originIndex) {
+                // qmllint disable missing-property
                 candidate.closeActionMenu(false)
+                // qmllint enable missing-property
+            }
         }
     }
 
     function closeTaskActionMenus() {
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = root.taskAt(index)
-            if (candidate !== null)
+            if (candidate !== null) {
+                // qmllint disable missing-property
                 candidate.closeActionMenu(false)
+                // qmllint enable missing-property
+            }
         }
     }
 
     function recoverFocus() {
-        const recovery = pendingFocusRecovery
-        pendingFocusRecovery = null
-        if (recovery === null)
+        const recoveryIndex = pendingFocusIndex
+        const recoverySerial = pendingFocusSerial
+        const recoverActionMenu = pendingActionMenuRecovery
+        pendingFocusIndex = -1
+        pendingFocusSerial = 0
+        pendingActionMenuRecovery = false
+        if (recoveryIndex < 0)
             return
 
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = root.taskAt(index)
-            if (candidate !== null && candidate === recovery.item) {
-                candidate.forceActiveFocus(Qt.OtherFocusReason)
-                return
+            if (candidate !== null) {
+                // A retained delegate keeps focus across a valid model move. If its
+                // immutable presentation was replaced, reopen its surviving action
+                // surface only to restore action focus and the current typed target.
+                // qmllint disable missing-property
+                if (recoverySerial !== 0
+                        && candidate.focusRecoverySerial === recoverySerial) {
+                    if (recoverActionMenu && candidate.openActionMenu())
+                        return
+                    candidate.forceActiveFocus(Qt.OtherFocusReason)
+                    return
+                }
+                // qmllint enable missing-property
             }
         }
 
         if (taskRepeater.count > 0) {
-            const fallback = root.taskAt(Math.min(recovery.index,
+            const fallback = root.taskAt(Math.min(recoveryIndex,
                                                   taskRepeater.count - 1))
             if (fallback !== null) {
                 fallback.forceActiveFocus(Qt.OtherFocusReason)
@@ -122,7 +160,6 @@ FocusScope {
         target: root.taskModel
         function onPublicationReconciliationStarted() {
             root.captureFocusRecovery()
-            root.closeTaskActionMenus()
         }
         function onPublicationApplied() {
             focusRecoveryTimer.restart()
@@ -170,7 +207,10 @@ FocusScope {
                 event.accepted = true
                 root.focusExitBackward()
             }
-            onClicked: root.launcherRequested()
+            onClicked: {
+                root.closeTaskActionMenus()
+                root.launcherRequested()
+            }
 
             contentItem: Text {
                 color: root.themeGeneration.panel.textPrimaryColor
@@ -218,13 +258,16 @@ FocusScope {
                     delegate: TaskButton {
                         required property int index
                         required property var task
+                        property double focusRecoverySerial: 0
 
                         height: tasks.height
                         presentation: task
                         tokens: root.themeGeneration.panel
+                        Component.onCompleted: focusRecoverySerial = root.allocateTaskFocusSerial()
                         onFocusExitForward: root.focusTask(index + 1, false)
                         onFocusExitBackward: root.focusTask(index - 1, true)
                         onActionMenuOpening: root.prepareTaskActionMenu(index)
+                        onClicked: root.closeTaskActionMenus()
                     }
                 }
             }
@@ -261,7 +304,10 @@ FocusScope {
                 event.accepted = true
                 root.focusTask(root.taskCount - 1, true)
             }
-            onClicked: root.diagnosticsRequested()
+            onClicked: {
+                root.closeTaskActionMenus()
+                root.diagnosticsRequested()
+            }
 
             contentItem: Text {
                 color: root.themeGeneration.panel.textPrimaryColor
@@ -313,7 +359,10 @@ FocusScope {
                 event.accepted = true
                 diagnostics.forceActiveFocus(Qt.BacktabFocusReason)
             }
-            onClicked: root.notificationRequested()
+            onClicked: {
+                root.closeTaskActionMenus()
+                root.notificationRequested()
+            }
 
             contentItem: Text {
                 color: root.themeGeneration.panel.textPrimaryColor

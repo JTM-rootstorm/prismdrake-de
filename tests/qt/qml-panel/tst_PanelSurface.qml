@@ -52,6 +52,17 @@ TestCase {
         return findChild(task, "panelTaskCloseAction")
     }
 
+    function verifyActionSurfaceFits(task) {
+        const menu = contextMenu(task)
+        const row = findChild(task, "panelTaskActionRow")
+        verify(row.x >= 0)
+        verify(row.y >= 0)
+        verify(row.x + row.width <= menu.width)
+        verify(row.y + row.height <= menu.height)
+        verify(menu.width <= task.width)
+        verify(menu.height <= task.height)
+    }
+
     function initTestCase() {
         failOnWarning(/.*/)
     }
@@ -82,6 +93,7 @@ TestCase {
         verify(firstTask.openActionMenu())
         tryCompare(contextMenu(firstTask), "opened", true)
         verify(contextMenu(firstTask).height <= panel.height)
+        verifyActionSurfaceFits(firstTask)
         firstTask.closeActionMenu(false)
 
         verify(panelFixture.publishForge())
@@ -94,6 +106,7 @@ TestCase {
         verify(firstTask.openActionMenu())
         tryCompare(contextMenu(firstTask), "opened", true)
         verify(contextMenu(firstTask).height <= panel.height)
+        verifyActionSurfaceFits(firstTask)
         firstTask.closeActionMenu(false)
     }
 
@@ -156,8 +169,8 @@ TestCase {
         compare(panelFixture.activationCount, 0)
         compare(pointerArea.width, first.contentItem.width)
         compare(pointerArea.height, first.contentItem.height)
-        compare(pointerArea.acceptedButtons, Qt.LeftButton | Qt.RightButton)
-        verify(first.handlePointerPress(Qt.RightButton))
+        compare(pointerArea.acceptedButtons, Qt.LeftButton)
+        mouseClick(pointerArea, 2, 2, Qt.RightButton)
         tryCompare(firstMenu, "opened", true)
         compare(first.actionTarget, first.presentation)
         compare(secondMenu.opened, false)
@@ -191,8 +204,10 @@ TestCase {
         keyClick(Qt.Key_Menu)
         tryCompare(menu, "opened", true)
         tryCompare(minimize, "activeFocus", true)
-        compare(menu.contentItem.Accessible.role, Accessible.PopupMenu)
-        compare(menu.contentItem.Accessible.name, "Window actions for Editor")
+        compare(menu.Accessible.role, Accessible.PopupMenu)
+        compare(menu.Accessible.name, "Window actions for Editor")
+        compare(findChild(first, "panelTaskPresentationContent").visible, false)
+        verify(first.Accessible.description.indexOf("Window actions shown.") >= 0)
         compare(minimize.Accessible.role, Accessible.MenuItem)
         compare(minimize.Accessible.name, "Minimize Editor")
         compare(close.Accessible.role, Accessible.MenuItem)
@@ -219,7 +234,34 @@ TestCase {
         tryCompare(close, "activeFocus", true)
         keyClick(Qt.Key_Escape)
         tryCompare(menu, "opened", false)
+        compare(findChild(first, "panelTaskPresentationContent").visible, true)
+        verify(first.Accessible.description.indexOf("Window actions shown.") < 0)
         tryCompare(first, "activeFocus", true)
+    }
+
+    function test_pointerActivationDismissesOpenSurface() {
+        const first = panel.taskAt(0)
+        const second = panel.taskAt(1)
+        const firstMenu = contextMenu(first)
+
+        verify(first.openActionMenu())
+        mouseClick(findChild(second, "panelTaskPointerArea"), 2, 2, Qt.LeftButton)
+        tryCompare(firstMenu, "opened", false)
+        tryCompare(panelFixture, "activationCount", 1)
+
+        verify(first.openActionMenu())
+        mouseClick(launcher(), 2, 2, Qt.LeftButton)
+        tryCompare(firstMenu, "opened", false)
+
+        verify(first.openActionMenu())
+        mouseClick(diagnostics(), 2, 2, Qt.LeftButton)
+        tryCompare(firstMenu, "opened", false)
+
+        verify(first.openActionMenu())
+        mouseClick(notification(), 2, 2, Qt.LeftButton)
+        tryCompare(firstMenu, "opened", false)
+        compare(panelFixture.minimizationCount, 0)
+        compare(panelFixture.closeCount, 0)
     }
 
     function test_actionsForwardOnlyCapturedTypedTarget() {
@@ -246,6 +288,30 @@ TestCase {
         compare(panelFixture.activationCount, 0)
     }
 
+    function test_keyboardActionsForwardOnlyFocusedTarget() {
+        const first = panel.taskAt(0)
+        const second = panel.taskAt(1)
+
+        first.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Menu)
+        tryCompare(minimizeAction(first), "activeFocus", true)
+        keyClick(Qt.Key_Space)
+        tryCompare(panelFixture, "minimizationCount", 1)
+        compare(panelFixture.lastMinimizationTitle, "Editor")
+        compare(contextMenu(first).opened, false)
+
+        second.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_F10, Qt.ShiftModifier)
+        tryCompare(minimizeAction(second), "activeFocus", true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(closeAction(second), "activeFocus", true)
+        keyClick(Qt.Key_Return)
+        tryCompare(panelFixture, "closeCount", 1)
+        compare(panelFixture.lastCloseTitle, "Terminal")
+        compare(contextMenu(second).opened, false)
+        compare(panelFixture.activationCount, 0)
+    }
+
     function test_minimizedTargetDisablesMinimizeAndStartsOnClose() {
         verify(panelFixture.setTaskMinimized(1, true))
         tryCompare(panel.taskAt(1).presentation, "minimized", true)
@@ -268,7 +334,7 @@ TestCase {
         tryCompare(second, "activeFocus", true)
     }
 
-    function test_reconciliationClosesMenuAndClearsCapturedObject() {
+    function test_reconciliationReopensOnlyForSurvivingTaskDelegate() {
         const first = panel.taskAt(0)
         first.forceActiveFocus(Qt.OtherFocusReason)
         keyClick(Qt.Key_Menu)
@@ -276,21 +342,24 @@ TestCase {
         compare(first.actionTarget, first.presentation)
 
         verify(panelFixture.swapFirstTwoTasks())
-        tryCompare(contextMenu(first), "opened", false)
-        compare(first.actionTarget, null)
-        compare(first.requestMenuClose(), false)
+        tryCompare(contextMenu(first), "opened", true)
+        compare(first.actionTarget, first.presentation)
         compare(panelFixture.closeCount, 0)
-        tryCompare(panel.taskAt(1), "activeFocus", true)
+        tryCompare(minimizeAction(first), "activeFocus", true)
         compare(panel.taskAt(1), first)
 
-        keyClick(Qt.Key_Menu)
-        tryCompare(contextMenu(first), "opened", true)
         verify(panelFixture.setTaskMinimized(1, true))
-        tryCompare(contextMenu(first), "opened", false)
-        compare(first.actionTarget, null)
-        compare(first.requestMenuMinimization(), false)
+        tryCompare(contextMenu(first), "opened", true)
+        compare(first.actionTarget, first.presentation)
+        compare(minimizeAction(first).enabled, false)
+        tryCompare(closeAction(first), "activeFocus", true)
         compare(panelFixture.minimizationCount, 0)
-        tryCompare(panel.taskAt(1), "activeFocus", true)
+
+        verify(panelFixture.removeTask(1))
+        tryCompare(panel, "taskCount", 2)
+        for (let index = 0; index < panel.taskCount; ++index)
+            compare(contextMenu(panel.taskAt(index)).opened, false)
+        compare(panelFixture.closeCount, 0)
     }
 
     function test_explicitTabAndBacktabTraversal() {
@@ -376,6 +445,7 @@ TestCase {
         verify(first.openActionMenu())
         tryCompare(contextMenu(first), "opened", true)
         verify(contextMenu(first).height <= panel.height)
+        verifyActionSurfaceFits(first)
         first.closeActionMenu(false)
     }
 }

@@ -26,9 +26,13 @@ Control {
     readonly property string text: presentationTitle
     readonly property bool actionMenuOpen: taskActionMenu.opened
     readonly property var actionTarget: taskActionMenu.actionTarget
-    readonly property string accessibleDescription: qsTr("Generic application icon. %1. %2")
-                                                        .arg(presentationApplicationId)
-                                                        .arg(presentationStatusText)
+    readonly property string accessibleDescriptionBase: qsTr("Generic application icon. %1. %2")
+                                                            .arg(presentationApplicationId)
+                                                            .arg(presentationStatusText)
+    readonly property string accessibleDescription: actionMenuOpen
+                                                    ? qsTr("%1 Window actions shown.")
+                                                        .arg(accessibleDescriptionBase)
+                                                    : accessibleDescriptionBase
 
     signal focusExitForward
     signal focusExitBackward
@@ -38,26 +42,29 @@ Control {
     function openActionMenu() {
         if (presentation === null)
             return false
+        actionFocusRestoreTimer.stop()
         actionMenuOpening()
         taskActionMenu.actionTarget = presentation
-        taskActionMenu.restoreOriginFocus = false
-        taskActionMenu.open()
+        taskActionMenu.opened = true
         if (minimizeAction.enabled)
-            minimizeAction.forceActiveFocus(Qt.PopupFocusReason)
+            minimizeAction.forceActiveFocus(Qt.OtherFocusReason)
         else
-            closeAction.forceActiveFocus(Qt.PopupFocusReason)
+            closeAction.forceActiveFocus(Qt.OtherFocusReason)
         return true
     }
 
     function closeActionMenu(restoreFocus) {
-        taskActionMenu.restoreOriginFocus = restoreFocus
-        if (taskActionMenu.opened)
-            taskActionMenu.close()
-        else {
-            taskActionMenu.actionTarget = null
-            if (restoreFocus && presentation !== null)
-                forceActiveFocus(Qt.OtherFocusReason)
-        }
+        taskActionMenu.opened = false
+        taskActionMenu.actionTarget = null
+        if (restoreFocus)
+            actionFocusRestoreTimer.restart()
+        else
+            actionFocusRestoreTimer.stop()
+    }
+
+    function restoreActionOriginFocus() {
+        if (!taskActionMenu.opened && presentation !== null)
+            forceActiveFocus(Qt.OtherFocusReason)
     }
 
     function requestMenuMinimization() {
@@ -110,6 +117,13 @@ Control {
         } else if (event.key === Qt.Key_Backtab || event.key === Qt.Key_Left) {
             moveActionFocus(current, Qt.BacktabFocusReason)
             event.accepted = true
+        } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
+                   || event.key === Qt.Key_Enter) {
+            if (current === minimizeAction)
+                requestMenuMinimization()
+            else
+                requestMenuClose()
+            event.accepted = true
         }
     }
 
@@ -117,7 +131,7 @@ Control {
     activeFocusOnTab: false
     hoverEnabled: true
     implicitWidth: Math.max(tokens.minimumTargetSize,
-                            contentItem.implicitWidth + leftPadding + rightPadding)
+                            taskStack.implicitWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(tokens.minimumTargetSize, tokens.panelHeight)
     leftPadding: tokens.taskPadding
     rightPadding: tokens.taskPadding
@@ -168,112 +182,132 @@ Control {
     }
     onPresentationChanged: closeActionMenu(false)
 
-    contentItem: Item {
-        implicitWidth: root.tokens.iconSize
-                       + Math.max(2, root.tokens.taskPadding / 2)
-                       + Math.max(taskTitle.implicitWidth, taskState.implicitWidth)
-        implicitHeight: presentationContent.implicitHeight
+    Timer {
+        id: actionFocusRestoreTimer
+        interval: 1
+        repeat: false
+        onTriggered: root.restoreActionOriginFocus()
+    }
 
-        Row {
-            id: presentationContent
+    Item {
+        id: taskStack
+        implicitWidth: Math.max(taskContent.implicitWidth, actionRow.implicitWidth)
+        implicitHeight: Math.max(taskContent.implicitHeight, actionRow.implicitHeight)
+
+        Item {
+            id: taskContent
+            objectName: "panelTaskPresentationContent"
             anchors.fill: parent
-            spacing: Math.max(2, root.tokens.taskPadding / 2)
+            implicitWidth: root.tokens.iconSize
+                           + Math.max(2, root.tokens.taskPadding / 2)
+                           + Math.max(taskTitle.implicitWidth, taskState.implicitWidth)
+            implicitHeight: presentationContent.implicitHeight
+            visible: !root.actionMenuOpen
 
-            Item {
-                id: fallbackIcon
-                objectName: "panelTaskFallbackIcon"
-                property string iconName: root.presentationFallbackIconName
-                width: root.tokens.iconSize
-                height: root.tokens.iconSize
-                anchors.verticalCenter: parent.verticalCenter
-                Accessible.ignored: true
+            Row {
+                id: presentationContent
+                anchors.fill: parent
+                spacing: Math.max(2, root.tokens.taskPadding / 2)
 
-                Rectangle {
-                    anchors.fill: parent
-                    radius: Math.max(1, root.tokens.taskRadius / 3)
-                    color: "transparent"
-                    border.width: Math.max(1, root.tokens.taskBorderWidth)
-                    border.color: root.presentationUrgent
-                                  ? root.tokens.warningColor : root.tokens.textMutedColor
+                Item {
+                    id: fallbackIcon
+                    objectName: "panelTaskFallbackIcon"
+                    property string iconName: root.presentationFallbackIconName
+                    width: root.tokens.iconSize
+                    height: root.tokens.iconSize
+                    anchors.verticalCenter: parent.verticalCenter
+                    Accessible.ignored: true
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Math.max(1, root.tokens.taskRadius / 3)
+                        color: "transparent"
+                        border.width: Math.max(1, root.tokens.taskBorderWidth)
+                        border.color: root.presentationUrgent
+                                      ? root.tokens.warningColor : root.tokens.textMutedColor
+                    }
+
+                    Rectangle {
+                        x: Math.max(2, root.tokens.taskBorderWidth * 2)
+                        y: x
+                        width: parent.width - (2 * x)
+                        height: Math.max(2, root.tokens.taskBorderWidth * 2)
+                        radius: height / 2
+                        color: root.presentationUrgent
+                               ? root.tokens.warningColor : root.tokens.textMutedColor
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.margins: Math.max(2, root.tokens.taskBorderWidth * 2)
+                        height: Math.max(3, parent.height / 4)
+                        radius: Math.max(1, root.tokens.taskRadius / 4)
+                        color: root.presentationActive
+                               ? root.tokens.selectionColor : root.tokens.surfaceColor
+                        border.width: Math.max(1, root.tokens.taskBorderWidth)
+                        border.color: root.tokens.activeBorderColor
+                    }
                 }
 
-                Rectangle {
-                    x: Math.max(2, root.tokens.taskBorderWidth * 2)
-                    y: x
-                    width: parent.width - (2 * x)
-                    height: Math.max(2, root.tokens.taskBorderWidth * 2)
-                    radius: height / 2
-                    color: root.presentationUrgent
-                           ? root.tokens.warningColor : root.tokens.textMutedColor
-                }
+                Column {
+                    width: Math.max(0, root.availableWidth - fallbackIcon.width - parent.spacing)
+                    spacing: 1
+                    anchors.verticalCenter: parent.verticalCenter
 
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    anchors.margins: Math.max(2, root.tokens.taskBorderWidth * 2)
-                    height: Math.max(3, parent.height / 4)
-                    radius: Math.max(1, root.tokens.taskRadius / 4)
-                    color: root.presentationActive
-                           ? root.tokens.selectionColor : root.tokens.surfaceColor
-                    border.width: Math.max(1, root.tokens.taskBorderWidth)
-                    border.color: root.tokens.activeBorderColor
+                    Text {
+                        id: taskTitle
+                        objectName: "panelTaskTitle"
+                        width: parent.width
+                        color: root.tokens.textPrimaryColor
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
+                        font.family: root.tokens.bodyFontFamily
+                        font.pixelSize: root.tokens.bodyFontPixels
+                        font.bold: root.presentationActive || root.presentationUrgent
+                        horizontalAlignment: Text.AlignHCenter
+                        text: root.presentationTitle
+                    }
+
+                    Text {
+                        id: taskState
+                        objectName: "panelTaskStateLabel"
+                        width: parent.width
+                        color: root.presentationUrgent
+                               ? root.tokens.warningColor : root.tokens.textMutedColor
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
+                        font.family: root.tokens.bodyFontFamily
+                        font.pixelSize: Math.max(10, root.tokens.bodyFontPixels - 2)
+                        font.bold: root.presentationUrgent
+                        horizontalAlignment: Text.AlignHCenter
+                        text: root.presentationStatusText
+                    }
                 }
             }
 
-            Column {
-                width: Math.max(0, root.availableWidth - fallbackIcon.width - parent.spacing)
-                spacing: 1
-                anchors.verticalCenter: parent.verticalCenter
-
-                Text {
-                    id: taskTitle
-                    objectName: "panelTaskTitle"
-                    width: parent.width
-                    color: root.tokens.textPrimaryColor
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
-                    font.family: root.tokens.bodyFontFamily
-                    font.pixelSize: root.tokens.bodyFontPixels
-                    font.bold: root.presentationActive || root.presentationUrgent
-                    horizontalAlignment: Text.AlignHCenter
-                    text: root.presentationTitle
-                }
-
-                Text {
-                    id: taskState
-                    objectName: "panelTaskStateLabel"
-                    width: parent.width
-                    color: root.presentationUrgent
-                           ? root.tokens.warningColor : root.tokens.textMutedColor
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
-                    font.family: root.tokens.bodyFontFamily
-                    font.pixelSize: Math.max(10, root.tokens.bodyFontPixels - 2)
-                    font.bold: root.presentationUrgent
-                    horizontalAlignment: Text.AlignHCenter
-                    text: root.presentationStatusText
-                }
-            }
-        }
-
-        MouseArea {
-            id: taskPointerArea
-            objectName: "panelTaskPointerArea"
-            anchors.fill: parent
-            acceptedButtons: Qt.LeftButton | Qt.RightButton
-            onPressed: event => {
-                if (event.button === Qt.RightButton)
-                    event.accepted = root.handlePointerPress(event.button)
-            }
-            onClicked: event => {
-                if (event.button === Qt.LeftButton) {
+            MouseArea {
+                id: taskPointerArea
+                objectName: "panelTaskPointerArea"
+                anchors.fill: parent
+                enabled: !root.actionMenuOpen
+                acceptedButtons: Qt.LeftButton
+                onClicked: event => {
                     root.clicked()
                     event.accepted = true
                 }
             }
         }
+
+        TapHandler {
+            enabled: !root.actionMenuOpen
+            acceptedButtons: Qt.RightButton
+            onTapped: root.handlePointerPress(Qt.RightButton)
+        }
     }
+
+    contentItem: taskStack
 
     background: Rectangle {
         radius: root.urgentState ? Math.max(0, root.tokens.taskRadius / 2)
@@ -307,45 +341,44 @@ Control {
         }
     }
 
-    Popup {
+    FocusScope {
         id: taskActionMenu
         objectName: "panelTaskContextMenu"
-        parent: root
+        parent: taskStack
         z: 20
-        x: (root.width - width) / 2
-        y: (root.height - height) / 2
-        width: contentItem.implicitWidth + (2 * padding)
-        height: contentItem.implicitHeight + (2 * padding)
-        padding: 0
-        modal: false
-        dim: false
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-
+        x: -root.leftPadding
+        y: -root.topPadding
+        width: root.width
+        height: root.height
+        visible: opened
+        enabled: visible
+        property bool opened: false
         property var actionTarget: null
-        property bool restoreOriginFocus: false
 
-        onClosed: {
-            const restore = restoreOriginFocus
-            restoreOriginFocus = false
-            actionTarget = null
-            if (restore && root.presentation !== null)
-                root.forceActiveFocus(Qt.OtherFocusReason)
+        Accessible.role: Accessible.PopupMenu
+        Accessible.name: qsTr("Window actions for %1").arg(root.presentationTitle)
+        Accessible.description: qsTr("Minimize or close this window")
+
+        Rectangle {
+            anchors.fill: parent
+            radius: root.tokens.menuItemRadius
+            color: root.tokens.surfaceColor
+            border.width: root.tokens.menuItemBorderWidth
+            border.color: root.tokens.activeBorderColor
         }
 
-        contentItem: Row {
+        Row {
             id: actionRow
+            objectName: "panelTaskActionRow"
+            anchors.centerIn: parent
             spacing: root.tokens.menuItemPadding
-            Accessible.role: Accessible.PopupMenu
-            Accessible.name: qsTr("Window actions for %1").arg(root.presentationTitle)
-            Accessible.description: qsTr("Minimize or close this window")
 
             Button {
                 id: minimizeAction
                 objectName: "panelTaskMinimizeAction"
-                enabled: taskActionMenu.actionTarget !== null
-                         && taskActionMenu.actionTarget === root.presentation
-                         && !taskActionMenu.actionTarget.minimized
+                enabled: root.actionTarget !== null
+                         && root.actionTarget === root.presentation
+                         && !root.actionTarget.minimized
                 activeFocusOnTab: false
                 text: qsTr("Minimize")
                 implicitWidth: Math.max(root.tokens.minimumTargetSize,
@@ -363,7 +396,6 @@ Control {
                                             .arg(root.presentationTitle)
                 Accessible.focusable: enabled
                 Accessible.focused: activeFocus
-                Accessible.onPressAction: minimizeAction.clicked()
 
                 Keys.priority: Keys.BeforeItem
                 Keys.onPressed: event => root.handleActionKey(event, minimizeAction)
@@ -393,8 +425,8 @@ Control {
             Button {
                 id: closeAction
                 objectName: "panelTaskCloseAction"
-                enabled: taskActionMenu.actionTarget !== null
-                         && taskActionMenu.actionTarget === root.presentation
+                enabled: root.actionTarget !== null
+                         && root.actionTarget === root.presentation
                 activeFocusOnTab: false
                 text: qsTr("Close")
                 implicitWidth: Math.max(root.tokens.minimumTargetSize,
@@ -412,7 +444,6 @@ Control {
                                             .arg(root.presentationTitle)
                 Accessible.focusable: enabled
                 Accessible.focused: activeFocus
-                Accessible.onPressAction: closeAction.clicked()
 
                 Keys.priority: Keys.BeforeItem
                 Keys.onPressed: event => root.handleActionKey(event, closeAction)
@@ -437,13 +468,6 @@ Control {
                                   ? root.tokens.focusColor : root.tokens.inactiveBorderColor
                 }
             }
-        }
-
-        background: Rectangle {
-            radius: root.tokens.menuItemRadius
-            color: root.tokens.surfaceColor
-            border.width: root.tokens.menuItemBorderWidth
-            border.color: root.tokens.activeBorderColor
         }
     }
 }
