@@ -62,10 +62,11 @@ evidence, planned versus implemented status, runtime measurement, packaging,
 license-review, and fallback semantics.
 
 The implemented foundation manifest records current repository and build/test
-tools. Session remains planned, settings records its implemented service slice,
-and shell is Experimental for its Qt presentation modules and standards-only
-panel window host. All three runtime closures remain unmeasured: observed Gentoo
-VM versions are evidence, not supported minima or proof of a production runtime
-closure. Declared constraints remain distinct from tested lower bounds.
+tools. Settings records its implemented service slice, session is Experimental
+for its init-neutral exact-PID supervisor, and shell is Experimental for its Qt
+composition root, presentation modules, and standards-only panel window host.
+All three complete installed runtime closures remain unmeasured: observed
+Gentoo VM versions are evidence, not supported minima or proof of a production
+runtime closure. Declared constraints remain distinct from tested lower bounds.
 Validation rejects the forbidden GNOME desktop stack in mandatory core runtime
 scope and rejects verified minima that lack component evidence.

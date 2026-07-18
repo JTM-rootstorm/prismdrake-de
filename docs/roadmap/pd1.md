@@ -47,16 +47,21 @@ and an event-driven controller that mirrors authoritative EWMH task state and
 sends only checked standard WM requests. A live asynchronous settings client
 now consumes complete owner-epoch-scoped snapshots through the Experimental
 internal D-Bus contract and publishes only canonical typed state.
+The Experimental `prismdrake-shell` composition root connects that settings
+epoch to the shared theme projection, panel and launcher Quick views,
+asynchronous launcher controller, EWMH task controller, and standards-only
+panel window host. Settings-owner loss removes only the presentation epoch; a
+later complete owner epoch rebuilds it without terminating the shell process.
 An init-neutral Experimental session executable validates its environment and
 display, starts settingsd before the shell, waits for bounded settings
 readiness, applies component-specific restart budgets, enters one observable
 safe-mode launch, and performs exact-PID reverse bounded shutdown without
 touching the window manager or unrelated applications.
-This is a development prototype, not a complete shell: the installed
-`prismdrake-shell` executable, end-to-end model wiring,
-reviewed visual baselines, live assistive-technology evidence, harness-owned
-isolated D-Bus lifecycle, post-exec shell readiness, and installed session
-registration remain open PD1 work.
+This is a development prototype, not a complete shell: installed shell/session
+artifacts, reviewed visual baselines, live assistive-technology evidence, a
+global launcher-entry contract, harness-owned isolated D-Bus lifecycle,
+post-exec shell readiness, and installed session registration remain open PD1
+work.
 
 ## Activation gate
 

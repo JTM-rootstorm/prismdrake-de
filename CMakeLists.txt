@@ -198,6 +198,18 @@ prismdrake_add_format_check(
     src/shell/taskcontroller/TaskController.hpp
     src/shell/taskcontroller/TaskControllerCore.cpp
     src/shell/taskcontroller/TaskControllerCore.hpp
+    src/shell/runtime/ShellRuntime.cpp
+    src/shell/runtime/ShellRuntime.hpp
+    src/shell/runtime/ShellRuntimeOptions.cpp
+    src/shell/runtime/ShellRuntimeOptions.hpp
+    src/shell/runtime/ShellRuntimeState.cpp
+    src/shell/runtime/ShellRuntimeState.hpp
+    src/shell/runtime/TerminationSignalBridge.cpp
+    src/shell/runtime/TerminationSignalBridge.hpp
+    src/shell/runtime/main.cpp
+    src/shell/runtime/tests/ShellRuntimeStateTests.cpp
+    src/shell/runtime/tests/ShellRuntimeOptionsTests.cpp
+    src/shell/runtime/tests/TerminationSignalBridgeTests.cpp
     src/shell/window/PanelWindowController.cpp
     src/shell/window/PanelWindowController.hpp
     src/shell/window/PanelWindowHost.cpp

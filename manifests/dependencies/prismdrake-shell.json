@@ -4,7 +4,7 @@
   "component_kind": "visible_shell",
   "implementation_status": "experimental",
   "mandatory_core_startup": true,
-  "runtime_dependency_state": "planned_unmeasured",
+  "runtime_dependency_state": "measured",
   "dependencies": [
     {
       "name": "qtbase",
@@ -22,7 +22,7 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental immutable settings/theme projection and panel window host directly use system Qt Core and GUI, while the launcher controller and passive launcher, task, and notification presentation adapters use Qt Core. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1 supplies current reference evidence."
+      "reason": "The Experimental shell composition root, immutable settings/theme projection, and panel window host directly use system Qt Core and GUI, while the launcher controller and passive launcher, task, and notification presentation adapters use Qt Core. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1 supplies current reference evidence."
     },
     {
       "name": "qtdeclarative",
@@ -40,7 +40,7 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental panel, launcher, and notification modules directly use system QML, Qt Quick, and Quick Controls. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1-r1 supplies current reference evidence."
+      "reason": "The Experimental shell executable and panel, launcher, and notification modules directly use system QML, Qt Quick, and Quick Controls. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1-r1 supplies current reference evidence."
     },
     {
       "name": "nlohmann-json",
@@ -112,13 +112,13 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental Qt panel host and event-driven task controller consume the internal standards-only X11 adapter, which links system libxcb for dedicated event connections, RandR topology, EWMH task observation, and checked dock and window-manager requests. The complete shell runtime closure remains unmeasured."
+      "reason": "The Experimental Qt panel host and event-driven task controller consume the internal standards-only X11 adapter, which links system libxcb for dedicated event connections, RandR topology, EWMH task observation, and checked dock and window-manager requests. The built shell executable resolves libxcb and libxcb-randr in the Gentoo VM; installed package closure remains unmeasured."
     }
   ],
   "unresolved": [
     {
       "area": "runtime_closure",
-      "reason": "The typed theme, launcher, task, and notification adapters, asynchronous launcher controller, live settings-snapshot client, panel, launcher, and notification QML modules, panel window host, and EWMH task controller are implemented, but the complete shell executable, runtime wiring, and direct and transitive closure still require measurement."
+      "reason": "The typed adapters, controllers, QML modules, panel window host, settings client, and shell composition executable are implemented and the built target's Gentoo dynamic links are observed, but the installed package closure still requires measurement."
     },
     {
       "area": "accessibility_runtime",

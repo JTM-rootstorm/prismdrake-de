@@ -85,9 +85,11 @@ carry a verified or observed version.
   system nlohmann JSON header. Ubuntu 24.04 CI verifies
   Qt 6.4.2 as the oldest tested common-API component version, while Qt 6.11.1 is
   the currently observed host component version and Gentoo supplies
-  qtdeclarative 6.11.1-r1. The shell executable, accessibility runtime closure,
-  and complete dynamic dependency graph remain
-  explicitly unresolved. Exact host and VM coverage is recorded in the
+  qtdeclarative 6.11.1-r1. The Experimental shell executable composes those
+  existing typed boundaries without another mandatory library dependency.
+  Its built-target dynamic links are measured on Gentoo. Accessibility runtime
+  closure and the complete installed package graph remain explicitly
+  unresolved. Exact host and VM coverage is recorded in the
   [panel-shell evidence](../research/pd1-panel-shell-evidence.md).
 - The settings service uses a mutex-protected immutable snapshot pointer and a
   single bounded worker; it introduced no atomic-storage dependency. Production

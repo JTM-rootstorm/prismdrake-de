@@ -16,12 +16,15 @@ The implemented slice contains:
 - plain-text rendering of untrusted task metadata;
 - one Qt/X11 host for the documented bottom-edge primary-output policy;
 - checked standard `_NET_WM_WINDOW_TYPE_DOCK`, `_NET_WM_STRUT`, and
-  `_NET_WM_STRUT_PARTIAL` publication before the window is shown; and
+  `_NET_WM_STRUT_PARTIAL` publication before the window is shown;
 - one event-driven EWMH task controller that publishes complete observations
   and sends checked activate, minimize, and close requests for the exact current
-  task lifetime and generation; and
+  task lifetime and generation;
 - one asynchronous settings client that invalidates owner epochs and publishes
-  only strict, complete, canonical typed settings/theme snapshots.
+  only strict, complete, canonical typed settings/theme snapshots; and
+- one `prismdrake-shell` composition root that creates panel and launcher views
+  only from a complete settings epoch and connects them to the existing
+  launcher, task, window-host, and theme boundaries.
 
 The host reuses Prismdrake's existing X11 connection, RandR topology, output
 selection, dock-publication, and root-event boundaries. It does not take focus,
@@ -52,6 +55,8 @@ passed:
 - 8 display-free panel-window controller tests;
 - 7 display-free task-controller tests plus one deterministic no-Xvfb skip;
 - 4 strict runtime-snapshot parser tests and 5 isolated-bus client cases;
+- 4 display-free shell-runtime lifecycle tests, 2 inherited-environment tests,
+  and 2 Qt owner-thread termination-signal bridge tests;
 - panel and notification `qmllint` targets;
 - the repository C++ format target;
 - `make validate`, including 39 negative contract fixtures; and
@@ -89,6 +94,22 @@ The isolated Xvfb harness also passed five consecutive bare starts and five
 consecutive Openbox starts using the server's built-in font path. Observed
 startup durations were 0.059 to 0.102 seconds. This avoids dependency on a cold
 distribution font catalogue while retaining the bounded startup timeout.
+
+The integrated `prismdrake-shell` composition also built on the Gentoo VM and
+passed all 4 runtime-state tests. A live Xvfb/Openbox smoke mapped the panel,
+transferred focus into the launcher and back on Escape, removed the complete
+presentation epoch when settingsd lost its D-Bus name, and remapped it after a
+new owner published generation 1. Terminating the complete X server remains a
+Qt XCB QPA process-fatal boundary with status 1 before application callbacks;
+the session supervisor therefore treats that process exit as restartable rather
+than claiming in-process X-transport recovery.
+
+`ldd` on the validated Gentoo shell target resolved the selected `libbasu`,
+Qt 6 Core/GUI/QML/Quick/Quick Controls libraries, `libxcb`, `libxcb-randr`, and
+the system transitive graphics, font, C++ runtime, D-Bus, and Qt support
+libraries without a missing entry. This measures the built executable boundary;
+it does not substitute for the later emerged-package content and dependency
+closure audit.
 
 ## Accessibility and fallback behavior
 
@@ -137,9 +158,10 @@ exposed to QML.
 
 ## Explicit remaining gaps
 
-- There is no installed `prismdrake-shell` executable yet.
-- Presentation adapters, the task controller, and the window host are not wired
-  into one long-running shell process yet.
+- The built `prismdrake-shell` executable is not installed by the Experimental
+  Gentoo package yet, and its complete installed package closure is unmeasured.
+- No Accepted WM/session shortcut contract currently provides global launcher
+  entry; the wired launcher remains reachable through the panel surface.
 - X-server-loss handling is implemented as notifier disable, panel hide, and a
   queued shutdown callback, but an induced-loss test is deferred. Killing Qt's
   sole platform X server can abort `QGuiApplication` before callback dispatch;
