@@ -747,6 +747,51 @@ def _visible_window_for_accessible(
     return identifiers[0] if len(identifiers) == 1 else None
 
 
+def _embedded_panel_for_accessible(
+    atspi: Any, xdotool: Path, node: Any, panel: str, expected_process_id: int
+) -> str | None:
+    """Accept Qt's embedded accessible surface only with an exact X11 inventory."""
+
+    if node.get_process_id() != expected_process_id:
+        return None
+    if not _has_state(node, atspi.StateType.FOCUSED):
+        return None
+    component = node.get_component_iface()
+    if component is None:
+        return None
+    extents = component.get_extents(atspi.CoordType.SCREEN)
+    if extents.width <= 0 or extents.height <= 0:
+        return None
+    if not _window_process_matches(xdotool, panel, expected_process_id):
+        return None
+
+    titled = _run_checked(
+        [str(xdotool), "search", "--all", "--name", f"^{LAUNCHER_TITLE}$"]
+    )
+    if titled.returncode != 1 or titled.stdout:
+        return None
+    focused = _run_checked([str(xdotool), "getwindowfocus"])
+    if focused.returncode != 1 or focused.stdout:
+        return None
+
+    inventories = (
+        [str(xdotool), "search", "--all", "--class", f"^{APPLICATION_NAME}$"],
+        [
+            str(xdotool),
+            "search",
+            "--all",
+            "--onlyvisible",
+            "--class",
+            f"^{APPLICATION_NAME}$",
+        ],
+    )
+    for command in inventories:
+        result = _run_checked(command)
+        if result.returncode != 0 or result.stdout.splitlines() != [panel]:
+            return None
+    return panel
+
+
 def _window_for_accessible(
     atspi: Any, xdotool: Path, node: Any, panel: str, expected_process_id: int
 ) -> str | None:
@@ -963,6 +1008,9 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
                 )
                 or _visible_window_for_accessible(
                     arguments.xdotool, launcher_search, panel, shell.pid
+                )
+                or _embedded_panel_for_accessible(
+                    Atspi, arguments.xdotool, launcher_search, panel, shell.pid
                 ),
                 "the Prismdrake launcher window",
             )
