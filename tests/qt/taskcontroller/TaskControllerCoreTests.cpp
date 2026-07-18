@@ -98,6 +98,16 @@ TEST(TaskEventRefreshPlanTest, RejectsAnOversizedSyntheticBatch) {
     EXPECT_EQ(plan.error().code, foundation::ErrorCode::too_large);
 }
 
+TEST(TaskEventFollowUpTest, ConsumesEventsBufferedByHealthyRefreshAttemptThenStopsWhenEmpty) {
+    EXPECT_TRUE(taskEventFollowUpRequired(true, false));
+    EXPECT_FALSE(taskEventFollowUpRequired(false, false));
+}
+
+TEST(TaskEventFollowUpTest, RetainsBoundedBatchContinuationWithoutARefresh) {
+    EXPECT_TRUE(taskEventFollowUpRequired(false, true));
+    EXPECT_TRUE(taskEventFollowUpRequired(true, true));
+}
+
 TEST(TaskControllerCoreTest, PublishesPresentationAndConfirmsExactTypedActivation) {
     tasks::TaskPresentationModel presentation;
     std::optional<x11::TaskRequestState> dispatched;

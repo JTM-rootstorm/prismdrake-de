@@ -255,7 +255,13 @@ bool LauncherSurfaceQmlFixture::rejectInvalidPublication() {
 
 void LauncherSurfaceQmlFixture::captureSearch(const QString &query) {
     captured_search_ = query;
+    ++request_generation_;
     emit searchCaptured();
+}
+
+bool LauncherSurfaceQmlFixture::publishCapturedSearch() {
+    return publishSearchAtGeneration(captured_search_.toStdString(), request_generation_,
+                                     prismdrake::launcher::maximumApplicationSearchWorkUnits);
 }
 
 bool LauncherSurfaceQmlFixture::rebuildCatalog() {
@@ -286,6 +292,12 @@ bool LauncherSurfaceQmlFixture::rebuildCatalog() {
 }
 
 bool LauncherSurfaceQmlFixture::publishSearch(std::string_view query, std::size_t workUnits) {
+    return publishSearchAtGeneration(query, ++request_generation_, workUnits);
+}
+
+bool LauncherSurfaceQmlFixture::publishSearchAtGeneration(std::string_view query,
+                                                          std::uint64_t requestGeneration,
+                                                          std::size_t workUnits) {
     if (!catalog_ || !launcher_presentation_) {
         return false;
     }
@@ -293,7 +305,7 @@ bool LauncherSurfaceQmlFixture::publishSearch(std::string_view query, std::size_
     if (!parsed) {
         return false;
     }
-    auto operation = prismdrake::launcher::createApplicationSearch(catalog_, ++request_generation_,
+    auto operation = prismdrake::launcher::createApplicationSearch(catalog_, requestGeneration,
                                                                    std::move(parsed).value());
     if (!operation) {
         return false;
@@ -305,7 +317,9 @@ bool LauncherSurfaceQmlFixture::publishSearch(std::string_view query, std::size_
 }
 
 void LauncherSurfaceQmlFixture::captureLaunch(const ApplicationLaunchIntent &intent) {
-    if (!catalog_ || intent.catalogGeneration != catalog_->generation) {
+    if (!catalog_ || !launcher_presentation_ || !launcher_presentation_->currentSearch() ||
+        intent.catalogGeneration != catalog_->generation ||
+        intent.requestGeneration != request_generation_) {
         return;
     }
     for (const auto &application : catalog_->discovery->entries) {

@@ -108,6 +108,9 @@ TestCase {
         tryCompare(surface, "viewState", "noResults")
         compare(stateLabel().text, "No matching applications")
         tryCompare(surface, "resultCount", 0)
+        search().forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Return)
+        compare(launcherFixture.launchCount, 0)
 
         verify(launcherFixture.rejectInvalidPublication())
         compare(surface.viewState, "noResults")
@@ -126,14 +129,28 @@ TestCase {
     function test_boundedSearchKeyboardActivationAndFocusExit() {
         const field = search()
         compare(field.maximumLength, 256)
-        field.text = "x".repeat(400)
-        verify(field.text.length <= 256)
+        field.text = ""
         field.forceActiveFocus(Qt.OtherFocusReason)
-        keyClick(Qt.Key_Return)
+        const query = "dragon editor"
+        for (let index = 0; index < query.length; ++index) {
+            const character = query[index]
+            keyClick(character === " " ? Qt.Key_Space
+                                         : character.toUpperCase().charCodeAt(0))
+        }
         tryCompare(launcherFixture, "capturedSearch", field.text)
+        compare(surface.searchPending, true)
+        keyClick(Qt.Key_Return)
+        compare(launcherFixture.launchCount, 0)
+        verify(launcherFixture.publishCapturedSearch())
+        tryCompare(surface, "searchPending", false)
+        tryCompare(surface, "resultCount", 2)
+        compare(surface.resultAt(0).presentationName, "Dragon Editor")
+        keyClick(Qt.Key_Return)
         tryCompare(launcherFixture, "launchCount", 1)
         compare(launcherFixture.lastLaunchedName, "Dragon Editor")
 
+        verify(launcherFixture.publishRepresentativeResults())
+        tryCompare(surface, "resultCount", 3)
         surface.focusSearch()
         tryCompare(field, "activeFocus", true)
         keyClick(Qt.Key_Tab)

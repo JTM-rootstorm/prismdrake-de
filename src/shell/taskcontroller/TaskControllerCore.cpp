@@ -65,6 +65,10 @@ Result<TaskEventRefreshPlan> planTaskEventRefresh(std::span<const x11::RootEvent
     return Result<TaskEventRefreshPlan>::success(std::move(plan));
 }
 
+bool taskEventFollowUpRequired(bool refreshAttempted, bool examinationLimitReached) noexcept {
+    return refreshAttempted || examinationLimitReached;
+}
+
 TaskControllerCore::TaskControllerCore(tasks::TaskPresentationModel &presentation,
                                        CheckedDispatch dispatch, OutcomeCallback outcome,
                                        FailureCallback failure)

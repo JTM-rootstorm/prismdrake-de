@@ -35,6 +35,11 @@ struct TaskEventRefreshPlan final {
 [[nodiscard]] foundation::Result<TaskEventRefreshPlan>
 planTaskEventRefresh(std::span<const x11::RootEvent> events);
 
+/// Schedules one non-reentrant drain after a healthy refresh attempt may have buffered later XCB
+/// events, or when the bounded examination limit explicitly reports remaining input.
+[[nodiscard]] bool taskEventFollowUpRequired(bool refreshAttempted,
+                                             bool examinationLimitReached) noexcept;
+
 /// Display-free task publication and checked-request coordinator.
 ///
 /// The core owns the mutable task mirror, publishes only complete immutable snapshots to the

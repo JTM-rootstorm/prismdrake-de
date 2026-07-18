@@ -12,6 +12,7 @@ FocusScope {
     property int layoutDirection: Qt.locale().textDirection
     property int pendingFocusIndex: -1
     property bool focusRecoveryReady: false
+    property bool searchPending: false
 
     readonly property var tokens: themeGeneration.launcher
     readonly property int resultCount: results.count
@@ -118,6 +119,7 @@ FocusScope {
             root.captureFocusRecovery()
         }
         function onPublicationApplied() {
+            root.searchPending = false
             // Reconcile ListView delegates after the model's synchronous move/remove signals.
             root.focusRecoveryReady = true
             Qt.callLater(root.recoverFocus)
@@ -193,10 +195,12 @@ FocusScope {
                 event.accepted = true
                 root.dismissRequested()
             }
-            onTextEdited: root.submitSearch()
-            onAccepted: {
+            onTextEdited: {
+                root.searchPending = true
                 root.submitSearch()
-                if (root.resultCount > 0)
+            }
+            onAccepted: {
+                if (!root.searchPending && root.resultCount > 0)
                     root.resultAt(0).presentation.requestLaunch()
             }
 

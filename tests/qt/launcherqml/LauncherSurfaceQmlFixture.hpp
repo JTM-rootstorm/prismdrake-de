@@ -51,6 +51,7 @@ class LauncherSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool publishReorderedResults();
     Q_INVOKABLE bool removeResult(int row);
     Q_INVOKABLE bool rejectInvalidPublication();
+    Q_INVOKABLE bool publishCapturedSearch();
     Q_INVOKABLE void captureSearch(const QString &query);
 
   signals:
@@ -71,6 +72,9 @@ class LauncherSurfaceQmlFixture final : public QObject {
     [[nodiscard]] bool resetFromConfiguration(const std::filesystem::path &configuration);
     [[nodiscard]] bool rebuildCatalog();
     [[nodiscard]] bool publishSearch(std::string_view query, std::size_t workUnits);
+    [[nodiscard]] bool publishSearchAtGeneration(std::string_view query,
+                                                 std::uint64_t requestGeneration,
+                                                 std::size_t workUnits);
     void captureLaunch(const ApplicationLaunchIntent &intent);
     void removeTemporaryDirectory();
 

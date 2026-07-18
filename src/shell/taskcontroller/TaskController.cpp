@@ -201,7 +201,9 @@ void TaskController::drainEvents() {
     for (const auto window : plan.value().invalidatedWindows) {
         source_.invalidateClient(window);
     }
+    bool refreshAttempted = false;
     if (plan.value().refreshRequired) {
+        refreshAttempted = true;
         auto refreshed = refreshTasks();
         if (!refreshed) {
             if (!connection_.healthy()) {
@@ -211,7 +213,7 @@ void TaskController::drainEvents() {
             reportRecoverable(refreshed.error());
         }
     }
-    if (batch.value().examinationLimitReached) {
+    if (taskEventFollowUpRequired(refreshAttempted, batch.value().examinationLimitReached)) {
         scheduleDrain();
     }
 }
