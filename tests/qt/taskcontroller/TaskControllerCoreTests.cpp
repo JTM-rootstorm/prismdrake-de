@@ -108,6 +108,47 @@ TEST(TaskEventFollowUpTest, RetainsBoundedBatchContinuationWithoutARefresh) {
     EXPECT_TRUE(taskEventFollowUpRequired(true, true));
 }
 
+TEST(TaskSnapshotStabilizationPolicyTest, UsesExactBoundAndResetsAfterSuccess) {
+    TaskSnapshotStabilizationPolicy policy;
+    ASSERT_EQ(policy.nextDelay(), taskSnapshotStabilizationDelays[0]);
+    ASSERT_EQ(policy.nextDelay(), taskSnapshotStabilizationDelays[1]);
+    policy.reset();
+    EXPECT_FALSE(policy.exhausted());
+    EXPECT_EQ(policy.scheduledAttemptCount(), 0U);
+
+    for (const auto expected : taskSnapshotStabilizationDelays) {
+        ASSERT_EQ(policy.nextDelay(), expected);
+    }
+    EXPECT_TRUE(policy.exhausted());
+    EXPECT_FALSE(policy.nextDelay());
+    EXPECT_EQ(policy.scheduledAttemptCount(), taskSnapshotStabilizationDelays.size());
+    EXPECT_TRUE(policy.takeExhaustionReport());
+    EXPECT_FALSE(policy.takeExhaustionReport());
+}
+
+TEST(TaskSnapshotStabilizationPolicyTest, RealEventStartsOneNewEpochAfterExhaustion) {
+    TaskSnapshotStabilizationPolicy policy;
+    for ([[maybe_unused]] const auto expected : taskSnapshotStabilizationDelays) {
+        ASSERT_TRUE(policy.nextDelay());
+    }
+    ASSERT_TRUE(policy.exhausted());
+    ASSERT_TRUE(policy.takeExhaustionReport());
+    policy.beginRealEventEpoch();
+    EXPECT_FALSE(policy.exhausted());
+    EXPECT_EQ(policy.scheduledAttemptCount(), 0U);
+    EXPECT_EQ(policy.nextDelay(), taskSnapshotStabilizationDelays.front());
+}
+
+TEST(TaskSnapshotStabilizationPolicyTest, CoalescesRelevantEventsWhileTimerIsPending) {
+    EXPECT_TRUE(taskRefreshShouldRunImmediately(true, false));
+    EXPECT_FALSE(taskRefreshShouldRunImmediately(true, true));
+    EXPECT_FALSE(taskRefreshShouldRunImmediately(false, false));
+    EXPECT_FALSE(taskRefreshShouldRunImmediately(false, true));
+    EXPECT_TRUE(taskRequestPathCanDispatch(true, false));
+    EXPECT_FALSE(taskRequestPathCanDispatch(true, true));
+    EXPECT_FALSE(taskRequestPathCanDispatch(false, false));
+}
+
 TEST(TaskControllerCoreTest, PublishesPresentationAndConfirmsExactTypedActivation) {
     tasks::TaskPresentationModel presentation;
     std::optional<x11::TaskRequestState> dispatched;

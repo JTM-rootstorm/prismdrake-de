@@ -39,6 +39,31 @@ class PublishingGuard final {
 
 } // namespace
 
+std::optional<std::chrono::milliseconds> TaskSnapshotStabilizationPolicy::nextDelay() noexcept {
+    if (exhausted()) {
+        return std::nullopt;
+    }
+    const auto delay = taskSnapshotStabilizationDelays[next_delay_];
+    ++next_delay_;
+    return delay;
+}
+
+bool TaskSnapshotStabilizationPolicy::takeExhaustionReport() noexcept {
+    if (!exhausted() || exhaustion_reported_) {
+        return false;
+    }
+    exhaustion_reported_ = true;
+    return true;
+}
+
+bool taskRefreshShouldRunImmediately(bool refreshRequired, bool stabilizationPending) noexcept {
+    return refreshRequired && !stabilizationPending;
+}
+
+bool taskRequestPathCanDispatch(bool adapterAvailable, bool stabilizationPending) noexcept {
+    return adapterAvailable && !stabilizationPending;
+}
+
 Result<TaskEventRefreshPlan> planTaskEventRefresh(std::span<const x11::RootEvent> events) {
     if (events.size() > x11::maximumRootEventsPerDrain) {
         return Result<TaskEventRefreshPlan>::failure(

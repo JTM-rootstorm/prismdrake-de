@@ -8,9 +8,12 @@
 
 #include <QMetaObject>
 
+#include <array>
+#include <chrono>
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -18,6 +21,44 @@ namespace prismdrake::shell::taskcontroller {
 
 inline constexpr std::size_t maximumPendingTaskRequests = 64U;
 inline constexpr std::uint32_t taskRequestExpiryGenerations = 8U;
+inline constexpr std::array taskSnapshotStabilizationDelays{
+    std::chrono::milliseconds{10}, std::chrono::milliseconds{20}, std::chrono::milliseconds{40},
+    std::chrono::milliseconds{80}, std::chrono::milliseconds{160}};
+
+/// Display-free state for one bounded deferred stabilization epoch.
+class TaskSnapshotStabilizationPolicy final {
+  public:
+    /// Advances after one transient failure. No value means the epoch is exhausted.
+    [[nodiscard]] std::optional<std::chrono::milliseconds> nextDelay() noexcept;
+    void reset() noexcept {
+        next_delay_ = 0U;
+        exhaustion_reported_ = false;
+    }
+    /// A later real X event starts one new bounded epoch after exhaustion.
+    void beginRealEventEpoch() noexcept {
+        if (exhausted()) {
+            reset();
+        }
+    }
+    /// Returns true once per exhausted epoch for one recoverable diagnostic.
+    [[nodiscard]] bool takeExhaustionReport() noexcept;
+    [[nodiscard]] bool exhausted() const noexcept {
+        return next_delay_ >= taskSnapshotStabilizationDelays.size();
+    }
+    [[nodiscard]] std::size_t scheduledAttemptCount() const noexcept { return next_delay_; }
+
+  private:
+    std::size_t next_delay_{0U};
+    bool exhaustion_reported_{false};
+};
+
+/// Relevant events are coalesced while the owned single-shot timer is active.
+[[nodiscard]] bool taskRefreshShouldRunImmediately(bool refreshRequired,
+                                                   bool stabilizationPending) noexcept;
+
+/// Checked WM requests remain disabled throughout deferred stabilization.
+[[nodiscard]] bool taskRequestPathCanDispatch(bool adapterAvailable,
+                                              bool stabilizationPending) noexcept;
 
 struct TaskRequestUpdate final {
     x11::TaskLifetimeId lifetime;

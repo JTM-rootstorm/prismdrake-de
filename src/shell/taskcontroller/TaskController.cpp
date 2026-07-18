@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QSocketNotifier>
 #include <QThread>
+#include <QTimer>
 
 #include <algorithm>
 #include <exception>
@@ -79,6 +80,9 @@ TaskController::create(tasks::TaskPresentationModel &presentation, std::string_v
         controller->event_notifier_ = std::make_unique<QSocketNotifier>(
             controller->connection_.eventFileDescriptor(), QSocketNotifier::Read,
             controller->event_context_.get());
+        controller->stabilization_timer_ =
+            std::make_unique<QTimer>(controller->event_context_.get());
+        controller->stabilization_timer_->setSingleShot(true);
     } catch (const std::exception &) {
         return Result<std::unique_ptr<TaskController>>::failure(allocationFailure());
     }
@@ -88,12 +92,15 @@ TaskController::create(tasks::TaskPresentationModel &presentation, std::string_v
                      [instance = controller.get()](QSocketDescriptor, QSocketNotifier::Type) {
                          instance->drainEvents();
                      });
+    QObject::connect(controller->stabilization_timer_.get(), &QTimer::timeout,
+                     controller->event_context_.get(),
+                     [instance = controller.get()] { instance->retryTaskRefresh(); });
     auto initialized = controller->refreshTasks();
     if (!initialized) {
         if (!controller->connection_.healthy()) {
             return Result<std::unique_ptr<TaskController>>::failure(initialized.error());
         }
-        controller->reportRecoverable(initialized.error());
+        controller->handleRefreshFailure(initialized.error());
     }
     return Result<std::unique_ptr<TaskController>>::success(std::move(controller));
 }
@@ -114,9 +121,13 @@ TaskController::TaskController(tasks::TaskPresentationModel &presentation,
       requests_(std::move(requests)) {}
 
 TaskController::~TaskController() {
+    if (stabilization_timer_) {
+        stabilization_timer_->stop();
+    }
     if (event_notifier_) {
         event_notifier_->setEnabled(false);
     }
+    stabilization_timer_.reset();
     event_notifier_.reset();
     event_context_.reset();
 }
@@ -149,7 +160,9 @@ Result<void> TaskController::dispatchCheckedRequest(const x11::TaskRequestState 
         return Result<void>::failure(terminatedController());
     }
     const auto snapshot = core_.currentSnapshot();
-    if (!snapshot || !request.canDispatch(*snapshot) || !requests_) {
+    const bool stabilizationPending = stabilization_timer_ && stabilization_timer_->isActive();
+    if (!snapshot || !request.canDispatch(*snapshot) ||
+        !taskRequestPathCanDispatch(requests_.has_value(), stabilizationPending)) {
         return Result<void>::failure(
             {ErrorCode::cancelled, "The checked task request path is not current.",
              "Wait for a complete authoritative task refresh before retrying."});
@@ -202,7 +215,9 @@ void TaskController::drainEvents() {
         source_.invalidateClient(window);
     }
     bool refreshAttempted = false;
-    if (plan.value().refreshRequired) {
+    const bool stabilizationPending = stabilization_timer_ && stabilization_timer_->isActive();
+    if (taskRefreshShouldRunImmediately(plan.value().refreshRequired, stabilizationPending)) {
+        stabilization_policy_.beginRealEventEpoch();
         refreshAttempted = true;
         auto refreshed = refreshTasks();
         if (!refreshed) {
@@ -210,12 +225,54 @@ void TaskController::drainEvents() {
                 terminateForConnectionLoss(refreshed.error());
                 return;
             }
-            reportRecoverable(refreshed.error());
+            handleRefreshFailure(refreshed.error());
+        } else {
+            resetStabilization();
         }
     }
     if (taskEventFollowUpRequired(refreshAttempted, batch.value().examinationLimitReached)) {
         scheduleDrain();
     }
+}
+
+void TaskController::retryTaskRefresh() {
+    if (terminated_) {
+        return;
+    }
+    auto refreshed = refreshTasks();
+    if (!refreshed) {
+        if (!connection_.healthy()) {
+            terminateForConnectionLoss(refreshed.error());
+            return;
+        }
+        handleRefreshFailure(refreshed.error());
+        return;
+    }
+    resetStabilization();
+    scheduleDrain();
+}
+
+void TaskController::handleRefreshFailure(const foundation::Error &error) {
+    if (!x11::taskRefreshFailureCanStabilize(error)) {
+        resetStabilization();
+        reportRecoverable(error);
+        return;
+    }
+    const auto delay = stabilization_policy_.nextDelay();
+    if (!delay) {
+        if (stabilization_policy_.takeExhaustionReport()) {
+            reportRecoverable(error);
+        }
+        return;
+    }
+    stabilization_timer_->start(static_cast<int>(delay->count()));
+}
+
+void TaskController::resetStabilization() noexcept {
+    if (stabilization_timer_) {
+        stabilization_timer_->stop();
+    }
+    stabilization_policy_.reset();
 }
 
 void TaskController::scheduleDrain() {
@@ -239,6 +296,7 @@ void TaskController::terminateForConnectionLoss(const foundation::Error &error) 
     }
     terminated_ = true;
     drain_scheduled_ = false;
+    resetStabilization();
     if (event_notifier_) {
         event_notifier_->setEnabled(false);
     }

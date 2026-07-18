@@ -15,6 +15,7 @@
 #include <string_view>
 
 class QSocketNotifier;
+class QTimer;
 class QObject;
 
 namespace prismdrake::shell::taskcontroller {
@@ -59,6 +60,9 @@ class TaskController final {
     dispatchCheckedRequest(const x11::TaskRequestState &request);
     void drainEvents();
     void scheduleDrain();
+    void retryTaskRefresh();
+    void handleRefreshFailure(const foundation::Error &error);
+    void resetStabilization() noexcept;
     void reportRecoverable(const foundation::Error &error) const;
     void terminateForConnectionLoss(const foundation::Error &error);
 
@@ -72,6 +76,8 @@ class TaskController final {
     std::optional<x11::EwmhWindowRequests> requests_;
     std::unique_ptr<QObject> event_context_;
     std::unique_ptr<QSocketNotifier> event_notifier_;
+    std::unique_ptr<QTimer> stabilization_timer_;
+    TaskSnapshotStabilizationPolicy stabilization_policy_;
     bool drain_scheduled_{false};
     bool terminated_{false};
 };
