@@ -204,8 +204,9 @@ exposed to QML.
 
 - The built `prismdrake-shell` executable is not installed by the Experimental
   Gentoo package yet, and its complete installed package closure is unmeasured.
-- No Accepted WM/session shortcut contract currently provides global launcher
-  entry; the wired launcher remains reachable through the panel surface.
+- The wired launcher is reachable through the panel's accessible Applications
+  action, which is the bounded PD1 entry contract. No global shortcut is claimed;
+  that PD2 behavior requires authoritative-WM coordination under `PD-INPUT-002`.
 - X-server-loss handling uses one internal owner-thread shutdown gate shared by
   the task and panel X11 reporters. Deterministic tests inject sequential and
   reentrant reports into that shared gate, proving it requests one
@@ -213,8 +214,9 @@ exposed to QML.
   that Qt survives physical X-server termination: killing Qt's sole platform X
   server can still abort `QGuiApplication` before application callback
   dispatch, and the session supervisor remains the recovery boundary.
-- Reviewed visual baselines and real mixed-scale/multi-output captures remain
-  WP13 work. The deterministic lane covers RTL layout, while the reference VM
-  now covers bounded live AT-SPI task actions.
+- The deterministic visual candidate lane satisfies the PD1 harness boundary
+  and covers RTL layout. Approved goldens and real mixed-scale/multi-output
+  captures remain later visual-system work, while the reference VM now covers
+  bounded live AT-SPI task actions.
 - Complete dynamic runtime closure and installed-package behavior remain WP15
   work.

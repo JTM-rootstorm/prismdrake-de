@@ -51,7 +51,12 @@ approved baseline requires maintainer visual review on the documented reference
 guest. Later image comparison must use a separately reviewed narrow tolerance;
 the harness must never rewrite approved images merely to make CI pass.
 
+The candidate capture, locked metadata, repeated-image determinism, and complete
+profile/fallback matrix satisfy the deterministic-harness outcome for PD1.
+Approved golden images and the cross-version comparison policy are a PD3 visual-
+system outcome, not a prerequisite for closing the PD1 engineering skeleton.
+
 This slice exercises `PD-THEME-002`, `PD-THEME-003`, `PD-THEME-008`,
 `PD-A11Y-002`, `PD-A11Y-004` through `PD-A11Y-010`, `PD-PERF-009`, and
 `PD-TEST-006`. The production-shell AT-SPI procedure is documented separately;
-approved cross-version image-diff policy remains open WP13 work.
+approved cross-version image-diff policy remains deferred PD3 work.

@@ -76,11 +76,17 @@ applications.
 The three Experimental processes, their read-only data, and a standard X11
 session entry now share one CMake install contract. This is still a development
 prototype, not a complete shell: Portage-installed end-to-end and AT-SPI replay
-evidence, reviewed visual baselines, and a global launcher-entry contract remain
-open PD1 work. The production build tree now has bounded live AT-SPI metadata,
+evidence remains open PD1 work. The production build tree now has bounded live AT-SPI metadata,
 forward/reverse focus, exact task activation, minimization, and close evidence,
 plus supervised settings-owner loss and complete presentation-epoch recovery on
 the reference guest.
+
+The deterministic visual candidate suites satisfy the PD1 harness outcome;
+promotion to reviewed golden images and a cross-version tolerance policy remain
+PD3 work. The panel's accessible **Applications** action is the bounded PD1
+launcher entry. A global shortcut is deferred to PD2 because `PD-INPUT-002`
+requires coordination with the authoritative WM or an Accepted negotiated
+interface.
 
 ## Activation gate
 
