@@ -522,6 +522,135 @@ def _window_process_matches(xdotool: Path, window: str, expected_process_id: int
     return owner.returncode == 0 and owner.stdout.strip() == str(expected_process_id)
 
 
+def _probe_window_ids(result: subprocess.CompletedProcess[str]) -> tuple[bool, int, list[str]]:
+    lines = result.stdout.splitlines()
+    count = min(len(lines), 17)
+    shape_valid = (
+        result.returncode == 0
+        and len(lines) <= 16
+        and all(line.isascii() and line.isdecimal() for line in lines)
+    )
+    return shape_valid, count, lines if shape_valid else []
+
+
+def _probe_owned_windows(
+    xdotool: Path, identifiers: list[str], expected_process_id: int
+) -> tuple[int, bool]:
+    owned = 0
+    for identifier in identifiers[:4]:
+        owner = _run_checked(
+            [str(xdotool), "getwindowpid", identifier], timeout=0.5
+        )
+        if owner.returncode == 0 and owner.stdout.strip() == str(expected_process_id):
+            owned += 1
+    return owned, len(identifiers) <= 4
+
+
+def _launcher_probe_summary(
+    atspi: Any, xdotool: Path, node: Any, panel: str, expected_process_id: int
+) -> str:
+    """Return bounded categorical diagnostics without runtime identifiers."""
+
+    accessible_owner_matches = node.get_process_id() == expected_process_id
+    accessible_focused = _has_state(node, atspi.StateType.FOCUSED)
+    component = node.get_component_iface()
+    component_available = component is not None
+    extents_positive = False
+    if component_available:
+        extents = component.get_extents(atspi.CoordType.SCREEN)
+        extents_positive = extents.width > 0 and extents.height > 0
+
+    titled = _run_checked(
+        [str(xdotool), "search", "--all", "--name", f"^{LAUNCHER_TITLE}$"],
+        timeout=1,
+    )
+    titled_shape, titled_count, titled_ids = _probe_window_ids(titled)
+    titled_non_panel = [identifier for identifier in titled_ids if identifier != panel]
+    titled_owned, titled_owner_complete = _probe_owned_windows(
+        xdotool, titled_non_panel, expected_process_id
+    )
+
+    shell_windows = _run_checked(
+        [str(xdotool), "search", "--all", "--class", f"^{APPLICATION_NAME}$"],
+        timeout=1,
+    )
+    shell_shape, shell_count, shell_ids = _probe_window_ids(shell_windows)
+    shell_non_panel = [identifier for identifier in shell_ids if identifier != panel]
+    shell_owned, shell_owner_complete = _probe_owned_windows(
+        xdotool, shell_non_panel, expected_process_id
+    )
+
+    visible = _run_checked(
+        [
+            str(xdotool),
+            "search",
+            "--all",
+            "--onlyvisible",
+            "--class",
+            f"^{APPLICATION_NAME}$",
+        ],
+        timeout=1,
+    )
+    visible_shape, visible_count, visible_ids = _probe_window_ids(visible)
+    visible_non_panel = [identifier for identifier in visible_ids if identifier != panel]
+    visible_owned, visible_owner_complete = _probe_owned_windows(
+        xdotool, visible_non_panel, expected_process_id
+    )
+
+    focused = _run_checked([str(xdotool), "getwindowfocus"], timeout=1)
+    focused_identifier = focused.stdout.strip()
+    focused_shape = (
+        focused.returncode == 0
+        and focused_identifier.isascii()
+        and focused_identifier.isdecimal()
+    )
+    focused_non_panel = focused_shape and focused_identifier != panel
+    focused_owned = focused_non_panel and _window_process_matches(
+        xdotool, focused_identifier, expected_process_id
+    )
+    focused_class_matches = False
+    if focused_owned:
+        window_class = _run_checked(
+            [str(xdotool), "getwindowclassname", focused_identifier], timeout=0.5
+        )
+        focused_class_matches = (
+            window_class.returncode == 0
+            and window_class.stdout.strip() == APPLICATION_NAME
+        )
+
+    fields = (
+        ("accessible_owner", accessible_owner_matches),
+        ("accessible_focused", accessible_focused),
+        ("component", component_available),
+        ("extents_positive", extents_positive),
+        ("title_query", titled.returncode == 0),
+        ("title_shape", titled_shape),
+        ("title_count", titled_count),
+        ("title_non_panel_count", len(titled_non_panel)),
+        ("title_owned_count", titled_owned),
+        ("title_owner_complete", titled_owner_complete),
+        ("class_query", shell_windows.returncode == 0),
+        ("class_shape", shell_shape),
+        ("class_count", shell_count),
+        ("class_non_panel_count", len(shell_non_panel)),
+        ("class_owned_count", shell_owned),
+        ("class_owner_complete", shell_owner_complete),
+        ("visible_query", visible.returncode == 0),
+        ("visible_shape", visible_shape),
+        ("visible_count", visible_count),
+        ("visible_non_panel_count", len(visible_non_panel)),
+        ("visible_owned_count", visible_owned),
+        ("visible_owner_complete", visible_owner_complete),
+        ("focus_shape", focused_shape),
+        ("focus_non_panel", focused_non_panel),
+        ("focus_owned", focused_owned),
+        ("focus_class", focused_class_matches),
+    )
+    return "launcher_probe " + " ".join(
+        f"{name}={int(value) if isinstance(value, bool) else value}" for name, value in fields
+    )
+
+
 def _focused_window_for_accessible(
     atspi: Any, xdotool: Path, node: Any, panel: str, expected_process_id: int
 ) -> str | None:
@@ -806,21 +935,27 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
             "the Prismdrake launcher accessible tree",
         )
         _require(_grab_focus(launcher_search), "launcher search focus request was rejected")
-        launcher = _wait_until(
-            lambda: _titled_window_for_accessible(
-                arguments.xdotool, launcher_search, panel, shell.pid
+        try:
+            launcher = _wait_until(
+                lambda: _titled_window_for_accessible(
+                    arguments.xdotool, launcher_search, panel, shell.pid
+                )
+                or _focused_window_for_accessible(
+                    Atspi, arguments.xdotool, launcher_search, panel, shell.pid
+                )
+                or _window_for_accessible(
+                    Atspi, arguments.xdotool, launcher_search, panel, shell.pid
+                )
+                or _visible_window_for_accessible(
+                    arguments.xdotool, launcher_search, panel, shell.pid
+                ),
+                "the Prismdrake launcher window",
             )
-            or _focused_window_for_accessible(
+        except EvidenceError as error:
+            summary = _launcher_probe_summary(
                 Atspi, arguments.xdotool, launcher_search, panel, shell.pid
             )
-            or _window_for_accessible(
-                Atspi, arguments.xdotool, launcher_search, panel, shell.pid
-            )
-            or _visible_window_for_accessible(
-                arguments.xdotool, launcher_search, panel, shell.pid
-            ),
-            "the Prismdrake launcher window",
-        )
+            raise EvidenceError(f"{error}; {summary}") from error
         phases.append(_phase(Atspi, PHASE_IDS[1], PHASE_FOCUS[1], launcher_specs))
         _send_key(arguments.xdotool, "Tab", launcher)
         phases.append(_phase(Atspi, PHASE_IDS[2], PHASE_FOCUS[2], result_specs))
