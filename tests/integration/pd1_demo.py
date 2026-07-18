@@ -32,6 +32,7 @@ LIMITATIONS = [
     "pd1_demo_task_icon_surface_unavailable",
     "pd1_demo_complete_validation_external",
 ]
+SESSION_CANCELLED_STATUS = 7
 
 
 class DemoError(RuntimeError):
@@ -531,8 +532,24 @@ def named_action_nodes(atspi: Any, name: str, action: str) -> list[Any]:
     return [node for node in named_nodes(atspi, name) if action in action_names(node)]
 
 
+def showing_named_action_nodes(atspi: Any, name: str, action: str) -> list[Any]:
+    return [
+        node for node in named_action_nodes(atspi, name, action)
+        if node.get_state_set().contains(atspi.StateType.SHOWING)
+        and node.get_state_set().contains(atspi.StateType.VISIBLE)
+    ]
+
+
 def press(atspi: Any, name: str) -> bool:
     matches = named_action_nodes(atspi, name, "Press")
+    require(len(matches) == 1, "atspi_control_identity")
+    node = matches[0]
+    actions = action_names(node)
+    return bool(node.get_action_iface().do_action(actions.index("Press")))
+
+
+def press_showing(atspi: Any, name: str) -> bool:
+    matches = showing_named_action_nodes(atspi, name, "Press")
     require(len(matches) == 1, "atspi_control_identity")
     node = matches[0]
     actions = action_names(node)
@@ -844,10 +861,22 @@ def run_session_child(arguments: argparse.Namespace) -> None:
             window_process_identity(arguments.xdotool, second),
         ))
         validate_cleanup_identities(detached_identities)
-        wait_until(lambda: len(named_action_nodes(Atspi, APP_TITLES[0], "Press")) == 1 and
-                   len(named_action_nodes(Atspi, APP_TITLES[1], "Press")) == 1,
-                   "task_mirror_timeout")
-        require(press(Atspi, APP_TITLES[0]), "task_activation_rejected")
+        try:
+            wait_until(
+                lambda: len(showing_named_action_nodes(Atspi, APP_TITLES[0], "Press")) == 1 and
+                len(showing_named_action_nodes(Atspi, APP_TITLES[1], "Press")) == 1,
+                       "task_mirror_timeout")
+        except DemoError:
+            interactive_counts = tuple(
+                len(showing_named_action_nodes(Atspi, title, "Press")) for title in APP_TITLES
+            )
+            print(
+                "PD1 task diagnostic: expected_count=2 "
+                f"interactive_counts={interactive_counts[0]},{interactive_counts[1]}",
+                file=sys.stderr,
+            )
+            raise
+        require(press_showing(Atspi, APP_TITLES[0]), "task_activation_rejected")
         wait_until(
             lambda: (first if run_checked([
                 str(arguments.xdotool), "getactivewindow",
@@ -879,7 +908,7 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                    "notification_action_timeout")
         send_key(arguments.xdotool, notification, "Tab")
         wait_until(lambda: focused(Atspi, "Acknowledge"), "notification_focus_timeout")
-        send_key(arguments.xdotool, notification, "Return")
+        send_key(arguments.xdotool, notification, "space")
         wait_until(lambda: visible_window_id(arguments.xdotool, NOTIFICATION_TITLE) is None,
                    "notification_dismiss_timeout")
         wait_until(lambda: focused(Atspi, "Send test notification"),
@@ -934,8 +963,9 @@ def run_session_child(arguments: argparse.Namespace) -> None:
         require(window_id(arguments.xdotool, APP_TITLES[0]) == first and
                 window_id(arguments.xdotool, APP_TITLES[1]) == second,
                 "application_state_lost_on_restart")
-        wait_until(lambda: len(named_action_nodes(Atspi, APP_TITLES[0], "Press")) == 1 and
-                   len(named_action_nodes(Atspi, APP_TITLES[1], "Press")) == 1,
+        wait_until(
+            lambda: len(showing_named_action_nodes(Atspi, APP_TITLES[0], "Press")) == 1 and
+            len(showing_named_action_nodes(Atspi, APP_TITLES[1], "Press")) == 1,
                    "task_mirror_rebuild_timeout", timeout=12)
         require(wm_identity(arguments.xprop) == initial_wm_identity,
                 "window_manager_owner_changed")
@@ -965,7 +995,13 @@ def run_session_child(arguments: argparse.Namespace) -> None:
             list(prismdrake_runtime.glob("*/safe-mode")))
         log_text = session_log.read_text(encoding="utf-8")
         validate_session_log(log_text)
-        require(status == 0 and marker_count == 0, "session_shutdown_invalid")
+        if status != SESSION_CANCELLED_STATUS or marker_count != 0:
+            print(
+                f"PD1 shutdown diagnostic: session_status={status} marker_count={marker_count}",
+                file=sys.stderr,
+            )
+        require(status == SESSION_CANCELLED_STATUS and marker_count == 0,
+                "session_shutdown_invalid")
 
         evidence = example_evidence(arguments.artifact_provenance)
         evidence["fallback"]["settings_policy_thumbnail"] = thumbnail

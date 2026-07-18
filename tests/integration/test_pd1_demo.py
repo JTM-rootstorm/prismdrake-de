@@ -26,6 +26,7 @@ from pd1_demo import (
     environment_has_marker,
     focused_window_id,
     named_action_nodes,
+    showing_named_action_nodes,
     openbox_command,
     openbox_environment,
     parse_atom_list,
@@ -363,6 +364,15 @@ class EvidenceContractTests(unittest.TestCase):
                 mock.patch.object(pd1_demo, "action_names",
                                   side_effect=(("Press",), ())):
             self.assertEqual(named_action_nodes(object(), "Demo", "Press"), [button])
+
+    def test_showing_named_action_nodes_exclude_hidden_surface_duplicates(self) -> None:
+        showing = mock.Mock()
+        hidden = mock.Mock()
+        showing.get_state_set.return_value.contains.side_effect = lambda state: state in (2, 3)
+        hidden.get_state_set.return_value.contains.return_value = False
+        atspi = mock.Mock(StateType=mock.Mock(SHOWING=2, VISIBLE=3))
+        with mock.patch.object(pd1_demo, "named_action_nodes", return_value=[showing, hidden]):
+            self.assertEqual(showing_named_action_nodes(atspi, "Demo", "Press"), [showing])
 
     def test_wait_until_surfaces_last_safe_closed_demo_error(self) -> None:
         with mock.patch.object(pd1_demo.time, "monotonic", side_effect=(0.0, 0.0, 1.0)), \
