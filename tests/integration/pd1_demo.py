@@ -370,48 +370,36 @@ def sha256_regular_file(path: Path) -> str:
 
 
 def validate_artifact_provenance(arguments: argparse.Namespace) -> None:
-    lifecycle_path = arguments.portage_lifecycle_evidence
+    attestation_path = arguments.installed_artifact_attestation
     if arguments.artifact_provenance == "build_tree":
-        require(lifecycle_path is None, "build_tree_lifecycle_evidence_unexpected")
+        require(attestation_path is None, "build_tree_attestation_unexpected")
         return
     require(arguments.artifact_provenance == "portage_installed" and
-            isinstance(lifecycle_path, Path) and lifecycle_path.is_absolute() and
-            lifecycle_path.is_file() and not lifecycle_path.is_symlink(),
-            "portage_lifecycle_evidence_required")
+            isinstance(attestation_path, Path) and attestation_path.is_absolute() and
+            attestation_path.is_file() and not attestation_path.is_symlink(),
+            "installed_artifact_attestation_required")
 
     gentoo_tests = str(Path(__file__).resolve().parents[1] / "gentoo")
     if gentoo_tests not in sys.path:
         sys.path.insert(0, gentoo_tests)
     try:
-        from portage_lifecycle_evidence import (  # pylint: disable=import-outside-toplevel
-            EvidenceError,
-            load_evidence,
-            validate_evidence_document,
+        from installed_artifact_attestation import (  # pylint: disable=import-outside-toplevel
+            AttestationError,
+            load_attestation,
+            validate_attested_files,
         )
     except ImportError as error:
-        raise DemoError("portage_lifecycle_evidence_invalid") from error
+        raise DemoError("installed_artifact_attestation_invalid") from error
     try:
-        lifecycle = load_evidence(lifecycle_path)
-        validate_evidence_document(lifecycle)
-    except EvidenceError as error:
-        raise DemoError("portage_lifecycle_evidence_invalid") from error
-
-    installed = lifecycle["installed"]
-    expected_hashes = {record["path"]: record["sha256"]
-                       for record in installed["executables"]}
-    executable_paths = {
-        "/usr/bin/prismdrake-session": arguments.session,
-        "/usr/bin/prismdrake-settingsd": arguments.settingsd,
-        "/usr/bin/prismdrake-shell": arguments.shell,
-    }
-    require(all(str(path) == expected for expected, path in executable_paths.items()),
-            "installed_executable_path_mismatch")
-    require(all(sha256_regular_file(path) == expected_hashes[expected]
-                for expected, path in executable_paths.items()),
-            "installed_executable_hash_mismatch")
-    driver_hash = lifecycle["runtime_validation"]["complete_demo"]["driver_sha256"]
-    require(sha256_regular_file(Path(__file__).resolve()) == driver_hash,
-            "installed_demo_driver_mismatch")
+        attestation = load_attestation(attestation_path)
+        validate_attested_files(
+            attestation,
+            (arguments.session, arguments.settingsd, arguments.shell),
+            Path(__file__).resolve(),
+            sha256_regular_file,
+        )
+    except AttestationError as error:
+        raise DemoError(str(error)) from error
 
 
 def example_evidence(provenance: str = "build_tree") -> dict[str, Any]:
@@ -538,7 +526,7 @@ def parse_arguments() -> argparse.Namespace:
         parser.add_argument(f"--{name}", type=Path)
     parser.add_argument("--session-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--artifact-provenance", choices=("build_tree", "portage_installed"))
-    parser.add_argument("--portage-lifecycle-evidence", type=Path)
+    parser.add_argument("--installed-artifact-attestation", type=Path)
     arguments = parser.parse_args()
     required = [
         "accessible_config", "gdbus", "openbox", "output", "session", "settingsd", "shell",
@@ -549,12 +537,12 @@ def parse_arguments() -> argparse.Namespace:
     if arguments.artifact_provenance is None:
         parser.error("--artifact-provenance is required")
     if arguments.artifact_provenance == "portage_installed":
-        if arguments.portage_lifecycle_evidence is None:
-            parser.error("--portage-lifecycle-evidence is required for installed artifacts")
-        if not arguments.portage_lifecycle_evidence.is_absolute():
-            parser.error("--portage-lifecycle-evidence must be absolute")
-    elif arguments.portage_lifecycle_evidence is not None:
-        parser.error("--portage-lifecycle-evidence is only valid for installed artifacts")
+        if arguments.installed_artifact_attestation is None:
+            parser.error("--installed-artifact-attestation is required for installed artifacts")
+        if not arguments.installed_artifact_attestation.is_absolute():
+            parser.error("--installed-artifact-attestation must be absolute")
+    elif arguments.installed_artifact_attestation is not None:
+        parser.error("--installed-artifact-attestation is only valid for installed artifacts")
     for name in required:
         value = getattr(arguments, name)
         if value is None:
@@ -1164,6 +1152,7 @@ def validate_panel_contract(xdotool: Path, xprop: Path, panel: str) -> None:
 
 
 def run_session_child(arguments: argparse.Namespace) -> None:
+    validate_artifact_provenance(arguments)
     import gi
 
     gi.require_version("Atspi", "2.0")
@@ -1550,6 +1539,27 @@ def run_session_child(arguments: argparse.Namespace) -> None:
             raise cleanup_error
 
 
+def session_child_command(arguments: argparse.Namespace) -> list[str]:
+    """Build the isolated child command, including installed provenance."""
+
+    command = [
+        str(arguments.dbus_run_session), "--", sys.executable, str(Path(__file__).resolve()),
+        "--session-child",
+    ]
+    for name in (
+        "accessible_config", "gdbus", "openbox", "output", "session", "settingsd",
+        "shell", "test_app", "xdotool", "xprop",
+    ):
+        command.extend((f"--{name.replace('_', '-')}", str(getattr(arguments, name))))
+    command.extend(("--artifact-provenance", arguments.artifact_provenance))
+    if arguments.artifact_provenance == "portage_installed":
+        command.extend((
+            "--installed-artifact-attestation",
+            str(arguments.installed_artifact_attestation),
+        ))
+    return command
+
+
 def run_parent(arguments: argparse.Namespace) -> None:
     validate_artifact_provenance(arguments)
     executable_names = (
@@ -1586,16 +1596,7 @@ def run_parent(arguments: argparse.Namespace) -> None:
                 "QT_QUICK_CONTROLS_STYLE": "Basic",
                 "XDG_RUNTIME_DIR": str(runtime),
             })
-            command = [
-                str(arguments.dbus_run_session), "--", sys.executable, str(Path(__file__).resolve()),
-                "--session-child",
-            ]
-            for name in (
-                "accessible_config", "gdbus", "openbox", "output", "session", "settingsd",
-                "shell", "test_app", "xdotool", "xprop",
-            ):
-                command.extend((f"--{name.replace('_', '-')}", str(getattr(arguments, name))))
-            command.extend(("--artifact-provenance", arguments.artifact_provenance))
+            command = session_child_command(arguments)
             child = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL,
                                      start_new_session=True)
             require(child.wait(timeout=65) == 0, "isolated_demo_failed")

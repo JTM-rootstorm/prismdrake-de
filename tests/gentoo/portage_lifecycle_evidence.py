@@ -14,6 +14,12 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from lifecycle_hashes import (
+    LifecycleHashError,
+    canonical_artifact_sha256,
+    canonical_linkage_sha256,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = Path(__file__).with_name("pd1-portage-lifecycle-evidence.schema.json")
@@ -180,6 +186,11 @@ def validate_evidence_document(document: Any) -> None:
 
     installed = document["installed"]
     _require_binding(installed, revision, artifact)
+    try:
+        _require(canonical_artifact_sha256(installed["executables"]) == artifact,
+                 "artifact_sha256_mismatch")
+    except LifecycleHashError as error:
+        raise EvidenceError(str(error)) from error
     installed_hashes = _executable_map(installed["executables"])
     ownership = installed["ownership"]
     _require(tuple(ownership["paths"]) == INSTALLED_PATHS,
@@ -197,6 +208,11 @@ def validate_evidence_document(document: Any) -> None:
                  "runtime_linkage_not_normalized")
     needed = {library for entry in linkage_entries for library in entry["needed"]}
     _require("libtomlplusplus.so.3" in needed, "runtime_linkage_incomplete")
+    try:
+        _require(runtime["linkage"]["capture_sha256"] ==
+                 canonical_linkage_sha256(linkage_entries), "runtime_linkage_hash_mismatch")
+    except LifecycleHashError as error:
+        raise EvidenceError(str(error)) from error
 
     exclusions = document["sandbox_exclusions"]
     _require(tuple(item["test_id"] for item in exclusions) == EXCLUDED_TESTS,
@@ -233,7 +249,6 @@ def example_evidence_document() -> dict[str, Any]:
 
     revision = "0123456789abcdef0123456789abcdef01234567"
     ebuild_hash = "a" * 64
-    artifact_hash = "b" * 64
     executable_hashes = ("c" * 64, "d" * 64, "e" * 64)
 
     def executables() -> list[dict[str, Any]]:
@@ -241,6 +256,25 @@ def example_evidence_document() -> dict[str, Any]:
             {"path": path, "sha256": digest, "regular_executable": True}
             for path, digest in zip(INSTALLED_PATHS, executable_hashes)
         ]
+
+    artifact_hash = canonical_artifact_sha256(executables())
+    linkage_entries = [
+        {
+            "path": INSTALLED_PATHS[0],
+            "executable_sha256": executable_hashes[0],
+            "needed": ["libQt6Core.so.6", "libc.so.6"],
+        },
+        {
+            "path": INSTALLED_PATHS[1],
+            "executable_sha256": executable_hashes[1],
+            "needed": ["libQt6Core.so.6", "libtomlplusplus.so.3"],
+        },
+        {
+            "path": INSTALLED_PATHS[2],
+            "executable_sha256": executable_hashes[2],
+            "needed": ["libQt6Core.so.6", "libQt6Quick.so.6"],
+        },
+    ]
 
     return {
         "schema_version": 1,
@@ -322,24 +356,8 @@ def example_evidence_document() -> dict[str, Any]:
             },
             "linkage": {
                 "tool": "scanelf",
-                "capture_sha256": "4" * 64,
-                "entries": [
-                    {
-                        "path": INSTALLED_PATHS[0],
-                        "executable_sha256": executable_hashes[0],
-                        "needed": ["libQt6Core.so.6", "libc.so.6"],
-                    },
-                    {
-                        "path": INSTALLED_PATHS[1],
-                        "executable_sha256": executable_hashes[1],
-                        "needed": ["libQt6Core.so.6", "libtomlplusplus.so.3"],
-                    },
-                    {
-                        "path": INSTALLED_PATHS[2],
-                        "executable_sha256": executable_hashes[2],
-                        "needed": ["libQt6Core.so.6", "libQt6Quick.so.6"],
-                    },
-                ],
+                "capture_sha256": canonical_linkage_sha256(linkage_entries),
+                "entries": linkage_entries,
             },
         },
         "sandbox_exclusions": [

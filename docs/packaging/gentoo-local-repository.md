@@ -136,8 +136,40 @@ anything outside the project-owned repository.
 
 ## Product lifecycle evidence contract
 
-The tracked version-one lifecycle schema and semantic validator define the
-success record for the final `x11-misc/prismdrake-9999` exercise:
+The installed demonstration uses a staged evidence flow so it never depends on
+a result that it is itself expected to produce. After the `USE=test` install,
+write a normalized source object and a JSON array containing the complete
+Portage-owned `/usr` path set. Capture the non-final, mode-0600 preflight
+attestation from the exact matching source driver:
+
+```bash
+python3 tests/gentoo/portage_lifecycle_collector.py preflight \
+  --source /absolute/private/evidence/source.json \
+  --owned-files /absolute/private/evidence/owned-files.json \
+  --driver tests/integration/pd1_demo.py \
+  --output /absolute/private/evidence/installed-preflight.json
+```
+
+The preflight command measures the fixed `/usr/bin/prismdrake-*` executable
+set itself. The demonstration validates the attestation in both its parent and
+isolated child before executing those files. It is not final lifecycle
+evidence and cannot claim the demonstration, unmerge, or reinstall passed.
+
+After every phase has actually completed, finalize a draft that already
+matches the tracked lifecycle schema:
+
+```bash
+python3 tests/gentoo/portage_lifecycle_collector.py finalize \
+  --attestation /absolute/private/evidence/installed-preflight.json \
+  --draft /absolute/private/evidence/pd1-portage-lifecycle-draft.json \
+  --output /absolute/private/evidence/pd1-portage-lifecycle.json
+```
+
+Canonical artifact, ownership, linkage, and controlled XDG-tree hashes bind
+the stages without preserving private command output. Both collector outputs
+are published atomically with mode 0600. The tracked version-one lifecycle
+schema and semantic validator define the success record for the final
+`x11-misc/prismdrake-9999` exercise:
 
 ```bash
 python3 tests/gentoo/portage_lifecycle_evidence.py \

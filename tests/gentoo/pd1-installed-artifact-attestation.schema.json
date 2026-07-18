@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/test/pd1-installed-artifact-attestation-v1.json",
+  "title": "Prismdrake PD1 installed-artifact preflight attestation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "attestation_kind",
+    "source",
+    "tested_artifact",
+    "installed",
+    "demo_driver"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "attestation_kind": { "const": "pd1_installed_artifact_preflight" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "repository_uri",
+        "repository_name",
+        "atom",
+        "version",
+        "ebuild_path",
+        "ebuild_sha256"
+      ],
+      "properties": {
+        "revision": { "$ref": "#/$defs/revision" },
+        "repository_uri": { "const": "https://github.com/JTM-rootstorm/prismdrake-de.git" },
+        "repository_name": { "const": "prismdrake-local" },
+        "atom": { "const": "x11-misc/prismdrake" },
+        "version": { "const": "9999" },
+        "ebuild_path": { "const": "x11-misc/prismdrake/prismdrake-9999.ebuild" },
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "tested_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "ebuild_sha256",
+        "atom",
+        "provenance",
+        "use_test",
+        "artifact_sha256"
+      ],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" },
+        "atom": { "const": "x11-misc/prismdrake-9999" },
+        "provenance": { "const": "portage_installed" },
+        "use_test": { "const": true },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "installed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "artifact_sha256",
+        "provenance",
+        "data_prefix",
+        "executables",
+        "ownership"
+      ],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "provenance": { "const": "portage_installed" },
+        "data_prefix": { "const": "/usr/share/prismdrake" },
+        "executables": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/executable" }
+        },
+        "ownership": { "$ref": "#/$defs/ownership" }
+      }
+    },
+    "demo_driver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path_class", "sha256"],
+      "properties": {
+        "path_class": { "const": "exact_source_driver" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  },
+  "$defs": {
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "installed_executable_path": {
+      "enum": [
+        "/usr/bin/prismdrake-session",
+        "/usr/bin/prismdrake-settingsd",
+        "/usr/bin/prismdrake-shell"
+      ]
+    },
+    "executable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "regular_executable"],
+      "properties": {
+        "path": { "$ref": "#/$defs/installed_executable_path" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "regular_executable": { "const": true }
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool", "owner_atom", "owned_file_count", "file_list_sha256", "paths"],
+      "properties": {
+        "tool": { "const": "equery" },
+        "owner_atom": { "const": "x11-misc/prismdrake-9999" },
+        "owned_file_count": { "type": "integer", "minimum": 13, "maximum": 10000 },
+        "file_list_sha256": { "$ref": "#/$defs/sha256" },
+        "paths": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/installed_executable_path" }
+        }
+      }
+    }
+  }
+}

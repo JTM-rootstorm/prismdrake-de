@@ -47,6 +47,7 @@ from pd1_demo import (
     send_focused_window_action_key,
     select_sole_owned_panel,
     select_current_workarea,
+    session_child_command,
     task_screen_center,
     validate_cleanup_identities,
     validate_artifact_provenance,
@@ -77,31 +78,31 @@ class EvidenceContractTests(unittest.TestCase):
         validate_evidence(document)
         validate_schema(document)
 
-    def test_build_tree_provenance_rejects_lifecycle_record(self) -> None:
+    def test_build_tree_provenance_rejects_installed_attestation(self) -> None:
         arguments = mock.Mock(
-            artifact_provenance="build_tree", portage_lifecycle_evidence=None,
+            artifact_provenance="build_tree", installed_artifact_attestation=None,
         )
         validate_artifact_provenance(arguments)
-        arguments.portage_lifecycle_evidence = Path("/private/evidence.json")
+        arguments.installed_artifact_attestation = Path("/private/attestation.json")
         with self.assertRaisesRegex(
-            DemoError, "^build_tree_lifecycle_evidence_unexpected$",
+            DemoError, "^build_tree_attestation_unexpected$",
         ):
             validate_artifact_provenance(arguments)
 
-    def test_installed_provenance_requires_valid_bound_lifecycle_record(self) -> None:
+    def test_installed_provenance_requires_valid_bound_attestation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "lifecycle.json"
+            path = Path(temporary) / "attestation.json"
             gentoo_tests = Path(__file__).resolve().parents[1] / "gentoo"
             sys.path.insert(0, str(gentoo_tests))
             try:
-                from portage_lifecycle_evidence import example_evidence_document
+                from installed_artifact_attestation import example_attestation_document
             finally:
                 sys.path.remove(str(gentoo_tests))
-            lifecycle = example_evidence_document()
-            path.write_text(json.dumps(lifecycle), encoding="utf-8")
+            attestation = example_attestation_document()
+            path.write_text(json.dumps(attestation), encoding="utf-8")
             arguments = mock.Mock(
                 artifact_provenance="portage_installed",
-                portage_lifecycle_evidence=path,
+                installed_artifact_attestation=path,
                 session=Path("/usr/bin/prismdrake-session"),
                 settingsd=Path("/usr/bin/prismdrake-settingsd"),
                 shell=Path("/usr/bin/prismdrake-shell"),
@@ -121,13 +122,33 @@ class EvidenceContractTests(unittest.TestCase):
             with self.assertRaisesRegex(DemoError, "^installed_executable_path_mismatch$"):
                 validate_artifact_provenance(arguments)
 
-    def test_installed_provenance_rejects_missing_lifecycle_record(self) -> None:
+    def test_installed_provenance_rejects_missing_attestation(self) -> None:
         arguments = mock.Mock(
             artifact_provenance="portage_installed",
-            portage_lifecycle_evidence=None,
+            installed_artifact_attestation=None,
         )
-        with self.assertRaisesRegex(DemoError, "^portage_lifecycle_evidence_required$"):
+        with self.assertRaisesRegex(DemoError, "^installed_artifact_attestation_required$"):
             validate_artifact_provenance(arguments)
+
+    def test_installed_attestation_is_forwarded_to_session_child(self) -> None:
+        arguments = mock.Mock(
+            artifact_provenance="portage_installed",
+            installed_artifact_attestation=Path("/private/attestation.json"),
+            dbus_run_session=Path("/usr/bin/dbus-run-session"),
+            accessible_config=Path("/fixture/config.toml"),
+            gdbus=Path("/usr/bin/gdbus"),
+            openbox=Path("/usr/bin/openbox"),
+            output=Path("/private/demo.json"),
+            session=Path("/usr/bin/prismdrake-session"),
+            settingsd=Path("/usr/bin/prismdrake-settingsd"),
+            shell=Path("/usr/bin/prismdrake-shell"),
+            test_app=Path("/fixture/app"),
+            xdotool=Path("/usr/bin/xdotool"),
+            xprop=Path("/usr/bin/xprop"),
+        )
+        command = session_child_command(arguments)
+        option = command.index("--installed-artifact-attestation")
+        self.assertEqual(command[option + 1], "/private/attestation.json")
 
     def test_rejects_unknown_provenance(self) -> None:
         with self.assertRaises(DemoError):

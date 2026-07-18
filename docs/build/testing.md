@@ -37,10 +37,16 @@ cmake --build --preset clang-debug
 ctest --preset clang-debug
 ```
 
-The final Gentoo package lifecycle has a separate strict evidence contract.
-`GentooPortageLifecycleEvidenceTest` exercises only synthetic positive and
-negative fixtures; it does not claim that Portage installation ran. Validate a
-real private result after the complete lifecycle with:
+The final Gentoo package lifecycle has separate strict preflight and final
+evidence contracts. `GentooInstalledArtifactAttestationTest`,
+`GentooPortageLifecycleCollectorTest`, and
+`GentooPortageLifecycleEvidenceTest` exercise only synthetic positive and
+negative fixtures; they do not claim that Portage installation ran. The
+preflight attestation is captured after the `USE=test` install and binds the
+exact installed executable, Portage ownership, source-driver, revision, and
+ebuild hashes before either installed driver executes. The post-demonstration
+record then binds every remaining phase and is the only final lifecycle result.
+Validate a real private final result with:
 
 ```sh
 python3 tests/gentoo/portage_lifecycle_evidence.py \

@@ -205,8 +205,18 @@ export PRISMDRAKE_DEMO_SHELL=/usr/bin/prismdrake-shell
 export PRISMDRAKE_DEMO_LOG=/absolute/private/evidence/installed-session.stderr.log
 ```
 
-Before starting, require all three paths to be regular executables and record
-the installed package revision outside this document. The installed build is
+Before starting, capture the strict installed-artifact preflight attestation
+described in [the Gentoo repository guide](../packaging/gentoo-local-repository.md)
+and pass it to `tests/integration/pd1_demo.py` as:
+
+```bash
+--artifact-provenance portage_installed \
+--installed-artifact-attestation \
+  /absolute/private/evidence/installed-preflight.json
+```
+
+The parent and isolated child both validate the attestation against the exact
+executables and source driver before continuing. The installed build is
 configured with `PRISMDRAKE_USE_INSTALL_PATHS=ON`; it must read packaged
 defaults, themes, schemas, and interfaces under the configured `/usr` data
 prefix rather than the source tree. Run the independent installed AT-SPI driver
@@ -219,8 +229,9 @@ check, the synthetic notification action, bounded shutdown, uninstall state
 verification, and ordinary reinstall. Those results intentionally are not
 pre-filled here.
 
-The lifecycle result must validate against the strict tracked contract rather
-than relying on the demonstration's caller-supplied provenance label:
+Only after the demonstration, unmerge, and ordinary reinstall should the
+operator finalize and validate the strict tracked lifecycle record. The
+preflight attestation is deliberately insufficient as a final result:
 
 ```bash
 python3 tests/gentoo/portage_lifecycle_evidence.py \

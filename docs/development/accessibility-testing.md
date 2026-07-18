@@ -120,6 +120,12 @@ and performs exact-child termination with a bounded kill fallback. It fails
 closed when an executable, service, application, control, role, description,
 action, state, focus transition, or fixture result is missing.
 
+For the final Portage lifecycle, run this driver only after the installed
+executable set has been measured by the non-final preflight attestation in the
+[Gentoo repository guide](../packaging/gentoo-local-repository.md). The AT-SPI
+result is then added to the post-demonstration lifecycle draft; it must not be
+used to manufacture or retroactively alter the preflight binding.
+
 ## Evidence contract and privacy
 
 [`atspi-evidence.schema.json`](../../tests/accessibility/atspi-evidence.schema.json)
