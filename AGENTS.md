@@ -233,16 +233,18 @@ Rules:
 
 ### Technology choices
 
-The following are leading proposals until Accepted ADRs say otherwise:
+The following choices are Accepted through ADRs 0003, 0004, 0006, and 0008:
 
-- Qt 6 Quick for visible shell surfaces.
-- Modern C++ for models, services, and integration.
-- CMake for builds.
+- Qt 6.11 Quick or newer for visible shell surfaces.
+- Modern C++20 for models, services, and integration.
+- CMake and CTest for builds and tests.
 - TOML for user configuration.
-- JSON schemas for themes and capability snapshots.
-- Versioned D-Bus XML under `org.prismdrake.*`.
+- JSON schemas for themes and normalized snapshots.
+- Versioned Experimental D-Bus XML under `org.prismdrake.*`.
 
-Do not add a production technology stack merely to make a proposal look inevitable.
+Candidate Glasswyrm capability payloads and public interface stability remain
+Proposed or Experimental as documented. Do not add a new production technology
+stack without an Accepted decision.
 
 ---
 

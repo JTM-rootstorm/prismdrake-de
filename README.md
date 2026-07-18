@@ -5,11 +5,13 @@ X11. It aims for a polished, expressive, accessible desktop with a
 standards-based baseline and optional, capability-negotiated enhancements when
 running with Glasswyrm.
 
-Prismdrake has completed **PD1: X11 shell skeleton and settings foundation**.
-The PD0 architecture decisions and PD1 scope were approved on 2026-07-16, and
-the exact Gentoo reference lifecycle passed on 2026-07-18. PD2 has not yet been
-activated. This repository does not yet contain a usable desktop shell or
-production-ready desktop environment.
+Prismdrake is in **PD2: Core desktop shell**. The PD0 architecture decisions
+and PD1 scope were approved on 2026-07-16, and the exact Gentoo PD1 reference
+lifecycle passed on 2026-07-18. The maintainer activated PD2 on 2026-07-18 to
+integrate the panel, launcher, desktop, notification service, quick-settings
+framework, multi-output baseline, and logout path. PD2 remains Experimental;
+this repository does not yet contain a usable desktop shell or production-ready
+desktop environment.
 
 ## Profiles
 
@@ -58,9 +60,9 @@ make validate
 
 The validator uses Python 3.11 or newer and the standard library. It validates
 schemas, examples, interface XML, theme parity, Architecture Decision Record
-structure, and repository-local links. This remains contract validation; PD1
-compiled targets use the separately documented CMake and CTest paths as they
-are introduced.
+structure, and repository-local links. This remains contract validation; the
+Gentoo reference environment supplies authoritative Qt 6.11-or-newer product
+build and runtime evidence through the documented CMake and CTest paths.
 
 ## License
 

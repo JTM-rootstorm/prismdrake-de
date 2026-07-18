@@ -7,7 +7,7 @@ PYTHON_COMPAT=( python3_{11..15} )
 
 inherit cmake git-r3 python-any-r1
 
-DESCRIPTION="Experimental Prismdrake PD1 X11 shell and settings foundation"
+DESCRIPTION="Experimental Prismdrake PD2 core desktop shell"
 HOMEPAGE="https://github.com/JTM-rootstorm/prismdrake-de"
 EGIT_REPO_URI="https://github.com/JTM-rootstorm/prismdrake-de.git"
 
@@ -118,6 +118,6 @@ src_install() {
 }
 
 pkg_postinst() {
-	elog "This live package installs the Experimental Prismdrake PD1 X11 session skeleton."
+	elog "This live package installs the Experimental Prismdrake PD2 core desktop shell."
 	elog "It is a development prototype, not a daily-use desktop environment."
 }

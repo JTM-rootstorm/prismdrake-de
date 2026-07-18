@@ -1,11 +1,12 @@
-# Prismdrake milestones and PD1 status
+# Prismdrake milestones and PD2 status
 
 Milestone labels organize work; they are not release versions or promises of a
-date. **PD1: X11 shell skeleton and settings foundation completed on
-2026-07-18; PD2 has not yet been activated.** PD1 was activated by maintainer
-approval on 2026-07-16 after the PD0 decisions, dependency boundary, milestone
-scope, and non-goals were reviewed. This roadmap follows the project-wide
-specification's PD0–PD7 sequence.
+date. **PD1: X11 shell skeleton and settings foundation completed and PD2: Core
+desktop shell was activated on 2026-07-18.** The maintainer approved the PD2
+execution plan, scope, non-goals, state ownership, and wave-based parallel
+execution model. PD2 remains Experimental and is not a production-ready
+desktop release. This roadmap follows the project-wide specification's
+PD0–PD7 sequence.
 
 ## Milestone sequence
 
@@ -97,6 +98,27 @@ protocols, or waive PD1 validation requirements.
 The exact revision, artifact hashes, measured runtime linkage, and privacy
 boundary are recorded in the
 [PD1 Gentoo package lifecycle evidence](../research/pd1-portage-lifecycle-evidence.md).
+
+## PD2 activation record
+
+- [x] The maintainer selected the PD2 execution plan and approved its scope,
+  non-goals, ownership boundaries, and wave-based parallel execution model on
+  2026-07-18.
+- [x] PD1 completed at the required `7b68d9e` activation baseline with no
+  intervening repository commits or tracked user changes.
+- [x] Qt 6.11 remains the minimum for every Qt-bound Prismdrake component.
+- [x] Configuration and state ownership, notification-service ownership,
+  multi-output surface policy, and Experimental shell/session-control designs
+  are approved for PD2 implementation.
+- [x] Standard X11 and freedesktop behavior remains authoritative; candidate
+  Glasswyrm protocols remain unapproved and unimplemented.
+- [x] Local contract validation passed at activation with all 39 negative
+  rejection fixtures.
+
+Compiler, CTest, Portage, X11, D-Bus, and AT-SPI activation evidence is tracked
+in the [active PD2 milestone record](pd2.md). Activation authorizes
+Experimental implementation; it does not satisfy the PD2 exit gate or imply
+stable interfaces.
 
 ## Continuing owner review after PD1
 

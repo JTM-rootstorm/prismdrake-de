@@ -1,15 +1,17 @@
 # Prismdrake documentation
 
-Prismdrake completed PD1 on the Gentoo reference environment on 2026-07-18.
-PD2 has not yet been activated, and these documents do not describe a usable
-or production-ready desktop release.
+Prismdrake completed PD1 on the Gentoo reference environment and entered
+**PD2: Core desktop shell** on 2026-07-18. PD2 is building a developer-usable
+core session, but these documents do not describe a production-ready desktop
+release or stable public interfaces.
 
 ## Governing material
 
 - [Project-wide product and technical specification](PRISMDRAKE_PROJECT_SPECIFICATION.md)
 - [Architecture Decision Records](adr/README.md)
-- [Milestones and PD1 status](roadmap/milestones.md)
-- [Active PD1 milestone tracker](roadmap/pd1.md)
+- [Milestones and current status](roadmap/milestones.md)
+- [Active PD2 milestone tracker](roadmap/pd2.md)
+- [Completed PD1 milestone tracker](roadmap/pd1.md)
 
 ## Product and design
 
