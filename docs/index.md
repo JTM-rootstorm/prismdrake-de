@@ -49,6 +49,7 @@ describe a usable or production-ready desktop release.
 - [PD1 launcher-model evidence](research/pd1-launcher-model-evidence.md)
 - [PD1 synthetic notification-presentation evidence](research/pd1-notification-presentation-evidence.md)
 - [PD1 panel-shell evidence](research/pd1-panel-shell-evidence.md)
+- [PD1 performance-evidence method](research/pd1-performance-evidence-method.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
 

@@ -288,6 +288,7 @@ prismdrake_add_format_check(
     tests/integration/RootEventStreamTests.cpp
     tests/integration/SettingsServiceTests.cpp
     tests/integration/X11ConnectionTests.cpp
+    tests/performance/PerformanceEvidenceRunner.cpp
     tests/fixtures/SessionChildFixture.cpp
     tests/fixtures/ApplicationLaunchFixture.cpp
     tests/unit/ChildProcessTests.cpp

@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/pd1-performance-evidence.schema.json",
+  "title": "Prismdrake PD1 prototype performance evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence_kind",
+    "release_budget",
+    "source_revision",
+    "reference_environment_id",
+    "build",
+    "method",
+    "measurements",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evidence_kind": { "const": "pd1_prototype_performance" },
+    "release_budget": { "const": false },
+    "source_revision": {
+      "type": "string",
+      "pattern": "(?:[0-9a-f]{40}|[0-9a-f]{64})"
+    },
+    "reference_environment_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "[a-z0-9][a-z0-9._-]*"
+    },
+    "build": { "$ref": "#/$defs/build" },
+    "method": { "$ref": "#/$defs/method" },
+    "measurements": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": { "$ref": "#/$defs/measurement" }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contains_filesystem_paths",
+        "contains_host_or_user_names",
+        "contains_application_or_window_content",
+        "diagnostics_are_closed_ids"
+      ],
+      "properties": {
+        "contains_filesystem_paths": { "const": false },
+        "contains_host_or_user_names": { "const": false },
+        "contains_application_or_window_content": { "const": false },
+        "diagnostics_are_closed_ids": { "const": true }
+      }
+    }
+  },
+  "$defs": {
+    "bounded_string": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product_version",
+        "architecture",
+        "cmake_generator",
+        "cmake_build_type",
+        "compiler_id",
+        "compiler_version",
+        "cxx_standard",
+        "developer_overrides"
+      ],
+      "properties": {
+        "product_version": { "$ref": "#/$defs/bounded_string" },
+        "architecture": { "$ref": "#/$defs/bounded_string" },
+        "cmake_generator": { "$ref": "#/$defs/bounded_string" },
+        "cmake_build_type": { "$ref": "#/$defs/bounded_string" },
+        "compiler_id": { "enum": ["GNU", "Clang"] },
+        "compiler_version": { "$ref": "#/$defs/bounded_string" },
+        "cxx_standard": { "const": 20 },
+        "developer_overrides": { "type": "boolean" }
+      }
+    },
+    "method": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clock",
+        "clock_is_steady",
+        "duration_unit",
+        "warmup_iterations",
+        "measured_iterations",
+        "filesystem_cache_state",
+        "fixture_sizes"
+      ],
+      "properties": {
+        "clock": { "const": "std_chrono_steady_clock" },
+        "clock_is_steady": { "const": true },
+        "duration_unit": { "const": "nanoseconds" },
+        "warmup_iterations": { "const": 1 },
+        "measured_iterations": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 200
+        },
+        "filesystem_cache_state": { "const": "warm_after_untimed_warmup" },
+        "fixture_sizes": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "enum": [16, 64, 256] }
+        }
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "scope", "fixture_count", "statistics"],
+      "properties": {
+        "name": {
+          "enum": [
+            "settings_initial_load",
+            "profile_switch_publication",
+            "desktop_entry_discovery",
+            "application_search_response",
+            "ewmh_task_model_update"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "packaged_config_and_theme_to_first_immutable_generation",
+            "validated_profile_request_to_immutable_in_process_publication",
+            "scanner_creation_through_complete_bounded_fixture_publication",
+            "validated_query_operation_to_complete_in_memory_result_publication",
+            "complete_decoded_observation_to_immutable_mirror_publication"
+          ]
+        },
+        "fixture_count": {
+          "oneOf": [
+            { "type": "null" },
+            { "enum": [16, 64, 256] }
+          ]
+        },
+        "statistics": { "$ref": "#/$defs/statistics" }
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_count",
+        "minimum_ns",
+        "median_ns",
+        "p95_ns",
+        "maximum_ns",
+        "samples_ns"
+      ],
+      "properties": {
+        "sample_count": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 200
+        },
+        "minimum_ns": { "type": "integer", "minimum": 0 },
+        "median_ns": { "type": "integer", "minimum": 0 },
+        "p95_ns": { "type": "integer", "minimum": 0 },
+        "maximum_ns": { "type": "integer", "minimum": 0 },
+        "samples_ns": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 200,
+          "items": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}
