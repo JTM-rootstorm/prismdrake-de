@@ -27,6 +27,7 @@ struct FreeDeleter final {
 };
 
 using ProtocolError = std::unique_ptr<xcb_generic_error_t, FreeDeleter>;
+using InputFocusReply = std::unique_ptr<xcb_get_input_focus_reply_t, FreeDeleter>;
 
 void ensureApplication() {
     if (QCoreApplication::instance() != nullptr) {
@@ -348,6 +349,17 @@ class ControlledClients final {
 
     [[nodiscard]] bool flush() const { return healthy() && xcb_flush(connection_) > 0; }
 
+    [[nodiscard]] bool synchronize() const {
+        if (!healthy()) {
+            return false;
+        }
+        xcb_generic_error_t *rawError = nullptr;
+        InputFocusReply reply{
+            xcb_get_input_focus_reply(connection_, xcb_get_input_focus(connection_), &rawError)};
+        ProtocolError error{rawError};
+        return reply != nullptr && !error && healthy();
+    }
+
     [[nodiscard]] bool destroyAll() {
         if (!healthy()) {
             return false;
@@ -568,11 +580,18 @@ TEST(TaskControllerX11IntegrationTest, StabilizesBackToBackOpenboxMapsAndRemoves
         [&recoverable](const foundation::Error &error) { recoverable.push_back(error); });
     ASSERT_TRUE(controller);
 
+    // Enter the dispatcher once before generating the burst so the owned XCB notifier is armed.
+    // This is test readiness, not a production delay or polling loop.
+    runEventLoopFor(1);
+
     ControlledClients clients{display};
     ASSERT_TRUE(clients.healthy());
     ASSERT_TRUE(clients.createAndMap("Prismdrake task fixture one"));
     ASSERT_TRUE(clients.createAndMap("Prismdrake task fixture two"));
     ASSERT_TRUE(clients.flush());
+    // Bound the observation deadline from the point where Xvfb has processed both map requests.
+    // Openbox and the controller remain asynchronous and must still converge through real events.
+    ASSERT_TRUE(clients.synchronize());
     ASSERT_TRUE(waitForRows(presentation, 2, 3000))
         << "row_count=" << presentation.rowCount() << " recoverable_count=" << recoverable.size();
     EXPECT_TRUE(bothFixtureTitlesPresented(presentation));
