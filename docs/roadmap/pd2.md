@@ -30,6 +30,43 @@ multi-output surface policy, Experimental shell and session control, and
 wave-based parallel execution model. This approval does not stabilize any API
 or approve candidate `GW_*` protocols.
 
+### Reference baseline evidence
+
+The exact pre-PD2 revision was replayed from an isolated source archive in the
+maintainer-provided Gentoo VM before feature work:
+
+| Subject | Observed baseline |
+|---|---|
+| Gentoo | Base System 2.18, amd64 23.0 systemd profile |
+| Qt | 6.11.1 (`qtdeclarative` 6.11.1-r1) |
+| GCC | 15.3.0 |
+| Clang | 22.1.8 |
+| CMake | 4.3.3-r1 |
+| Portage | 3.0.81.2 |
+| Xorg | 21.1.24 |
+| Openbox | 3.6.1-r11 |
+| AT-SPI | 2.58.6 |
+
+Both warnings-as-errors compiler builds completed 321 build steps and
+registered 565 tests. Each suite passed 564 tests with zero failures and the
+same documented root-only permission test skipped. Formatting, all repository
+contracts and 39 negative fixtures, `pkgcheck`, and live-ebuild resolution with
+the Qt 6.11 floor also passed.
+
+### Wave 0 status
+
+- [x] Baseline and user work recorded and preserved.
+- [x] PD2 status activated without changing the Experimental maturity claim.
+- [x] Root format registration replaced by automatic source-tree-only target
+  registration, excluding generated build outputs.
+- [x] Gentoo and shell-runtime test registration moved behind feature-local
+  CMake entry points without changing the 565-test manifest.
+- [x] Post-sharding GCC and Clang suites repeated the 564-pass, one-skip,
+  zero-failure baseline.
+- [x] Post-sharding format check, all three QML lint targets, and a
+  `BUILD_TESTING=OFF` runtime-only build passed.
+- [ ] PD2 configuration, state, and Experimental IPC contracts are frozen.
+
 ## Active workstreams
 
 1. **Shared foundation:** parallel-friendly build/test registration,
