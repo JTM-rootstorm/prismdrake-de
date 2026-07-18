@@ -17,7 +17,7 @@
 #include <QSGRendererInterface>
 #include <QTextStream>
 #include <QTimer>
-#include <QtLogging>
+#include <QtCore/qlogging.h>
 
 #include <algorithm>
 #include <array>
