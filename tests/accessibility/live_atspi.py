@@ -495,7 +495,40 @@ def _window_id(xdotool: Path, title: str) -> str | None:
     return identifiers[0] if len(identifiers) == 1 else None
 
 
-def _launcher_window(xdotool: Path, panel: str) -> str | None:
+def _window_geometry(xdotool: Path, window: str) -> tuple[int, int, int, int] | None:
+    result = _run_checked([str(xdotool), "getwindowgeometry", "--shell", window])
+    if result.returncode != 0:
+        return None
+    fields: dict[str, int] = {}
+    try:
+        for line in result.stdout.splitlines():
+            key, separator, value = line.partition("=")
+            if separator and key in {"X", "Y", "WIDTH", "HEIGHT"}:
+                if key in fields:
+                    return None
+                fields[key] = int(value, 10)
+    except ValueError:
+        return None
+    if set(fields) != {"X", "Y", "WIDTH", "HEIGHT"}:
+        return None
+    if fields["WIDTH"] <= 0 or fields["HEIGHT"] <= 0:
+        return None
+    return fields["X"], fields["Y"], fields["WIDTH"], fields["HEIGHT"]
+
+
+def _window_for_accessible(
+    atspi: Any, xdotool: Path, node: Any, panel: str, expected_process_id: int
+) -> str | None:
+    if node.get_process_id() != expected_process_id:
+        return None
+    component = node.get_component_iface()
+    if component is None:
+        return None
+    extents = component.get_extents(atspi.CoordType.SCREEN)
+    if extents.width <= 0 or extents.height <= 0:
+        return None
+    center_x = extents.x + extents.width // 2
+    center_y = extents.y + extents.height // 2
     result = _run_checked(
         [str(xdotool), "search", "--all", "--class", "^prismdrake-shell$"]
     )
@@ -508,7 +541,15 @@ def _launcher_window(xdotool: Path, panel: str) -> str | None:
     ]
     if len(identifiers) > 16:
         raise EvidenceError("the shell X11 window count exceeds the bound")
-    return identifiers[0] if len(identifiers) == 1 else None
+    matches = []
+    for identifier in identifiers:
+        geometry = _window_geometry(xdotool, identifier)
+        if geometry is None:
+            continue
+        x, y, width, height = geometry
+        if x <= center_x < x + width and y <= center_y < y + height:
+            matches.append(identifier)
+    return matches[0] if len(matches) == 1 else None
 
 
 def _grab_focus(node: Any) -> bool:
@@ -677,7 +718,9 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
         )
         _require(_grab_focus(launcher_search), "launcher search focus request was rejected")
         launcher = _wait_until(
-            lambda: _launcher_window(arguments.xdotool, panel),
+            lambda: _window_for_accessible(
+                Atspi, arguments.xdotool, launcher_search, panel, shell.pid
+            ),
             "the Prismdrake launcher window",
         )
         phases.append(_phase(Atspi, PHASE_IDS[1], PHASE_FOCUS[1], launcher_specs))

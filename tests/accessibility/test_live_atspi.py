@@ -21,19 +21,43 @@ from live_atspi import (
 
 
 class AccessibilityEvidenceContractTests(unittest.TestCase):
-    def test_launcher_window_is_the_sole_non_panel_shell_surface(self) -> None:
-        completed = SimpleNamespace(returncode=0, stdout="11\n17\n")
-        with mock.patch.object(live_atspi, "_run_checked", return_value=completed):
+    def test_selects_exact_class_surface_containing_accessible_center(self) -> None:
+        search = SimpleNamespace(returncode=0, stdout="11\n17\n19\n")
+        launcher = SimpleNamespace(
+            returncode=0,
+            stdout="WINDOW=17\nX=0\nY=52\nWIDTH=560\nHEIGHT=620\nSCREEN=0\n",
+        )
+        other = SimpleNamespace(
+            returncode=0,
+            stdout="WINDOW=19\nX=800\nY=40\nWIDTH=300\nHEIGHT=200\nSCREEN=0\n",
+        )
+        node = mock.Mock()
+        node.get_process_id.return_value = 42
+        node.get_component_iface.return_value.get_extents.return_value = SimpleNamespace(
+            x=20, y=70, width=300, height=48
+        )
+        atspi = SimpleNamespace(CoordType=SimpleNamespace(SCREEN=1))
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[search, launcher, other]
+        ):
             self.assertEqual(
-                live_atspi._launcher_window(Path("/usr/bin/xdotool"), "11"), "17"
+                live_atspi._window_for_accessible(
+                    atspi, Path("/usr/bin/xdotool"), node, "11", 42
+                ),
+                "17",
             )
 
-    def test_launcher_window_rejects_ambiguous_shell_surfaces(self) -> None:
-        completed = SimpleNamespace(returncode=0, stdout="11\n17\n19\n")
-        with mock.patch.object(live_atspi, "_run_checked", return_value=completed):
+    def test_accessible_surface_rejects_process_identity_mismatch(self) -> None:
+        node = mock.Mock()
+        node.get_process_id.return_value = 41
+        atspi = SimpleNamespace(CoordType=SimpleNamespace(SCREEN=1))
+        with mock.patch.object(live_atspi, "_run_checked") as run_checked:
             self.assertIsNone(
-                live_atspi._launcher_window(Path("/usr/bin/xdotool"), "11")
+                live_atspi._window_for_accessible(
+                    atspi, Path("/usr/bin/xdotool"), node, "11", 42
+                )
             )
+        run_checked.assert_not_called()
 
     def test_grab_focus_rejects_missing_component_interface(self) -> None:
         class NodeWithoutComponent:
