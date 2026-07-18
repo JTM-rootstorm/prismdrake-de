@@ -82,6 +82,16 @@ class ApplyingSnapshotGuard final {
     return QString::fromUtf8(value->data(), static_cast<qsizetype>(value->size()));
 }
 
+void retirePresentation(std::unique_ptr<LauncherResultPresentation> presentation) noexcept {
+    if (auto *retired = presentation.release(); retired != nullptr) {
+        // Views may still be reconciling a delegate that holds this QObject role. Keeping the
+        // presentation alive through the current event turn avoids exposing a dangling object
+        // between the model's begin/end notifications. The model remains its QObject parent, so
+        // shutdown is also safe when no event loop runs again.
+        retired->deleteLater();
+    }
+}
+
 [[nodiscard]] Result<void>
 validateCatalog(const std::shared_ptr<const ApplicationCatalogSnapshot> &catalog,
                 std::uint64_t requestGeneration) {
@@ -297,8 +307,10 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
         });
         if (!retained) {
             beginRemoveRows({}, static_cast<int>(row), static_cast<int>(row));
+            auto retired = std::move(results_[row]);
             results_.erase(results_.begin() + static_cast<std::ptrdiff_t>(row));
             endRemoveRows();
+            retirePresentation(std::move(retired));
         }
     }
 
@@ -327,9 +339,11 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
             currentIndex = index;
         }
         if (replacements[index]) {
+            auto retired = std::move(results_[currentIndex]);
             results_[currentIndex] = std::move(replacements[index]);
             emit dataChanged(this->index(static_cast<int>(currentIndex)),
                              this->index(static_cast<int>(currentIndex)), {Role::resultObject});
+            retirePresentation(std::move(retired));
         }
     }
 
@@ -392,7 +406,9 @@ bool LauncherPresentationModel::containsCurrentIdentity(
 }
 
 bool LauncherPresentationModel::requestLaunch(const LauncherResultPresentation &result) {
-    if (QThread::currentThread() != thread() || applying_snapshot_ ||
+    const bool isActivePresentation = std::ranges::any_of(
+        results_, [&result](const auto &candidate) { return candidate.get() == &result; });
+    if (QThread::currentThread() != thread() || applying_snapshot_ || !isActivePresentation ||
         !containsCurrentIdentity(result.desktop_file_id_)) {
         return false;
     }

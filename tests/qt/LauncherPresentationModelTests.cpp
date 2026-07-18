@@ -260,16 +260,27 @@ TEST(LauncherPresentationModelTest, PreservesUnchangedIdentityAcrossFilteringAnd
     auto *oneObject = model.resultAt(0);
     auto *twoObject = model.resultAt(1);
     QPointer<LauncherResultPresentation> onePointer = oneObject;
+    bool aliveWhenRowsRemoved = false;
+    bool aliveWhenPublicationApplied = false;
+    QObject::connect(&model, &QAbstractItemModel::rowsRemoved, &model,
+                     [&] { aliveWhenRowsRemoved = !onePointer.isNull(); });
+    QObject::connect(&model, &LauncherPresentationModel::publicationApplied, &model,
+                     [&] { aliveWhenPublicationApplied = !onePointer.isNull(); });
 
     ASSERT_TRUE(model.applySnapshot(source, complete(onlyTwo)));
     EXPECT_EQ(model.rowCount(), 1);
     EXPECT_EQ(model.resultAt(0), twoObject);
-    EXPECT_TRUE(onePointer.isNull());
+    EXPECT_TRUE(aliveWhenRowsRemoved);
+    EXPECT_TRUE(aliveWhenPublicationApplied);
+    ASSERT_FALSE(onePointer.isNull());
+    EXPECT_FALSE(onePointer->requestLaunch());
 
     ASSERT_TRUE(model.applySnapshot(source, complete(allAgain)));
     EXPECT_EQ(model.rowCount(), 2);
     EXPECT_EQ(model.resultAt(1), twoObject);
     EXPECT_NE(model.resultAt(0), oneObject);
+    EXPECT_FALSE(onePointer.isNull());
+    EXPECT_FALSE(onePointer->requestLaunch());
 }
 
 TEST(LauncherPresentationModelTest, ReordersRetainedIdentitiesWithValidModelSignals) {
@@ -319,7 +330,8 @@ TEST(LauncherPresentationModelTest, ReplacesChangedContentAndUsesNewCurrentPubli
     auto *unchanged = model.resultAt(1);
 
     ASSERT_TRUE(model.applySnapshot(newCatalog, complete(newOperation)));
-    EXPECT_TRUE(changed.isNull());
+    ASSERT_FALSE(changed.isNull());
+    EXPECT_FALSE(changed->requestLaunch());
     ASSERT_NE(model.resultAt(0), nullptr);
     EXPECT_EQ(model.resultAt(0)->comment(), QStringLiteral("New comment"));
     EXPECT_EQ(model.resultAt(1), unchanged);
