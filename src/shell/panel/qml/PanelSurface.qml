@@ -60,15 +60,11 @@ FocusScope {
         pendingActionMenuRecovery = false
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = root.taskAt(index)
-            // qmllint disable missing-property
             if (candidate !== null
                     && (candidate.activeFocus || candidate.actionMenuOpen)) {
-                // qmllint enable missing-property
                 pendingFocusIndex = index
-                // qmllint disable missing-property
                 pendingFocusSerial = candidate.focusRecoverySerial
                 pendingActionMenuRecovery = candidate.actionMenuOpen
-                // qmllint enable missing-property
                 return
             }
         }
@@ -88,9 +84,7 @@ FocusScope {
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = root.taskAt(index)
             if (candidate !== null && index !== originIndex) {
-                // qmllint disable missing-property
                 candidate.closeActionMenu(false)
-                // qmllint enable missing-property
             }
         }
     }
@@ -99,9 +93,7 @@ FocusScope {
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = root.taskAt(index)
             if (candidate !== null) {
-                // qmllint disable missing-property
                 candidate.closeActionMenu(false)
-                // qmllint enable missing-property
             }
         }
     }
@@ -122,7 +114,6 @@ FocusScope {
                 // A retained delegate keeps focus across a valid model move. If its
                 // immutable presentation was replaced, reopen its surviving action
                 // surface only to restore action focus and the current typed target.
-                // qmllint disable missing-property
                 if (recoverySerial !== 0
                         && candidate.focusRecoverySerial === recoverySerial) {
                     if (recoverActionMenu && candidate.openActionMenu())
@@ -130,7 +121,6 @@ FocusScope {
                     candidate.forceActiveFocus(Qt.OtherFocusReason)
                     return
                 }
-                // qmllint enable missing-property
             }
         }
 
