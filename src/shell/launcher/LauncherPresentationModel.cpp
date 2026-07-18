@@ -82,16 +82,6 @@ class ApplyingSnapshotGuard final {
     return QString::fromUtf8(value->data(), static_cast<qsizetype>(value->size()));
 }
 
-void retirePresentation(std::unique_ptr<LauncherResultPresentation> presentation) noexcept {
-    if (auto *retired = presentation.release(); retired != nullptr) {
-        // Views may still be reconciling a delegate that holds this QObject role. Keeping the
-        // presentation alive through the current event turn avoids exposing a dangling object
-        // between the model's begin/end notifications. The model remains its QObject parent, so
-        // shutdown is also safe when no event loop runs again.
-        retired->deleteLater();
-    }
-}
-
 [[nodiscard]] Result<void>
 validateCatalog(const std::shared_ptr<const ApplicationCatalogSnapshot> &catalog,
                 std::uint64_t requestGeneration) {
@@ -276,8 +266,10 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
     }
 
     std::vector<std::unique_ptr<LauncherResultPresentation>> replacements;
+    std::vector<std::unique_ptr<LauncherResultPresentation>> retiredPresentations;
     try {
         replacements.resize(search->results.size());
+        retiredPresentations.reserve(results_.size());
         for (std::size_t index = 0U; index < search->results.size(); ++index) {
             const auto entryIndex = search->results[index].discoveryEntryIndex;
             const auto &entry = catalog->discovery->entries[entryIndex];
@@ -299,6 +291,28 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
     ApplyingSnapshotGuard applyingGuard{applying_snapshot_};
     emit publicationReconciliationStarted();
 
+    // Prefer an in-place row substitution when neither the old identity nor the new identity is
+    // retained elsewhere. This is a data change, not a remove-plus-insert pair, and lets views
+    // keep keyboard focus on the bounded fallback row without pinning a removed delegate.
+    const auto commonRows = std::min(results_.size(), search->results.size());
+    for (std::size_t row = 0U; row < commonRows; ++row) {
+        const auto newEntryIndex = search->results[row].discoveryEntryIndex;
+        const auto &newEntry = catalog->discovery->entries[newEntryIndex];
+        const bool oldRetained = std::ranges::any_of(search->results, [&](const auto &result) {
+            return catalog->discovery->entries[result.discoveryEntryIndex].id ==
+                   results_[row]->desktop_file_id_;
+        });
+        const bool newAlreadyPresent = std::ranges::any_of(
+            results_, [&](const auto &result) { return result->desktop_file_id_ == newEntry.id; });
+        if (!oldRetained && !newAlreadyPresent && replacements[row]) {
+            auto retired = std::move(results_[row]);
+            results_[row] = std::move(replacements[row]);
+            emit dataChanged(index(static_cast<int>(row)), index(static_cast<int>(row)),
+                             {Role::resultObject});
+            retiredPresentations.push_back(std::move(retired));
+        }
+    }
+
     for (std::size_t index = results_.size(); index > 0U; --index) {
         const auto row = index - 1U;
         const auto retained = std::ranges::any_of(search->results, [&](const auto &result) {
@@ -310,7 +324,7 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
             auto retired = std::move(results_[row]);
             results_.erase(results_.begin() + static_cast<std::ptrdiff_t>(row));
             endRemoveRows();
-            retirePresentation(std::move(retired));
+            retiredPresentations.push_back(std::move(retired));
         }
     }
 
@@ -343,7 +357,7 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
             results_[currentIndex] = std::move(replacements[index]);
             emit dataChanged(this->index(static_cast<int>(currentIndex)),
                              this->index(static_cast<int>(currentIndex)), {Role::resultObject});
-            retirePresentation(std::move(retired));
+            retiredPresentations.push_back(std::move(retired));
         }
     }
 
@@ -351,6 +365,15 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
     search_ = std::move(search);
     view_state_ = *mappedViewState(search_->state);
     truncated_ = search_->truncated;
+    const bool refreshObjectRoles = !retiredPresentations.empty() && !results_.empty();
+    // QObject-backed roles remain valid through every standard begin/end model notification.
+    // Retire them only after synchronous structural reconciliation, then refresh the bounded
+    // current role range so views cannot retain a null or stale cached QObject before the final
+    // coherent publication signal.
+    retiredPresentations.clear();
+    if (refreshObjectRoles) {
+        emit dataChanged(index(0), index(rowCount() - 1), {Role::resultObject});
+    }
     applyingGuard.finish();
     emit publicationApplied();
     return Result<void>::success();

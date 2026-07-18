@@ -158,7 +158,7 @@ TestCase {
     function test_reorderRemovalAndStateChangeRecoverFocus() {
         const focused = surface.resultAt(0)
         const focusedPresentation = focused.presentation
-        focused.forceActiveFocus(Qt.OtherFocusReason)
+        surface.focusResult(0, false)
         tryCompare(focused, "activeFocus", true)
         compare(focused.presentationName, "Dragon Editor")
 

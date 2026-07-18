@@ -27,7 +27,7 @@ struct ApplicationLaunchIntent final {
 };
 
 /// Immutable literal presentation for one eligible desktop-file identity.
-/// A retired object remains alive through the model reconciliation event turn, but launch
+/// A retired object remains alive through structural model reconciliation, but launch
 /// requests are rejected as soon as its identity leaves the current complete publication.
 class LauncherResultPresentation final : public QObject {
     Q_OBJECT

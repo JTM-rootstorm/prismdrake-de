@@ -261,26 +261,24 @@ TEST(LauncherPresentationModelTest, PreservesUnchangedIdentityAcrossFilteringAnd
     auto *twoObject = model.resultAt(1);
     QPointer<LauncherResultPresentation> onePointer = oneObject;
     bool aliveWhenRowsRemoved = false;
-    bool aliveWhenPublicationApplied = false;
+    bool retiredBeforePublicationApplied = false;
     QObject::connect(&model, &QAbstractItemModel::rowsRemoved, &model,
                      [&] { aliveWhenRowsRemoved = !onePointer.isNull(); });
     QObject::connect(&model, &LauncherPresentationModel::publicationApplied, &model,
-                     [&] { aliveWhenPublicationApplied = !onePointer.isNull(); });
+                     [&] { retiredBeforePublicationApplied = onePointer.isNull(); });
 
     ASSERT_TRUE(model.applySnapshot(source, complete(onlyTwo)));
     EXPECT_EQ(model.rowCount(), 1);
     EXPECT_EQ(model.resultAt(0), twoObject);
     EXPECT_TRUE(aliveWhenRowsRemoved);
-    EXPECT_TRUE(aliveWhenPublicationApplied);
-    ASSERT_FALSE(onePointer.isNull());
-    EXPECT_FALSE(onePointer->requestLaunch());
+    EXPECT_TRUE(retiredBeforePublicationApplied);
+    EXPECT_TRUE(onePointer.isNull());
 
     ASSERT_TRUE(model.applySnapshot(source, complete(allAgain)));
     EXPECT_EQ(model.rowCount(), 2);
     EXPECT_EQ(model.resultAt(1), twoObject);
     EXPECT_NE(model.resultAt(0), oneObject);
-    EXPECT_FALSE(onePointer.isNull());
-    EXPECT_FALSE(onePointer->requestLaunch());
+    EXPECT_TRUE(onePointer.isNull());
 }
 
 TEST(LauncherPresentationModelTest, ReordersRetainedIdentitiesWithValidModelSignals) {
@@ -328,10 +326,17 @@ TEST(LauncherPresentationModelTest, ReplacesChangedContentAndUsesNewCurrentPubli
     ASSERT_TRUE(model.applySnapshot(oldCatalog, complete(oldOperation)));
     QPointer<LauncherResultPresentation> changed = model.resultAt(0);
     auto *unchanged = model.resultAt(1);
+    bool retiredRejectedDuringPublication = false;
+    QObject::connect(&model, &QAbstractItemModel::dataChanged, &model, [&] {
+        if (!changed.isNull() && model.resultAt(0) != changed) {
+            retiredRejectedDuringPublication =
+                !changed->requestLaunch() && model.isApplyingSnapshot();
+        }
+    });
 
     ASSERT_TRUE(model.applySnapshot(newCatalog, complete(newOperation)));
-    ASSERT_FALSE(changed.isNull());
-    EXPECT_FALSE(changed->requestLaunch());
+    EXPECT_TRUE(retiredRejectedDuringPublication);
+    EXPECT_TRUE(changed.isNull());
     ASSERT_NE(model.resultAt(0), nullptr);
     EXPECT_EQ(model.resultAt(0)->comment(), QStringLiteral("New comment"));
     EXPECT_EQ(model.resultAt(1), unchanged);
