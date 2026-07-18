@@ -270,7 +270,9 @@ TestCase {
 
         first.forceActiveFocus(Qt.OtherFocusReason)
         keyClick(Qt.Key_Menu)
-        minimizeAction(first).click()
+        tryCompare(contextMenu(first), "opened", true)
+        tryCompare(minimizeAction(first), "enabled", true)
+        minimizeAction(first).clicked()
         tryCompare(panelFixture, "minimizationCount", 1)
         compare(panelFixture.lastMinimizationTitle, "Editor")
         compare(panelFixture.lastMinimizationGeneration, panelFixture.taskGeneration)
@@ -279,7 +281,9 @@ TestCase {
 
         second.forceActiveFocus(Qt.OtherFocusReason)
         keyClick(Qt.Key_Menu)
-        closeAction(second).click()
+        tryCompare(contextMenu(second), "opened", true)
+        tryCompare(closeAction(second), "enabled", true)
+        closeAction(second).clicked()
         tryCompare(panelFixture, "closeCount", 1)
         compare(panelFixture.lastCloseTitle, "Terminal")
         compare(panelFixture.lastCloseGeneration, panelFixture.taskGeneration)
