@@ -98,12 +98,19 @@ install(
 install(
     FILES
         schemas/prismdrake-config.schema.json
+        schemas/prismdrake-notification-history.schema.json
+        schemas/prismdrake-notification-state.schema.json
+        schemas/prismdrake-pin-state.schema.json
         schemas/prismdrake-runtime-snapshot.schema.json
         schemas/prismdrake-theme-tokens.schema.json
     DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake/schemas"
     COMPONENT Runtime)
 install(
-    FILES interfaces/dbus/org.prismdrake.Settings1.xml
+    FILES
+        interfaces/dbus/org.prismdrake.NotificationCenter1.xml
+        interfaces/dbus/org.prismdrake.Session1.xml
+        interfaces/dbus/org.prismdrake.Settings1.xml
+        interfaces/dbus/org.prismdrake.Shell1.xml
     DESTINATION "${CMAKE_INSTALL_DATADIR}/dbus-1/interfaces"
     COMPONENT Runtime)
 install(

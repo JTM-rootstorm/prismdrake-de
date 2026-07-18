@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Prismdrake PD0 documents and machine-readable contracts."""
+"""Validate Prismdrake documents and machine-readable contracts."""
 
 from __future__ import annotations
 
@@ -16,7 +16,24 @@ from urllib.parse import unquote
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SUPPORTED_SCHEMA_VERSION = 1
+CURRENT_CONFIG_SCHEMA_VERSION = 2
+LEGACY_CONFIG_SCHEMA_VERSION = 1
+SUPPORTED_THEME_SCHEMA_VERSION = 1
+RUNTIME_SNAPSHOT_SCHEMA_VERSION = 2
+PIN_STATE_SCHEMA_VERSION = 1
+NOTIFICATION_HISTORY_SCHEMA_VERSION = 1
+NOTIFICATION_STATE_SCHEMA_VERSION = 1
+MAX_NOTIFICATION_DOCUMENT_BYTES = 8 * 1024 * 1024
+SCHEMA_VERSIONS = {
+    "config": CURRENT_CONFIG_SCHEMA_VERSION,
+    "theme-tokens": SUPPORTED_THEME_SCHEMA_VERSION,
+    "runtime-snapshot": RUNTIME_SNAPSHOT_SCHEMA_VERSION,
+    "pin-state": PIN_STATE_SCHEMA_VERSION,
+    "notification-history": NOTIFICATION_HISTORY_SCHEMA_VERSION,
+    "notification-state": NOTIFICATION_STATE_SCHEMA_VERSION,
+    "capabilities": 1,
+    "dependency-manifest": 1,
+}
 PROFILE_NAMES = {
     "lustre": "Prismdrake Lustre",
     "forge": "Prismdrake Forge",
@@ -56,6 +73,7 @@ SETTINGS_DBUS_INTERFACES = {
         "annotations": {
             "org.prismdrake.Experimental": "true",
             "org.prismdrake.Audience": "PrismdrakeInternal",
+            "org.prismdrake.SnapshotSchemaVersion": "2",
         },
         "methods": {
             "GetCurrentSnapshot": (
@@ -66,6 +84,96 @@ SETTINGS_DBUS_INTERFACES = {
         },
         "signals": {},
     },
+}
+SHELL_DBUS_PATH = "/org/prismdrake/Shell1"
+SHELL_DBUS_INTERFACES = {
+    "org.prismdrake.Shell1": {
+        "annotations": {"org.prismdrake.Experimental": "true"},
+        "methods": {
+            "ToggleLauncher": (("output_name", "s", "in"),),
+            "OpenQuickSettings": (("output_name", "s", "in"),),
+            "OpenNotificationCenter": (("output_name", "s", "in"),),
+            "FocusPanel": (("output_name", "s", "in"),),
+        },
+        "signals": {},
+    },
+}
+SESSION_DBUS_PATH = "/org/prismdrake/Session1"
+SESSION_DBUS_INTERFACES = {
+    "org.prismdrake.Session1": {
+        "annotations": {"org.prismdrake.Experimental": "true"},
+        "methods": {
+            "GetSessionState": (
+                ("transaction_id", "t", "out"),
+                ("state", "s", "out"),
+            ),
+            "RequestLogout": (("transaction_id", "t", "out"),),
+            "ConfirmLogout": (("transaction_id", "t", "in"),),
+            "CancelLogout": (("transaction_id", "t", "in"),),
+        },
+        "signals": {
+            "SessionStateChanged": (
+                ("transaction_id", "t", None),
+                ("state", "s", None),
+            ),
+        },
+    },
+}
+NOTIFICATION_CENTER_DBUS_PATH = "/org/prismdrake/NotificationCenter1"
+NOTIFICATION_CENTER_DBUS_INTERFACES = {
+    "org.prismdrake.NotificationCenter1": {
+        "annotations": {
+            "org.prismdrake.Experimental": "true",
+            "org.prismdrake.StateSchemaVersion": "1",
+        },
+        "methods": {
+            "GetCurrentState": (
+                ("schema_version", "u", "in"),
+                ("generation", "t", "out"),
+                ("state_json", "ay", "out"),
+            ),
+            "SetDoNotDisturb": (
+                ("enabled", "b", "in"),
+                ("generation", "t", "out"),
+            ),
+            "ClearHistory": (("generation", "t", "out"),),
+            "Dismiss": (
+                ("record_id", "t", "in"),
+                ("content_generation", "t", "in"),
+                ("generation", "t", "out"),
+            ),
+            "InvokeAction": (
+                ("record_id", "t", "in"),
+                ("content_generation", "t", "in"),
+                ("action_id", "s", "in"),
+                ("generation", "t", "out"),
+            ),
+        },
+        "signals": {
+            "StateChanged": (
+                ("generation", "t", None),
+                ("changed_domains", "as", None),
+            ),
+        },
+    },
+}
+DBUS_CONTRACTS = {
+    "interfaces/dbus/org.prismdrake.Settings1.xml": (
+        SETTINGS_DBUS_PATH,
+        SETTINGS_DBUS_INTERFACES,
+    ),
+    "interfaces/dbus/org.prismdrake.Shell1.xml": (
+        SHELL_DBUS_PATH,
+        SHELL_DBUS_INTERFACES,
+    ),
+    "interfaces/dbus/org.prismdrake.Session1.xml": (
+        SESSION_DBUS_PATH,
+        SESSION_DBUS_INTERFACES,
+    ),
+    "interfaces/dbus/org.prismdrake.NotificationCenter1.xml": (
+        NOTIFICATION_CENTER_DBUS_PATH,
+        NOTIFICATION_CENTER_DBUS_INTERFACES,
+    ),
 }
 LICENSE_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
 DEPENDENCY_MANIFEST_COMPONENTS = {
@@ -137,8 +245,14 @@ REQUIRED_FILES = (
     "examples/capabilities/x11-standard.json",
     "examples/capabilities/glasswyrm-enhanced.json",
     "interfaces/README.md",
+    "interfaces/dbus/org.prismdrake.NotificationCenter1.xml",
+    "interfaces/dbus/org.prismdrake.Session1.xml",
     "interfaces/dbus/org.prismdrake.Settings1.xml",
+    "interfaces/dbus/org.prismdrake.Shell1.xml",
     "schemas/prismdrake-config.schema.json",
+    "schemas/prismdrake-notification-history.schema.json",
+    "schemas/prismdrake-notification-state.schema.json",
+    "schemas/prismdrake-pin-state.schema.json",
     "schemas/prismdrake-theme-tokens.schema.json",
     "schemas/prismdrake-runtime-snapshot.schema.json",
     "schemas/prismdrake-capabilities.schema.json",
@@ -299,7 +413,7 @@ def validate_schema(
     root_schema: dict[str, Any],
     location: str,
 ) -> list[str]:
-    """Validate the JSON Schema subset used by the PD0 contracts."""
+    """Validate the JSON Schema subset used by Prismdrake contracts."""
     if "$ref" in schema:
         try:
             schema = resolve_ref(root_schema, schema["$ref"])
@@ -487,12 +601,96 @@ def dependency_manifest_policy_errors(document: dict[str, Any], location: str) -
     return errors
 
 
+def legacy_config_schema(current_schema: dict[str, Any]) -> dict[str, Any]:
+    schema = copy.deepcopy(current_schema)
+    schema["title"] = "Prismdrake configuration version 1"
+    schema["properties"]["schema_version"] = {"const": LEGACY_CONFIG_SCHEMA_VERSION}
+
+    panel = schema["properties"]["panel"]
+    panel["required"].remove("output_policy")
+    del panel["properties"]["output_policy"]
+
+    desktop = schema["properties"]["desktop"]
+    desktop["required"].remove("wallpaper_source")
+    desktop["required"].remove("background_color")
+    del desktop["properties"]["wallpaper_source"]
+    del desktop["properties"]["background_color"]
+    return schema
+
+
+def normalize_legacy_config(document: dict[str, Any]) -> dict[str, Any]:
+    normalized = copy.deepcopy(document)
+    normalized["schema_version"] = CURRENT_CONFIG_SCHEMA_VERSION
+    panel = normalized.get("panel")
+    if isinstance(panel, dict):
+        outputs = panel.get("outputs")
+        panel["output_policy"] = "named" if isinstance(outputs, list) and outputs else "primary"
+    desktop = normalized.get("desktop")
+    if isinstance(desktop, dict):
+        desktop["wallpaper_source"] = ""
+        desktop["background_color"] = "#182033"
+    return normalized
+
+
+def notification_record_policy_errors(
+    document: dict[str, Any], location: str, *, runtime_state: bool
+) -> list[str]:
+    errors: list[str] = []
+    encoded_size = len(
+        json.dumps(document, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    )
+    if encoded_size > MAX_NOTIFICATION_DOCUMENT_BYTES:
+        errors.append(
+            f"{location}: canonical document exceeds the 8 MiB serialized bound"
+        )
+
+    record_ids: set[int] = set()
+    for index, record in enumerate(document.get("records", [])):
+        if not isinstance(record, dict):
+            continue
+        record_location = f"{location}.records[{index}]"
+        record_id = record.get("record_id")
+        if isinstance(record_id, int) and not isinstance(record_id, bool):
+            if record_id in record_ids:
+                errors.append(f"{record_location}.record_id: duplicate record identity")
+            record_ids.add(record_id)
+
+        action_ids: set[str] = set()
+        for action_index, action in enumerate(record.get("actions", [])):
+            if not isinstance(action, dict):
+                continue
+            action_id = action.get("action_id")
+            action_location = f"{record_location}.actions[{action_index}]"
+            if isinstance(action_id, str):
+                if action_id in action_ids:
+                    errors.append(f"{action_location}.action_id: duplicate action identity")
+                action_ids.add(action_id)
+            if (
+                runtime_state
+                and record.get("notification_id") is None
+                and action.get("enabled") is True
+            ):
+                errors.append(
+                    f"{action_location}.enabled: records without a live notification ID cannot expose enabled actions"
+                )
+
+        if runtime_state and record.get("transient") is True and record.get("notification_id") is None:
+            errors.append(
+                f"{record_location}.transient: a transient record requires a live notification ID"
+            )
+
+    return errors
+
+
 def validate_contracts(validation: Validation) -> dict[str, Any]:
     schemas: dict[str, Any] = {}
     for name in (
         "config",
         "theme-tokens",
         "runtime-snapshot",
+        "pin-state",
+        "notification-history",
+        "notification-state",
         "capabilities",
         "dependency-manifest",
     ):
@@ -505,23 +703,62 @@ def validate_contracts(validation: Validation) -> dict[str, Any]:
                 path.relative_to(ROOT).as_posix(),
                 "schema must declare JSON Schema draft 2020-12",
             )
+            validation.require(
+                document.get("properties", {}).get("schema_version", {}).get("const")
+                == SCHEMA_VERSIONS[name],
+                path.relative_to(ROOT).as_posix(),
+                f"schema_version must be exactly {SCHEMA_VERSIONS[name]}",
+            )
 
     if "config" in schemas:
+        schemas["config-v1"] = legacy_config_schema(schemas["config"])
         for path in sorted((ROOT / "examples/config").glob("*.toml")):
             document = load_toml(path, validation)
             if document is None:
                 continue
             location = path.relative_to(ROOT).as_posix()
-            validation.errors.extend(validate_schema(document, schemas["config"], schemas["config"], location))
+            version = document.get("schema_version")
+            if version == LEGACY_CONFIG_SCHEMA_VERSION:
+                validation.require(
+                    path.name == "legacy-v1.toml",
+                    f"{location}.schema_version",
+                    "only legacy-v1.toml may remain at configuration version 1",
+                )
+                validation.errors.extend(
+                    validate_schema(
+                        document, schemas["config-v1"], schemas["config-v1"], location
+                    )
+                )
+                normalized = normalize_legacy_config(document)
+                validation.errors.extend(
+                    validate_schema(
+                        normalized,
+                        schemas["config"],
+                        schemas["config"],
+                        f"{location}.normalized",
+                    )
+                )
+                expected_output_policy = "named" if document.get("panel", {}).get("outputs") else "primary"
+                validation.require(
+                    normalized.get("panel", {}).get("output_policy") == expected_output_policy
+                    and normalized.get("desktop", {}).get("wallpaper_source") == ""
+                    and normalized.get("desktop", {}).get("background_color") == "#182033",
+                    f"{location}.normalized",
+                    "version-1 configuration must normalize to the frozen version-2 defaults",
+                )
+            else:
+                validation.errors.extend(
+                    validate_schema(document, schemas["config"], schemas["config"], location)
+                )
             validation.require(
                 document.get("profile") in PROFILE_NAMES,
                 f"{location}.profile",
                 "profile must be exactly 'lustre' or 'forge'",
             )
             validation.require(
-                document.get("schema_version") == SUPPORTED_SCHEMA_VERSION,
+                version in {LEGACY_CONFIG_SCHEMA_VERSION, CURRENT_CONFIG_SCHEMA_VERSION},
                 f"{location}.schema_version",
-                f"only schema version {SUPPORTED_SCHEMA_VERSION} is supported",
+                "only configuration schema versions 1 and 2 are supported",
             )
             validation.require(
                 document.get("developer", {}).get("diagnostics_enabled") is False
@@ -542,9 +779,9 @@ def validate_contracts(validation: Validation) -> dict[str, Any]:
                 validate_schema(document, schemas["theme-tokens"], schemas["theme-tokens"], location)
             )
             validation.require(
-                document.get("schema_version") == SUPPORTED_SCHEMA_VERSION,
+                document.get("schema_version") == SUPPORTED_THEME_SCHEMA_VERSION,
                 f"{location}.schema_version",
-                f"only schema version {SUPPORTED_SCHEMA_VERSION} is supported",
+                f"only schema version {SUPPORTED_THEME_SCHEMA_VERSION} is supported",
             )
             colors = document.get("semantic", {}).get("colors", {})
             materials = document.get("semantic", {}).get("materials", {})
@@ -688,22 +925,27 @@ def dbus_arguments(element: ET.Element) -> tuple[tuple[str, str, str | None], ..
     )
 
 
-def settings_dbus_contract_errors(root: ET.Element, location: str) -> list[str]:
+def dbus_contract_errors(
+    root: ET.Element,
+    location: str,
+    expected_path: str,
+    expected_interfaces: dict[str, dict[str, Any]],
+) -> list[str]:
     errors: list[str] = []
-    if root.tag != "node" or root.get("name") != SETTINGS_DBUS_PATH:
-        errors.append(f"{location}: root node must be exactly {SETTINGS_DBUS_PATH!r}")
+    if root.tag != "node" or root.get("name") != expected_path:
+        errors.append(f"{location}: root node must be exactly {expected_path!r}")
 
     interfaces = dbus_members(root, "interface")
     if interfaces is None:
         errors.append(f"{location}: D-Bus interface names must be unique")
         interfaces = {}
-    expected_interfaces = set(SETTINGS_DBUS_INTERFACES)
-    if set(interfaces) != expected_interfaces:
+    expected_interface_names = set(expected_interfaces)
+    if set(interfaces) != expected_interface_names:
         errors.append(
-            f"{location}: interfaces must be exactly {sorted(expected_interfaces)!r}"
+            f"{location}: interfaces must be exactly {sorted(expected_interface_names)!r}"
         )
 
-    for interface_name, expected in SETTINGS_DBUS_INTERFACES.items():
+    for interface_name, expected in expected_interfaces.items():
         interface = interfaces.get(interface_name)
         if interface is None:
             continue
@@ -761,6 +1003,15 @@ def settings_dbus_contract_errors(root: ET.Element, location: str) -> list[str]:
     return errors
 
 
+def settings_dbus_contract_errors(root: ET.Element, location: str) -> list[str]:
+    return dbus_contract_errors(
+        root,
+        location,
+        SETTINGS_DBUS_PATH,
+        SETTINGS_DBUS_INTERFACES,
+    )
+
+
 def validate_xml(validation: Validation) -> None:
     for path in sorted((ROOT / "interfaces").rglob("*.xml")):
         location = path.relative_to(ROOT).as_posix()
@@ -773,8 +1024,14 @@ def validate_xml(validation: Validation) -> None:
         validation.require(bool(interfaces), location, "D-Bus XML must contain an interface")
         for name in invalid_dbus_interface_names(tree.getroot()):
             validation.error(location, f"D-Bus interface {name!r} must begin with 'org.prismdrake.'")
-        if location == "interfaces/dbus/org.prismdrake.Settings1.xml":
-            validation.errors.extend(settings_dbus_contract_errors(tree.getroot(), location))
+        contract = DBUS_CONTRACTS.get(location)
+        if contract is not None:
+            expected_path, expected_interfaces = contract
+            validation.errors.extend(
+                dbus_contract_errors(
+                    tree.getroot(), location, expected_path, expected_interfaces
+                )
+            )
 
     mockups = sorted((ROOT / "docs/design/mockups").glob("*.svg"))
     validation.require(len(mockups) == 6, "docs/design/mockups", "exactly six required PD0 mockups must exist")
@@ -906,8 +1163,12 @@ def validate_identity_and_hygiene(validation: Validation) -> None:
 def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation) -> int:
     required = {
         "config",
+        "config-v1",
         "theme-tokens",
         "runtime-snapshot",
+        "pin-state",
+        "notification-history",
+        "notification-state",
         "capabilities",
         "dependency-manifest",
     }
@@ -930,6 +1191,9 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
         validation.error("self-test", "cannot run negative tests because fixtures failed to load")
         return 0
 
+    if config.get("schema_version") == LEGACY_CONFIG_SCHEMA_VERSION:
+        config = normalize_legacy_config(config)
+
     cases: list[tuple[str, Any, dict[str, Any], str]] = []
     invalid_profile = copy.deepcopy(config)
     invalid_profile["profile"] = "sparkle"
@@ -938,6 +1202,184 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
     unsupported_version = copy.deepcopy(config)
     unsupported_version["schema_version"] = 99
     cases.append(("unsupported schema version", unsupported_version, schemas["config"], "schema_version"))
+
+    missing_output_policy = copy.deepcopy(config)
+    del missing_output_policy["panel"]["output_policy"]
+    cases.append(
+        (
+            "missing panel output policy",
+            missing_output_policy,
+            schemas["config"],
+            "missing required",
+        )
+    )
+
+    invalid_output_policy = copy.deepcopy(config)
+    invalid_output_policy["panel"]["output_policy"] = "automatic"
+    cases.append(
+        (
+            "invalid panel output policy",
+            invalid_output_policy,
+            schemas["config"],
+            "expected one of",
+        )
+    )
+
+    oversized_wallpaper_source = copy.deepcopy(config)
+    oversized_wallpaper_source["desktop"]["wallpaper_source"] = "x" * 129
+    cases.append(
+        (
+            "oversized wallpaper source",
+            oversized_wallpaper_source,
+            schemas["config"],
+            "string exceeds",
+        )
+    )
+
+    invalid_background_color = copy.deepcopy(config)
+    invalid_background_color["desktop"]["background_color"] = "transparent"
+    cases.append(
+        (
+            "invalid desktop background color",
+            invalid_background_color,
+            schemas["config"],
+            "does not match",
+        )
+    )
+
+    valid_pin_state = {
+        "schema_version": PIN_STATE_SCHEMA_VERSION,
+        "pins": ["prismdrake-control.desktop", "example-editor.desktop"],
+    }
+    valid_history_record = {
+        "record_id": 1,
+        "content_generation": 1,
+        "application_name": "Fixture application",
+        "desktop_file_id": "example-fixture.desktop",
+        "summary": "Fixture summary",
+        "body": "Fixture body",
+        "urgency": "normal",
+        "received_at_unix_ms": 1,
+        "dismissible": True,
+        "actions": [{"action_id": "open", "label": "Open"}],
+    }
+    valid_history = {
+        "schema_version": NOTIFICATION_HISTORY_SCHEMA_VERSION,
+        "records": [valid_history_record],
+    }
+    valid_state_record = copy.deepcopy(valid_history_record)
+    valid_state_record["notification_id"] = 1
+    valid_state_record["transient"] = False
+    valid_state_record["actions"][0]["enabled"] = True
+    valid_notification_state = {
+        "schema_version": NOTIFICATION_STATE_SCHEMA_VERSION,
+        "generation": 1,
+        "history_mode": "session",
+        "effective_do_not_disturb": False,
+        "runtime_do_not_disturb_override": None,
+        "records": [valid_state_record],
+    }
+
+    for fixture_name, fixture, schema_name, runtime_state in (
+        ("pin state", valid_pin_state, "pin-state", False),
+        ("notification history", valid_history, "notification-history", False),
+        ("notification state", valid_notification_state, "notification-state", True),
+    ):
+        fixture_errors = validate_schema(
+            fixture, schemas[schema_name], schemas[schema_name], f"self-test.valid {fixture_name}"
+        )
+        if schema_name.startswith("notification-"):
+            fixture_errors.extend(
+                notification_record_policy_errors(
+                    fixture, f"self-test.valid {fixture_name}", runtime_state=runtime_state
+                )
+            )
+        validation.require(
+            not fixture_errors,
+            "self-test",
+            f"valid {fixture_name} fixture failed validation: " + "; ".join(fixture_errors),
+        )
+
+    duplicate_pin = copy.deepcopy(valid_pin_state)
+    duplicate_pin["pins"].append(duplicate_pin["pins"][0])
+    cases.append(("duplicate pin", duplicate_pin, schemas["pin-state"], "items must be unique"))
+
+    oversized_pins = copy.deepcopy(valid_pin_state)
+    oversized_pins["pins"] = [f"example-app-{index}.desktop" for index in range(257)]
+    cases.append(("oversized pin list", oversized_pins, schemas["pin-state"], "exceeds maximum"))
+
+    unsafe_pin = copy.deepcopy(valid_pin_state)
+    unsafe_pin["pins"] = ["../example-unsafe.desktop"]
+    cases.append(("unsafe pin identifier", unsafe_pin, schemas["pin-state"], "does not match"))
+
+    live_id_in_history = copy.deepcopy(valid_history)
+    live_id_in_history["records"][0]["notification_id"] = 7
+    cases.append(
+        (
+            "live notification ID in persistent history",
+            live_id_in_history,
+            schemas["notification-history"],
+            "unknown key",
+        )
+    )
+
+    image_path_in_history = copy.deepcopy(valid_history)
+    image_path_in_history["records"][0]["image_path"] = "/private/notification.png"
+    cases.append(
+        (
+            "image path in persistent history",
+            image_path_in_history,
+            schemas["notification-history"],
+            "unknown key",
+        )
+    )
+
+    oversized_history = copy.deepcopy(valid_history)
+    oversized_history["records"] = [
+        {**copy.deepcopy(valid_history_record), "record_id": index + 1}
+        for index in range(257)
+    ]
+    cases.append(
+        (
+            "oversized notification history",
+            oversized_history,
+            schemas["notification-history"],
+            "exceeds maximum",
+        )
+    )
+
+    oversized_history_body = copy.deepcopy(valid_history)
+    oversized_history_body["records"][0]["body"] = "x" * 4097
+    cases.append(
+        (
+            "oversized notification body",
+            oversized_history_body,
+            schemas["notification-history"],
+            "string exceeds",
+        )
+    )
+
+    invalid_live_id = copy.deepcopy(valid_notification_state)
+    invalid_live_id["records"][0]["notification_id"] = 4294967296
+    cases.append(
+        (
+            "out-of-range live notification ID",
+            invalid_live_id,
+            schemas["notification-state"],
+            "exceeds maximum",
+        )
+    )
+
+    missing_action_state = copy.deepcopy(valid_notification_state)
+    del missing_action_state["records"][0]["actions"][0]["enabled"]
+    cases.append(
+        (
+            "missing notification action enabled state",
+            missing_action_state,
+            schemas["notification-state"],
+            "missing required",
+        )
+    )
 
     missing_token = copy.deepcopy(theme)
     del missing_token["semantic"]["colors"]["focus_ring"]
@@ -1144,7 +1586,7 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
     runtime_settings = copy.deepcopy(config)
     del runtime_settings["profile"]
     runtime_snapshot = {
-        "schema_version": 1,
+        "schema_version": RUNTIME_SNAPSHOT_SCHEMA_VERSION,
         "generation": 1,
         "profile_id": "lustre",
         "configuration_source_id": "packaged_default",
@@ -1265,6 +1707,35 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
             f"negative case {name!r} was not rejected with an actionable field",
         )
 
+    duplicate_history_record = copy.deepcopy(valid_history)
+    duplicate_history_record["records"].append(copy.deepcopy(valid_history_record))
+    duplicate_history_record["records"][1]["summary"] = "Changed content"
+    duplicate_history_action = copy.deepcopy(valid_history)
+    duplicate_history_action["records"][0]["actions"].append(
+        {"action_id": "open", "label": "Open another way"}
+    )
+    dead_enabled_action = copy.deepcopy(valid_notification_state)
+    del dead_enabled_action["records"][0]["notification_id"]
+    transient_history_record = copy.deepcopy(valid_notification_state)
+    del transient_history_record["records"][0]["notification_id"]
+    transient_history_record["records"][0]["actions"][0]["enabled"] = False
+    transient_history_record["records"][0]["transient"] = True
+    policy_cases = (
+        ("duplicate history record identity", duplicate_history_record, False, "duplicate record"),
+        ("duplicate history action identity", duplicate_history_action, False, "duplicate action"),
+        ("enabled dead action", dead_enabled_action, True, "cannot expose enabled actions"),
+        ("transient history record", transient_history_record, True, "requires a live notification ID"),
+    )
+    for name, document, runtime_state, expected_fragment in policy_cases:
+        errors = notification_record_policy_errors(
+            document, f"self-test.{name}", runtime_state=runtime_state
+        )
+        validation.require(
+            bool(errors) and any(expected_fragment in error for error in errors),
+            "self-test",
+            f"notification policy case {name!r} was not rejected with an actionable field",
+        )
+
     dependency_policy_cases: list[tuple[str, dict[str, Any], str]] = []
     forbidden_name = copy.deepcopy(shell_manifest)
     forbidden_name["dependencies"][0]["name"] = "gnome-shell"
@@ -1350,6 +1821,89 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
             f"D-Bus contract case {name!r} was not rejected with an actionable field",
         )
 
+    pd2_dbus_cases: list[
+        tuple[str, ET.Element, str, str, dict[str, dict[str, Any]]]
+    ] = []
+    shell_contract = ET.parse(ROOT / "interfaces/dbus/org.prismdrake.Shell1.xml").getroot()
+    shell_signature = copy.deepcopy(shell_contract)
+    shell_signature.find("./interface/method[@name='ToggleLauncher']/arg").set("type", "ay")
+    pd2_dbus_cases.append(
+        ("changed Shell1 signature", shell_signature, "signature", SHELL_DBUS_PATH, SHELL_DBUS_INTERFACES)
+    )
+
+    session_contract = ET.parse(ROOT / "interfaces/dbus/org.prismdrake.Session1.xml").getroot()
+    session_missing_method = copy.deepcopy(session_contract)
+    session_interface = session_missing_method.find("./interface")
+    session_interface.remove(session_interface.find("./method[@name='ConfirmLogout']"))
+    pd2_dbus_cases.append(
+        (
+            "missing Session1 transaction method",
+            session_missing_method,
+            "methods must be exactly",
+            SESSION_DBUS_PATH,
+            SESSION_DBUS_INTERFACES,
+        )
+    )
+
+    notification_contract = ET.parse(
+        ROOT / "interfaces/dbus/org.prismdrake.NotificationCenter1.xml"
+    ).getroot()
+    notification_signature = copy.deepcopy(notification_contract)
+    notification_signature.find(
+        "./interface/method[@name='Dismiss']/arg[@name='record_id']"
+    ).set("type", "u")
+    pd2_dbus_cases.append(
+        (
+            "narrow NotificationCenter1 durable identity",
+            notification_signature,
+            "signature",
+            NOTIFICATION_CENTER_DBUS_PATH,
+            NOTIFICATION_CENTER_DBUS_INTERFACES,
+        )
+    )
+    notification_untyped = copy.deepcopy(notification_contract)
+    notification_untyped.find(
+        "./interface/method[@name='GetCurrentState']/arg[@name='state_json']"
+    ).set("type", "a{sv}")
+    pd2_dbus_cases.append(
+        (
+            "untyped NotificationCenter1 state",
+            notification_untyped,
+            "a{sv}",
+            NOTIFICATION_CENTER_DBUS_PATH,
+            NOTIFICATION_CENTER_DBUS_INTERFACES,
+        )
+    )
+    notification_missing_version = copy.deepcopy(notification_contract)
+    notification_interface = notification_missing_version.find("./interface")
+    notification_interface.remove(
+        notification_interface.find(
+            "./annotation[@name='org.prismdrake.StateSchemaVersion']"
+        )
+    )
+    pd2_dbus_cases.append(
+        (
+            "missing NotificationCenter1 state schema annotation",
+            notification_missing_version,
+            "annotations",
+            NOTIFICATION_CENTER_DBUS_PATH,
+            NOTIFICATION_CENTER_DBUS_INTERFACES,
+        )
+    )
+
+    for name, document, expected_fragment, expected_path, expected_interfaces in pd2_dbus_cases:
+        errors = dbus_contract_errors(
+            document,
+            f"self-test.{name}",
+            expected_path,
+            expected_interfaces,
+        )
+        validation.require(
+            bool(errors) and any(expected_fragment in error for error in errors),
+            "self-test",
+            f"D-Bus contract case {name!r} was not rejected with an actionable field",
+        )
+
     strict_json_cases = (
         '{"schema_version": 1, "schema_version": 1}',
         '{"value": NaN}',
@@ -1369,9 +1923,11 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
 
     return (
         len(cases)
+        + len(policy_cases)
         + len(dependency_policy_cases)
         + 1
         + len(dbus_cases)
+        + len(pd2_dbus_cases)
         + len(strict_json_cases)
     )
 

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Experimental PD2 same-user notification-center contract owned by
+  prismdrake-notifyd. This interface has no stable ABI or wire-compatibility
+  guarantee. It is separate from the standard freedesktop notification API.
+
+  Domain failures use fixed org.prismdrake.NotificationCenter1.Error.* names:
+    UnsupportedSchemaVersion, NoState, StaleRecord, ActionUnavailable,
+    InvalidAction, TooLarge, Busy, TimedOut, NotAuthorized, ServiceStopping,
+    and Internal.
+
+  Error messages are fixed, redacted, and bounded to 256 bytes. They never
+  include notification content, action labels, sender identities, image data,
+  or filesystem paths. Getters have a 1-second server budget and mutations
+  have a 5-second server budget. The service validates the effective UID of
+  every caller and fails closed when credentials are absent or differ.
+-->
+<node name="/org/prismdrake/NotificationCenter1">
+  <interface name="org.prismdrake.NotificationCenter1">
+    <annotation name="org.prismdrake.Experimental" value="true"/>
+    <annotation name="org.prismdrake.StateSchemaVersion" value="1"/>
+
+    <!--
+      Accepts only schema_version=1. Returns one complete immutable canonical
+      UTF-8 JSON snapshot bounded to 8 MiB. The outer generation equals the
+      embedded generation. Unknown versions return UnsupportedSchemaVersion.
+    -->
+    <method name="GetCurrentState">
+      <arg name="schema_version" type="u" direction="in"/>
+      <arg name="generation" type="t" direction="out"/>
+      <arg name="state_json" type="ay" direction="out"/>
+    </method>
+
+    <!-- A same-value effective result is a no-op returning the current generation. -->
+    <method name="SetDoNotDisturb">
+      <arg name="enabled" type="b" direction="in"/>
+      <arg name="generation" type="t" direction="out"/>
+    </method>
+
+    <!-- Atomically clears retained history; all live notifications remain authoritative. -->
+    <method name="ClearHistory">
+      <arg name="generation" type="t" direction="out"/>
+    </method>
+
+    <!-- Dismisses only the exact record content generation supplied by the caller. -->
+    <method name="Dismiss">
+      <arg name="record_id" type="t" direction="in"/>
+      <arg name="content_generation" type="t" direction="in"/>
+      <arg name="generation" type="t" direction="out"/>
+    </method>
+
+    <!-- Invokes one enabled live action on the exact current record content. -->
+    <method name="InvokeAction">
+      <arg name="record_id" type="t" direction="in"/>
+      <arg name="content_generation" type="t" direction="in"/>
+      <arg name="action_id" type="s" direction="in"/>
+      <arg name="generation" type="t" direction="out"/>
+    </method>
+
+    <!-- changed_domains is a unique ordered subset of records, do_not_disturb, history_mode. -->
+    <signal name="StateChanged">
+      <arg name="generation" type="t"/>
+      <arg name="changed_domains" type="as"/>
+    </signal>
+  </interface>
+</node>

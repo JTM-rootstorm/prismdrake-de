@@ -1,15 +1,18 @@
 # Experimental interfaces
 
-Prismdrake's PD1 interfaces are implemented prototypes. They are explicitly
-Experimental and have no compatibility or ABI guarantee until a separate
-stability decision is Accepted.
+Prismdrake's PD1 and PD2 interfaces are implemented or planned prototypes. They
+are explicitly Experimental and have no compatibility or ABI guarantee until a
+separate stability decision is Accepted.
 
-| Interface | Audience | PD1 status | Compatibility |
+| Interface | Audience | Status | Compatibility |
 |---|---|---|---|
 | [`org.prismdrake.Settings1`](dbus/org.prismdrake.Settings1.xml) | Same-user session clients | Experimental implementation | None before separate acceptance |
 | `org.prismdrake.SettingsSnapshot1` | Internal Prismdrake consumers | Experimental implementation | None before separate acceptance |
+| [`org.prismdrake.Shell1`](dbus/org.prismdrake.Shell1.xml) | Same-user shell-control clients | Experimental PD2 contract | None before separate acceptance |
+| [`org.prismdrake.Session1`](dbus/org.prismdrake.Session1.xml) | Same-user logout clients | Experimental PD2 contract | None before separate acceptance |
+| [`org.prismdrake.NotificationCenter1`](dbus/org.prismdrake.NotificationCenter1.xml) | Same-user shell clients | Experimental PD2 contract | None before separate acceptance |
 
-Both interfaces are exported at `/org/prismdrake/Settings1` by the owner of
+The two settings interfaces are exported at `/org/prismdrake/Settings1` by the owner of
 `org.prismdrake.Settings1`. The service validates the D-Bus sender's effective
 UID and fails closed when credentials are absent or do not match the service
 UID. PD1 uses no privileged or cross-user settings operation.
@@ -18,7 +21,7 @@ UID. PD1 uses no privileged or cross-user settings operation.
 
 `org.prismdrake.SettingsSnapshot1.GetCurrentSnapshot` accepts the requested
 snapshot schema version and returns one generation plus one complete immutable
-byte-array copy. Version 1 is canonical UTF-8 JSON governed by the strict
+byte-array copy. Version 2 is canonical UTF-8 JSON governed by the strict
 [`prismdrake-runtime-snapshot` schema](../schemas/prismdrake-runtime-snapshot.schema.json)
 and limited to 1 MiB. The outer generation and embedded generation are equal.
 There is no chunking, per-domain fetch, caller-supplied path, arbitrary object
@@ -26,8 +29,8 @@ export, or `a{sv}` extension channel.
 
 The reply belongs to the caller. Later service publications do not mutate it.
 The service retains its current and immediately previous typed and serialized
-snapshots; consumer-held copies may live longer. Unknown schema versions are
-rejected without changing service state.
+snapshots; consumer-held copies may live longer. Version 1 and unknown schema
+versions are rejected without changing service state.
 
 The top-level profile is authoritative. The nested `settings` object contains
 all normalized configuration domains except that deliberately non-duplicated
@@ -128,6 +131,115 @@ Domain failures use these fixed names under
 Error text is fixed and bounded to 256 bytes. It never interpolates input,
 parser text, filesystem paths, or secrets. Wrong wire signatures may use the
 standard `org.freedesktop.DBus.Error.InvalidArgs` response.
+
+## PD2 shell control
+
+`org.prismdrake.Shell1` is exported at `/org/prismdrake/Shell1` by
+`prismdrake-shell`. Its four narrow methods open or focus an existing shell
+surface; it is not a keyboard-grab service and owns no window-manager policy.
+Each method accepts a bounded validated output name. An empty name selects the
+current primary output. A named output that is unknown returns `InvalidOutput`;
+one that disappears before the request is applied returns `OutputUnavailable`.
+The shell may use the documented primary-output fallback only when doing so
+cannot place the surface on an unintended output.
+
+Immediate shell-control calls have a 1-second server budget. Domain failures
+use fixed names under `org.prismdrake.Shell1.Error.*`: `InvalidOutput`,
+`OutputUnavailable`, `Busy`, `TimedOut`, `NotAuthorized`, `ServiceStopping`,
+and `Internal`.
+
+Shell pins use the strict
+[`prismdrake-pin-state` schema](../schemas/prismdrake-pin-state.schema.json).
+The on-disk version-1 document is an ordered unique list of at most 256 bounded
+desktop-file identifiers. It stores no executable path, arguments, query
+history, window title, or owner-epoch generation. Pin and unpin operations
+publish a complete runtime generation separately; a shell restart begins a new
+owner epoch rather than trusting an old file generation.
+
+## PD2 logout transactions
+
+`org.prismdrake.Session1` is exported at `/org/prismdrake/Session1` by
+`prismdrake-session`. It exposes only logout; PD2 adds no power, suspend,
+hibernate, restart, lock, or privileged operation. The session process remains
+authoritative for child shutdown. Shell confirmation is presentation, not
+authorization.
+
+`RequestLogout` allocates one nonzero 64-bit transaction identifier and moves
+the state from `idle` to `confirmation_requested`. Only that exact identifier
+can be passed to `ConfirmLogout` or `CancelLogout`. The exact state set is
+`idle`, `confirmation_requested`, `confirmed`, `stopping_shell`,
+`stopping_notifyd`, `stopping_settingsd`, `complete`, `cancelled`, and `failed`.
+Cancellation publishes `cancelled` and then `idle`; confirmation advances
+through the bounded component-stop states. A second request while a transaction
+exists returns `Busy`. `GetSessionState` returns one complete pair; its
+transaction identifier is zero only for the current `idle` state.
+`SessionStateChanged` carries the transaction that caused the transition, so a
+cancelled nonzero identifier may accompany both `cancelled` and the transition
+back to `idle`.
+
+Getters have a 1-second server budget and mutations have a 5-second server
+budget. A service-returned `TimedOut` guarantees no later transition from that
+call. A client-side `NoReply` is ambiguous; clients refetch state and never
+blindly confirm, cancel, or repeat a transaction. Domain failures use fixed
+names under `org.prismdrake.Session1.Error.*`: `NoTransaction`,
+`TransactionMismatch`, `InvalidState`, `Busy`, `TimedOut`, `NotAuthorized`,
+`ServiceStopping`, and `Internal`.
+
+## PD2 notification-center state
+
+`org.prismdrake.NotificationCenter1` is exported at
+`/org/prismdrake/NotificationCenter1` by `prismdrake-notifyd`. It is a private
+Prismdrake state interface, separate from the standard freedesktop notification
+service. `GetCurrentState` accepts only state schema version 1 and returns one
+complete canonical UTF-8 JSON snapshot governed by the strict
+[`prismdrake-notification-state` schema](../schemas/prismdrake-notification-state.schema.json).
+The encoded snapshot is limited to 8 MiB, contains at most 256 records, and has
+an outer generation equal to the embedded generation.
+
+The state exposes persistent 64-bit `record_id` and `content_generation`
+identities. A live standard notification identifier is an optional unsigned
+32-bit field and is never used as a durable history identity. `Dismiss` and
+`InvokeAction` require both durable values so stale shell content cannot affect
+a replacement. Action invocation also requires an exact bounded `action_id` and
+succeeds only while that action is marked enabled and its sender remains live.
+Persistent history is governed by the strict
+[`prismdrake-notification-history` schema](../schemas/prismdrake-notification-history.schema.json),
+is limited to 256 records and 8 MiB, and never contains live notification IDs,
+D-Bus sender identities, filesystem paths, or image data.
+
+The NotificationCenter owner-epoch and generation rules match the settings
+snapshot rules: generation zero is unpublished, the first complete state in an
+epoch is generation one, real changes advance monotonically, and no-ops or
+failures consume no generation. Clients subscribe before fetching, invalidate
+all state on every owner transition or bus disconnect, and fetch one complete
+snapshot after reacquisition. They never merge `StateChanged` domains into an
+old snapshot. The signal's `changed_domains` is a unique ordered subset of
+`records`, `do_not_disturb`, and `history_mode`.
+
+Getters have a 1-second server budget and mutations have a 5-second server
+budget. One bounded mutation may be in flight; excess work returns `Busy`. A
+service-returned `TimedOut` guarantees no later publication from that call. A
+client-side `NoReply` is ambiguous and requires a complete refetch without a
+blind mutation retry. Domain failures use fixed names under
+`org.prismdrake.NotificationCenter1.Error.*`: `UnsupportedSchemaVersion`,
+`NoState`, `StaleRecord`, `ActionUnavailable`, `InvalidAction`, `TooLarge`,
+`Busy`, `TimedOut`, `NotAuthorized`, `ServiceStopping`, and `Internal`.
+
+## Authorization, errors, and standard-service exception
+
+Every Prismdrake interface in this directory is same-user or more restrictive.
+The service resolves the D-Bus sender's effective UID for every call and fails
+closed with `NotAuthorized` when credentials are absent or do not match the
+service UID. All domain error messages are fixed, redacted, and limited to 256
+bytes. Notification errors and diagnostics never include summaries, bodies,
+action labels, sender identities, image data, or paths.
+
+The standard `org.freedesktop.Notifications.Notify` method necessarily includes
+the specification's `a{sv}` hints dictionary. That standards-owned method is
+the sole documented exception to Prismdrake's ban on arbitrary variant maps and
+is not duplicated as XML in this directory. Hints are input-only, bounded, and
+handled through a closed policy; the exception does not permit `a{sv}` in any
+`org.prismdrake.*` interface.
 
 Public Prismdrake interfaces use `org.prismdrake.*`. Generic Glasswyrm-native
 `GW_*` proposals are owned and accepted separately by Glasswyrm and are not

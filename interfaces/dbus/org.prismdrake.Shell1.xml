@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Experimental PD2 same-user shell-control contract. This interface has no
+  stable ABI or wire-compatibility guarantee.
+
+  Domain failures use fixed org.prismdrake.Shell1.Error.* names:
+    InvalidOutput, OutputUnavailable, Busy, TimedOut, NotAuthorized,
+    ServiceStopping, and Internal.
+
+  Error messages are fixed, redacted, and bounded to 256 bytes. Immediate
+  requests have a 1-second server budget. The service validates the effective
+  UID of every caller and fails closed when credentials are absent or differ.
+-->
+<node name="/org/prismdrake/Shell1">
+  <interface name="org.prismdrake.Shell1">
+    <annotation name="org.prismdrake.Experimental" value="true"/>
+
+    <!-- Empty output_name selects the current primary output. -->
+    <method name="ToggleLauncher">
+      <arg name="output_name" type="s" direction="in"/>
+    </method>
+
+    <!-- Empty output_name selects the current primary output. -->
+    <method name="OpenQuickSettings">
+      <arg name="output_name" type="s" direction="in"/>
+    </method>
+
+    <!-- Empty output_name selects the current primary output. -->
+    <method name="OpenNotificationCenter">
+      <arg name="output_name" type="s" direction="in"/>
+    </method>
+
+    <!-- Empty output_name selects the current primary output. -->
+    <method name="FocusPanel">
+      <arg name="output_name" type="s" direction="in"/>
+    </method>
+  </interface>
+</node>

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/prismdrake-pin-state.schema.json",
+  "title": "Prismdrake shell pin state version 1",
+  "description": "Strict on-disk state for ordered application pins. The owner publishes runtime generations separately.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "pins"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "pins": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/desktop_file_id" }
+    }
+  },
+  "$defs": {
+    "desktop_file_id": {
+      "type": "string",
+      "minLength": 9,
+      "maxLength": 4096,
+      "pattern": "^[^/\\u0000]+\\.desktop$"
+    }
+  }
+}

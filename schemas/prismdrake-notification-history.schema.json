@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/prismdrake-notification-history.schema.json",
+  "title": "Prismdrake notification history version 1",
+  "description": "Strict private on-disk history. The complete serialized document is externally limited to 8 MiB and contains no live notification IDs, D-Bus sender identities, filesystem paths, or image data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "records"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "records": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/record" }
+    }
+  },
+  "$defs": {
+    "uint64": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 18446744073709551615
+    },
+    "nullable_application_name": {
+      "type": ["string", "null"],
+      "maxLength": 128
+    },
+    "nullable_desktop_file_id": {
+      "type": ["string", "null"],
+      "maxLength": 4096,
+      "pattern": "^[^/\\u0000]+\\.desktop$"
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "label"],
+      "properties": {
+        "action_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "content_generation",
+        "application_name",
+        "desktop_file_id",
+        "summary",
+        "body",
+        "urgency",
+        "received_at_unix_ms",
+        "dismissible",
+        "actions"
+      ],
+      "properties": {
+        "record_id": { "$ref": "#/$defs/uint64" },
+        "content_generation": { "$ref": "#/$defs/uint64" },
+        "application_name": { "$ref": "#/$defs/nullable_application_name" },
+        "desktop_file_id": { "$ref": "#/$defs/nullable_desktop_file_id" },
+        "summary": { "type": "string", "maxLength": 256 },
+        "body": { "type": "string", "maxLength": 4096 },
+        "urgency": { "enum": ["low", "normal", "critical"] },
+        "received_at_unix_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "dismissible": { "type": "boolean" },
+        "actions": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/action" }
+        }
+      }
+    }
+  }
+}

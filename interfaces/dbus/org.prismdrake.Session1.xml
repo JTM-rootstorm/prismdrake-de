@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Experimental PD2 same-user logout-transaction contract. This interface has
+  no stable ABI or wire-compatibility guarantee and exposes no power or lock
+  operation.
+
+  Domain failures use fixed org.prismdrake.Session1.Error.* names:
+    NoTransaction, TransactionMismatch, InvalidState, Busy, TimedOut,
+    NotAuthorized, ServiceStopping, and Internal.
+
+  Error messages are fixed, redacted, and bounded to 256 bytes. Getters have a
+  1-second server budget and mutations have a 5-second server budget. The
+  service validates the effective UID of every caller and fails closed when
+  credentials are absent or differ. A service-returned TimedOut guarantees no
+  later state transition from that call.
+-->
+<node name="/org/prismdrake/Session1">
+  <interface name="org.prismdrake.Session1">
+    <annotation name="org.prismdrake.Experimental" value="true"/>
+
+    <!--
+      Returns state as one of idle, confirmation_requested, confirmed,
+      stopping_shell, stopping_notifyd, stopping_settingsd, complete,
+      cancelled, or failed. transaction_id is zero only when the current state
+      is idle.
+    -->
+    <method name="GetSessionState">
+      <arg name="transaction_id" type="t" direction="out"/>
+      <arg name="state" type="s" direction="out"/>
+    </method>
+
+    <!-- Starts the sole nonzero logout transaction or returns Busy. -->
+    <method name="RequestLogout">
+      <arg name="transaction_id" type="t" direction="out"/>
+    </method>
+
+    <!-- Confirms only the exact transaction in confirmation_requested. -->
+    <method name="ConfirmLogout">
+      <arg name="transaction_id" type="t" direction="in"/>
+    </method>
+
+    <!-- Cancels only the exact transaction in confirmation_requested. -->
+    <method name="CancelLogout">
+      <arg name="transaction_id" type="t" direction="in"/>
+    </method>
+
+    <!--
+      Carries the transaction that caused the transition. Cancellation emits
+      cancelled and then idle with the cancelled nonzero transaction ID; a
+      subsequent getter reports transaction_id=0 for that current idle state.
+    -->
+    <signal name="SessionStateChanged">
+      <arg name="transaction_id" type="t"/>
+      <arg name="state" type="s"/>
+    </signal>
+  </interface>
+</node>

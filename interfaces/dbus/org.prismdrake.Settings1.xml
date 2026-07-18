@@ -81,12 +81,13 @@
   <interface name="org.prismdrake.SettingsSnapshot1">
     <annotation name="org.prismdrake.Experimental" value="true"/>
     <annotation name="org.prismdrake.Audience" value="PrismdrakeInternal"/>
+    <annotation name="org.prismdrake.SnapshotSchemaVersion" value="2"/>
 
     <!--
-      Accepts only snapshot_schema_version=1. Returns one caller-owned immutable
+      Accepts only snapshot_schema_version=2. Returns one caller-owned immutable
       copy of the complete canonical UTF-8 JSON snapshot, limited to 1 MiB. The
-      outer generation equals the embedded generation. Unknown versions return
-      UnsupportedSnapshotVersion. NoSnapshot, TimedOut, NotAuthorized,
+      outer generation equals the embedded generation. Version 1 and unknown
+      versions return UnsupportedSnapshotVersion. NoSnapshot, TimedOut, NotAuthorized,
       ServiceStopping, and Internal may also be returned.
     -->
     <method name="GetCurrentSnapshot">
