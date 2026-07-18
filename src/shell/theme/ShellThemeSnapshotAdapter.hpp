@@ -112,6 +112,92 @@ class PanelThemeTokens final : public QObject {
     friend class ShellThemeGeneration;
 };
 
+/// Immutable launcher projection derived from the same complete generation as panel tokens.
+class LauncherThemeTokens final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QColor surfaceColor READ surfaceColor CONSTANT)
+    Q_PROPERTY(bool blurRequested READ blurRequested CONSTANT)
+    Q_PROPERTY(bool fallbackActive READ fallbackActive CONSTANT)
+    Q_PROPERTY(QColor borderColor READ borderColor CONSTANT)
+    Q_PROPERTY(QColor textPrimaryColor READ textPrimaryColor CONSTANT)
+    Q_PROPERTY(QColor textMutedColor READ textMutedColor CONSTANT)
+    Q_PROPERTY(QColor focusColor READ focusColor CONSTANT)
+    Q_PROPERTY(QColor selectionColor READ selectionColor CONSTANT)
+    Q_PROPERTY(QColor dangerColor READ dangerColor CONSTANT)
+    Q_PROPERTY(QColor controlColor READ controlColor CONSTANT)
+    Q_PROPERTY(double tileRadius READ tileRadius CONSTANT)
+    Q_PROPERTY(double tilePadding READ tilePadding CONSTANT)
+    Q_PROPERTY(double tileBorderWidth READ tileBorderWidth CONSTANT)
+    Q_PROPERTY(double borderWidth READ borderWidth CONSTANT)
+    Q_PROPERTY(double focusWidth READ focusWidth CONSTANT)
+    Q_PROPERTY(double minimumTargetSize READ minimumTargetSize CONSTANT)
+    Q_PROPERTY(QString bodyFontFamily READ bodyFontFamily CONSTANT)
+    Q_PROPERTY(double bodyFontPixels READ bodyFontPixels CONSTANT)
+    Q_PROPERTY(double titleFontPixels READ titleFontPixels CONSTANT)
+    Q_PROPERTY(int fastMotionMs READ fastMotionMs CONSTANT)
+    Q_PROPERTY(int normalMotionMs READ normalMotionMs CONSTANT)
+    Q_PROPERTY(bool reducedMotion READ reducedMotion CONSTANT)
+    Q_PROPERTY(bool highContrast READ highContrast CONSTANT)
+    Q_PROPERTY(bool transparencyDisabled READ transparencyDisabled CONSTANT)
+
+  public:
+    [[nodiscard]] const QColor &surfaceColor() const noexcept { return surface_color_; }
+    [[nodiscard]] bool blurRequested() const noexcept { return blur_requested_; }
+    [[nodiscard]] bool fallbackActive() const noexcept { return fallback_active_; }
+    [[nodiscard]] const QColor &borderColor() const noexcept { return border_color_; }
+    [[nodiscard]] const QColor &textPrimaryColor() const noexcept { return text_primary_color_; }
+    [[nodiscard]] const QColor &textMutedColor() const noexcept { return text_muted_color_; }
+    [[nodiscard]] const QColor &focusColor() const noexcept { return focus_color_; }
+    [[nodiscard]] const QColor &selectionColor() const noexcept { return selection_color_; }
+    [[nodiscard]] const QColor &dangerColor() const noexcept { return danger_color_; }
+    [[nodiscard]] const QColor &controlColor() const noexcept { return control_color_; }
+    [[nodiscard]] double tileRadius() const noexcept { return tile_radius_; }
+    [[nodiscard]] double tilePadding() const noexcept { return tile_padding_; }
+    [[nodiscard]] double tileBorderWidth() const noexcept { return tile_border_width_; }
+    [[nodiscard]] double borderWidth() const noexcept { return border_width_; }
+    [[nodiscard]] double focusWidth() const noexcept { return focus_width_; }
+    [[nodiscard]] double minimumTargetSize() const noexcept { return minimum_target_size_; }
+    [[nodiscard]] const QString &bodyFontFamily() const noexcept { return body_font_family_; }
+    [[nodiscard]] double bodyFontPixels() const noexcept { return body_font_pixels_; }
+    [[nodiscard]] double titleFontPixels() const noexcept { return title_font_pixels_; }
+    [[nodiscard]] int fastMotionMs() const noexcept { return fast_motion_ms_; }
+    [[nodiscard]] int normalMotionMs() const noexcept { return normal_motion_ms_; }
+    [[nodiscard]] bool reducedMotion() const noexcept { return reduced_motion_; }
+    [[nodiscard]] bool highContrast() const noexcept { return high_contrast_; }
+    [[nodiscard]] bool transparencyDisabled() const noexcept { return transparency_disabled_; }
+
+  private:
+    explicit LauncherThemeTokens(const prismdrake::settings::SettingsSnapshot &snapshot,
+                                 QObject *parent);
+
+    QColor surface_color_;
+    bool blur_requested_;
+    bool fallback_active_;
+    QColor border_color_;
+    QColor text_primary_color_;
+    QColor text_muted_color_;
+    QColor focus_color_;
+    QColor selection_color_;
+    QColor danger_color_;
+    QColor control_color_;
+    double tile_radius_;
+    double tile_padding_;
+    double tile_border_width_;
+    double border_width_;
+    double focus_width_;
+    double minimum_target_size_;
+    QString body_font_family_;
+    double body_font_pixels_;
+    double title_font_pixels_;
+    int fast_motion_ms_;
+    int normal_motion_ms_;
+    bool reduced_motion_;
+    bool high_contrast_;
+    bool transparency_disabled_;
+
+    friend class ShellThemeGeneration;
+};
+
 /// Immutable notification projection derived from the same generation as the panel tokens.
 class NotificationThemeTokens final : public QObject {
     Q_OBJECT
@@ -209,6 +295,7 @@ class ShellThemeGeneration final : public QObject {
     Q_PROPERTY(double textScale READ textScale CONSTANT)
     Q_PROPERTY(double animationScale READ animationScale CONSTANT)
     Q_PROPERTY(PanelThemeTokens *panel READ panel CONSTANT)
+    Q_PROPERTY(LauncherThemeTokens *launcher READ launcher CONSTANT)
     Q_PROPERTY(NotificationThemeTokens *notification READ notification CONSTANT)
 
   public:
@@ -226,6 +313,7 @@ class ShellThemeGeneration final : public QObject {
     [[nodiscard]] double textScale() const noexcept { return text_scale_; }
     [[nodiscard]] double animationScale() const noexcept { return animation_scale_; }
     [[nodiscard]] PanelThemeTokens *panel() const noexcept { return panel_; }
+    [[nodiscard]] LauncherThemeTokens *launcher() const noexcept { return launcher_; }
     [[nodiscard]] NotificationThemeTokens *notification() const noexcept { return notification_; }
 
     [[nodiscard]] const std::shared_ptr<const prismdrake::settings::SettingsSnapshot> &
@@ -248,6 +336,7 @@ class ShellThemeGeneration final : public QObject {
     double text_scale_;
     double animation_scale_;
     PanelThemeTokens *panel_;
+    LauncherThemeTokens *launcher_;
     NotificationThemeTokens *notification_;
 
     friend class ShellThemeSnapshotAdapter;

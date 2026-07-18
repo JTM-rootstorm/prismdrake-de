@@ -19,8 +19,10 @@ disabled affordances, replacement refresh, and typed action and dismissal
 intents whose 64-bit identity never round-trips through JavaScript. A bounded
 Qt Quick Test lane uses the offscreen platform and software renderer to verify
 literal text, keyboard order, accessible metadata, non-color urgency text,
-reduced motion, high contrast, and opaque resolved token inputs. GoogleTest and
-Qt are obtained only from the system package manager and are never downloaded.
+reduced motion, high contrast, opaque resolved token inputs, launcher state
+presentation, right-to-left mirroring, bounded search input, and focus recovery
+after result reorder or removal. GoogleTest and Qt are obtained only from the
+system package manager and are never downloaded.
 Focused launcher-controller tests verify worker-thread execution, replacement
 cancellation, stale-generation rejection even when a backend ignores
 cancellation, initial error/recovery presentation, typed launch-intent gating,

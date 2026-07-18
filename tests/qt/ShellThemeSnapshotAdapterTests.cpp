@@ -144,6 +144,10 @@ TEST(ShellThemeSnapshotAdapterTest, ProjectsRealLustreAndForgeSettingsSnapshots)
     EXPECT_EQ(lustreGeneration->panel()->surfaceColor().blue(), 0x42);
     EXPECT_NEAR(lustreGeneration->panel()->surfaceColor().alphaF(), 0.82, 0.0001);
     EXPECT_NEAR(lustreGeneration->notification()->surfaceColor().alphaF(), 0.9, 0.0001);
+    EXPECT_NEAR(lustreGeneration->launcher()->surfaceColor().alphaF(), 0.86, 0.0001);
+    EXPECT_TRUE(lustreGeneration->launcher()->blurRequested());
+    EXPECT_FALSE(lustreGeneration->launcher()->fallbackActive());
+    EXPECT_DOUBLE_EQ(lustreGeneration->launcher()->tileRadius(), 11.0);
     EXPECT_DOUBLE_EQ(lustreGeneration->panel()->bodyFontPixels(), 14.0);
     EXPECT_DOUBLE_EQ(lustreGeneration->panel()->titleFontPixels(), 17.0);
     EXPECT_DOUBLE_EQ(lustreGeneration->panel()->panelHeight(), 48.0);
@@ -155,6 +159,9 @@ TEST(ShellThemeSnapshotAdapterTest, ProjectsRealLustreAndForgeSettingsSnapshots)
     EXPECT_EQ(forgeGeneration->profileId(), QStringLiteral("forge"));
     EXPECT_TRUE(forgeGeneration->transparencyDisabled());
     EXPECT_TRUE(forgeGeneration->panel()->fallbackActive());
+    EXPECT_TRUE(forgeGeneration->launcher()->fallbackActive());
+    EXPECT_FALSE(forgeGeneration->launcher()->blurRequested());
+    EXPECT_DOUBLE_EQ(forgeGeneration->launcher()->tileBorderWidth(), 2.0);
     EXPECT_FALSE(forgeGeneration->panel()->blurRequested());
     EXPECT_EQ(forgeGeneration->panel()->surfaceColor(), QColor::fromRgb(0x34, 0x30, 0x28));
     EXPECT_DOUBLE_EQ(forgeGeneration->panel()->panelHeight(), 44.0);
@@ -212,6 +219,10 @@ TEST(ShellThemeSnapshotAdapterTest, ProjectsAccessibilityFallbackAndFractionalTe
     EXPECT_EQ(accessibleGeneration->notification()->fastMotionMs(), 0);
     EXPECT_TRUE(accessibleGeneration->notification()->fallbackActive());
     EXPECT_EQ(accessibleGeneration->notification()->surfaceColor().alpha(), 255);
+    EXPECT_TRUE(accessibleGeneration->launcher()->fallbackActive());
+    EXPECT_TRUE(accessibleGeneration->launcher()->reducedMotion());
+    EXPECT_EQ(accessibleGeneration->launcher()->fastMotionMs(), 0);
+    EXPECT_DOUBLE_EQ(accessibleGeneration->launcher()->minimumTargetSize(), 48.0);
 
     const auto *fractionalGeneration = fractionalAdapter.current();
     ASSERT_NE(fractionalGeneration, nullptr);
@@ -234,6 +245,9 @@ TEST(ShellThemeSnapshotAdapterTest, DistinguishesMissingBlurFromTransparencyPref
     EXPECT_FALSE(adapter.current()->panel()->blurRequested());
     EXPECT_EQ(adapter.current()->panel()->surfaceColor().alpha(), 255);
     EXPECT_TRUE(adapter.current()->notification()->fallbackActive());
+    EXPECT_TRUE(adapter.current()->launcher()->fallbackActive());
+    EXPECT_FALSE(adapter.current()->launcher()->blurRequested());
+    EXPECT_EQ(adapter.current()->launcher()->surfaceColor().alpha(), 255);
 }
 
 TEST(ShellThemeSnapshotAdapterTest, RejectsAbsentSchemaMismatchProfileMismatchAndConflict) {
@@ -348,6 +362,7 @@ TEST(ShellThemeSnapshotAdapterTest, CapturedPriorGenerationRetainsItsCompleteObj
     EXPECT_EQ(first->profileId(), QStringLiteral("lustre"));
     EXPECT_EQ(first->panel()->surfaceColor().red(), 0x20);
     EXPECT_EQ(first->notification()->surfaceColor().red(), 0x2c);
+    EXPECT_EQ(first->launcher()->surfaceColor().red(), 0x26);
     EXPECT_FALSE(firstWeak.expired());
 
     first.reset();

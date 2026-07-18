@@ -275,6 +275,9 @@ prismdrake_add_format_check(
     tests/qt/LauncherPresentationModelTests.cpp
     tests/qt/launchercontroller/LauncherControllerTests.cpp
     tests/qt/launchercontroller/TestMain.cpp
+    tests/qt/launcherqml/LauncherSurfaceQmlFixture.cpp
+    tests/qt/launcherqml/LauncherSurfaceQmlFixture.hpp
+    tests/qt/launcherqml/LauncherSurfaceQmlTestRunner.cpp
     tests/qt/TaskPresentationModelTests.cpp
     tests/qt/taskcontroller/TaskControllerCoreTests.cpp
     tests/qt/taskcontroller/TaskControllerX11Tests.cpp

@@ -20,12 +20,12 @@ settings, launcher, notification, X11, shell-presentation, and session targets.
 The Experimental shell presentation now includes immutable Qt projections of
 one complete settings/theme generation, authoritative task snapshots, matching
 launcher catalog/search snapshots, and synthetic notification snapshots. It
-also contains compiled panel and notification QML modules plus a Qt/X11 panel
-window host that publishes standard dock and strut state through the existing
-X11 adapter. An event-driven task controller owns a separate X11 connection,
-publishes complete EWMH task observations, and sends only checked standard WM
-requests tied to the current task lifetime and generation. The presentation
-adapters emit typed intents; none becomes authoritative for window or
+also contains compiled panel, launcher, and notification QML modules plus a
+Qt/X11 panel window host that publishes standard dock and strut state through
+the existing X11 adapter. An event-driven task controller owns a separate X11
+connection, publishes complete EWMH task observations, and sends only checked
+standard WM requests tied to the current task lifetime and generation. The
+presentation adapters emit typed intents; none becomes authoritative for window or
 notification state. The launcher controller schedules replaceable discovery
 and search on one worker and safe single-flight process launch on a separate
 worker, so neither filesystem indexing nor the bounded detached-launch

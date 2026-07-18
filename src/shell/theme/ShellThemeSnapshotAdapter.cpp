@@ -165,6 +165,11 @@ validateSnapshot(const prismdrake::settings::SettingsSnapshot &snapshot) {
     if (!panelMaterial) {
         return panelMaterial;
     }
+    auto launcherMaterial =
+        validateMaterial(resolved.materials.launcher, "resolved launcher material");
+    if (!launcherMaterial) {
+        return launcherMaterial;
+    }
     auto notificationMaterial =
         validateMaterial(resolved.materials.notification, "resolved notification material");
     if (!notificationMaterial) {
@@ -211,6 +216,33 @@ PanelThemeTokens::PanelThemeTokens(const prismdrake::settings::SettingsSnapshot 
       launcher_padding_(snapshot.candidate.theme.component.launcherTile.paddingPx),
       launcher_border_width_(snapshot.candidate.theme.component.launcherTile.borderWidthPx) {}
 
+LauncherThemeTokens::LauncherThemeTokens(const prismdrake::settings::SettingsSnapshot &snapshot,
+                                         QObject *parent)
+    : QObject(parent), surface_color_(materialColor(snapshot.candidate.theme.materials.launcher)),
+      blur_requested_(snapshot.candidate.theme.materials.launcher.blurRequested),
+      fallback_active_(snapshot.candidate.theme.materials.launcher.usedFallback),
+      border_color_(color(snapshot.candidate.theme.semantic.colors.borderInactive)),
+      text_primary_color_(color(snapshot.candidate.theme.semantic.colors.textPrimary)),
+      text_muted_color_(color(snapshot.candidate.theme.semantic.colors.textMuted)),
+      focus_color_(color(snapshot.candidate.theme.semantic.colors.focusRing)),
+      selection_color_(color(snapshot.candidate.theme.semantic.colors.selection)),
+      danger_color_(color(snapshot.candidate.theme.semantic.colors.danger)),
+      control_color_(color(snapshot.candidate.theme.semantic.colors.elevatedSurface)),
+      tile_radius_(snapshot.candidate.theme.component.launcherTile.radiusPx),
+      tile_padding_(snapshot.candidate.theme.component.launcherTile.paddingPx),
+      tile_border_width_(snapshot.candidate.theme.component.launcherTile.borderWidthPx),
+      border_width_(snapshot.candidate.theme.semantic.border.thicknessPx),
+      focus_width_(snapshot.candidate.theme.accessibility.focusWidthPx),
+      minimum_target_size_(snapshot.candidate.theme.accessibility.minimumTargetSizePx),
+      body_font_family_(utf8(snapshot.candidate.theme.semantic.typography.bodyFamily)),
+      body_font_pixels_(snapshot.candidate.theme.semantic.typography.bodySizePx),
+      title_font_pixels_(snapshot.candidate.theme.semantic.typography.titleSizePx),
+      fast_motion_ms_(snapshot.candidate.theme.semantic.motion.fastMs),
+      normal_motion_ms_(snapshot.candidate.theme.semantic.motion.normalMs),
+      reduced_motion_(snapshot.candidate.theme.accessibility.reducedMotion),
+      high_contrast_(snapshot.candidate.theme.accessibility.highContrast),
+      transparency_disabled_(snapshot.candidate.theme.accessibility.transparencyDisabled) {}
+
 NotificationThemeTokens::NotificationThemeTokens(
     const prismdrake::settings::SettingsSnapshot &snapshot, QObject *parent)
     : QObject(parent),
@@ -250,6 +282,7 @@ ShellThemeGeneration::ShellThemeGeneration(
       text_scale_(snapshot_->candidate.theme.accessibility.textScale),
       animation_scale_(snapshot_->candidate.theme.accessibility.animationScale),
       panel_(new PanelThemeTokens(*snapshot_, this)),
+      launcher_(new LauncherThemeTokens(*snapshot_, this)),
       notification_(new NotificationThemeTokens(*snapshot_, this)) {}
 
 foundation::Result<void> ShellThemeSnapshotAdapter::applySnapshot(
