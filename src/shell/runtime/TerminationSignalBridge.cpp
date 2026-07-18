@@ -23,7 +23,8 @@ extern "C" void handleTerminationSignal(int signalNumber) {
     const auto fd = static_cast<int>(signal_write_fd);
     if (fd >= 0) {
         const auto value = static_cast<std::uint8_t>(signalNumber);
-        static_cast<void>(::write(fd, &value, sizeof(value)));
+        const auto written = ::write(fd, &value, sizeof(value));
+        static_cast<void>(written);
     }
     errno = savedErrno;
 }
@@ -122,7 +123,7 @@ Result<void> TerminationSignalBridge::initialize() {
     connect(notifier_.get(), &QSocketNotifier::activated, this,
             [this](QSocketDescriptor, QSocketNotifier::Type) { drainSignalPipe(); });
 
-    struct sigaction action{};
+    SignalAction action{};
     action.sa_handler = handleTerminationSignal;
     ::sigemptyset(&action.sa_mask);
     action.sa_flags = 0;

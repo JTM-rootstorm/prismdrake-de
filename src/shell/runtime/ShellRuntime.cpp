@@ -520,8 +520,9 @@ void ShellRuntime::reportRecoverable(const char *context, const Error &error) {
         return;
     }
     last_recoverable_diagnostic_ = diagnostic;
-    qWarning().noquote() << "prismdrake-shell:" << context << '-' << error.message
-                         << error.recovery;
+    qWarning().noquote() << "prismdrake-shell:" << context << '-'
+                         << QString::fromStdString(error.message)
+                         << QString::fromStdString(error.recovery);
 }
 
 void ShellRuntime::requestShutdown(const char *context, const Error &error) {
@@ -529,8 +530,9 @@ void ShellRuntime::requestShutdown(const char *context, const Error &error) {
         return;
     }
     shutdown_requested_ = true;
-    qCritical().noquote() << "prismdrake-shell:" << context << '-' << error.message
-                          << error.recovery;
+    qCritical().noquote() << "prismdrake-shell:" << context << '-'
+                          << QString::fromStdString(error.message)
+                          << QString::fromStdString(error.recovery);
     QCoreApplication::exit(foundation::processExitCode(foundation::exitStatusFor(error)));
 }
 

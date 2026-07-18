@@ -12,6 +12,8 @@ class QSocketNotifier;
 
 namespace prismdrake::shell::runtime {
 
+using SignalAction = struct sigaction;
+
 /// Converts SIGINT and SIGTERM into one owner-thread callback through a non-blocking pipe.
 ///
 /// The signal handler performs only an async-signal-safe write. Qt object teardown and shell
@@ -37,8 +39,8 @@ class TerminationSignalBridge final : public QObject {
     std::unique_ptr<QSocketNotifier> notifier_;
     int read_fd_{-1};
     int write_fd_{-1};
-    struct sigaction previous_interrupt_{};
-    struct sigaction previous_terminate_{};
+    SignalAction previous_interrupt_{};
+    SignalAction previous_terminate_{};
     bool interrupt_installed_{false};
     bool terminate_installed_{false};
     bool callback_requested_{false};
