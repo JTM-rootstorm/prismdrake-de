@@ -89,14 +89,15 @@ Control {
         return false
     }
 
-    function moveActionFocus(current, direction, reason) {
-        const controls = minimizeAction.enabled
-                         ? [minimizeAction, closeAction] : [closeAction]
-        const currentIndex = controls.indexOf(current)
-        const nextIndex = currentIndex < 0
-                          ? 0
-                          : (currentIndex + direction + controls.length) % controls.length
-        controls[nextIndex].forceActiveFocus(reason)
+    function moveActionFocus(current, reason) {
+        if (!minimizeAction.enabled) {
+            closeAction.forceActiveFocus(reason)
+            return
+        }
+        if (current === minimizeAction)
+            closeAction.forceActiveFocus(reason)
+        else
+            minimizeAction.forceActiveFocus(reason)
     }
 
     function handleActionKey(event, current) {
@@ -104,10 +105,10 @@ Control {
             closeActionMenu(true)
             event.accepted = true
         } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Right) {
-            moveActionFocus(current, 1, Qt.TabFocusReason)
+            moveActionFocus(current, Qt.TabFocusReason)
             event.accepted = true
         } else if (event.key === Qt.Key_Backtab || event.key === Qt.Key_Left) {
-            moveActionFocus(current, -1, Qt.BacktabFocusReason)
+            moveActionFocus(current, Qt.BacktabFocusReason)
             event.accepted = true
         }
     }
@@ -116,9 +117,7 @@ Control {
     activeFocusOnTab: false
     hoverEnabled: true
     implicitWidth: Math.max(tokens.minimumTargetSize,
-                            tokens.iconSize + Math.max(2, tokens.taskPadding / 2)
-                            + Math.max(taskTitle.implicitWidth, taskState.implicitWidth)
-                            + leftPadding + rightPadding)
+                            contentItem.implicitWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(tokens.minimumTargetSize, tokens.panelHeight)
     leftPadding: tokens.taskPadding
     rightPadding: tokens.taskPadding
@@ -170,7 +169,9 @@ Control {
     onPresentationChanged: closeActionMenu(false)
 
     contentItem: Item {
-        implicitWidth: presentationContent.implicitWidth
+        implicitWidth: root.tokens.iconSize
+                       + Math.max(2, root.tokens.taskPadding / 2)
+                       + Math.max(taskTitle.implicitWidth, taskState.implicitWidth)
         implicitHeight: presentationContent.implicitHeight
 
         Row {
@@ -313,8 +314,8 @@ Control {
         z: 20
         x: (root.width - width) / 2
         y: (root.height - height) / 2
-        width: actionRow.implicitWidth + (2 * padding)
-        height: actionRow.implicitHeight + (2 * padding)
+        width: contentItem.implicitWidth + (2 * padding)
+        height: contentItem.implicitHeight + (2 * padding)
         padding: 0
         modal: false
         dim: false
