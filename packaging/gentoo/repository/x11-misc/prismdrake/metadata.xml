@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+  <maintainer type="person">
+    <email>jtm@root-storm.com</email>
+    <name>JT</name>
+  </maintainer>
+  <longdescription>
+    Builds and installs the Experimental Prismdrake PD1 settings service, X11
+    shell, init-neutral session supervisor, packaged defaults, themes, schemas,
+    D-Bus interface contract, and X session entry. This package is a bounded
+    development prototype and not a production desktop release.
+  </longdescription>
+  <upstream>
+    <remote-id type="github">JTM-rootstorm/prismdrake-de</remote-id>
+  </upstream>
+</pkgmetadata>

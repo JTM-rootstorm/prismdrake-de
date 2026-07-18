@@ -5,12 +5,12 @@ Prismdrake tracks an EAPI 8 local Portage repository named
 dependency evidence and VM reproducibility; it is not an official Gentoo
 overlay and has no synchronization or signing claim.
 
-The current repository contains only
-`dev-util/prismdrake-dev-env`, a development metapackage. It intentionally does
-not contain `x11-misc/prismdrake-9999`: the product ebuild remains deferred
-until the build system and install targets are Accepted and implemented. This
-keeps development-only tools out of future runtime metadata (`PD-DEP-002`,
-`PD-PKG-006`, `PD-PKG-008`, and `PD-PKG-009`).
+The repository contains `dev-util/prismdrake-dev-env`, a development
+metapackage, and the live Experimental `x11-misc/prismdrake-9999` product
+ebuild. The product ebuild consumes the project CMake install contract and keeps
+development-only tools out of runtime metadata (`PD-DEP-002`, `PD-PKG-006`,
+`PD-PKG-008`, and `PD-PKG-009`). It installs a bounded PD1 X11 development
+session, not a stable or production desktop package.
 
 ## Repository contract
 
@@ -21,10 +21,14 @@ packaging/gentoo/repository/
 ├── profiles/
 │   ├── eapi
 │   └── repo_name
-└── dev-util/
-    └── prismdrake-dev-env/
+├── dev-util/
+│   └── prismdrake-dev-env/
+│       ├── metadata.xml
+│       └── prismdrake-dev-env-0.1.ebuild
+└── x11-misc/
+    └── prismdrake/
         ├── metadata.xml
-        └── prismdrake-dev-env-0.1.ebuild
+        └── prismdrake-9999.ebuild
 ```
 
 The repository inherits Gentoo categories and profiles, disables auto-sync,
@@ -181,13 +185,39 @@ Stop on masks, keyword requirements, license prompts, or USE conflicts. Do not
 use `--nodeps`, change global keyword policy, edit Portage databases directly,
 or execute an actual automated depclean to force resolution.
 
-## Product ebuild gate
+## Experimental product ebuild
 
-Add `x11-misc/prismdrake-9999` only after an Accepted build decision and real
-install targets exist. That future patch must separate build, test, and runtime
-dependencies; use the canonical Git source; install only production artifacts
-to standard locations; preserve user configuration and state on uninstall; and
-prove install, test, uninstall, and reinstall in a disposable VM checkpoint.
+`x11-misc/prismdrake-9999` uses `git-r3` with the canonical repository URI and
+enables the upstream install-path contract. Its runtime dependency set contains
+only the libraries and broker required by the three installed Experimental
+processes. GoogleTest, Python, Xvfb, Openbox, xprop, fontconfig, and the fixed
+test font remain conditional `USE=test` build dependencies.
 
-Until that gate is met, verification reports the product ebuild as deferred
-rather than claiming Prismdrake itself is emergeable.
+Run a reviewed resolution and targeted package test with:
+
+```sh
+emerge --pretend --verbose --tree --newuse x11-misc/prismdrake
+USE=test emerge --ask --verbose --newuse x11-misc/prismdrake
+```
+
+Portage's mandatory libsandbox injects `LD_PRELOAD` and `SANDBOX_*` entries into
+executed children. The ebuild therefore excludes exactly three upstream tests:
+
+- `DetachedApplicationTest.ExecutesExactArgvWorkingDirectoryAndEnvironmentWithoutShell`
+  and
+  `LauncherPipelineTest.ExpandsPlansAndLaunchesLiteralArgumentsWithoutAShell`
+  require byte-exact child environments and reject the injected variables.
+- `X11DockOpenboxIntegrationTest` remains an exact Prismdrake X11 contract, but
+  libsandbox's preload changes the third-party Openbox process's strut handling.
+
+Run all three separately outside the Portage sandbox on the same source
+revision. Run the exact Openbox test at least five consecutive times against
+the same built artifact. No other test exclusion is permitted by this policy.
+
+Before updating the ebuild, verify its installed file list and dynamic linkage,
+run the settings and X11 session behavior from installed paths, unmerge it, and
+confirm that user configuration and state remain byte-identical. Reinstall once
+without `USE=test` to exercise the ordinary package path. Use a disposable VM
+checkpoint and preserve the documented Stage 0 baseline. Current exact results
+belong in the PD1 Gentoo package evidence report rather than this normative
+workflow document.
