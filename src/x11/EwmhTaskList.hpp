@@ -34,10 +34,11 @@ struct EwmhTaskListObservation final {
 
 /// One all-or-nothing mirror of authoritative root task-list state.
 ///
-/// Both list orders are retained exactly as advertised. If the optional
-/// stacking property is absent, stackingOrder() deterministically matches
-/// clientList(). This value owns no windows and confers no focus or stacking
-/// authority on Prismdrake.
+/// A valid stacking permutation is retained exactly as advertised. If the optional
+/// stacking property is absent or temporarily names a different valid client set,
+/// stackingOrder() deterministically matches clientList(). A valid stale active-window
+/// hint is reduced to no active task. This value owns no windows and confers no focus
+/// or stacking authority on Prismdrake.
 class EwmhTaskListSnapshot final {
   public:
     [[nodiscard]] std::span<const WindowId> clientList() const noexcept { return client_list_; }
@@ -48,6 +49,10 @@ class EwmhTaskListSnapshot final {
         return active_window_;
     }
     [[nodiscard]] EwmhStackingSource stackingSource() const noexcept { return stacking_source_; }
+    [[nodiscard]] bool stackingSetDisagreed() const noexcept { return stacking_set_disagreed_; }
+    [[nodiscard]] bool staleActiveWindowCleared() const noexcept {
+        return stale_active_window_cleared_;
+    }
     [[nodiscard]] bool contains(WindowId window) const noexcept;
 
   private:
@@ -55,23 +60,31 @@ class EwmhTaskListSnapshot final {
     buildEwmhTaskListSnapshot(const EwmhTaskListObservation &observation);
 
     EwmhTaskListSnapshot(std::vector<WindowId> clientList, std::vector<WindowId> stackingOrder,
-                         std::optional<WindowId> activeWindow,
-                         EwmhStackingSource stackingSource) noexcept;
+                         std::optional<WindowId> activeWindow, EwmhStackingSource stackingSource,
+                         bool stackingSetDisagreed, bool staleActiveWindowCleared) noexcept;
 
     std::vector<WindowId> client_list_;
     std::vector<WindowId> stacking_order_;
     std::optional<WindowId> active_window_;
     EwmhStackingSource stacking_source_;
+    bool stacking_set_disagreed_;
+    bool stale_active_window_cleared_;
 };
 
 /// Validates one complete root-property observation.
 ///
 /// The client list is required. Present lists reject zero or duplicate IDs and
-/// must remain within maximumEwmhTaskWindows. A present stacking list must be
-/// an exact permutation of the client list, and a present active window must
-/// be a client-list member. Any violation rejects the complete observation so
-/// callers can retain their previous valid snapshot.
+/// must remain within maximumEwmhTaskWindows. A validly encoded stacking list
+/// whose set temporarily differs from the mandatory client list degrades to
+/// client-list order. A valid active identifier outside that list degrades to
+/// no active task. Malformed encoding, zero identifiers, duplicates, and
+/// oversized payloads still reject the complete observation.
 [[nodiscard]] foundation::Result<EwmhTaskListSnapshot>
 buildEwmhTaskListSnapshot(const EwmhTaskListObservation &observation);
+
+/// Compares only the mandatory, ordered client-list generation. Optional
+/// stacking and active-window churn cannot make stable membership incoherent.
+[[nodiscard]] bool sameEwmhTaskMembership(const EwmhTaskListSnapshot &left,
+                                          const EwmhTaskListSnapshot &right) noexcept;
 
 } // namespace prismdrake::x11

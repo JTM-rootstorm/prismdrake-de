@@ -9,11 +9,36 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 namespace prismdrake::x11 {
 
 class X11Connection;
+
+enum class EwmhTaskRefreshFailureKind : std::uint8_t {
+    ownerUnavailable,
+    ownerMalformed,
+    capabilitiesMalformed,
+    clientListUnsupported,
+    clientListUnavailable,
+    clientListMalformed,
+    stackingMalformed,
+    activeWindowMalformed,
+    ownerChanged,
+    clientListChanged,
+    transport,
+    other,
+};
+
+[[nodiscard]] EwmhTaskRefreshFailureKind
+classifyTaskRefreshFailure(const foundation::Error &error) noexcept;
+[[nodiscard]] std::string_view
+ewmhTaskRefreshFailureKindId(EwmhTaskRefreshFailureKind kind) noexcept;
+
+/// True only for a healthy-source failure that may settle after a small
+/// event-loop-driven delay. Malformed and oversized payloads are never retried.
+[[nodiscard]] bool taskRefreshFailureCanStabilize(const foundation::Error &error) noexcept;
 
 /// Exact small bound for reconstructing one coherent snapshot while a window
 /// manager publishes the short root-property burst around a client map.

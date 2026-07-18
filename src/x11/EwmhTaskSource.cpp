@@ -14,6 +14,7 @@
 #include <ranges>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -24,6 +25,27 @@ namespace {
 
 using foundation::ErrorCode;
 using foundation::Result;
+
+constexpr std::string_view changingRootSnapshotMessage =
+    "The mandatory EWMH task membership changed during one observation.";
+constexpr std::string_view ownerUnavailableMessage =
+    "A verified EWMH task-list owner is unavailable.";
+constexpr std::string_view ownerMalformedMessage =
+    "The EWMH task-list owner property is malformed.";
+constexpr std::string_view capabilitiesMalformedMessage =
+    "The EWMH task-list owner contract is malformed.";
+constexpr std::string_view clientListUnsupportedMessage =
+    "The verified EWMH owner does not advertise a client list.";
+constexpr std::string_view clientListUnavailableMessage =
+    "The mandatory EWMH client list is unavailable.";
+constexpr std::string_view clientListMalformedMessage =
+    "The mandatory EWMH client list is malformed.";
+constexpr std::string_view stackingMalformedMessage =
+    "The optional EWMH stacking list is malformed.";
+constexpr std::string_view activeWindowMalformedMessage =
+    "The optional EWMH active-window property is malformed.";
+constexpr std::string_view ownerChangedMessage =
+    "The EWMH task-list owner changed during one observation.";
 
 struct FreeDeleter final {
     void operator()(void *value) const noexcept { std::free(value); }
@@ -46,14 +68,63 @@ template <typename Value> [[nodiscard]] Result<Value> transportFailure() {
 
 template <typename Value> [[nodiscard]] Result<Value> unavailableWindowManager() {
     return Result<Value>::failure(
-        {ErrorCode::not_found, "A verified EWMH task-list owner is unavailable.",
+        {ErrorCode::not_found, std::string{ownerUnavailableMessage},
          "Retain the previous snapshot and retry after the window-manager owner changes."});
+}
+
+template <typename Value> [[nodiscard]] Result<Value> malformedWindowManagerCapabilities() {
+    return Result<Value>::failure(
+        {ErrorCode::validation_error, std::string{capabilitiesMalformedMessage},
+         "Retain the previous snapshot until a valid window-manager owner replaces it."});
+}
+
+template <typename Value> [[nodiscard]] Result<Value> unsupportedClientList() {
+    return Result<Value>::failure({ErrorCode::unsupported,
+                                   std::string{clientListUnsupportedMessage},
+                                   "Keep task presentation unavailable with this window manager."});
+}
+
+[[nodiscard]] foundation::Error ownerReadFailure(const foundation::Error &error) {
+    return {error.code,
+            std::string{error.code == ErrorCode::not_found ? ownerUnavailableMessage
+                                                           : ownerMalformedMessage},
+            "Retain the previous snapshot until a valid owner property is available."};
+}
+
+[[nodiscard]] foundation::Error clientListReadFailure(const foundation::Error &error) {
+    return {error.code,
+            std::string{error.code == ErrorCode::not_found ? clientListUnavailableMessage
+                                                           : clientListMalformedMessage},
+            "Retain the previous snapshot until a valid mandatory client list is available."};
+}
+
+[[nodiscard]] foundation::Error stackingReadFailure(const foundation::Error &error) {
+    return {error.code, std::string{stackingMalformedMessage},
+            "Reject the malformed optional property and retain the previous snapshot."};
+}
+
+[[nodiscard]] foundation::Error activeWindowReadFailure(const foundation::Error &error) {
+    return {error.code, std::string{activeWindowMalformedMessage},
+            "Reject the malformed optional property and retain the previous snapshot."};
+}
+
+template <typename Value> [[nodiscard]] Result<Value> ownerChangedFailure() {
+    return Result<Value>::failure(
+        {ErrorCode::validation_error, std::string{ownerChangedMessage},
+         "Retain the previous snapshot while a bounded event-loop retry observes one owner."});
 }
 
 template <typename Value> [[nodiscard]] Result<Value> malformedRootSnapshot() {
     return Result<Value>::failure(
         {ErrorCode::validation_error, "The EWMH root task snapshot changed or is malformed.",
          "Retain the previous snapshot and retry one complete bounded refresh."});
+}
+
+template <typename Value> [[nodiscard]] Result<Value> changingRootSnapshot() {
+    return Result<Value>::failure({ErrorCode::validation_error,
+                                   std::string{changingRootSnapshotMessage},
+                                   "Retain the previous task snapshot while a bounded event-loop "
+                                   "retry stabilizes membership."});
 }
 
 template <typename Value> [[nodiscard]] Result<Value> exhaustedIncarnations() {
@@ -122,13 +193,21 @@ optionalWords(std::optional<PropertyValue> &value) {
     auto value = PropertyReader::read(connection, atoms, connection.screen().rootWindow,
                                       AtomName::net_supporting_wm_check, ownerSpec);
     if (!value) {
-        return Result<WindowId>::failure(value.error());
+        return Result<WindowId>::failure(ownerReadFailure(value.error()));
     }
     auto words = value.value().uint32Items();
     if (!words || words.value().size() != 1U) {
-        return malformedRootSnapshot<WindowId>();
+        return Result<WindowId>::failure(
+            {ErrorCode::validation_error, std::string{ownerMalformedMessage},
+             "Retain the previous snapshot until a valid owner property is available."});
     }
-    return WindowId::fromProtocol(words.value().front());
+    auto owner = WindowId::fromProtocol(words.value().front());
+    if (!owner) {
+        return Result<WindowId>::failure(
+            {ErrorCode::validation_error, std::string{ownerMalformedMessage},
+             "Retain the previous snapshot until a valid owner property is available."});
+    }
+    return owner;
 }
 
 [[nodiscard]] Result<EwmhTaskListSnapshot>
@@ -142,7 +221,7 @@ readRootSnapshot(X11Connection &connection, const AtomCache &atoms, bool readAct
     auto clients = PropertyReader::read(connection, atoms, connection.screen().rootWindow,
                                         AtomName::net_client_list, listSpec);
     if (!clients) {
-        return Result<EwmhTaskListSnapshot>::failure(clients.error());
+        return Result<EwmhTaskListSnapshot>::failure(clientListReadFailure(clients.error()));
     }
     auto clientWords = requiredWords(clients.value());
     if (!clientWords) {
@@ -152,7 +231,7 @@ readRootSnapshot(X11Connection &connection, const AtomCache &atoms, bool readAct
     auto stacking = readOptional(connection, atoms, connection.screen().rootWindow,
                                  AtomName::net_client_list_stacking, listSpec);
     if (!stacking) {
-        return Result<EwmhTaskListSnapshot>::failure(stacking.error());
+        return Result<EwmhTaskListSnapshot>::failure(stackingReadFailure(stacking.error()));
     }
     auto stackingWords = optionalWords(stacking.value());
     if (!stackingWords) {
@@ -164,7 +243,7 @@ readRootSnapshot(X11Connection &connection, const AtomCache &atoms, bool readAct
         auto active = readOptional(connection, atoms, connection.screen().rootWindow,
                                    AtomName::net_active_window, activeSpec);
         if (!active) {
-            return Result<EwmhTaskListSnapshot>::failure(active.error());
+            return Result<EwmhTaskListSnapshot>::failure(activeWindowReadFailure(active.error()));
         }
         auto activeWords = optionalWords(active.value());
         if (!activeWords) {
@@ -172,7 +251,9 @@ readRootSnapshot(X11Connection &connection, const AtomCache &atoms, bool readAct
         }
         if (activeWords.value()) {
             if (activeWords.value()->size() != 1U) {
-                return malformedRootSnapshot<EwmhTaskListSnapshot>();
+                return Result<EwmhTaskListSnapshot>::failure(
+                    {ErrorCode::validation_error, std::string{activeWindowMalformedMessage},
+                     "Reject the malformed optional property and retain the previous snapshot."});
             }
             if (activeWords.value()->front() != XCB_WINDOW_NONE) {
                 activeWindow = activeWords.value()->front();
@@ -182,14 +263,6 @@ readRootSnapshot(X11Connection &connection, const AtomCache &atoms, bool readAct
 
     return buildEwmhTaskListSnapshot(
         {std::move(clientWords).value(), std::move(stackingWords).value(), activeWindow});
-}
-
-[[nodiscard]] bool sameSnapshot(const EwmhTaskListSnapshot &left,
-                                const EwmhTaskListSnapshot &right) noexcept {
-    return std::ranges::equal(left.clientList(), right.clientList()) &&
-           std::ranges::equal(left.stackingOrder(), right.stackingOrder()) &&
-           left.activeWindow() == right.activeWindow() &&
-           left.stackingSource() == right.stackingSource();
 }
 
 [[nodiscard]] std::optional<WindowType> decodeWindowType(std::uint32_t raw,
@@ -424,14 +497,21 @@ Result<TaskModelObservation> EwmhTaskSource::refresh(X11Connection &connection) 
         return invalidSource<TaskModelObservation>();
     }
 
+    bool observedOwnerChange = false;
+    bool observedClientListChange = false;
     for (std::size_t attempt = 0U; taskSnapshotAttemptAllowed(attempt); ++attempt) {
         const auto capabilities = discoverEwmhCapabilities(connection);
         if (!capabilities) {
             return Result<TaskModelObservation>::failure(capabilities.error());
         }
-        if (capabilities.value().status != EwmhDiscoveryStatus::verified ||
-            !capabilities.value().flags.clientList) {
+        if (capabilities.value().status == EwmhDiscoveryStatus::unavailable) {
             return unavailableWindowManager<TaskModelObservation>();
+        }
+        if (capabilities.value().status == EwmhDiscoveryStatus::malformed) {
+            return malformedWindowManagerCapabilities<TaskModelObservation>();
+        }
+        if (!capabilities.value().flags.clientList) {
+            return unsupportedClientList<TaskModelObservation>();
         }
 
         auto owner = readOwner(connection, atoms_);
@@ -441,7 +521,8 @@ Result<TaskModelObservation> EwmhTaskSource::refresh(X11Connection &connection) 
             if (!connection.healthy()) {
                 return transportFailure<TaskModelObservation>();
             }
-            continue;
+            const auto &error = !owner ? owner.error() : initial.error();
+            return Result<TaskModelObservation>::failure(error);
         }
 
         auto candidateIncarnations = incarnations_;
@@ -455,7 +536,9 @@ Result<TaskModelObservation> EwmhTaskSource::refresh(X11Connection &connection) 
         bool exhausted = false;
         for (const auto window : initial.value().clientList()) {
             if (window == connection.screen().rootWindow) {
-                return malformedRootSnapshot<TaskModelObservation>();
+                return Result<TaskModelObservation>::failure(
+                    {ErrorCode::validation_error, std::string{clientListMalformedMessage},
+                     "Reject the malformed mandatory list and retain the previous snapshot."});
             }
             auto incarnation = candidateIncarnations.find(window.value());
             if (incarnation == candidateIncarnations.end()) {
@@ -506,10 +589,15 @@ Result<TaskModelObservation> EwmhTaskSource::refresh(X11Connection &connection) 
             if (!connection.healthy()) {
                 return transportFailure<TaskModelObservation>();
             }
+            const auto &error = !confirmedOwner ? confirmedOwner.error() : confirmed.error();
+            return Result<TaskModelObservation>::failure(error);
+        }
+        if (confirmedOwner.value() != owner.value()) {
+            observedOwnerChange = true;
             continue;
         }
-        if (confirmedOwner.value() != owner.value() ||
-            !sameSnapshot(initial.value(), confirmed.value())) {
+        if (!sameEwmhTaskMembership(initial.value(), confirmed.value())) {
+            observedClientListChange = true;
             continue;
         }
 
@@ -526,11 +614,91 @@ Result<TaskModelObservation> EwmhTaskSource::refresh(X11Connection &connection) 
         return Result<TaskModelObservation>::success(
             TaskModelObservation{std::move(confirmed).value(), std::move(windows)});
     }
-    return malformedRootSnapshot<TaskModelObservation>();
+    return observedClientListChange || !observedOwnerChange
+               ? changingRootSnapshot<TaskModelObservation>()
+               : ownerChangedFailure<TaskModelObservation>();
 }
 
 void EwmhTaskSource::invalidateClient(WindowId window) noexcept {
     incarnations_.erase(window.value());
+}
+
+bool taskRefreshFailureCanStabilize(const foundation::Error &error) noexcept {
+    const auto kind = classifyTaskRefreshFailure(error);
+    return kind == EwmhTaskRefreshFailureKind::ownerUnavailable ||
+           kind == EwmhTaskRefreshFailureKind::clientListUnavailable ||
+           kind == EwmhTaskRefreshFailureKind::ownerChanged ||
+           kind == EwmhTaskRefreshFailureKind::clientListChanged;
+}
+
+EwmhTaskRefreshFailureKind classifyTaskRefreshFailure(const foundation::Error &error) noexcept {
+    if (error.code == ErrorCode::io_error) {
+        return EwmhTaskRefreshFailureKind::transport;
+    }
+    const std::string_view message{error.message};
+    if (message == ownerUnavailableMessage) {
+        return EwmhTaskRefreshFailureKind::ownerUnavailable;
+    }
+    if (message == ownerMalformedMessage) {
+        return EwmhTaskRefreshFailureKind::ownerMalformed;
+    }
+    if (message == capabilitiesMalformedMessage) {
+        return EwmhTaskRefreshFailureKind::capabilitiesMalformed;
+    }
+    if (message == clientListUnsupportedMessage) {
+        return EwmhTaskRefreshFailureKind::clientListUnsupported;
+    }
+    if (message == clientListUnavailableMessage) {
+        return EwmhTaskRefreshFailureKind::clientListUnavailable;
+    }
+    if (message == clientListMalformedMessage ||
+        message == "The mandatory EWMH client list exceeds its window bound.") {
+        return EwmhTaskRefreshFailureKind::clientListMalformed;
+    }
+    if (message == stackingMalformedMessage ||
+        message == "The optional EWMH stacking list exceeds its window bound.") {
+        return EwmhTaskRefreshFailureKind::stackingMalformed;
+    }
+    if (message == activeWindowMalformedMessage) {
+        return EwmhTaskRefreshFailureKind::activeWindowMalformed;
+    }
+    if (message == ownerChangedMessage) {
+        return EwmhTaskRefreshFailureKind::ownerChanged;
+    }
+    if (message == changingRootSnapshotMessage) {
+        return EwmhTaskRefreshFailureKind::clientListChanged;
+    }
+    return EwmhTaskRefreshFailureKind::other;
+}
+
+std::string_view ewmhTaskRefreshFailureKindId(EwmhTaskRefreshFailureKind kind) noexcept {
+    switch (kind) {
+    case EwmhTaskRefreshFailureKind::ownerUnavailable:
+        return "owner_unavailable";
+    case EwmhTaskRefreshFailureKind::ownerMalformed:
+        return "owner_malformed";
+    case EwmhTaskRefreshFailureKind::capabilitiesMalformed:
+        return "capabilities_malformed";
+    case EwmhTaskRefreshFailureKind::clientListUnsupported:
+        return "client_list_unsupported";
+    case EwmhTaskRefreshFailureKind::clientListUnavailable:
+        return "client_list_unavailable";
+    case EwmhTaskRefreshFailureKind::clientListMalformed:
+        return "client_list_malformed";
+    case EwmhTaskRefreshFailureKind::stackingMalformed:
+        return "stacking_malformed";
+    case EwmhTaskRefreshFailureKind::activeWindowMalformed:
+        return "active_window_malformed";
+    case EwmhTaskRefreshFailureKind::ownerChanged:
+        return "owner_changed";
+    case EwmhTaskRefreshFailureKind::clientListChanged:
+        return "client_list_changed";
+    case EwmhTaskRefreshFailureKind::transport:
+        return "transport";
+    case EwmhTaskRefreshFailureKind::other:
+        return "other";
+    }
+    return "other";
 }
 
 } // namespace prismdrake::x11

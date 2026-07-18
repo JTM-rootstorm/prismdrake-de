@@ -25,6 +25,7 @@ namespace prismdrake::x11 {
 namespace {
 
 using namespace std::chrono_literals;
+using foundation::ErrorCode;
 
 static_assert(maximumTaskRefreshAttempts == 4U,
               "Task snapshot retries must remain at the reviewed small bound.");
@@ -51,6 +52,51 @@ TEST(EwmhTaskSourceRetryPolicyTest, MalformedSnapshotsExhaustExactBound) {
     }
     EXPECT_EQ(attempts, maximumTaskRefreshAttempts);
     EXPECT_FALSE(taskSnapshotAttemptAllowed(attempts));
+}
+
+TEST(EwmhTaskSourceRetryPolicyTest, OnlyTransientTopologyFailuresCanStabilize) {
+    EXPECT_TRUE(taskRefreshFailureCanStabilize(
+        {ErrorCode::not_found, "A verified EWMH task-list owner is unavailable.", "retry"}));
+    EXPECT_TRUE(taskRefreshFailureCanStabilize(
+        {ErrorCode::validation_error,
+         "The mandatory EWMH task membership changed during one observation.", "retry"}));
+    EXPECT_FALSE(taskRefreshFailureCanStabilize(
+        {ErrorCode::validation_error, "The EWMH root task snapshot changed or is malformed.",
+         "discard"}));
+    EXPECT_FALSE(taskRefreshFailureCanStabilize(
+        {ErrorCode::too_large, "The task property is oversized.", "discard"}));
+}
+
+TEST(EwmhTaskSourceRetryPolicyTest, ExposesFixedRedactedFailureCategories) {
+    const std::array categories{
+        std::pair{foundation::Error{ErrorCode::validation_error,
+                                    "The EWMH task-list owner property is malformed.", "x"},
+                  EwmhTaskRefreshFailureKind::ownerMalformed},
+        std::pair{foundation::Error{ErrorCode::validation_error,
+                                    "The EWMH task-list owner contract is malformed.", "x"},
+                  EwmhTaskRefreshFailureKind::capabilitiesMalformed},
+        std::pair{foundation::Error{ErrorCode::validation_error,
+                                    "The mandatory EWMH client list is malformed.", "x"},
+                  EwmhTaskRefreshFailureKind::clientListMalformed},
+        std::pair{foundation::Error{ErrorCode::validation_error,
+                                    "The optional EWMH stacking list is malformed.", "x"},
+                  EwmhTaskRefreshFailureKind::stackingMalformed},
+        std::pair{foundation::Error{ErrorCode::validation_error,
+                                    "The optional EWMH active-window property is malformed.", "x"},
+                  EwmhTaskRefreshFailureKind::activeWindowMalformed},
+        std::pair{foundation::Error{ErrorCode::validation_error,
+                                    "The EWMH task-list owner changed during one observation.",
+                                    "x"},
+                  EwmhTaskRefreshFailureKind::ownerChanged},
+        std::pair{foundation::Error{
+                      ErrorCode::validation_error,
+                      "The mandatory EWMH task membership changed during one observation.", "x"},
+                  EwmhTaskRefreshFailureKind::clientListChanged},
+    };
+    for (const auto &[error, expected] : categories) {
+        EXPECT_EQ(classifyTaskRefreshFailure(error), expected);
+        EXPECT_NE(ewmhTaskRefreshFailureKindId(expected), "other");
+    }
 }
 
 struct FreeDeleter final {
@@ -361,6 +407,95 @@ TEST_F(EwmhTaskSourceIntegrationTest, PublishesBoundedMetadataFromVerifiedOwner)
     EXPECT_EQ(snapshot.value()->tasks()[0].fallbackIconName(), "application-x-executable");
     EXPECT_FALSE(snapshot.value()->tasks()[1].active());
     EXPECT_TRUE(snapshot.value()->tasks()[1].urgent());
+}
+
+TEST_F(EwmhTaskSourceIntegrationTest, DegradesValidOptionalContradictionsOnly) {
+    const auto owner = createWindow();
+    const auto first = createWindow();
+    const auto second = createWindow();
+    const auto stale = createWindow();
+    configureOwner(owner);
+    const std::array<std::uint32_t, 2U> clients{first, second};
+    const std::array<std::uint32_t, 1U> incompleteStacking{second};
+    configureRoot(clients, incompleteStacking, stale);
+    configureClient(first, "First task");
+    configureClient(second, "Second task");
+    flushChecked();
+
+    auto connection = X11Connection::connect(display_);
+    ASSERT_TRUE(connection);
+    auto source = EwmhTaskSource::create(connection.value());
+    ASSERT_TRUE(source);
+    auto observed = source.value().refresh(connection.value());
+    ASSERT_TRUE(observed);
+    EXPECT_EQ(observed.value().authoritative.clientList().size(), 2U);
+    EXPECT_EQ(observed.value().authoritative.stackingOrder().size(), 2U);
+    EXPECT_EQ(observed.value().authoritative.stackingSource(),
+              EwmhStackingSource::clientListFallback);
+    EXPECT_FALSE(observed.value().authoritative.activeWindow());
+    EXPECT_TRUE(observed.value().authoritative.stackingSetDisagreed());
+    EXPECT_TRUE(observed.value().authoritative.staleActiveWindowCleared());
+}
+
+TEST_F(EwmhTaskSourceIntegrationTest, RejectsMalformedCapabilitiesAndMandatoryClientEncoding) {
+    const auto owner = createWindow();
+    const auto client = createWindow();
+    configureOwner(owner);
+    const std::array<std::uint32_t, 1U> ownerValue{owner};
+    replace32(root_, atoms_.supportingCheck, XCB_ATOM_CARDINAL, ownerValue);
+    flushChecked();
+
+    auto connection = X11Connection::connect(display_);
+    ASSERT_TRUE(connection);
+    auto source = EwmhTaskSource::create(connection.value());
+    ASSERT_TRUE(source);
+    auto malformedCapabilities = source.value().refresh(connection.value());
+    ASSERT_FALSE(malformedCapabilities);
+    EXPECT_EQ(malformedCapabilities.error().code, ErrorCode::validation_error);
+    EXPECT_EQ(classifyTaskRefreshFailure(malformedCapabilities.error()),
+              EwmhTaskRefreshFailureKind::capabilitiesMalformed);
+    EXPECT_FALSE(taskRefreshFailureCanStabilize(malformedCapabilities.error()));
+
+    configureOwner(owner);
+    const std::array<std::uint32_t, 1U> clients{client};
+    replace32(root_, atoms_.clientList, XCB_ATOM_CARDINAL, clients);
+    replace32(root_, atoms_.clientListStacking, XCB_ATOM_WINDOW, clients);
+    configureClient(client, "Mandatory encoding");
+    flushChecked();
+    auto wrongType = source.value().refresh(connection.value());
+    ASSERT_FALSE(wrongType);
+    EXPECT_EQ(wrongType.error().code, ErrorCode::validation_error);
+    EXPECT_EQ(classifyTaskRefreshFailure(wrongType.error()),
+              EwmhTaskRefreshFailureKind::clientListMalformed);
+    EXPECT_FALSE(taskRefreshFailureCanStabilize(wrongType.error()));
+
+    const std::array<std::uint32_t, 2U> duplicates{client, client};
+    configureRoot(duplicates, duplicates, client);
+    flushChecked();
+    auto duplicateClient = source.value().refresh(connection.value());
+    ASSERT_FALSE(duplicateClient);
+    EXPECT_EQ(duplicateClient.error().code, ErrorCode::validation_error);
+    EXPECT_EQ(classifyTaskRefreshFailure(duplicateClient.error()),
+              EwmhTaskRefreshFailureKind::clientListMalformed);
+    EXPECT_FALSE(taskRefreshFailureCanStabilize(duplicateClient.error()));
+
+    configureRoot(clients, clients, client);
+    replace32(root_, atoms_.clientListStacking, XCB_ATOM_CARDINAL, clients);
+    flushChecked();
+    auto malformedStacking = source.value().refresh(connection.value());
+    ASSERT_FALSE(malformedStacking);
+    EXPECT_EQ(classifyTaskRefreshFailure(malformedStacking.error()),
+              EwmhTaskRefreshFailureKind::stackingMalformed);
+    EXPECT_FALSE(taskRefreshFailureCanStabilize(malformedStacking.error()));
+
+    configureRoot(clients, clients, client);
+    replace32(root_, atoms_.activeWindow, XCB_ATOM_CARDINAL, clients);
+    flushChecked();
+    auto malformedActive = source.value().refresh(connection.value());
+    ASSERT_FALSE(malformedActive);
+    EXPECT_EQ(classifyTaskRefreshFailure(malformedActive.error()),
+              EwmhTaskRefreshFailureKind::activeWindowMalformed);
+    EXPECT_FALSE(taskRefreshFailureCanStabilize(malformedActive.error()));
 }
 
 TEST_F(EwmhTaskSourceIntegrationTest, ClientPropertyHintsRefreshOneStableLifetime) {

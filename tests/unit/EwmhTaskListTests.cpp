@@ -58,6 +58,43 @@ TEST(EwmhTaskListTest, MissingOptionalPropertiesUseDeterministicClientListFallba
     EXPECT_EQ(values(reordered.value().stackingOrder()), (std::vector<std::uint32_t>{5U, 8U, 2U}));
 }
 
+TEST(EwmhTaskListTest, ValidOptionalContradictionsDegradeWithoutChangingMembership) {
+    const auto incompleteStacking =
+        buildEwmhTaskListSnapshot(observation({1U, 2U}, std::vector<std::uint32_t>{2U}, 3U));
+    ASSERT_TRUE(incompleteStacking);
+    EXPECT_EQ(values(incompleteStacking.value().clientList()),
+              (std::vector<std::uint32_t>{1U, 2U}));
+    EXPECT_EQ(values(incompleteStacking.value().stackingOrder()),
+              (std::vector<std::uint32_t>{1U, 2U}));
+    EXPECT_EQ(incompleteStacking.value().stackingSource(), EwmhStackingSource::clientListFallback);
+    EXPECT_FALSE(incompleteStacking.value().activeWindow());
+    EXPECT_TRUE(incompleteStacking.value().stackingSetDisagreed());
+    EXPECT_TRUE(incompleteStacking.value().staleActiveWindowCleared());
+
+    const auto differentStacking =
+        buildEwmhTaskListSnapshot(observation({1U, 2U}, std::vector<std::uint32_t>{2U, 3U}, 2U));
+    ASSERT_TRUE(differentStacking);
+    EXPECT_EQ(values(differentStacking.value().stackingOrder()),
+              (std::vector<std::uint32_t>{1U, 2U}));
+    ASSERT_TRUE(differentStacking.value().activeWindow());
+    EXPECT_EQ(differentStacking.value().activeWindow()->value(), 2U);
+    EXPECT_TRUE(differentStacking.value().stackingSetDisagreed());
+    EXPECT_FALSE(differentStacking.value().staleActiveWindowCleared());
+}
+
+TEST(EwmhTaskListTest, MembershipComparisonIgnoresOptionalVolatility) {
+    const auto first =
+        buildEwmhTaskListSnapshot(observation({1U, 2U}, std::vector<std::uint32_t>{2U, 1U}, 1U));
+    const auto second =
+        buildEwmhTaskListSnapshot(observation({1U, 2U}, std::vector<std::uint32_t>{1U}, 3U));
+    const auto changed = buildEwmhTaskListSnapshot(observation({2U, 1U}));
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    ASSERT_TRUE(changed);
+    EXPECT_TRUE(sameEwmhTaskMembership(first.value(), second.value()));
+    EXPECT_FALSE(sameEwmhTaskMembership(first.value(), changed.value()));
+}
+
 TEST(EwmhTaskListTest, AcceptsPresentEmptyListsWithoutInventingTasks) {
     const auto fallback = buildEwmhTaskListSnapshot(observation({}));
     ASSERT_TRUE(fallback);
@@ -94,32 +131,18 @@ TEST(EwmhTaskListTest, RejectsZeroAndDuplicateIdentifiersInEitherList) {
     }
 }
 
-TEST(EwmhTaskListTest, RejectsStackingListsThatAreNotExactClientPermutations) {
-    const std::array malformed{
-        observation({1U, 2U}, std::vector<std::uint32_t>{1U}),
-        observation({1U, 2U}, std::vector<std::uint32_t>{1U, 3U}),
-        observation({1U}, std::vector<std::uint32_t>{1U, 2U}),
-    };
-
-    for (const auto &item : malformed) {
-        const auto snapshot = buildEwmhTaskListSnapshot(item);
-        ASSERT_FALSE(snapshot);
-        EXPECT_EQ(snapshot.error().code, ErrorCode::validation_error);
-    }
-}
-
-TEST(EwmhTaskListTest, RejectsZeroOrNonmemberActiveWindows) {
+TEST(EwmhTaskListTest, RejectsZeroActiveWindowButDegradesValidNonmember) {
     const auto zero = buildEwmhTaskListSnapshot(observation({1U, 2U}, std::nullopt, 0U));
     ASSERT_FALSE(zero);
     EXPECT_EQ(zero.error().code, ErrorCode::validation_error);
 
     const auto nonmember = buildEwmhTaskListSnapshot(observation({1U, 2U}, std::nullopt, 3U));
-    ASSERT_FALSE(nonmember);
-    EXPECT_EQ(nonmember.error().code, ErrorCode::validation_error);
+    ASSERT_TRUE(nonmember);
+    EXPECT_FALSE(nonmember.value().activeWindow());
 
     const auto activeWithNoClients = buildEwmhTaskListSnapshot(observation({}, std::nullopt, 1U));
-    ASSERT_FALSE(activeWithNoClients);
-    EXPECT_EQ(activeWithNoClients.error().code, ErrorCode::validation_error);
+    ASSERT_TRUE(activeWithNoClients);
+    EXPECT_FALSE(activeWithNoClients.value().activeWindow());
 }
 
 TEST(EwmhTaskListTest, EnforcesStrictIndependentListBounds) {
