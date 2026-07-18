@@ -116,8 +116,10 @@ struct Scenario final {
         return QStringLiteral("metal");
     case QSGRendererInterface::Null:
         return QStringLiteral("null");
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
     case QSGRendererInterface::Direct3D12:
         return QStringLiteral("direct3d12");
+#endif
     }
     return QStringLiteral("unsupported");
 }
