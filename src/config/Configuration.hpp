@@ -9,6 +9,7 @@ namespace prismdrake::config {
 enum class Profile : std::uint8_t { lustre, forge };
 enum class BlurQuality : std::uint8_t { off, low, balanced, high };
 enum class PanelEdge : std::uint8_t { top, right, bottom, left };
+enum class PanelOutputPolicy : std::uint8_t { primary, all, named };
 enum class AutohideMode : std::uint8_t { never, always, overlap };
 enum class GroupingMode : std::uint8_t { always, when_full, never };
 enum class ClockFormat : std::uint8_t { locale, hour_12, hour_24 };
@@ -19,7 +20,7 @@ enum class NotificationHistory : std::uint8_t { disabled, session, persistent };
 enum class WallpaperMode : std::uint8_t { solid, center, fit, fill, stretch, tile };
 enum class FocusEmphasis : std::uint8_t { standard, strong };
 
-/// Immutable, normalized appearance values from configuration version 1.
+/// Immutable, normalized appearance values from configuration version 2.
 struct Appearance final {
     const std::string accent;
     const bool transparencyEnabled;
@@ -40,6 +41,7 @@ struct Panel final {
     const AutohideMode autohide;
     const GroupingMode grouping;
     const ClockFormat clockFormat;
+    const PanelOutputPolicy outputPolicy;
     const std::vector<std::string> outputs;
 
     friend bool operator==(const Panel &, const Panel &) = default;
@@ -63,6 +65,8 @@ struct Notifications final {
 };
 
 struct Desktop final {
+    const std::string wallpaperSource;
+    const std::string backgroundColor;
     const WallpaperMode wallpaperMode;
     const bool iconsEnabled;
 

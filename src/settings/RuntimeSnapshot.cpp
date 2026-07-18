@@ -52,6 +52,11 @@ template <typename Enum, typename Value, std::size_t Size>
     return enumId(value, ids);
 }
 
+[[nodiscard]] std::string_view panelOutputPolicyId(config::PanelOutputPolicy value) {
+    constexpr std::array ids{"primary", "all", "named"};
+    return enumId(value, ids);
+}
+
 [[nodiscard]] std::string_view autohideId(config::AutohideMode value) {
     constexpr std::array ids{"never", "always", "overlap"};
     return enumId(value, ids);
@@ -135,6 +140,7 @@ template <typename Enum, typename Value, std::size_t Size>
               {"autohide", autohideId(configuration.panel.autohide)},
               {"grouping", groupingId(configuration.panel.grouping)},
               {"clock_format", clockFormatId(configuration.panel.clockFormat)},
+              {"output_policy", panelOutputPolicyId(configuration.panel.outputPolicy)},
               {"outputs", configuration.panel.outputs}}},
             {"launcher",
              {{"layout", launcherLayoutId(configuration.launcher.layout)},
@@ -146,7 +152,9 @@ template <typename Enum, typename Value, std::size_t Size>
               {"default_timeout_ms", configuration.notifications.defaultTimeoutMs},
               {"do_not_disturb", configuration.notifications.doNotDisturb}}},
             {"desktop",
-             {{"wallpaper_mode", wallpaperModeId(configuration.desktop.wallpaperMode)},
+             {{"wallpaper_source", configuration.desktop.wallpaperSource},
+              {"background_color", configuration.desktop.backgroundColor},
+              {"wallpaper_mode", wallpaperModeId(configuration.desktop.wallpaperMode)},
               {"icons_enabled", configuration.desktop.iconsEnabled}}},
             {"integration",
              {{"export_gtk", configuration.integration.exportGtk},

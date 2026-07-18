@@ -145,7 +145,8 @@ class FakeSettingsService final {
                                   sd_bus_error *error) noexcept {
         auto &self = *static_cast<FakeSettingsService *>(userdata);
         std::uint32_t version = 0U;
-        if (sd_bus_message_read(message, "u", &version) <= 0 || version != 1U ||
+        if (sd_bus_message_read(message, "u", &version) <= 0 ||
+            version != prismdrake::settings::runtimeSnapshotSchemaVersion ||
             sd_bus_message_at_end(message, 1) <= 0) {
             return sd_bus_error_set_const(error, "org.prismdrake.Settings1.Error.Unsupported",
                                           "Unsupported snapshot version.");

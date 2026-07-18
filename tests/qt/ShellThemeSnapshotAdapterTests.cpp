@@ -4,8 +4,8 @@
 
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -24,10 +24,14 @@ namespace {
 class TemporaryDirectory final {
   public:
     TemporaryDirectory() {
-        static std::atomic_uint counter{0U};
-        path_ = std::filesystem::temp_directory_path() /
-                ("prismdrake-shell-theme-test-" + std::to_string(counter.fetch_add(1U)));
-        std::filesystem::create_directories(path_);
+        std::string pathTemplate =
+            (std::filesystem::temp_directory_path() / "prismdrake-shell-theme-test.XXXXXX")
+                .string();
+        char *created = ::mkdtemp(pathTemplate.data());
+        if (created == nullptr) {
+            throw std::runtime_error("mkdtemp failed");
+        }
+        path_ = created;
     }
 
     ~TemporaryDirectory() { std::filesystem::remove_all(path_); }

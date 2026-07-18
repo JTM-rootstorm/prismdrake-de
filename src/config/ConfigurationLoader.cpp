@@ -106,7 +106,19 @@ Result<Configuration> validateAndWriteUserConfiguration(const ConfigurationLocat
         return configuration;
     }
 
-    auto write = foundation::writeFileAtomically(locations.user, input);
+    auto serialized = serializeConfigurationTomlV2(configuration.value());
+    if (!serialized) {
+        return Result<Configuration>::failure(std::move(serialized).error());
+    }
+    auto roundTrip = parseConfigurationToml(serialized.value(), options);
+    if (!roundTrip || roundTrip.value() != configuration.value()) {
+        return Result<Configuration>::failure(
+            {ErrorCode::validation_error,
+             "The normalized version-2 configuration failed round-trip validation.",
+             "Retain the existing user file and report the configuration serializer failure."});
+    }
+
+    auto write = foundation::writeFileAtomically(locations.user, serialized.value());
     if (!write) {
         return Result<Configuration>::failure(std::move(write).error());
     }

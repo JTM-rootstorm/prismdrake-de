@@ -1030,7 +1030,7 @@ def current_snapshot(gdbus: Path) -> dict[str, Any]:
     result = run_checked([
         str(gdbus), "call", "--session", "--dest", "org.prismdrake.Settings1",
         "--object-path", "/org/prismdrake/Settings1", "--method",
-        "org.prismdrake.SettingsSnapshot1.GetCurrentSnapshot", "1",
+        "org.prismdrake.SettingsSnapshot1.GetCurrentSnapshot", "2",
     ], timeout=2)
     require(result.returncode == 0, "settings_snapshot_unavailable")
     octets = bytes(int(value, 16) for value in re.findall(r"0x([0-9a-fA-F]{2})", result.stdout))

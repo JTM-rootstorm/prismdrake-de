@@ -15,7 +15,7 @@
 
 namespace prismdrake::settings {
 
-inline constexpr std::uint32_t runtimeSnapshotSchemaVersion = 1U;
+inline constexpr std::uint32_t runtimeSnapshotSchemaVersion = 2U;
 
 enum class SettingsDomain : std::uint8_t {
     profile,

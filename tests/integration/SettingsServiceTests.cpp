@@ -245,7 +245,7 @@ class SettingsServiceFixture : public ::testing::Test {
     }
 
     [[nodiscard]] std::pair<std::uint64_t, std::string>
-    currentSnapshot(std::uint32_t version = 1U) {
+    currentSnapshot(std::uint32_t version = 2U) {
         ErrorCapture error;
         Message reply;
         if (sd_bus_call_method(bus_.get(), serviceName, objectPath, snapshotInterface,
@@ -408,8 +408,9 @@ TEST_F(SettingsServiceFixture, ProfileRequestsAreAtomicAndTyped) {
     EXPECT_EQ(profileValue.profile, "forge");
     EXPECT_EQ(profileValue.generation, 2U);
 
-    const std::uint32_t unsupported = 2U;
-    EXPECT_EQ(callVersionErrorName(snapshotInterface, "GetCurrentSnapshot", unsupported),
+    EXPECT_EQ(callVersionErrorName(snapshotInterface, "GetCurrentSnapshot", 1U),
+              "org.prismdrake.Settings1.Error.UnsupportedSnapshotVersion");
+    EXPECT_EQ(callVersionErrorName(snapshotInterface, "GetCurrentSnapshot", 3U),
               "org.prismdrake.Settings1.Error.UnsupportedSnapshotVersion");
 }
 

@@ -53,12 +53,16 @@ class ParsedConfiguration final {
 [[nodiscard]] foundation::Result<ParsedConfiguration>
 parseConfigurationSyntax(std::string_view input);
 
-/// Validates a syntax-valid document against the complete version-1 semantic contract.
+/// Validates a syntax-valid version-1 or version-2 document and normalizes it to version 2.
 [[nodiscard]] foundation::Result<Configuration>
 validateConfiguration(const ParsedConfiguration &document, ConfigurationParseOptions options = {});
 
 /// Fuzz-friendly bounded convenience entry point for syntax and semantic validation.
 [[nodiscard]] foundation::Result<Configuration>
 parseConfigurationToml(std::string_view input, ConfigurationParseOptions options = {});
+
+/// Serializes one normalized configuration as a complete version-2 TOML document.
+[[nodiscard]] foundation::Result<std::string>
+serializeConfigurationTomlV2(const Configuration &configuration);
 
 } // namespace prismdrake::config

@@ -60,13 +60,14 @@ TEST(ConfigurationParserTest, ParsesEveryCommittedCompleteConfiguration) {
         std::string_view{"examples/config/lustre.toml"},
         std::string_view{"examples/config/forge.toml"},
         std::string_view{"examples/config/accessible.toml"},
+        std::string_view{"examples/config/legacy-v1.toml"},
         std::string_view{"data/defaults/config.toml"},
     };
 
     for (const auto fixture : fixtures) {
         const auto result = parseConfigurationToml(readFixture(fixture));
         ASSERT_TRUE(result) << fixture << ": " << result.error().message;
-        EXPECT_EQ(result.value().schemaVersion, 1U);
+        EXPECT_EQ(result.value().schemaVersion, 2U);
     }
 }
 
@@ -83,9 +84,13 @@ TEST(ConfigurationParserTest, NormalizesEveryDomainIntoTypedValues) {
     EXPECT_EQ(config.panel.edge, PanelEdge::bottom);
     EXPECT_EQ(config.panel.sizePx, 48U);
     EXPECT_EQ(config.panel.grouping, GroupingMode::when_full);
+    EXPECT_EQ(config.panel.outputPolicy, PanelOutputPolicy::primary);
+    EXPECT_TRUE(config.panel.outputs.empty());
     ASSERT_EQ(config.launcher.searchProviders.size(), 2U);
     EXPECT_EQ(config.notifications.defaultTimeoutMs, 5000U);
     EXPECT_EQ(config.desktop.wallpaperMode, WallpaperMode::fill);
+    EXPECT_TRUE(config.desktop.wallpaperSource.empty());
+    EXPECT_EQ(config.desktop.backgroundColor, "#182033");
     EXPECT_TRUE(config.integration.exportXsettings);
     EXPECT_EQ(config.accessibility.minimumTargetSizePx, 40U);
     EXPECT_TRUE(config.keyboard.menuKeyOpensLauncher);
@@ -106,7 +111,7 @@ TEST(ConfigurationParserTest, RebuildsOnlyTheRequestedProfile) {
 }
 
 TEST(ConfigurationParserTest, KeepsSyntaxAndSemanticValidationSeparate) {
-    const auto incomplete = replaceOnce(validConfiguration(), "schema_version = 1\n", "");
+    const auto incomplete = replaceOnce(validConfiguration(), "schema_version = 2\n", "");
 
     auto parsed = parseConfigurationSyntax(incomplete);
     ASSERT_TRUE(parsed);
@@ -154,13 +159,58 @@ TEST(ConfigurationParserTest, EnforcesTheBoundedInMemoryEntryPoint) {
 
 TEST(ConfigurationParserTest, RejectsUnsupportedVersionBeforePublication) {
     const auto input =
-        replaceOnce(validConfiguration(), "schema_version = 1", "schema_version = 2");
+        replaceOnce(validConfiguration(), "schema_version = 2", "schema_version = 3");
 
     const auto result = parseConfigurationToml(input);
 
     ASSERT_FALSE(result);
     EXPECT_EQ(result.error().code, ErrorCode::unsupported);
     EXPECT_NE(result.error().message.find("schema_version"), std::string::npos);
+}
+
+TEST(ConfigurationParserTest, NormalizesLegacyVersionWithoutRequiringNewFields) {
+    auto legacy = readFixture("examples/config/legacy-v1.toml");
+    const auto primary = parseConfigurationToml(legacy);
+    ASSERT_TRUE(primary);
+    EXPECT_EQ(primary.value().schemaVersion, 2U);
+    EXPECT_EQ(primary.value().panel.outputPolicy, PanelOutputPolicy::primary);
+    EXPECT_TRUE(primary.value().desktop.wallpaperSource.empty());
+    EXPECT_EQ(primary.value().desktop.backgroundColor, "#182033");
+
+    legacy = replaceOnce(std::move(legacy), "outputs = []", "outputs = [\"DP-1\"]");
+    const auto named = parseConfigurationToml(legacy);
+    ASSERT_TRUE(named);
+    EXPECT_EQ(named.value().panel.outputPolicy, PanelOutputPolicy::named);
+    EXPECT_EQ(named.value().panel.outputs, std::vector<std::string>{"DP-1"});
+}
+
+TEST(ConfigurationParserTest, ValidatesVersionTwoOutputAndDesktopFields) {
+    const auto all =
+        replaceOnce(validConfiguration(), "output_policy = \"primary\"", "output_policy = \"all\"");
+    const auto parsedAll = parseConfigurationToml(all);
+    ASSERT_TRUE(parsedAll);
+    EXPECT_EQ(parsedAll.value().panel.outputPolicy, PanelOutputPolicy::all);
+
+    auto named = replaceOnce(validConfiguration(), "output_policy = \"primary\"",
+                             "output_policy = \"named\"");
+    named = replaceOnce(std::move(named), "outputs = []", "outputs = [\"DP-1\"]");
+    named = replaceOnce(std::move(named), "wallpaper_source = \"\"",
+                        "wallpaper_source = \"wallpapers/original.png\"");
+    const auto parsed = parseConfigurationToml(named);
+    ASSERT_TRUE(parsed);
+    EXPECT_EQ(parsed.value().panel.outputPolicy, PanelOutputPolicy::named);
+    EXPECT_EQ(parsed.value().desktop.wallpaperSource, "wallpapers/original.png");
+
+    const auto invalidPolicy = replaceOnce(validConfiguration(), "output_policy = \"primary\"",
+                                           "output_policy = \"automatic\"");
+    EXPECT_FALSE(parseConfigurationToml(invalidPolicy));
+
+    const auto invalidColor = replaceOnce(validConfiguration(), "background_color = \"#182033\"",
+                                          "background_color = \"#18203G\"");
+    EXPECT_FALSE(parseConfigurationToml(invalidColor));
+
+    const auto missingSource = replaceOnce(validConfiguration(), "wallpaper_source = \"\"\n", "");
+    EXPECT_FALSE(parseConfigurationToml(missingSource));
 }
 
 TEST(ConfigurationParserTest, RejectsUnknownKeysWithoutEchoingTheirValuesOrNames) {

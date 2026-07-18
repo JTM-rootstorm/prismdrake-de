@@ -5,10 +5,11 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <atomic>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <set>
+#include <stdexcept>
 #include <string>
 
 namespace prismdrake::settings {
@@ -17,10 +18,13 @@ namespace {
 class TemporaryDirectory final {
   public:
     TemporaryDirectory() {
-        static std::atomic_uint counter{0U};
-        path_ = std::filesystem::temp_directory_path() /
-                ("prismdrake-settings-test-" + std::to_string(counter.fetch_add(1U)));
-        std::filesystem::create_directories(path_);
+        std::string pathTemplate =
+            (std::filesystem::temp_directory_path() / "prismdrake-settings-test.XXXXXX").string();
+        char *created = ::mkdtemp(pathTemplate.data());
+        if (created == nullptr) {
+            throw std::runtime_error("mkdtemp failed");
+        }
+        path_ = created;
     }
 
     ~TemporaryDirectory() { std::filesystem::remove_all(path_); }
@@ -138,6 +142,28 @@ TEST(SettingsEngineTest, ReloadClearsTheRuntimeProfileOverride) {
     EXPECT_EQ(reloaded.value().snapshot->generation.value(), 3U);
     EXPECT_EQ(reloaded.value().snapshot->candidate.configuration.profile, config::Profile::lustre);
     EXPECT_FALSE(reloaded.value().snapshot->candidate.provenance.runtimeProfileOverride);
+}
+
+TEST(SettingsEngineTest, LegacyConfigurationPublishesOneAtomicVersionTwoGeneration) {
+    TemporaryDirectory temporary;
+    const auto options = optionsFor(temporary);
+    writeText(options.configurationLocations.user,
+              fixtureConfiguration("examples/config/legacy-v1.toml"));
+
+    auto engine = SettingsEngine::start(options);
+
+    ASSERT_TRUE(engine);
+    const auto snapshot = engine.value()->current();
+    ASSERT_TRUE(snapshot);
+    EXPECT_EQ(snapshot->generation.value(), 1U);
+    EXPECT_EQ(snapshot->snapshotSchemaVersion, 2U);
+    EXPECT_EQ(snapshot->candidate.configuration.schemaVersion, 2U);
+    EXPECT_EQ(snapshot->candidate.configuration.panel.outputPolicy,
+              config::PanelOutputPolicy::primary);
+    const auto document = nlohmann::json::parse(snapshot->serializedJson);
+    EXPECT_EQ(document.at("schema_version"), 2U);
+    EXPECT_EQ(document.at("settings").at("schema_version"), 2U);
+    EXPECT_EQ(document.at("settings").at("desktop").at("background_color"), "#182033");
 }
 
 TEST(SettingsEngineTest, CandidateValidationIsBoundedRedactedAndSideEffectFree) {
@@ -268,6 +294,9 @@ TEST(SettingsSnapshotTest, SerializesOneBoundedCompleteGenerationWithoutFilesyst
                                      "panel", "schema_version"}));
     EXPECT_FALSE(document.at("settings").contains("profile"));
     EXPECT_EQ(document.at("settings").at("appearance").at("accent"), "#4D7FFF");
+    EXPECT_EQ(document.at("settings").at("panel").at("output_policy"), "primary");
+    EXPECT_EQ(document.at("settings").at("desktop").at("wallpaper_source"), "");
+    EXPECT_EQ(document.at("settings").at("desktop").at("background_color"), "#182033");
     EXPECT_EQ(document.at("theme").at("profile_id"), "lustre");
     EXPECT_EQ(document.at("theme").at("profile_display_name"), "Prismdrake Lustre");
     EXPECT_EQ(document.at("theme").at("logical_source_ids"),

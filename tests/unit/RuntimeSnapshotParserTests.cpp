@@ -86,6 +86,22 @@ TEST(RuntimeSnapshotParserTest, RejectsGenerationMismatchAndNoncanonicalBytes) {
     EXPECT_FALSE(parseRuntimeSnapshot(source->generation.value(), source->serializedJson + "\n"));
 }
 
+TEST(RuntimeSnapshotParserTest, RejectsLegacyAndUnknownTransportVersions) {
+    const auto source = realSnapshot();
+    auto legacyTransport = nlohmann::ordered_json::parse(source->serializedJson);
+    legacyTransport["schema_version"] = 1U;
+    auto unknownTransport = nlohmann::ordered_json::parse(source->serializedJson);
+    unknownTransport["schema_version"] = 3U;
+    auto legacySettings = nlohmann::ordered_json::parse(source->serializedJson);
+    legacySettings["settings"]["schema_version"] = 1U;
+
+    const auto legacy = parseRuntimeSnapshot(source->generation.value(), legacyTransport.dump());
+    ASSERT_FALSE(legacy);
+    EXPECT_EQ(legacy.error().code, foundation::ErrorCode::unsupported);
+    EXPECT_FALSE(parseRuntimeSnapshot(source->generation.value(), unknownTransport.dump()));
+    EXPECT_FALSE(parseRuntimeSnapshot(source->generation.value(), legacySettings.dump()));
+}
+
 TEST(RuntimeSnapshotParserTest, RejectsMalformedDuplicateDeepAndOversizedInputs) {
     const auto source = realSnapshot();
     auto duplicate = source->serializedJson;

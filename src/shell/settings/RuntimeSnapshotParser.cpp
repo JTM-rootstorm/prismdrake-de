@@ -135,13 +135,14 @@ class SnapshotBoundsSax final : public nlohmann::json_sax<Json> {
 }
 
 [[nodiscard]] std::string stringValue(const Json &parent, std::string_view key,
-                                      std::size_t maximum = maximumStringCodePoints) {
+                                      std::size_t maximum = maximumStringCodePoints,
+                                      bool allowEmpty = false) {
     const auto &value = parent.at(key);
     if (!value.is_string()) {
         throw std::domain_error("string expected");
     }
     auto result = value.get<std::string>();
-    if (result.empty() || utf8CodePointCount(result) > maximum) {
+    if ((!allowEmpty && result.empty()) || utf8CodePointCount(result) > maximum) {
         throw std::domain_error("bounded string expected");
     }
     return result;
@@ -333,7 +334,7 @@ template <typename Name, typename Enum, std::size_t Size>
 [[nodiscard]] config::Configuration configuration(const Json &document,
                                                   config::Profile activeProfile) {
     const auto &source = object(document, "settings");
-    if (integerValue<std::uint32_t>(source, "schema_version", 1U, 1U) != 1U) {
+    if (integerValue<std::uint32_t>(source, "schema_version", 2U, 2U) != 2U) {
         throw std::domain_error("settings version expected");
     }
     const auto &appearance = object(source, "appearance");
@@ -371,11 +372,16 @@ template <typename Name, typename Enum, std::size_t Size>
     constexpr std::array clockValues{std::pair{"locale", config::ClockFormat::locale},
                                      std::pair{"12_hour", config::ClockFormat::hour_12},
                                      std::pair{"24_hour", config::ClockFormat::hour_24}};
+    constexpr std::array outputPolicyValues{
+        std::pair{"primary", config::PanelOutputPolicy::primary},
+        std::pair{"all", config::PanelOutputPolicy::all},
+        std::pair{"named", config::PanelOutputPolicy::named}};
     config::Panel panelValue{enumValue(panel, "edge", edgeValues),
                              integerValue<std::uint16_t>(panel, "size_px", 24U, 192U),
                              enumValue(panel, "autohide", autohideValues),
                              enumValue(panel, "grouping", groupingValues),
                              enumValue(panel, "clock_format", clockValues),
+                             enumValue(panel, "output_policy", outputPolicyValues),
                              stringArray(panel, "outputs", 0U, 32U, 128U)};
 
     const auto &launcher = object(source, "launcher");
@@ -409,7 +415,15 @@ template <typename Name, typename Enum, std::size_t Size>
                                          std::pair{"fill", config::WallpaperMode::fill},
                                          std::pair{"stretch", config::WallpaperMode::stretch},
                                          std::pair{"tile", config::WallpaperMode::tile}};
-    config::Desktop desktopValue{enumValue(desktop, "wallpaper_mode", wallpaperValues),
+    auto backgroundColor = stringValue(desktop, "background_color", 7U);
+    if (backgroundColor.size() != 7U || backgroundColor.front() != '#' ||
+        !std::all_of(backgroundColor.begin() + 1, backgroundColor.end(),
+                     [](unsigned char character) { return std::isxdigit(character) != 0; })) {
+        throw std::domain_error("background color expected");
+    }
+    config::Desktop desktopValue{stringValue(desktop, "wallpaper_source", 128U, true),
+                                 std::move(backgroundColor),
+                                 enumValue(desktop, "wallpaper_mode", wallpaperValues),
                                  booleanValue(desktop, "icons_enabled")};
 
     const auto &integration = object(source, "integration");
@@ -434,7 +448,7 @@ template <typename Name, typename Enum, std::size_t Size>
         booleanValue(developer, "diagnostics_enabled"),
         stringArray(developer, "mock_capability_overrides", 0U, 64U, 128U)};
 
-    return {1U,
+    return {2U,
             activeProfile,
             std::move(appearanceValue),
             std::move(panelValue),
@@ -660,9 +674,12 @@ parseRuntimeSnapshot(std::uint64_t outerGeneration, std::string_view json) {
 
     try {
         const auto document = Json::parse(json.begin(), json.end());
-        if (!document.is_object() ||
-            integerValue<std::uint32_t>(document, "schema_version", 1U, 1U) !=
-                prismdrake::settings::runtimeSnapshotSchemaVersion) {
+        if (!document.is_object()) {
+            throw std::domain_error("snapshot object expected");
+        }
+        const auto schemaVersion = integerValue<std::uint32_t>(
+            document, "schema_version", 0U, std::numeric_limits<std::uint32_t>::max());
+        if (schemaVersion != prismdrake::settings::runtimeSnapshotSchemaVersion) {
             return Result<std::shared_ptr<const prismdrake::settings::SettingsSnapshot>>::failure(
                 invalidSnapshot(ErrorCode::unsupported));
         }

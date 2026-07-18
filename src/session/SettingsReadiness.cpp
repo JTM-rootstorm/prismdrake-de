@@ -18,7 +18,7 @@ constexpr char serviceName[] = "org.prismdrake.Settings1";
 constexpr char objectPath[] = "/org/prismdrake/Settings1";
 constexpr char snapshotInterface[] = "org.prismdrake.SettingsSnapshot1";
 constexpr char snapshotMethod[] = "GetCurrentSnapshot";
-constexpr std::uint32_t snapshotSchemaVersion = 1U;
+constexpr std::uint32_t snapshotSchemaVersion = 2U;
 
 class BusError final {
   public:
@@ -80,7 +80,7 @@ Result<SettingsReadiness> probeSettingsReadiness(std::chrono::milliseconds timeo
         bytes == nullptr) {
         return Result<SettingsReadiness>::failure(
             {ErrorCode::validation_error, "The settings readiness reply is invalid.",
-             "Restart settingsd and require one complete version-1 snapshot."});
+             "Restart settingsd and require one complete version-2 snapshot."});
     }
 
     return Result<SettingsReadiness>::success(SettingsReadiness{generation, size});

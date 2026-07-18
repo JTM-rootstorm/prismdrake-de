@@ -25,7 +25,9 @@ using foundation::Error;
 using foundation::ErrorCode;
 using foundation::Result;
 
-constexpr std::uint32_t supportedSchemaVersion = 1U;
+constexpr std::uint32_t legacySchemaVersion = 1U;
+constexpr std::uint32_t currentSchemaVersion = 2U;
+constexpr std::string_view legacyBackgroundColor = "#182033";
 
 [[nodiscard]] std::size_t utf8CodePointCount(std::string_view value) noexcept {
     return static_cast<std::size_t>(std::count_if(
@@ -55,11 +57,11 @@ constexpr std::uint32_t supportedSchemaVersion = 1U;
 
 [[nodiscard]] Error unsupportedVersionError() {
     return {ErrorCode::unsupported, "Configuration value is unsupported at $.schema_version.",
-            "Use configuration schema_version 1."};
+            "Use configuration schema_version 1 or 2."};
 }
 
 [[nodiscard]] Error missingFieldError(std::string_view path) {
-    return semanticError(path, "Add the required field using the documented version-1 type.");
+    return semanticError(path, "Add the required field using the documented schema type.");
 }
 
 [[nodiscard]] Error wrongTypeError(std::string_view path, std::string_view type) {
@@ -68,9 +70,8 @@ constexpr std::uint32_t supportedSchemaVersion = 1U;
 }
 
 [[nodiscard]] Error unknownKeyError(std::string_view table_path) {
-    return semanticError(
-        table_path.empty() ? "$" : table_path,
-        "Remove the unknown key; configuration version 1 is closed to extensions.");
+    return semanticError(table_path.empty() ? "$" : table_path,
+                         "Remove the unknown key; configuration schemas are closed to extensions.");
 }
 
 template <std::size_t Size>
@@ -171,6 +172,35 @@ template <std::size_t Size>
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+[[nodiscard]] Result<std::string>
+readPossiblyEmptyString(const toml::table &table, std::string_view key, std::string_view path) {
+    const auto *node = table.get(key);
+    if (node == nullptr) {
+        return Result<std::string>::failure(missingFieldError(path));
+    }
+    const auto *value = node->as_string();
+    if (value == nullptr) {
+        return Result<std::string>::failure(wrongTypeError(path, "string"));
+    }
+    const auto text = value->get();
+    if (text.size() > maximumConfigurationStringBytes ||
+        utf8CodePointCount(text) > maximumConfigurationStringCodePoints) {
+        return Result<std::string>::failure(
+            semanticError(path, "Use a UTF-8 string no longer than 128 Unicode code points."));
+    }
+    return Result<std::string>::success(text);
+}
+
+[[nodiscard]] bool isRgbColor(std::string_view value) noexcept {
+    const auto validHex = [](unsigned char character) {
+        return (character >= '0' && character <= '9') || (character >= 'A' && character <= 'F') ||
+               (character >= 'a' && character <= 'f');
+    };
+    return value.size() == 7U && value.front() == '#' &&
+           std::all_of(value.begin() + 1, value.end(), validHex);
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 [[nodiscard]] Result<bool> readBoolean(const toml::table &table, std::string_view key,
                                        std::string_view path) {
     const auto *node = table.get(key);
@@ -199,7 +229,7 @@ template <std::size_t Size>
     const auto number = value->get();
     if (number < minimum || number > maximum) {
         return Result<std::int64_t>::failure(
-            semanticError(path, "Use a value within the documented version-1 range."));
+            semanticError(path, "Use a value within the documented schema range."));
     }
     return Result<std::int64_t>::success(number);
 }
@@ -223,7 +253,7 @@ template <std::size_t Size>
 
     if (!std::isfinite(number) || number < minimum || number > maximum) {
         return Result<double>::failure(
-            semanticError(path, "Use a finite value within the documented version-1 range."));
+            semanticError(path, "Use a finite value within the documented schema range."));
     }
     return Result<double>::success(number);
 }
@@ -242,7 +272,7 @@ readEnum(const toml::table &table, std::string_view key, std::string_view path,
     });
     if (match == values.end()) {
         return Result<Enum>::failure(
-            semanticError(path, "Use one of the documented version-1 identifiers."));
+            semanticError(path, "Use one of the documented schema identifiers."));
     }
     return Result<Enum>::success(match->second);
 }
@@ -282,7 +312,7 @@ readEnumArray(const toml::table &table, std::string_view key, std::string_view p
         });
         if (match == values.end()) {
             return Result<std::vector<Enum>>::failure(
-                semanticError(path, "Use only documented version-1 identifiers."));
+                semanticError(path, "Use only documented schema identifiers."));
         }
         if (!seen.insert(match->second).second) {
             return Result<std::vector<Enum>>::failure(
@@ -334,6 +364,29 @@ readStringArray(const toml::table &table,
 
 template <typename T> [[nodiscard]] Result<T> forwardFailure(const Error &error) {
     return Result<T>::failure(error);
+}
+
+template <typename Enum, typename Value, std::size_t Size>
+[[nodiscard]] std::string_view enumId(Enum value, const std::array<Value, Size> &ids) {
+    return ids.at(static_cast<std::size_t>(value));
+}
+
+[[nodiscard]] toml::array stringArrayToml(const std::vector<std::string> &values) {
+    toml::array result;
+    for (const auto &value : values) {
+        result.push_back(value);
+    }
+    return result;
+}
+
+template <typename Enum, typename Value, std::size_t Size>
+[[nodiscard]] toml::array enumArrayToml(const std::vector<Enum> &values,
+                                        const std::array<Value, Size> &ids) {
+    toml::array result;
+    for (const auto value : values) {
+        result.push_back(enumId(value, ids));
+    }
+    return result;
 }
 
 } // namespace
@@ -396,9 +449,10 @@ Result<Configuration> validateConfiguration(const ParsedConfiguration &document,
     if (!schema_version) {
         return forwardFailure<Configuration>(schema_version.error());
     }
-    // Explicit version dispatch is the migration boundary. Version 1 is an identity path;
-    // every other version fails without an implicit or lossy migration.
-    if (schema_version.value() != supportedSchemaVersion) {
+    // Explicit version dispatch is the migration boundary. Version 1 is normalized in memory;
+    // every other historical or future version fails without an implicit or lossy migration.
+    const bool is_legacy = schema_version.value() == legacySchemaVersion;
+    if (!is_legacy && schema_version.value() != currentSchemaVersion) {
         return Result<Configuration>::failure(unsupportedVersionError());
     }
 
@@ -475,12 +529,7 @@ Result<Configuration> validateConfiguration(const ParsedConfiguration &document,
                                                : &icon_theme.error();
         return forwardFailure<Configuration>(*error);
     }
-    const auto valid_hex = [](unsigned char value) {
-        return (value >= '0' && value <= '9') || (value >= 'A' && value <= 'F') ||
-               (value >= 'a' && value <= 'f');
-    };
-    if (accent.value().size() != 7U || accent.value().front() != '#' ||
-        !std::all_of(accent.value().begin() + 1, accent.value().end(), valid_hex)) {
+    if (!isRgbColor(accent.value())) {
         return Result<Configuration>::failure(
             semanticError("appearance.accent", "Use an RGB color in #RRGGBB form."));
     }
@@ -488,12 +537,20 @@ Result<Configuration> validateConfiguration(const ParsedConfiguration &document,
     if (!panel_table) {
         return forwardFailure<Configuration>(panel_table.error());
     }
-    constexpr std::array panel_keys = {
+    constexpr std::array legacy_panel_keys = {
         std::string_view{"edge"},         std::string_view{"size_px"},
         std::string_view{"autohide"},     std::string_view{"grouping"},
         std::string_view{"clock_format"}, std::string_view{"outputs"},
     };
-    auto panel_shape = validateTableShape(*panel_table.value(), "panel", panel_keys);
+    constexpr std::array current_panel_keys = {
+        std::string_view{"edge"},         std::string_view{"size_px"},
+        std::string_view{"autohide"},     std::string_view{"grouping"},
+        std::string_view{"clock_format"}, std::string_view{"output_policy"},
+        std::string_view{"outputs"},
+    };
+    auto panel_shape = is_legacy
+                           ? validateTableShape(*panel_table.value(), "panel", legacy_panel_keys)
+                           : validateTableShape(*panel_table.value(), "panel", current_panel_keys);
     if (!panel_shape) {
         return forwardFailure<Configuration>(panel_shape.error());
     }
@@ -518,6 +575,11 @@ Result<Configuration> validateConfiguration(const ParsedConfiguration &document,
         std::pair{std::string_view{"12_hour"}, ClockFormat::hour_12},
         std::pair{std::string_view{"24_hour"}, ClockFormat::hour_24},
     };
+    constexpr std::array output_policy_values = {
+        std::pair{std::string_view{"primary"}, PanelOutputPolicy::primary},
+        std::pair{std::string_view{"all"}, PanelOutputPolicy::all},
+        std::pair{std::string_view{"named"}, PanelOutputPolicy::named},
+    };
     auto edge = readEnum(*panel_table.value(), "edge", "panel.edge", edge_values);
     auto panel_size = readInteger(*panel_table.value(), "size_px", "panel.size_px", 24, 192);
     auto autohide = readEnum(*panel_table.value(), "autohide", "panel.autohide", autohide_values);
@@ -532,6 +594,16 @@ Result<Configuration> validateConfiguration(const ParsedConfiguration &document,
                              : !clock      ? &clock.error()
                                            : &outputs.error();
         return forwardFailure<Configuration>(*error);
+    }
+    PanelOutputPolicy output_policy =
+        outputs.value().empty() ? PanelOutputPolicy::primary : PanelOutputPolicy::named;
+    if (!is_legacy) {
+        auto parsed_output_policy = readEnum(*panel_table.value(), "output_policy",
+                                             "panel.output_policy", output_policy_values);
+        if (!parsed_output_policy) {
+            return forwardFailure<Configuration>(parsed_output_policy.error());
+        }
+        output_policy = parsed_output_policy.value();
     }
 
     auto launcher_table = readTable(root, "launcher");
@@ -606,9 +678,14 @@ Result<Configuration> validateConfiguration(const ParsedConfiguration &document,
     if (!desktop_table) {
         return forwardFailure<Configuration>(desktop_table.error());
     }
-    constexpr std::array desktop_keys = {std::string_view{"wallpaper_mode"},
-                                         std::string_view{"icons_enabled"}};
-    auto desktop_shape = validateTableShape(*desktop_table.value(), "desktop", desktop_keys);
+    constexpr std::array legacy_desktop_keys = {std::string_view{"wallpaper_mode"},
+                                                std::string_view{"icons_enabled"}};
+    constexpr std::array current_desktop_keys = {
+        std::string_view{"wallpaper_source"}, std::string_view{"background_color"},
+        std::string_view{"wallpaper_mode"}, std::string_view{"icons_enabled"}};
+    auto desktop_shape =
+        is_legacy ? validateTableShape(*desktop_table.value(), "desktop", legacy_desktop_keys)
+                  : validateTableShape(*desktop_table.value(), "desktop", current_desktop_keys);
     if (!desktop_shape) {
         return forwardFailure<Configuration>(desktop_shape.error());
     }
@@ -625,6 +702,24 @@ Result<Configuration> validateConfiguration(const ParsedConfiguration &document,
     auto icons = readBoolean(*desktop_table.value(), "icons_enabled", "desktop.icons_enabled");
     if (!wallpaper || !icons) {
         return forwardFailure<Configuration>(!wallpaper ? wallpaper.error() : icons.error());
+    }
+    std::string wallpaper_source;
+    std::string background_color{legacyBackgroundColor};
+    if (!is_legacy) {
+        auto parsed_source = readPossiblyEmptyString(*desktop_table.value(), "wallpaper_source",
+                                                     "desktop.wallpaper_source");
+        auto parsed_color =
+            readString(*desktop_table.value(), "background_color", "desktop.background_color");
+        if (!parsed_source || !parsed_color) {
+            return forwardFailure<Configuration>(!parsed_source ? parsed_source.error()
+                                                                : parsed_color.error());
+        }
+        if (!isRgbColor(parsed_color.value())) {
+            return Result<Configuration>::failure(
+                semanticError("desktop.background_color", "Use an RGB color in #RRGGBB form."));
+        }
+        wallpaper_source = std::move(parsed_source).value();
+        background_color = std::move(parsed_color).value();
     }
 
     auto integration_table = readTable(root, "integration");
@@ -724,18 +819,19 @@ Result<Configuration> validateConfiguration(const ParsedConfiguration &document,
         foundation::developerOverridesEnabled();
 
     return Result<Configuration>::success(Configuration{
-        supportedSchemaVersion,
+        currentSchemaVersion,
         profile.value(),
         Appearance{std::move(accent).value(), transparency.value(), blur.value(),
                    reduced_motion.value(), high_contrast.value(), text_scale.value(),
                    std::move(cursor_theme).value(), static_cast<std::uint16_t>(cursor_size.value()),
                    std::move(icon_theme).value()},
         Panel{edge.value(), static_cast<std::uint16_t>(panel_size.value()), autohide.value(),
-              grouping.value(), clock.value(), std::move(outputs).value()},
+              grouping.value(), clock.value(), output_policy, std::move(outputs).value()},
         Launcher{layout.value(), std::move(providers).value(), recent.value()},
         Notifications{notifications_enabled.value(), history.value(),
                       static_cast<std::uint32_t>(timeout.value()), do_not_disturb.value()},
-        Desktop{wallpaper.value(), icons.value()},
+        Desktop{std::move(wallpaper_source), std::move(background_color), wallpaper.value(),
+                icons.value()},
         Integration{export_gtk.value(), export_qt.value(), export_xsettings.value(),
                     export_portal.value()},
         Accessibility{focus.value(), animation_scale.value(),
@@ -754,6 +850,98 @@ Result<Configuration> parseConfigurationToml(std::string_view input,
         return Result<Configuration>::failure(std::move(parsed).error());
     }
     return validateConfiguration(parsed.value(), options);
+}
+
+Result<std::string> serializeConfigurationTomlV2(const Configuration &configuration) {
+    if (configuration.schemaVersion != currentSchemaVersion) {
+        return Result<std::string>::failure(
+            {ErrorCode::invalid_argument, "Only normalized configuration version 2 can be written.",
+             "Parse and normalize the complete configuration before writing it."});
+    }
+
+    try {
+        constexpr std::array profileIds{"lustre", "forge"};
+        constexpr std::array blurIds{"off", "low", "balanced", "high"};
+        constexpr std::array edgeIds{"top", "right", "bottom", "left"};
+        constexpr std::array autohideIds{"never", "always", "overlap"};
+        constexpr std::array groupingIds{"always", "when_full", "never"};
+        constexpr std::array clockIds{"locale", "12_hour", "24_hour"};
+        constexpr std::array outputPolicyIds{"primary", "all", "named"};
+        constexpr std::array layoutIds{"compact", "expanded"};
+        constexpr std::array providerIds{"applications", "settings", "recent_files"};
+        constexpr std::array recentIds{"disabled", "local_only"};
+        constexpr std::array historyIds{"disabled", "session", "persistent"};
+        constexpr std::array wallpaperIds{"solid", "center", "fit", "fill", "stretch", "tile"};
+        constexpr std::array focusIds{"standard", "strong"};
+
+        toml::table document{
+            {"schema_version", static_cast<std::int64_t>(currentSchemaVersion)},
+            {"profile", enumId(configuration.profile, profileIds)},
+            {"appearance",
+             toml::table{{"accent", configuration.appearance.accent},
+                         {"transparency_enabled", configuration.appearance.transparencyEnabled},
+                         {"blur_quality", enumId(configuration.appearance.blurQuality, blurIds)},
+                         {"reduced_motion", configuration.appearance.reducedMotion},
+                         {"high_contrast", configuration.appearance.highContrast},
+                         {"text_scale", configuration.appearance.textScale},
+                         {"cursor_theme", configuration.appearance.cursorTheme},
+                         {"cursor_size_px",
+                          static_cast<std::int64_t>(configuration.appearance.cursorSizePx)},
+                         {"icon_theme", configuration.appearance.iconTheme}}},
+            {"panel",
+             toml::table{
+                 {"edge", enumId(configuration.panel.edge, edgeIds)},
+                 {"size_px", static_cast<std::int64_t>(configuration.panel.sizePx)},
+                 {"autohide", enumId(configuration.panel.autohide, autohideIds)},
+                 {"grouping", enumId(configuration.panel.grouping, groupingIds)},
+                 {"clock_format", enumId(configuration.panel.clockFormat, clockIds)},
+                 {"output_policy", enumId(configuration.panel.outputPolicy, outputPolicyIds)},
+                 {"outputs", stringArrayToml(configuration.panel.outputs)}}},
+            {"launcher",
+             toml::table{{"layout", enumId(configuration.launcher.layout, layoutIds)},
+                         {"search_providers",
+                          enumArrayToml(configuration.launcher.searchProviders, providerIds)},
+                         {"recent_items", enumId(configuration.launcher.recentItems, recentIds)}}},
+            {"notifications",
+             toml::table{{"enabled", configuration.notifications.enabled},
+                         {"history", enumId(configuration.notifications.history, historyIds)},
+                         {"default_timeout_ms",
+                          static_cast<std::int64_t>(configuration.notifications.defaultTimeoutMs)},
+                         {"do_not_disturb", configuration.notifications.doNotDisturb}}},
+            {"desktop", toml::table{{"wallpaper_source", configuration.desktop.wallpaperSource},
+                                    {"background_color", configuration.desktop.backgroundColor},
+                                    {"wallpaper_mode",
+                                     enumId(configuration.desktop.wallpaperMode, wallpaperIds)},
+                                    {"icons_enabled", configuration.desktop.iconsEnabled}}},
+            {"integration",
+             toml::table{{"export_gtk", configuration.integration.exportGtk},
+                         {"export_qt", configuration.integration.exportQt},
+                         {"export_xsettings", configuration.integration.exportXsettings},
+                         {"export_portal", configuration.integration.exportPortal}}},
+            {"accessibility",
+             toml::table{
+                 {"focus_emphasis", enumId(configuration.accessibility.focusEmphasis, focusIds)},
+                 {"animation_scale", configuration.accessibility.animationScale},
+                 {"minimum_target_size_px",
+                  static_cast<std::int64_t>(configuration.accessibility.minimumTargetSizePx)}}},
+            {"keyboard",
+             toml::table{{"menu_key_opens_launcher", configuration.keyboard.menuKeyOpensLauncher},
+                         {"focus_wraps", configuration.keyboard.focusWraps}}},
+            {"developer",
+             toml::table{{"diagnostics_enabled", configuration.developer.diagnosticsEnabled},
+                         {"mock_capability_overrides",
+                          stringArrayToml(configuration.developer.mockCapabilityOverrides)}}},
+        };
+
+        std::ostringstream output;
+        output << document;
+        output << '\n';
+        return Result<std::string>::success(output.str());
+    } catch (const std::exception &) {
+        return Result<std::string>::failure(
+            {ErrorCode::validation_error, "The normalized configuration could not be serialized.",
+             "Validate every typed configuration field before writing it."});
+    }
 }
 
 } // namespace prismdrake::config

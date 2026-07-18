@@ -16,7 +16,7 @@ struct SerializedRuntimeSnapshot final {
     std::string json;
 };
 
-/// Serializes one complete candidate as strict, bounded version-1 JSON before publication.
+/// Serializes one complete candidate as strict, bounded version-2 JSON before publication.
 [[nodiscard]] foundation::Result<SerializedRuntimeSnapshot>
 serializeRuntimeSnapshot(foundation::Generation generation, const SettingsCandidate &candidate);
 

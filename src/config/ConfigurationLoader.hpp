@@ -69,7 +69,8 @@ loadReloadConfiguration(const ConfigurationLocations &locations,
 loadPackagedConfiguration(const ConfigurationLocations &locations,
                           ConfigurationParseOptions options = {});
 
-/// Validates one complete document and atomically replaces only the canonical user file.
+/// Validates one complete document, normalizes it, and atomically writes version 2 to the
+/// canonical user file. Merely loading a version-1 document never invokes this write path.
 [[nodiscard]] foundation::Result<Configuration>
 validateAndWriteUserConfiguration(const ConfigurationLocations &locations, std::string_view input,
                                   ConfigurationParseOptions options = {});

@@ -1,4 +1,4 @@
-schema_version = 1
+schema_version = 2
 profile = "lustre"
 
 [appearance]
@@ -18,6 +18,7 @@ size_px = 48
 autohide = "never"
 grouping = "when_full"
 clock_format = "locale"
+output_policy = "primary"
 outputs = []
 
 [launcher]
@@ -32,6 +33,8 @@ default_timeout_ms = 5000
 do_not_disturb = false
 
 [desktop]
+wallpaper_source = ""
+background_color = "#182033"
 wallpaper_mode = "fill"
 icons_enabled = true
 

@@ -96,6 +96,23 @@ TEST(ConfigurationLoaderTest, PrefersACompleteValidUserConfiguration) {
     EXPECT_TRUE(result.value().issues.empty());
 }
 
+TEST(ConfigurationLoaderTest, LoadingLegacyConfigurationNormalizesWithoutRewritingSource) {
+    ConfigurationStorageFixture storage;
+    const auto locations = storage.locations();
+    const auto legacy = readFixture("examples/config/legacy-v1.toml");
+    writeDocument(locations.user, legacy);
+    writeDocument(locations.packagedDefault, readFixture("data/defaults/config.toml"));
+
+    const auto result = loadStartupConfiguration(locations);
+
+    ASSERT_TRUE(result);
+    EXPECT_EQ(result.value().candidate.configuration.schemaVersion, 2U);
+    EXPECT_EQ(result.value().candidate.configuration.panel.outputPolicy,
+              PanelOutputPolicy::primary);
+    EXPECT_EQ(result.value().candidate.originalDocument, legacy);
+    EXPECT_EQ(readDocument(locations.user), legacy);
+}
+
 TEST(ConfigurationLoaderTest, MissingUserConfigurationSelectsPackagedDefaultNotStaleLkv) {
     ConfigurationStorageFixture storage;
     const auto locations = storage.locations();
@@ -113,7 +130,7 @@ TEST(ConfigurationLoaderTest, MissingUserConfigurationSelectsPackagedDefaultNotS
 TEST(ConfigurationLoaderTest, InvalidUserConfigurationRecoversThroughLkv) {
     ConfigurationStorageFixture storage;
     const auto locations = storage.locations();
-    writeDocument(locations.user, "schema_version = 2\n");
+    writeDocument(locations.user, "schema_version = 3\n");
     writeDocument(locations.lastKnownValid, readFixture("examples/config/forge.toml"));
     writeDocument(locations.packagedDefault, readFixture("data/defaults/config.toml"));
 
@@ -147,9 +164,9 @@ TEST(ConfigurationLoaderTest, InvalidUserAndLkvRecoverThroughPackagedDefault) {
 TEST(ConfigurationLoaderTest, FailsWhenNoCompleteValidSourceExists) {
     ConfigurationStorageFixture storage;
     const auto locations = storage.locations();
-    writeDocument(locations.user, "schema_version = 2\n");
-    writeDocument(locations.lastKnownValid, "schema_version = 2\n");
-    writeDocument(locations.packagedDefault, "schema_version = 2\n");
+    writeDocument(locations.user, "schema_version = 3\n");
+    writeDocument(locations.lastKnownValid, "schema_version = 3\n");
+    writeDocument(locations.packagedDefault, "schema_version = 3\n");
 
     const auto result = loadStartupConfiguration(locations);
 
@@ -162,7 +179,7 @@ TEST(ConfigurationLoaderTest, FailsWhenNoCompleteValidSourceExists) {
 TEST(ConfigurationLoaderTest, InvalidReloadFailsSoCallerCanRetainCurrentGeneration) {
     ConfigurationStorageFixture storage;
     const auto locations = storage.locations();
-    writeDocument(locations.user, "schema_version = 2\n");
+    writeDocument(locations.user, "schema_version = 3\n");
     writeDocument(locations.lastKnownValid, readFixture("examples/config/forge.toml"));
     writeDocument(locations.packagedDefault, readFixture("data/defaults/config.toml"));
 
@@ -205,7 +222,7 @@ TEST(ConfigurationLoaderTest, InvalidCandidateNeverReplacesUserConfiguration) {
     const std::string previous = readFixture("examples/config/forge.toml");
     writeDocument(locations.user, previous);
 
-    const auto result = validateAndWriteUserConfiguration(locations, "schema_version = 2\n");
+    const auto result = validateAndWriteUserConfiguration(locations, "schema_version = 3\n");
 
     ASSERT_FALSE(result);
     EXPECT_EQ(readDocument(locations.user), previous);
@@ -221,7 +238,34 @@ TEST(ConfigurationLoaderTest, ValidCandidateIsWrittenAsOneCompleteDocument) {
 
     ASSERT_TRUE(result);
     EXPECT_EQ(result.value().profile, Profile::lustre);
-    EXPECT_EQ(readDocument(locations.user), replacement);
+    const auto written = readDocument(locations.user);
+    EXPECT_NE(written.find("schema_version = 2"), std::string::npos);
+    const auto reparsed = parseConfigurationToml(written);
+    ASSERT_TRUE(reparsed);
+    EXPECT_EQ(reparsed.value(), result.value());
+}
+
+TEST(ConfigurationLoaderTest, ExplicitLegacyWriteAtomicallyUpgradesToVersionTwo) {
+    ConfigurationStorageFixture storage;
+    const auto locations = storage.locations();
+    const auto previous = readFixture("examples/config/forge.toml");
+    writeDocument(locations.user, previous);
+
+    const auto result =
+        validateAndWriteUserConfiguration(locations, readFixture("examples/config/legacy-v1.toml"));
+
+    ASSERT_TRUE(result);
+    EXPECT_EQ(result.value().schemaVersion, 2U);
+    const auto written = readDocument(locations.user);
+    EXPECT_NE(written, previous);
+    EXPECT_NE(written.find("schema_version = 2"), std::string::npos);
+    EXPECT_NE(written.find("output_policy"), std::string::npos);
+    EXPECT_NE(written.find("background_color"), std::string::npos);
+    const auto reparsed = parseConfigurationToml(written);
+    ASSERT_TRUE(reparsed);
+    EXPECT_EQ(reparsed.value(), result.value());
+    EXPECT_EQ(reparsed.value().panel.outputPolicy, PanelOutputPolicy::primary);
+    EXPECT_EQ(reparsed.value().desktop.backgroundColor, "#182033");
 }
 
 TEST(ConfigurationLoaderTest, PromotesOnlyAValidatedUserCandidate) {
@@ -254,7 +298,7 @@ TEST(ConfigurationLoaderTest, RevalidatesCandidateBytesBeforeLkvPromotion) {
 
     auto candidate = loadReloadConfiguration(locations);
     ASSERT_TRUE(candidate);
-    candidate.value().originalDocument = "schema_version = 2\n";
+    candidate.value().originalDocument = "schema_version = 3\n";
 
     const auto result = promoteLastKnownValidConfiguration(locations, candidate.value());
 
