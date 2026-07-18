@@ -26,6 +26,7 @@ TestCase {
 
     SignalSpy { id: forwardExit; target: panel; signalName: "focusExitForward" }
     SignalSpy { id: backwardExit; target: panel; signalName: "focusExitBackward" }
+    SignalSpy { id: launcherRequest; target: panel; signalName: "launcherRequested" }
 
     function launcher() {
         return findChild(panel, "panelLauncherButton")
@@ -48,7 +49,15 @@ TestCase {
         verify(panelFixture.publishRepresentativeTasks())
         forwardExit.clear()
         backwardExit.clear()
+        launcherRequest.clear()
         tryCompare(panel, "taskCount", 3)
+    }
+
+    function test_accessibleLauncherPressEmitsExactlyOneRequest() {
+        launcher().Accessible.pressAction()
+        tryCompare(launcherRequest, "count", 1)
+        wait(0)
+        compare(launcherRequest.count, 1)
     }
 
     function test_profilesUseOneTreeAndCoherentGenerationLabel() {

@@ -141,6 +141,7 @@ FocusScope {
             Accessible.description: qsTr("Open the application launcher")
             Accessible.focusable: true
             Accessible.focused: activeFocus
+            Accessible.onPressAction: launcher.clicked()
 
             Keys.priority: Keys.BeforeItem
             Keys.onTabPressed: event => {
