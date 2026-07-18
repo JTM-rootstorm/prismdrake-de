@@ -110,6 +110,42 @@ class AccessibilityEvidenceContractTests(unittest.TestCase):
                 "17",
             )
 
+    def test_accepts_only_a_non_panel_active_window_owned_by_the_shell(self) -> None:
+        active = SimpleNamespace(returncode=0, stdout="17\n")
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[active, owner]
+        ):
+            self.assertEqual(
+                live_atspi._active_shell_window(
+                    Path("/usr/bin/xdotool"), 42, "11"
+                ),
+                "17",
+            )
+        with mock.patch.object(live_atspi, "_run_checked", return_value=active):
+            self.assertIsNone(
+                live_atspi._active_shell_window(
+                    Path("/usr/bin/xdotool"), 42, "17"
+                )
+            )
+
+    def test_fallback_requires_one_visible_non_panel_shell_tool_window(self) -> None:
+        completed = SimpleNamespace(returncode=0, stdout="11\n17\n")
+        with mock.patch.object(live_atspi, "_run_checked", return_value=completed):
+            self.assertEqual(
+                live_atspi._visible_shell_tool_window(
+                    Path("/usr/bin/xdotool"), "11"
+                ),
+                "17",
+            )
+        duplicate = SimpleNamespace(returncode=0, stdout="11\n17\n19\n")
+        with mock.patch.object(live_atspi, "_run_checked", return_value=duplicate):
+            self.assertIsNone(
+                live_atspi._visible_shell_tool_window(
+                    Path("/usr/bin/xdotool"), "11"
+                )
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

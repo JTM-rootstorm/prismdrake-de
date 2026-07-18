@@ -545,6 +545,37 @@ def _window_for_accessible(atspi: Any, xdotool: Path, node: Any) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def _active_shell_window(
+    xdotool: Path, process_id: int, excluded_window: str
+) -> str | None:
+    active = _run_checked([str(xdotool), "getactivewindow"])
+    if active.returncode != 0:
+        return None
+    identifier = active.stdout.strip()
+    if not identifier.isascii() or not identifier.isdecimal() or identifier == excluded_window:
+        return None
+    owner = _run_checked([str(xdotool), "getwindowpid", identifier])
+    if owner.returncode != 0 or owner.stdout.strip() != str(process_id):
+        return None
+    return identifier
+
+
+def _visible_shell_tool_window(xdotool: Path, excluded_window: str) -> str | None:
+    result = _run_checked(
+        [str(xdotool), "search", "--onlyvisible", "--class", "^prismdrake-shell$"]
+    )
+    if result.returncode != 0:
+        return None
+    identifiers = [
+        line
+        for line in result.stdout.splitlines()
+        if line.isascii() and line.isdecimal() and line != excluded_window
+    ]
+    if len(identifiers) > 16:
+        raise EvidenceError("the visible shell X11 window count exceeds the bound")
+    return identifiers[0] if len(identifiers) == 1 else None
+
+
 def _send_key(xdotool: Path, window: str, key: str) -> None:
     result = _run_checked([str(xdotool), "key", "--window", window, key])
     _require(result.returncode == 0, f"keyboard injection failed for {key}")
@@ -702,7 +733,9 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
             "the Prismdrake launcher accessible tree",
         )
         launcher = _wait_until(
-            lambda: _window_for_accessible(Atspi, arguments.xdotool, launcher_search),
+            lambda: _active_shell_window(arguments.xdotool, shell.pid, panel)
+            or _window_for_accessible(Atspi, arguments.xdotool, launcher_search)
+            or _visible_shell_tool_window(arguments.xdotool, panel),
             "the X11 window owning the launcher search control",
         )
         phases.append(_phase(Atspi, PHASE_IDS[1], PHASE_FOCUS[1], launcher_specs))
