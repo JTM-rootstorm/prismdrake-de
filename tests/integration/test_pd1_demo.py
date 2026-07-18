@@ -17,10 +17,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pd1_demo import (
+    APP_TITLES,
     accept_first_result_from_focused_search,
     DemoError,
     ProcessIdentity,
     capture_process_identity,
+    children,
     close_identities,
     example_evidence,
     environment_has_marker,
@@ -29,16 +31,21 @@ from pd1_demo import (
     showing_named_action_nodes,
     openbox_command,
     openbox_environment,
+    open_task_context_menu_from_pointer,
     parse_atom_list,
     parse_cardinals,
+    parse_optional_atom_list,
     parse_utf8_property,
     parse_window_property,
     process_identity_alive,
     require_distinct_process_identity,
     require_normal_ready,
     require_normal_snapshot,
+    send_focused_shell_action_key,
+    send_focused_window_action_key,
     select_sole_owned_panel,
     select_current_workarea,
+    task_screen_center,
     validate_cleanup_identities,
     validate_evidence,
     validate_output_target,
@@ -91,10 +98,64 @@ class EvidenceContractTests(unittest.TestCase):
         document["settings"]["generation_sequence"] = [1, 2]
         self.assert_rejected(document)
 
-    def test_rejects_unverified_task_action(self) -> None:
+    def test_rejects_false_or_missing_task_action_claims(self) -> None:
+        for field in (
+            "minimization_through_shell",
+            "reactivation_through_shell",
+            "close_through_shell",
+        ):
+            for mutation in ("false", "missing"):
+                with self.subTest(field=field, mutation=mutation):
+                    document = example_evidence()
+                    if mutation == "false":
+                        document["tasks"][field] = False
+                    else:
+                        del document["tasks"][field]
+                    self.assert_rejected(document)
+
+    def test_schema_rejects_false_or_missing_task_action_claims(self) -> None:
+        for field in (
+            "minimization_through_shell",
+            "reactivation_through_shell",
+            "close_through_shell",
+        ):
+            for mutation in ("false", "missing"):
+                with self.subTest(field=field, mutation=mutation):
+                    document = example_evidence()
+                    if mutation == "false":
+                        document["tasks"][field] = False
+                    else:
+                        del document["tasks"][field]
+                    with self.assertRaises(DemoError):
+                        validate_schema(document)
+
+    def test_rejects_false_or_missing_task_generic_icon_semantics(self) -> None:
+        for mutation in ("false", "missing"):
+            with self.subTest(mutation=mutation):
+                document = example_evidence()
+                if mutation == "false":
+                    document["fallback"]["task_generic_icon_semantics"] = False
+                else:
+                    del document["fallback"]["task_generic_icon_semantics"]
+                self.assert_rejected(document)
+
+    def test_schema_rejects_false_or_missing_task_generic_icon_semantics(self) -> None:
+        for mutation in ("false", "missing"):
+            with self.subTest(mutation=mutation):
+                document = example_evidence()
+                if mutation == "false":
+                    document["fallback"]["task_generic_icon_semantics"] = False
+                else:
+                    del document["fallback"]["task_generic_icon_semantics"]
+                with self.assertRaises(DemoError):
+                    validate_schema(document)
+
+    def test_rejects_stale_schema_version(self) -> None:
         document = example_evidence()
-        document["tasks"]["minimized_through_shell"] = True
+        document["schema_version"] = 1
         self.assert_rejected(document)
+        with self.assertRaises(DemoError):
+            validate_schema(document)
 
     def test_rejects_live_rendering_fallback_claim(self) -> None:
         document = example_evidence()
@@ -150,6 +211,21 @@ class EvidenceContractTests(unittest.TestCase):
             ["_NET_WM_WINDOW_TYPE_DOCK"],
         )
         self.assertEqual(
+            parse_optional_atom_list("_NET_WM_STATE(ATOM) =\n", "_NET_WM_STATE"),
+            [],
+        )
+        self.assertEqual(
+            parse_optional_atom_list("_NET_WM_STATE(ATOM) = \n", "_NET_WM_STATE"),
+            [],
+        )
+        self.assertEqual(
+            parse_optional_atom_list(
+                "_NET_WM_STATE(ATOM) = _NET_WM_STATE_HIDDEN, _NET_WM_STATE_ABOVE\n",
+                "_NET_WM_STATE",
+            ),
+            ["_NET_WM_STATE_HIDDEN", "_NET_WM_STATE_ABOVE"],
+        )
+        self.assertEqual(
             parse_window_property(
                 "_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0x20020c\n",
                 "_NET_SUPPORTING_WM_CHECK",
@@ -168,6 +244,19 @@ class EvidenceContractTests(unittest.TestCase):
             lambda: parse_atom_list(
                 "_NET_WM_WINDOW_TYPE(ATOM) = _NET_WM_WINDOW_TYPE_DOCK, bad\n",
                 "_NET_WM_WINDOW_TYPE",
+            ),
+            lambda: parse_optional_atom_list(
+                "_NET_WM_STATE(ATOM) = _NET_WM_STATE_HIDDEN, _NET_WM_STATE_HIDDEN\n",
+                "_NET_WM_STATE",
+            ),
+            lambda: parse_optional_atom_list(
+                "_NET_WM_STATE(STRING) = _NET_WM_STATE_HIDDEN\n", "_NET_WM_STATE",
+            ),
+            lambda: parse_optional_atom_list(
+                "_NET_WM_STATE(ATOM) =  \n", "_NET_WM_STATE",
+            ),
+            lambda: parse_optional_atom_list(
+                f"_NET_WM_STATE(ATOM) = _{('A' * 128)}\n", "_NET_WM_STATE",
             ),
             lambda: parse_window_property(
                 "_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0x0\n",
@@ -357,6 +446,164 @@ class EvidenceContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(DemoError, "^keyboard_focus_window_invalid$"):
                     focused_window_id(Path("/usr/bin/xdotool"))
 
+    def test_focused_window_action_rejects_wrong_x_focus_without_emission(self) -> None:
+        xdotool = Path("/usr/bin/xdotool")
+        with mock.patch.object(pd1_demo, "require_shell_owner"), \
+                mock.patch.object(pd1_demo, "focused_window_id", return_value="4194306"), \
+                mock.patch.object(pd1_demo, "showing_focused_action_node") as focus_probe, \
+                mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
+            with self.assertRaisesRegex(DemoError, "^action_window_focus_lost$"):
+                send_focused_window_action_key(
+                    object(), xdotool, "4194305", 100, APP_TITLES[0], "shift+F10",
+                )
+        focus_probe.assert_not_called()
+        key_sender.assert_not_called()
+
+    def test_focused_window_action_rejects_lost_atspi_focus_without_emission(self) -> None:
+        xdotool = Path("/usr/bin/xdotool")
+        with mock.patch.object(pd1_demo, "require_shell_owner"), \
+                mock.patch.object(pd1_demo, "focused_window_id", return_value="4194305"), \
+                mock.patch.object(
+                    pd1_demo, "showing_focused_action_node",
+                    side_effect=DemoError("atspi_focused_control_identity"),
+                ), mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
+            with self.assertRaisesRegex(DemoError, "^atspi_focused_control_identity$"):
+                send_focused_window_action_key(
+                    object(), xdotool, "4194305", 100, APP_TITLES[0], "shift+F10",
+                )
+        key_sender.assert_not_called()
+
+    def test_focused_window_action_rejects_atspi_owner_drift_without_emission(self) -> None:
+        xdotool = Path("/usr/bin/xdotool")
+        with mock.patch.object(pd1_demo, "window_process_id", return_value=100), \
+                mock.patch.object(pd1_demo, "process_application_id", return_value=99), \
+                mock.patch.object(pd1_demo, "focused_window_id") as focus_probe, \
+                mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
+            with self.assertRaisesRegex(DemoError, "^atspi_owner_identity_invalid$"):
+                send_focused_window_action_key(
+                    object(), xdotool, "4194305", 100, APP_TITLES[0], "shift+F10",
+                )
+        focus_probe.assert_not_called()
+        key_sender.assert_not_called()
+
+    def test_focused_shell_action_rejects_wrong_owner_without_emission(self) -> None:
+        xdotool = Path("/usr/bin/xdotool")
+        with mock.patch.object(pd1_demo, "window_process_id", return_value=99), \
+                mock.patch.object(pd1_demo, "showing_focused_action_node") as focus_probe, \
+                mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
+            with self.assertRaisesRegex(DemoError, "^panel_owner_identity_invalid$"):
+                send_focused_shell_action_key(
+                    object(), xdotool, "4194305", 100,
+                    f"Minimize {APP_TITLES[0]}", "Return",
+                )
+        focus_probe.assert_not_called()
+        key_sender.assert_not_called()
+
+    def test_focused_shell_action_rejects_lost_atspi_focus_without_emission(self) -> None:
+        xdotool = Path("/usr/bin/xdotool")
+        with mock.patch.object(pd1_demo, "require_shell_owner"), \
+                mock.patch.object(pd1_demo, "focused_window_id", return_value="4194305"), \
+                mock.patch.object(
+                    pd1_demo, "showing_focused_action_node",
+                    side_effect=DemoError("atspi_focused_control_identity"),
+                ), mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
+            with self.assertRaisesRegex(DemoError, "^atspi_focused_control_identity$"):
+                send_focused_shell_action_key(
+                    object(), xdotool, "4194305", 100,
+                    f"Minimize {APP_TITLES[0]}", "Return",
+                )
+        key_sender.assert_not_called()
+
+    def test_task_pointer_center_is_bounded_to_panel_extents(self) -> None:
+        rectangle = mock.Mock(x=100, y=660, width=200, height=48)
+        component = mock.Mock()
+        component.get_extents.return_value = rectangle
+        node = mock.Mock()
+        node.get_component_iface.return_value = component
+        atspi = mock.Mock(CoordType=mock.Mock(SCREEN=7))
+        xdotool = Path("/usr/bin/xdotool")
+        with mock.patch.object(pd1_demo, "showing_named_action_nodes", return_value=[node]), \
+                mock.patch.object(pd1_demo, "geometry", return_value=[0, 656, 1280, 64]):
+            self.assertEqual(
+                task_screen_center(atspi, xdotool, "4194305", APP_TITLES[1]),
+                (200, 684),
+            )
+        component.get_extents.assert_called_once_with(7)
+
+    def test_task_pointer_center_rejects_outside_panel_before_emission(self) -> None:
+        rectangle = mock.Mock(x=100, y=650, width=200, height=48)
+        component = mock.Mock()
+        component.get_extents.return_value = rectangle
+        node = mock.Mock()
+        node.get_component_iface.return_value = component
+        atspi = mock.Mock(CoordType=mock.Mock(SCREEN=7))
+        with mock.patch.object(pd1_demo, "showing_named_action_nodes", return_value=[node]), \
+                mock.patch.object(pd1_demo, "geometry", return_value=[0, 656, 1280, 64]), \
+                mock.patch.object(pd1_demo, "run_checked") as pointer_sender:
+            with self.assertRaisesRegex(DemoError, "^task_extents_outside_panel$"):
+                task_screen_center(
+                    atspi, Path("/usr/bin/xdotool"), "4194305", APP_TITLES[1],
+                )
+        pointer_sender.assert_not_called()
+
+    def test_task_pointer_center_rejects_coordinates_outside_fixed_display(self) -> None:
+        rectangle = mock.Mock(x=-5, y=660, width=200, height=48)
+        component = mock.Mock()
+        component.get_extents.return_value = rectangle
+        node = mock.Mock()
+        node.get_component_iface.return_value = component
+        atspi = mock.Mock(CoordType=mock.Mock(SCREEN=7))
+        with mock.patch.object(pd1_demo, "showing_named_action_nodes", return_value=[node]), \
+                mock.patch.object(pd1_demo, "geometry", return_value=[-10, 656, 1290, 64]), \
+                mock.patch.object(pd1_demo, "run_checked") as pointer_sender:
+            with self.assertRaisesRegex(DemoError, "^atspi_extents_invalid$"):
+                task_screen_center(
+                    atspi, Path("/usr/bin/xdotool"), "4194305", APP_TITLES[1],
+                )
+        pointer_sender.assert_not_called()
+
+    def test_pointer_context_open_uses_exact_center_and_validates_focus(self) -> None:
+        atspi = object()
+        xdotool = Path("/usr/bin/xdotool")
+        result = mock.Mock(returncode=0)
+        with mock.patch.object(pd1_demo, "window_process_id", return_value=100), \
+                mock.patch.object(pd1_demo, "process_application_id", return_value=100), \
+                mock.patch.object(pd1_demo, "task_screen_center", return_value=(200, 684)), \
+                mock.patch.object(pd1_demo, "run_checked", return_value=result) as pointer_sender, \
+                mock.patch.object(pd1_demo, "require_task_context_menu_focus") as focus_probe:
+            open_task_context_menu_from_pointer(
+                atspi, xdotool, "4194305", 100, APP_TITLES[1],
+            )
+        pointer_sender.assert_called_once_with([
+            str(xdotool), "mousemove", "--sync", "200", "684", "click", "3",
+        ])
+        focus_probe.assert_called_once_with(
+            atspi, xdotool, "4194305", 100, APP_TITLES[1], False,
+        )
+
+    def test_pointer_context_open_rejects_invalid_shell_identity_before_emission(self) -> None:
+        with mock.patch.object(pd1_demo, "window_process_id") as owner_probe, \
+                mock.patch.object(pd1_demo, "task_screen_center") as center_probe, \
+                mock.patch.object(pd1_demo, "run_checked") as pointer_sender:
+            with self.assertRaisesRegex(DemoError, "^shell_process_identity_invalid$"):
+                open_task_context_menu_from_pointer(
+                    object(), Path("/usr/bin/xdotool"), "4194305", 1, APP_TITLES[1],
+                )
+        owner_probe.assert_not_called()
+        center_probe.assert_not_called()
+        pointer_sender.assert_not_called()
+
+    def test_pointer_context_open_rejects_stale_panel_before_emission(self) -> None:
+        with mock.patch.object(pd1_demo, "window_process_id", return_value=99), \
+                mock.patch.object(pd1_demo, "task_screen_center") as center_probe, \
+                mock.patch.object(pd1_demo, "run_checked") as pointer_sender:
+            with self.assertRaisesRegex(DemoError, "^panel_owner_identity_invalid$"):
+                open_task_context_menu_from_pointer(
+                    object(), Path("/usr/bin/xdotool"), "4194305", 100, APP_TITLES[1],
+                )
+        center_probe.assert_not_called()
+        pointer_sender.assert_not_called()
+
     def test_named_action_nodes_ignore_same_named_noninteractive_descendants(self) -> None:
         button = object()
         label = object()
@@ -364,6 +611,13 @@ class EvidenceContractTests(unittest.TestCase):
                 mock.patch.object(pd1_demo, "action_names",
                                   side_effect=(("Press",), ())):
             self.assertEqual(named_action_nodes(object(), "Demo", "Press"), [button])
+
+    def test_atspi_children_skip_transient_null_entries(self) -> None:
+        child = object()
+        node = mock.Mock()
+        node.get_child_count.return_value = 2
+        node.get_child_at_index.side_effect = (child, None)
+        self.assertEqual(children(node), [child])
 
     def test_showing_named_action_nodes_exclude_hidden_surface_duplicates(self) -> None:
         showing = mock.Mock()

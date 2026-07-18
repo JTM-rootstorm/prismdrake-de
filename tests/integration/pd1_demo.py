@@ -27,9 +27,6 @@ LAUNCHER_TITLE = "Prismdrake Launcher"
 NOTIFICATION_TITLE = "Prismdrake Test Notification"
 APP_TITLES = ("Prismdrake Demo App One", "Prismdrake Demo App Two")
 LIMITATIONS = [
-    "pd1_demo_task_minimize_surface_unavailable",
-    "pd1_demo_task_close_surface_unavailable",
-    "pd1_demo_task_icon_surface_unavailable",
     "pd1_demo_complete_validation_external",
 ]
 SESSION_CANCELLED_STATUS = 7
@@ -69,6 +66,22 @@ def parse_atom_list(output: str, property_name: str) -> list[str]:
     require(match is not None, "xprop_atom_format_invalid")
     values = match.group(1).split(", ")
     require(len(values) <= 64 and len(values) == len(set(values)), "xprop_atom_value_invalid")
+    return values
+
+
+def parse_optional_atom_list(output: str, property_name: str) -> list[str]:
+    match = re.fullmatch(
+        rf"{re.escape(property_name)}\(ATOM\) =(?: "
+        rf"([A-Z0-9_]+(?:, [A-Z0-9_]+)*)| )?\n?",
+        output,
+    )
+    require(match is not None, "xprop_atom_format_invalid")
+    if match.group(1) is None:
+        return []
+    values = match.group(1).split(", ")
+    require(len(values) <= 64 and len(values) == len(set(values)) and
+            all(len(value) <= 128 for value in values),
+            "xprop_atom_value_invalid")
     return values
 
 
@@ -270,7 +283,7 @@ def write_evidence(path: Path, document: dict[str, Any]) -> None:
 
 
 def example_evidence(provenance: str = "build_tree") -> dict[str, Any]:
-    """Return the sole valid version-one semantic fixture."""
+    """Return the sole valid version-two semantic fixture."""
     require(isinstance(provenance, str) and
             provenance in {"build_tree", "portage_installed"}, "artifact_provenance_invalid")
     return {
@@ -286,6 +299,7 @@ def example_evidence(provenance: str = "build_tree") -> dict[str, Any]:
             "settings_policy_materials_opaque": True,
             "settings_policy_optional_capabilities": "withheld",
             "settings_policy_thumbnail": "application_icon_title_state",
+            "task_generic_icon_semantics": True,
         },
         "limitations": list(LIMITATIONS),
         "restart": {
@@ -295,7 +309,7 @@ def example_evidence(provenance: str = "build_tree") -> dict[str, Any]:
             "task_mirror_rebuilt": True,
             "window_manager_owner_preserved": True,
         },
-        "schema_version": 1,
+        "schema_version": 2,
         "scope": {
             "complete_multi_output_policy": False,
             "compositor_blur": False,
@@ -335,8 +349,11 @@ def example_evidence(provenance: str = "build_tree") -> dict[str, Any]:
         },
         "tasks": {
             "activation_through_shell": True,
+            "close_through_shell": True,
             "controlled_window_count": 2,
             "mirror_count": 2,
+            "minimization_through_shell": True,
+            "reactivation_through_shell": True,
         },
     }
 
@@ -483,7 +500,12 @@ def read_display_number(server: subprocess.Popen[str]) -> str:
 def children(node: Any) -> list[Any]:
     count = node.get_child_count()
     require(0 <= count <= 256, "atspi_child_bound")
-    return [node.get_child_at_index(index) for index in range(count)]
+    found: list[Any] = []
+    for index in range(count):
+        child = node.get_child_at_index(index)
+        if child is not None:
+            found.append(child)
+    return found
 
 
 def walk(root: Any) -> list[Any]:
@@ -561,6 +583,36 @@ def focused(atspi: Any, name: str) -> bool:
     return bool(node.get_state_set().contains(atspi.StateType.FOCUSED))
 
 
+def showing_focused_action_node(atspi: Any, name: str, action: str = "Press") -> Any:
+    matches = [
+        node for node in showing_named_action_nodes(atspi, name, action)
+        if node.get_state_set().contains(atspi.StateType.FOCUSED)
+    ]
+    require(len(matches) == 1, "atspi_focused_control_identity")
+    return matches[0]
+
+
+def has_showing_focused_action(atspi: Any, name: str, action: str = "Press") -> bool:
+    matches = [
+        node for node in showing_named_action_nodes(atspi, name, action)
+        if node.get_state_set().contains(atspi.StateType.FOCUSED)
+    ]
+    return len(matches) == 1
+
+
+def task_accessible_description(atspi: Any, title: str) -> str:
+    matches = showing_named_action_nodes(atspi, title, "Press")
+    require(len(matches) == 1, "atspi_control_identity")
+    description = matches[0].get_description() or ""
+    require(isinstance(description, str) and len(description) <= 256,
+            "atspi_description_invalid")
+    return description
+
+
+def task_has_generic_icon_semantics(atspi: Any, title: str) -> bool:
+    return task_accessible_description(atspi, title).startswith("Generic application icon.")
+
+
 def window_ids(xdotool: Path, title: str, only_visible: bool = False) -> list[str]:
     command = [str(xdotool), "search"]
     if only_visible:
@@ -590,6 +642,13 @@ def window_process_identity(xdotool: Path, identifier: str) -> ProcessIdentity:
     require(result.returncode == 0 and re.fullmatch(r"[1-9]\d*\n?", result.stdout) is not None,
             "window_process_identity_invalid")
     return capture_process_identity(int(result.stdout.strip()))
+
+
+def window_process_id(xdotool: Path, identifier: str) -> int:
+    result = run_checked([str(xdotool), "getwindowpid", identifier])
+    require(result.returncode == 0 and re.fullmatch(r"[1-9]\d*\n?", result.stdout) is not None,
+            "window_process_identity_invalid")
+    return int(result.stdout.strip())
 
 
 def geometry(xdotool: Path, identifier: str) -> list[int] | None:
@@ -632,11 +691,189 @@ def send_focused_key(xdotool: Path, key: str) -> None:
     require(result.returncode == 0, "focused_keyboard_injection_failed")
 
 
+def require_shell_owner(atspi: Any, xdotool: Path, panel: str,
+                        shell_process_id: int) -> None:
+    require(shell_process_id > 1, "shell_process_identity_invalid")
+    require(window_process_id(xdotool, panel) == shell_process_id,
+            "panel_owner_identity_invalid")
+    require(process_application_id(atspi) == shell_process_id,
+            "atspi_owner_identity_invalid")
+
+
+def send_focused_window_action_key(atspi: Any, xdotool: Path, expected_window: str,
+                                   shell_process_id: int, accessible_name: str,
+                                   key: str) -> None:
+    require_shell_owner(atspi, xdotool, expected_window, shell_process_id)
+    require(focused_window_id(xdotool) == expected_window, "action_window_focus_lost")
+    showing_focused_action_node(atspi, accessible_name)
+    send_focused_key(xdotool, key)
+
+
+def send_focused_shell_action_key(atspi: Any, xdotool: Path, panel: str,
+                                  shell_process_id: int, accessible_name: str,
+                                  key: str) -> None:
+    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+    focused_window = focused_window_id(xdotool)
+    if focused_window != panel:
+        require(window_process_id(xdotool, focused_window) == shell_process_id,
+                "action_shell_window_owner_invalid")
+    showing_focused_action_node(atspi, accessible_name)
+    send_focused_key(xdotool, key)
+
+
 def accept_first_result_from_focused_search(atspi: Any, xdotool: Path,
                                              launcher: str) -> None:
     require(focused_window_id(xdotool) == launcher, "launcher_window_focus_lost")
     require(focused(atspi, "Search applications"), "launcher_search_focus_lost")
     send_focused_key(xdotool, "Return")
+
+
+def focus_task_from_panel(atspi: Any, xdotool: Path, panel: str,
+                          shell_process_id: int, title: str) -> None:
+    require(title in APP_TITLES, "task_navigation_target_invalid")
+    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+    require(press(atspi, "Open applications"), "launcher_press_rejected")
+    launcher = wait_until(lambda: visible_window_id(xdotool, LAUNCHER_TITLE),
+                          "launcher_window_timeout")
+    wait_until(lambda: bool(named_nodes(atspi, "Search applications")) and
+               focused(atspi, "Search applications"), "launcher_search_focus_timeout")
+    require(focused_window_id(xdotool) == launcher, "launcher_window_focus_lost")
+    send_focused_key(xdotool, "Escape")
+    wait_until(lambda: visible_window_id(xdotool, LAUNCHER_TITLE) is None,
+               "launcher_dismiss_timeout")
+    wait_until(lambda: focused_window_id(xdotool) == panel and
+               has_showing_focused_action(atspi, "Open applications"),
+               "panel_keyboard_return_timeout")
+
+    previous = "Open applications"
+    for candidate in APP_TITLES[:APP_TITLES.index(title) + 1]:
+        send_focused_window_action_key(
+            atspi, xdotool, panel, shell_process_id, previous, "Tab",
+        )
+        wait_until(lambda candidate=candidate:
+                   has_showing_focused_action(atspi, candidate),
+                   "task_keyboard_focus_timeout")
+        previous = candidate
+
+
+def open_task_context_menu(atspi: Any, xdotool: Path, panel: str,
+                           shell_process_id: int, title: str,
+                           expected_action: str = "Minimize") -> None:
+    require(expected_action in {"Minimize", "Close"},
+            "task_context_action_invalid")
+    focus_task_from_panel(atspi, xdotool, panel, shell_process_id, title)
+    send_focused_window_action_key(
+        atspi, xdotool, panel, shell_process_id, title, "shift+F10",
+    )
+    require_task_context_menu_focus(
+        atspi, xdotool, panel, shell_process_id, title, True, expected_action,
+    )
+
+
+def require_task_context_menu_focus(atspi: Any, xdotool: Path, panel: str,
+                                    shell_process_id: int, title: str,
+                                    require_keyboard_focus: bool,
+                                    expected_action: str = "Minimize") -> None:
+    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+    action_name = f"{expected_action} {title}"
+    try:
+        wait_until(lambda: has_showing_focused_action(atspi, action_name),
+                   "task_context_menu_focus_timeout")
+    except DemoError:
+        nodes = named_nodes(atspi, action_name)
+        interactive = named_action_nodes(atspi, action_name, "Press")
+        showing_count = sum(
+            node.get_state_set().contains(atspi.StateType.SHOWING) for node in interactive
+        )
+        visible_count = sum(
+            node.get_state_set().contains(atspi.StateType.VISIBLE) for node in interactive
+        )
+        focused_count = sum(
+            node.get_state_set().contains(atspi.StateType.FOCUSED) for node in interactive
+        )
+        bare_minimize_count = len(named_nodes(atspi, "Minimize"))
+        bare_close_count = len(named_nodes(atspi, "Close"))
+        task_description = task_accessible_description(atspi, title)
+        print(
+            "PD1 task-menu diagnostic: "
+            f"named_count={len(nodes)} interactive_count={len(interactive)} "
+            f"showing_count={showing_count} visible_count={visible_count} "
+            f"focused_count={focused_count} "
+            f"bare_counts={bare_minimize_count},{bare_close_count} "
+            f"menu_marker={int('Window actions shown.' in task_description)} "
+            f"action_sets={';'.join(','.join(action_names(node)) for node in nodes)}",
+            file=sys.stderr,
+        )
+        raise
+    if require_keyboard_focus:
+        focused_window = focused_window_id(xdotool)
+        require(focused_window == panel or
+                window_process_id(xdotool, focused_window) == shell_process_id,
+                "action_shell_window_owner_invalid")
+
+
+def task_screen_center(atspi: Any, xdotool: Path, panel: str,
+                       title: str) -> tuple[int, int]:
+    matches = showing_named_action_nodes(atspi, title, "Press")
+    require(len(matches) == 1, "atspi_control_identity")
+    component = matches[0].get_component_iface()
+    require(component is not None, "atspi_component_unavailable")
+    rectangle = component.get_extents(atspi.CoordType.SCREEN)
+    values = (rectangle.x, rectangle.y, rectangle.width, rectangle.height)
+    require(all(isinstance(value, int) and not isinstance(value, bool) for value in values),
+            "atspi_extents_invalid")
+    x, y, width, height = values
+    require(width > 0 and height > 0 and width <= 1280 and height <= 720,
+            "atspi_extents_invalid")
+    require(x >= 0 and y >= 0 and x + width <= 1280 and y + height <= 720,
+            "atspi_extents_invalid")
+    panel_geometry = geometry(xdotool, panel)
+    require(panel_geometry is not None, "panel_geometry_unavailable")
+    panel_x, panel_y, panel_width, panel_height = panel_geometry
+    require(x >= panel_x and y >= panel_y and
+            x + width <= panel_x + panel_width and
+            y + height <= panel_y + panel_height,
+            "task_extents_outside_panel")
+    return x + (width // 2), y + (height // 2)
+
+
+def open_task_context_menu_from_pointer(atspi: Any, xdotool: Path, panel: str,
+                                        shell_process_id: int, title: str) -> None:
+    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+    center_x, center_y = task_screen_center(atspi, xdotool, panel, title)
+    result = run_checked([
+        str(xdotool), "mousemove", "--sync", str(center_x), str(center_y), "click", "3",
+    ])
+    require(result.returncode == 0, "pointer_context_injection_failed")
+    require_task_context_menu_focus(
+        atspi, xdotool, panel, shell_process_id, title, False,
+    )
+
+
+def minimize_task_from_context_menu(atspi: Any, xdotool: Path, panel: str,
+                                    shell_process_id: int, title: str) -> None:
+    open_task_context_menu(atspi, xdotool, panel, shell_process_id, title)
+    send_focused_shell_action_key(
+        atspi, xdotool, panel, shell_process_id, f"Minimize {title}", "space",
+    )
+
+
+def close_minimized_task_from_context_menu(atspi: Any, xdotool: Path, panel: str,
+                                           shell_process_id: int, title: str) -> None:
+    open_task_context_menu(
+        atspi, xdotool, panel, shell_process_id, title, "Close",
+    )
+    send_focused_shell_action_key(
+        atspi, xdotool, panel, shell_process_id, f"Close {title}", "space",
+    )
+
+
+def close_task_from_pointer_context_menu(atspi: Any, xdotool: Path, panel: str,
+                                         shell_process_id: int, title: str) -> None:
+    open_task_context_menu_from_pointer(atspi, xdotool, panel, shell_process_id, title)
+    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+    require(press_showing(atspi, f"Close {title}"),
+            "task_close_accessible_action_rejected")
 
 
 def xprop_output(xprop: Path, target: list[str], name: str) -> str:
@@ -648,6 +885,13 @@ def xprop_output(xprop: Path, target: list[str], name: str) -> str:
 
 def xprop_cardinals(xprop: Path, target: list[str], name: str) -> list[int]:
     return parse_cardinals(xprop_output(xprop, target, name), name)
+
+
+def window_state_atoms(xprop: Path, identifier: str) -> list[str]:
+    return parse_optional_atom_list(
+        xprop_output(xprop, ["-id", identifier], "_NET_WM_STATE"),
+        "_NET_WM_STATE",
+    )
 
 
 def current_snapshot(gdbus: Path) -> dict[str, Any]:
@@ -883,6 +1127,40 @@ def run_session_child(arguments: argparse.Namespace) -> None:
             ]).stdout.strip() == first else None),
             "task_activation_timeout",
         )
+        initial_shell_process_id = process_application_id(Atspi)
+        require(task_has_generic_icon_semantics(Atspi, APP_TITLES[0]) and
+                task_has_generic_icon_semantics(Atspi, APP_TITLES[1]),
+                "task_generic_icon_semantics_invalid")
+
+        minimize_task_from_context_menu(
+            Atspi, arguments.xdotool, panel, initial_shell_process_id, APP_TITLES[0],
+        )
+        wait_until(
+            lambda: (True if "_NET_WM_STATE_HIDDEN" in
+                     window_state_atoms(arguments.xprop, first) else None),
+            "task_minimization_timeout",
+        )
+        wait_until(
+            lambda: (True if "Minimized" in
+                     task_accessible_description(Atspi, APP_TITLES[0]) else None),
+            "task_minimized_accessibility_timeout",
+        )
+
+        focus_task_from_panel(
+            Atspi, arguments.xdotool, panel, initial_shell_process_id, APP_TITLES[0],
+        )
+        send_focused_window_action_key(
+            Atspi, arguments.xdotool, panel, initial_shell_process_id,
+            APP_TITLES[0], "Return",
+        )
+        wait_until(
+            lambda: (first if run_checked([
+                str(arguments.xdotool), "getactivewindow",
+            ]).stdout.strip() == first and
+            "_NET_WM_STATE_HIDDEN" not in window_state_atoms(arguments.xprop, first)
+            else None),
+            "task_reactivation_timeout",
+        )
 
         forge_generation = request_profile(arguments.gdbus, "forge")
         forge = wait_until(lambda: current_snapshot(arguments.gdbus).get("generation") == 2 and
@@ -915,6 +1193,7 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                    "notification_panel_return_timeout")
 
         old_shell_identity = capture_process_identity(process_application_id(Atspi))
+        restarted_shell_process_id = 0
         try:
             signal.pidfd_send_signal(old_shell_identity.pidfd, signal.SIGKILL)
             wait_until(lambda: not process_identity_alive(old_shell_identity),
@@ -953,6 +1232,7 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                     return None
 
             new_panel = wait_until(sole_owned_panel, "shell_restart_panel_timeout", timeout=12)
+            restarted_shell_process_id = new_shell_identity.process_id
             require_normal_ready(prismdrake_runtime)
             restarted_snapshot = current_snapshot(arguments.gdbus)
             require(restarted_snapshot.get("generation") == 3, "restart_generation_invalid")
@@ -969,6 +1249,9 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                    "task_mirror_rebuild_timeout", timeout=12)
         require(wm_identity(arguments.xprop) == initial_wm_identity,
                 "window_manager_owner_changed")
+        require(task_has_generic_icon_semantics(Atspi, APP_TITLES[0]) and
+                task_has_generic_icon_semantics(Atspi, APP_TITLES[1]),
+                "task_generic_icon_semantics_invalid")
 
         materials = final_snapshot["theme"]["resolved_materials"]
         require("thumbnail_fallback_active" in final_snapshot["theme"]["warnings"] and
@@ -976,12 +1259,46 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                     for material in materials.values()), "opaque_fallback_invalid")
         thumbnail = final_snapshot["theme"]["thumbnail_presentation"]
 
-        for identifier in (first, second):
-            result = run_checked([str(arguments.xdotool), "windowclose", identifier])
-            require(result.returncode == 0, "controlled_window_close_failed")
-        wait_until(lambda: window_id(arguments.xdotool, APP_TITLES[0]) is None and
-                   window_id(arguments.xdotool, APP_TITLES[1]) is None,
-                   "controlled_window_shutdown_timeout")
+        close_task_from_pointer_context_menu(
+            Atspi, arguments.xdotool, new_panel, restarted_shell_process_id, APP_TITLES[1],
+        )
+        wait_until(lambda: window_id(arguments.xdotool, APP_TITLES[1]) is None and
+                   not named_action_nodes(Atspi, APP_TITLES[1], "Press") and
+                   not process_identity_alive(detached_identities[1]),
+                   "pointer_controlled_window_close_timeout")
+        minimize_task_from_context_menu(
+            Atspi, arguments.xdotool, new_panel, restarted_shell_process_id, APP_TITLES[0],
+        )
+        wait_until(
+            lambda: (True if "_NET_WM_STATE_HIDDEN" in
+                     window_state_atoms(arguments.xprop, first) else None),
+            "task_cleanup_minimization_timeout",
+        )
+        wait_until(
+            lambda: (True if "Minimized" in
+                     task_accessible_description(Atspi, APP_TITLES[0]) else None),
+            "task_cleanup_minimized_accessibility_timeout",
+        )
+        close_minimized_task_from_context_menu(
+            Atspi, arguments.xdotool, new_panel, restarted_shell_process_id, APP_TITLES[0],
+        )
+        try:
+            wait_until(lambda: window_id(arguments.xdotool, APP_TITLES[0]) is None and
+                       not showing_named_action_nodes(Atspi, APP_TITLES[0], "Press") and
+                       not process_identity_alive(detached_identities[0]),
+                       "keyboard_controlled_window_close_timeout")
+        except DemoError:
+            showing_task_count = len(
+                showing_named_action_nodes(Atspi, APP_TITLES[0], "Press")
+            )
+            print(
+                "PD1 keyboard-close diagnostic: "
+                f"window_count={len(window_ids(arguments.xdotool, APP_TITLES[0]))} "
+                f"showing_task_count={showing_task_count} "
+                f"process_alive={int(process_identity_alive(detached_identities[0]))}",
+                file=sys.stderr,
+            )
+            raise
         wait_until(lambda: not any(process_identity_alive(item) for item in detached_identities),
                    "controlled_process_shutdown_timeout")
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://prismdrake.org/schemas/pd1-demo-evidence-v1.json",
+  "$id": "https://prismdrake.org/schemas/pd1-demo-evidence-v2.json",
   "title": "Prismdrake PD1 partial bounded development demonstration evidence",
   "type": "object",
   "additionalProperties": false,
@@ -18,7 +18,7 @@
     "scope"
   ],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "environment": {
       "type": "object",
       "additionalProperties": false,
@@ -77,11 +77,14 @@
     "tasks": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["controlled_window_count", "mirror_count", "activation_through_shell"],
+      "required": ["controlled_window_count", "mirror_count", "activation_through_shell", "minimization_through_shell", "reactivation_through_shell", "close_through_shell"],
       "properties": {
         "controlled_window_count": { "const": 2 },
         "mirror_count": { "const": 2 },
-        "activation_through_shell": { "const": true }
+        "activation_through_shell": { "const": true },
+        "minimization_through_shell": { "const": true },
+        "reactivation_through_shell": { "const": true },
+        "close_through_shell": { "const": true }
       }
     },
     "restart": {
@@ -99,11 +102,12 @@
     "fallback": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["settings_policy_materials_opaque", "settings_policy_optional_capabilities", "settings_policy_thumbnail"],
+      "required": ["settings_policy_materials_opaque", "settings_policy_optional_capabilities", "settings_policy_thumbnail", "task_generic_icon_semantics"],
       "properties": {
         "settings_policy_materials_opaque": { "const": true },
         "settings_policy_optional_capabilities": { "const": "withheld" },
-        "settings_policy_thumbnail": { "const": "application_icon_title_state" }
+        "settings_policy_thumbnail": { "const": "application_icon_title_state" },
+        "task_generic_icon_semantics": { "const": true }
       }
     },
     "shutdown": {
@@ -117,12 +121,7 @@
       }
     },
     "limitations": {
-      "const": [
-        "pd1_demo_task_minimize_surface_unavailable",
-        "pd1_demo_task_close_surface_unavailable",
-        "pd1_demo_task_icon_surface_unavailable",
-        "pd1_demo_complete_validation_external"
-      ]
+      "const": ["pd1_demo_complete_validation_external"]
     },
     "scope": {
       "type": "object",
