@@ -70,7 +70,7 @@ about the future Prismdrake runtime package.
 | `portage-qa` | on | Local repository QA and Portage inspection tools |
 | `debug-tools` | on | GDB, strace, Valgrind, perf, and lsof |
 | `x11` | on | Xvfb, Xephyr, Openbox, X11 tools, D-Bus, AT-SPI and its schema data, Mesa, DejaVu fonts, and fontconfig inspection |
-| `qt6` | on | Qt 6 modules for the isolated visible-shell evidence spike |
+| `qt6` | on | Qt 6.11-or-newer modules for the production shell and visible-shell evidence |
 | `clang` | off | Optional compiler-matrix coverage |
 | `implementation-deps` | off | Candidate parser, D-Bus, and test libraries after decision approval |
 | `visual-tests` | off | Optional ImageMagick comparison, `xdotool` input, and XWD own-window capture tooling |

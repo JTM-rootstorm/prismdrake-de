@@ -5,7 +5,8 @@
 **Reference environments:** host plus `prismdrake-vm`
 
 **Evidence checkpoint:** functional WP12 implementation through `70aaf34`, with
-the exact Gentoo source artifact and Ubuntu lower-bound CI recorded below
+the exact Gentoo source artifact and historical Ubuntu lower-bound CI recorded
+below
 
 ## Scope and status
 
@@ -149,9 +150,9 @@ metadata, and brief interruptible motion. It provides:
 - reduced-motion, high-contrast, opaque-fallback, Lustre, and Forge token inputs
   through one shared component implementation.
 
-The compiled internal QML module carries version `0.1` because Qt 6.4 requires
-module-version metadata. This Experimental version does not declare a stable
-public QML API or compatibility guarantee.
+The compiled internal QML module carries version `0.1` as explicit internal
+module metadata. This Experimental version does not declare a stable public QML
+API or compatibility guarantee.
 
 `NotificationList.qml` moves focus between cards and recovers focus when a
 publication removes or replaces the focused delegate. It keeps the same
@@ -185,10 +186,10 @@ presentation adapter links Qt Core, while the separate compiled QML module uses
 system Qt QML, Qt Quick, and Qt Quick Controls. Qt Quick Test is test-only.
 GoogleTest remains test-only, and no dependency is downloaded or vendored.
 
-The root build declares Qt 6.4 as a common-API configure constraint. Ubuntu
-24.04 CI verifies Qt 6.4.2 as the oldest tested component version, while the
-Gentoo reference environment supplies Qt 6.11.1. The shell dependency manifest
-remains
+The root build declares Qt 6.11 as the minimum supported toolkit version. The
+Gentoo reference environment verifies Qt 6.11.1 and qtdeclarative 6.11.1-r1.
+Ubuntu 24.04's Qt 6.4.2 packages are below the supported floor and no longer
+provide product compatibility evidence. The shell dependency manifest remains
 `planned_unmeasured`: the complete shell executable, AT-SPI runtime linkage,
 installation shape, and direct and transitive runtime closure have not been
 measured. The later [panel-shell evidence](pd1-panel-shell-evidence.md) records
@@ -283,6 +284,10 @@ The table records the functional WP12 implementation and compatibility fixes
 through `70aaf34`. The exact staged artifact was extracted and tested in the
 Gentoo VM at `/var/tmp/prismdrake-wp12-qt-final`.
 
+The Ubuntu Qt 6.4 rows below are retained as historical evidence for that
+revision. The maintainer ended Qt 6.4 support and selected Qt 6.11 as the
+minimum on 2026-07-18; those rows are not current compatibility claims.
+
 | Layer | Exact command or artifact | Result | Revision, environment, or run |
 |---|---|---|---|
 | Contract validation | `make validate` | Passed all 39 rejection fixtures. | Host, `70aaf34` |
@@ -294,8 +299,8 @@ Gentoo VM at `/var/tmp/prismdrake-wp12-qt-final`.
 | Gentoo VM GCC complete suite, including Xvfb and isolated D-Bus lanes | `ctest --test-dir /var/tmp/prismdrake-wp12-qt-final/build-gcc --output-on-failure` | Passed 440 of 440 tests; only the root-inapplicable `BoundedFileTest.DistinguishesPermissionDenied` fixture skipped. Card and real-model list verbose runners passed 6 of 6 and 8 of 8. | GCC 15.3.0, Qt 6.11.1, `prismdrake-vm` |
 | Gentoo VM Clang focused notification tests | `ctest --test-dir /var/tmp/prismdrake-wp12-qt-final/build-clang -R 'Notification' --output-on-failure` | Passed all 25 focused registrations. | Clang 22.1.8, `prismdrake-vm` |
 | Gentoo VM ASan plus UBSan focused notification tests | `ASAN_OPTIONS=detect_leaks=1 ctest --test-dir /var/tmp/prismdrake-wp12-qt-final/build-sanitizers -R 'Notification' --output-on-failure` | Passed all 25 focused registrations with LeakSanitizer enabled. | GCC 15.3.0 ASan plus UBSan, `prismdrake-vm` |
-| Ubuntu lower-bound Qt lane | `pkg-config --modversion Qt6Core Qt6Qml Qt6Quick Qt6QuickControls2`; complete GCC and Clang CI jobs | All four components reported 6.4.2; GCC and Clang each passed all 440 tests, and the QML lint target passed. | Ubuntu 24.04, GitHub Actions run `29616932095` |
-| GitHub Actions | Run `29616932095` | All four jobs passed: GCC build/test, Clang build/test, contract validation, and C++ format plus QML lint. | `70aaf34` |
+| Historical Ubuntu Qt lane | `pkg-config --modversion Qt6Core Qt6Qml Qt6Quick Qt6QuickControls2`; complete GCC and Clang CI jobs | All four components reported 6.4.2; GCC and Clang each passed all 440 tests, and the QML lint target passed. Superseded as compatibility evidence on 2026-07-18. | Ubuntu 24.04, GitHub Actions run `29616932095` |
+| Historical GitHub Actions | Run `29616932095` | All four jobs passed: GCC build/test, Clang build/test, contract validation, and C++ format plus QML lint. | `70aaf34`; retained as historical evidence |
 
 ## Explicitly unresolved evidence
 

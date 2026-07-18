@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-16
+- **Hosted-CI policy amended:** 2026-07-18
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -64,11 +65,14 @@ target so the policy is explicit and consistently inherited. Do not rely on a
 compiler's default language mode.
 
 Support GCC and Clang on Linux. The Gentoo reference build uses its reviewed
-system compiler, while CI must configure, compile, and run display-free tests
-with both compiler families before PD1 exits. Minimum supported compiler and
-CMake versions must be based on tested package evidence and recorded in build
-and dependency documentation; configuration must fail with an actionable
-message when the selected toolchain lacks required C++20 behavior.
+system compilers. Before PD1 exits, the supported reference environment must
+configure, compile, and run applicable tests with both compiler families.
+Hosted CI may remain contract-only when its system toolkit is older than the
+Accepted minimum; it must not download or vendor a newer toolkit merely to
+manufacture a compatibility lane. Minimum supported compiler and CMake versions
+must be based on tested package evidence and recorded in build and dependency
+documentation; configuration must fail with an actionable message when the
+selected toolchain lacks required C++20 behavior.
 
 Use system-packaged GoogleTest for C++ unit tests and register tests with CTest,
 using CMake's GoogleTest integration where discovery is appropriate. Test code
@@ -136,6 +140,12 @@ tooling. Supporting two compiler families and maintaining formatter, analyzer,
 and sanitizer paths adds CI work. System-packaged GoogleTest adds a test-only
 dependency but keeps third-party source and updates outside the Prismdrake tree.
 
+The Gentoo reference environment is authoritative for Qt-bound GCC, Clang,
+formatting, QML lint, and integration evidence while hosted runners remain below
+the Accepted Qt floor. GitHub Actions continues to validate repository
+contracts. Full hosted build jobs may return when a runner supplies supported
+system packages; a green contract job is not a product-build claim.
+
 Feature options, warnings, sanitizer flags, installation destinations, and
 version generation require focused CMake helpers rather than directory-global
 flags. Package and CI evidence must establish tested minimum tool versions; this
@@ -143,7 +153,7 @@ ADR intentionally does not invent unmeasured compatibility claims.
 
 This ADR does not by itself select a visible-shell toolkit, make Qt a dependency
 of toolkit-neutral components, or stabilize a public C++ ABI. ADR 0003 governs
-the separately accepted Qt 6 Quick visible-shell direction.
+the separately accepted Qt 6.11-or-newer Quick visible-shell direction.
 
 ## Validation or evidence
 
@@ -152,6 +162,10 @@ development environment and isolated toolkit spike. The first GCC, Clang,
 GoogleTest, sanitizer, formatting, analysis, LTO,
 missing-dependency, and archive results are recorded in the
 [PD1 build and toolchain evidence](../research/pd1-build-toolchain-evidence.md).
+On 2026-07-18, the maintainer selected Qt 6.11 as the visible-shell minimum and
+ended Qt 6.4 support. Because the available Ubuntu hosted runner provides Qt
+6.4.2, its product build and formatting jobs were retired rather than treated
+as supported-toolkit evidence; the independent repository-contract job remains.
 The following remain the continuing PD1 exit contract for every applicable
 production target and for packaging rather than claims about the isolated
 spike:

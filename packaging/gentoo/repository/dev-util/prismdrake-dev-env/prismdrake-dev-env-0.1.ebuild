@@ -36,10 +36,10 @@ RDEPEND="
 		dev-util/pkgdev
 	)
 	qt6? (
-		dev-qt/qtbase:6
-		dev-qt/qtdeclarative:6
-		dev-qt/qtsvg:6
-		dev-qt/qttools:6
+		>=dev-qt/qtbase-6.11:6
+		>=dev-qt/qtdeclarative-6.11:6
+		>=dev-qt/qtsvg-6.11:6
+		>=dev-qt/qttools-6.11:6
 	)
 	visual-tests? (
 		media-gfx/imagemagick

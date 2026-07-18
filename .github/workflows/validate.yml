@@ -9,6 +9,9 @@ permissions:
   contents: read
 
 jobs:
+  # Ubuntu 24.04 provides Qt 6.4, below Prismdrake's supported Qt 6.11 floor.
+  # Product builds, tests, formatting, and QML lint run in the Gentoo reference
+  # environment until a hosted runner supplies the supported system toolkit.
   contracts:
     name: Validate repository contracts
     runs-on: ubuntu-24.04
@@ -24,87 +27,3 @@ jobs:
 
       - name: Run contract validation
         run: make validate
-
-  build:
-    name: Build and test (${{ matrix.name }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: GCC
-            compiler: g++
-            packages: g++
-          - name: Clang 18
-            compiler: clang++-18
-            packages: clang-18
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v6
-
-      - name: Install system build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends \
-            at-spi2-core dbus gir1.2-atspi-2.0 libglib2.0-bin libsystemd-dev \
-            libxcb1-dev libxcb-randr0-dev ninja-build openbox python3-gi xdotool \
-            libgtest-dev libtomlplusplus-dev nlohmann-json3-dev \
-            qt6-base-dev qt6-declarative-dev \
-            qml6-module-qtqml qml6-module-qtqml-models \
-            qml6-module-qtqml-workerscript qml6-module-qtquick \
-            qml6-module-qtquick-controls qml6-module-qtquick-layouts \
-            qml6-module-qtquick-templates qml6-module-qtquick-window \
-            qml6-module-qttest xvfb ${{ matrix.packages }}
-
-      - name: Record Qt component versions
-        run: pkg-config --modversion Qt6Core Qt6Qml Qt6Quick Qt6QuickControls2
-
-      - name: Configure
-        run: >-
-          cmake -S . -B build/ci -G Ninja
-          -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
-          -DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=ON
-          -DPRISMDRAKE_WARNINGS_AS_ERRORS=ON
-
-      - name: Build
-        run: cmake --build build/ci --parallel 2
-
-      - name: Test
-        run: ctest --test-dir build/ci --output-on-failure
-
-  format:
-    name: Check C++ formatting
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v6
-
-      - name: Install formatter
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends \
-            ninja-build clang-format-18 libsystemd-dev libtomlplusplus-dev \
-            libxcb1-dev libxcb-randr0-dev nlohmann-json3-dev \
-            qt6-base-dev qt6-declarative-dev \
-            qml6-module-qtqml qml6-module-qtqml-models \
-            qml6-module-qtqml-workerscript qml6-module-qtquick \
-            qml6-module-qtquick-controls qml6-module-qtquick-layouts \
-            qml6-module-qtquick-templates qml6-module-qtquick-window
-
-      - name: Configure without tests
-        run: >-
-          cmake -S . -B build/format -G Ninja
-          -DBUILD_TESTING=OFF
-          -DPRISMDRAKE_CLANG_FORMAT_EXECUTABLE=/usr/bin/clang-format-18
-
-      - name: Check formatting
-        run: cmake --build build/format --target format-check
-
-      - name: Check QML
-        run: >-
-          cmake --build build/format --target
-          prismdrake-shell-notification-qml_qmllint
-          prismdrake-shell-panel-qml_qmllint

@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-16
+- **Compatibility floor amended:** 2026-07-18
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -31,10 +32,16 @@ accessibility and input ownership for the current scope.
 
 ## Decision
 
-Use Qt 6 Quick for visible `prismdrake-shell` surfaces and modern C++ for
-models, services, and integration. Keep persistent policy, parsing, system
-integration, and authoritative models outside QML. Use QML for layout, visual
-state, bindings, accessibility metadata, and brief interruptible animation.
+Use Qt 6.11 Quick or newer for visible `prismdrake-shell` surfaces and modern
+C++ for models, services, and integration. Keep persistent policy, parsing,
+system integration, and authoritative models outside QML. Use QML for layout,
+visual state, bindings, accessibility metadata, and brief interruptible
+animation.
+
+Require Qt 6.11 or newer for the visible shell and its Qt-bound presentation
+adapters. Qt 6.11.1 in the Gentoo reference environment is the verified
+component baseline. Qt 6.4 compatibility is not a supported target and must not
+constrain implementation or validation.
 
 Keep non-visual services toolkit-neutral where practical. This decision does
 not select Qt for every component or make Qt and GTK jointly mandatory. The
@@ -47,6 +54,9 @@ The shell can share one declarative component set across Lustre and Forge, but
 must police QML business-logic islands, UI-thread work, global singletons, and
 hard-coded theme values. Qt modules and transitive packages require explicit
 license and dependency review. Custom controls require accessibility tests.
+Distribution packages and build environments must supply the declared Qt 6.11
+floor; older hosted environments may validate repository contracts but cannot
+provide product compatibility evidence.
 
 ## Validation or evidence
 

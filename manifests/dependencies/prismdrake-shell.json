@@ -14,15 +14,15 @@
       "feature": "visible_shell_foundation",
       "requirement_status": "implemented",
       "version": {
-        "declared_minimum": "6.4",
-        "verified_minimum": "6.4.2",
+        "declared_minimum": "6.11",
+        "verified_minimum": "6.11.1",
         "observed": "6.11.1",
         "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental shell composition root, immutable settings/theme projection, and panel window host directly use system Qt Core and GUI, while the launcher controller and passive launcher, task, and notification presentation adapters use Qt Core. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1 supplies current reference evidence."
+      "reason": "The Experimental shell composition root, immutable settings/theme projection, and panel window host directly use system Qt Core and GUI, while the launcher controller and launcher, task, and notification presentation adapters use Qt Core. The maintainer-selected Qt 6.11 floor is verified by the Gentoo 6.11.1 reference environment."
     },
     {
       "name": "qtdeclarative",
@@ -32,15 +32,15 @@
       "feature": "qml_and_qt_quick",
       "requirement_status": "implemented",
       "version": {
-        "declared_minimum": "6.4",
-        "verified_minimum": "6.4.2",
+        "declared_minimum": "6.11",
+        "verified_minimum": "6.11.1-r1",
         "observed": "6.11.1-r1",
         "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental shell executable and panel, launcher, and notification modules directly use system QML, Qt Quick, and Quick Controls. Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested common-API component version; Gentoo 6.11.1-r1 supplies current reference evidence."
+      "reason": "The Experimental shell executable and panel, launcher, and notification modules directly use system QML, Qt Quick, and Quick Controls. The maintainer-selected Qt 6.11 floor is verified by the Gentoo qtdeclarative 6.11.1-r1 reference environment."
     },
     {
       "name": "nlohmann-json",

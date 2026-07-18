@@ -39,15 +39,15 @@ BDEPEND="
 DEPEND="
 	>=dev-cpp/nlohmann_json-3.11
 	dev-cpp/tomlplusplus
-	>=dev-qt/qtbase-6.4:6[X,accessibility,dbus,gui,opengl]
-	>=dev-qt/qtdeclarative-6.4:6[accessibility,opengl]
+	>=dev-qt/qtbase-6.11:6[X,accessibility,dbus,gui,opengl]
+	>=dev-qt/qtdeclarative-6.11:6[accessibility,opengl]
 	sys-libs/basu
 	x11-libs/libxcb
 "
 RDEPEND="
 	dev-cpp/tomlplusplus
-	>=dev-qt/qtbase-6.4:6[X,accessibility,dbus,gui,opengl]
-	>=dev-qt/qtdeclarative-6.4:6[accessibility,opengl]
+	>=dev-qt/qtbase-6.11:6[X,accessibility,dbus,gui,opengl]
+	>=dev-qt/qtdeclarative-6.11:6[accessibility,opengl]
 	sys-apps/dbus
 	sys-libs/basu
 	x11-libs/libxcb

@@ -8,10 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PkgConfig REQUIRED)
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2)
+find_package(Qt6 6.11 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2)
 pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
 
-qt_standard_project_setup(REQUIRES 6.5)
+qt_standard_project_setup(REQUIRES 6.11)
 qt_policy(SET QTP0004 NEW)
 
 add_executable(prismdrake-pd1-toolkit-spike
@@ -46,7 +46,7 @@ target_link_libraries(prismdrake-pd1-toolkit-spike PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
-    find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
+    find_package(Qt6 6.11 REQUIRED COMPONENTS Test)
 
     add_executable(prismdrake-pd1-toolkit-spike-tests
         tests/PresentationModelTest.cpp

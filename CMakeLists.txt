@@ -45,13 +45,13 @@ set(prismdrake_qt_components Core Gui Qml Quick QuickControls2)
 if(BUILD_TESTING)
     list(APPEND prismdrake_qt_components QuickTest)
 endif()
-find_package(Qt6 6.4 CONFIG QUIET COMPONENTS ${prismdrake_qt_components})
+find_package(Qt6 6.11 CONFIG QUIET COMPONENTS ${prismdrake_qt_components})
 if(NOT Qt6_FOUND)
     message(FATAL_ERROR
         "Prismdrake shell presentation requires system-packaged Qt Core, GUI, QML, Quick, "
-        "and Quick Controls 6.4 or newer; tests also require Quick Test. Install "
-        "dev-qt/qtbase:6 and dev-qt/qtdeclarative:6 on Gentoo, or qt6-base-dev, "
-        "qt6-declarative-dev, and the required qml6-module-* packages on Ubuntu. "
+        "and Quick Controls 6.11 or newer; tests also require Quick Test. Install "
+        ">=dev-qt/qtbase-6.11:6 and >=dev-qt/qtdeclarative-6.11:6 on Gentoo, "
+        "or equivalent Qt 6.11-or-newer system packages on another supported host. "
         "Prismdrake does not download or vendor Qt.")
 endif()
 find_package(tomlplusplus CONFIG QUIET)

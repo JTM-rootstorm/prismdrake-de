@@ -402,7 +402,7 @@ The following direction is Accepted for PD1 through ADRs 0003, 0004, 0006, and
 0008. It does not make every dependency mandatory for every component or
 stabilize public implementation interfaces:
 
-- Visible shell surfaces: Qt 6 Quick.
+- Visible shell surfaces: Qt 6.11 Quick or newer.
 - Shell models and integration: modern C++.
 - Non-visual core services: modern C++ with D-Bus and X11/XCB interfaces as appropriate.
 - Build system: CMake.
@@ -418,8 +418,10 @@ stability limits recorded by the Accepted ADRs.
 
 ### 12.2 Toolkit expectations
 
-For the Accepted Qt 6 Quick visible-shell direction:
+For the Accepted Qt 6.11-or-newer Quick visible-shell direction:
 
+- Qt 6.11 is the minimum supported toolkit version for Qt-bound Prismdrake
+  components; Qt 6.4 compatibility is not a project target.
 - QML SHOULD contain layout, visual state, and animation.
 - Persistent policy, parsing, D-Bus access, window models, and settings logic SHOULD remain in C++ or service interfaces.
 - QML MUST NOT become the sole source of security or authorization decisions.
@@ -1401,7 +1403,7 @@ Prismdrake 1.0 is ready only when all applicable mandatory requirements have evi
 | Canonical repository | Accepted |
 | GPL-3.0 repository license | Accepted |
 | Component and process model | Accepted |
-| Qt 6 Quick visible shell | Accepted for visible shell surfaces |
+| Qt 6.11-or-newer Quick visible shell | Accepted for visible shell surfaces |
 | Modern C++ core | Accepted for PD1 models, services, and integration |
 | CMake, CTest, C++20, and system GoogleTest baseline | Accepted |
 | TOML user configuration and immutable snapshot model | Accepted |

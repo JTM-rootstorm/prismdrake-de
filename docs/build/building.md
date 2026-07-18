@@ -44,9 +44,10 @@ depth, node, container, string, and 1 MiB limits, rejects duplicate or unknown
 shape, and verifies an exact canonical serializer round trip before publication.
 
 Shell presentation requires system Qt Core, GUI, QML, Quick, and Quick Controls
-6.4 or newer through the Qt CMake packages; tests also require Quick Test.
-Ubuntu 24.04 CI verifies Qt 6.4.2 as the oldest tested component version;
-current host and Gentoo component evidence use Qt 6.11.1. The Experimental shell
+6.11 or newer through the Qt CMake packages; tests also require Quick Test.
+The Gentoo reference environment verifies Qt 6.11.1 and qtdeclarative
+6.11.1-r1. Ubuntu 24.04's Qt 6.4 packages are below the supported floor and do
+not provide product build or compatibility evidence. The Experimental shell
 composition root wires the settings client, panel, launcher, task controller,
 development-only synthetic-notification owner, and session boundary. The fixed
 bounded notification fixture is available from the panel and survives a

@@ -55,10 +55,13 @@ cmake --build --preset clang-debug --target format-check
 cmake --build --preset clang-debug --target prismdrake-shell-notification-qml_qmllint
 ```
 
-The authoritative CI formatting path uses `clang-format-18` on Ubuntu 24.04.
-Set `PRISMDRAKE_CLANG_FORMAT_EXECUTABLE` when the reviewed executable has a
+The authoritative formatting and QML-lint paths run in the Gentoo reference
+environment with the supported Qt 6.11-or-newer toolkit. Set
+`PRISMDRAKE_CLANG_FORMAT_EXECUTABLE` when the reviewed executable has a
 versioned name. A missing formatter causes the explicit `format-check` target
-to fail rather than claiming a skipped success.
+to fail rather than claiming a skipped success. GitHub Actions remains a
+repository-contract lane while its Ubuntu system Qt is below the supported
+floor; it does not claim product compilation, formatting, or QML validation.
 
 Clang-Tidy is opt-in and requires either `clang-tidy` on `PATH` or an explicit
 `PRISMDRAKE_CLANG_TIDY_EXECUTABLE`. Required environment-dependent checks must
