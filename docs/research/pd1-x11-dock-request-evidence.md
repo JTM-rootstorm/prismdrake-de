@@ -70,6 +70,10 @@ and independently reads each property with strict type, format, item-count, and
 `_NET_SUPPORTED` atoms through XCB, then maps the dock and observes the current
 desktop's `_NET_WORKAREA`. For the 1024 by 768 fixture and 48-pixel bottom
 panel, Openbox published the expected `[0, 0, 1024, 720]` rectangle.
+The work-area observation remains bounded by eight seconds inside the existing
+30-second isolated-lane timeout. This accommodates a delayed Openbox event turn
+under package-build contention without converting the test to an unbounded
+retry or weakening the exact expected rectangle.
 
 Openbox is selected only as a controlled standards-capable test WM. Runtime
 capability discovery uses protocol state and never infers support from its
