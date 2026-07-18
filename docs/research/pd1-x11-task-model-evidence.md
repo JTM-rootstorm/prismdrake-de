@@ -1,11 +1,13 @@
 # PD1 X11 task-model evidence
 
-**Date:** 2026-07-17
+**Date:** 2026-07-18
 
 **Reference environment:** host plus `prismdrake-vm`
 
 **Source revisions:** task contracts commit `ca48a8b`; task-source and
-confirmation commit `ce34ada`
+confirmation commit `ce34ada`; EWMH stabilization commit `3ae1d0c`; controller
+stabilization commit `d3ded0b`; complete demonstration commit `8ce2e13`;
+Openbox harness readiness commit `d9149f3`; final validation revision `0e223cf`
 
 ## Scope
 
@@ -28,16 +30,29 @@ requirements attached to those features.
 the owner to advertise the client-list contract. It reads
 `_NET_CLIENT_LIST`, optional `_NET_CLIENT_LIST_STACKING`, and optional
 `_NET_ACTIVE_WINDOW`, then re-reads the owner and root properties before
-publishing. One refresh is limited to two attempts so a torn observation cannot
-cause unbounded work.
+publishing. The confirming read requires the same verified owner and the same
+ordered mandatory client list. Optional stacking or active-window churn does
+not invalidate that structural owner/client gate.
 
-Each client list is limited to 256 nonzero, unique XIDs. A present stacking
-list must be an exact permutation of the client list, and a present active
-window must belong to that list. An absent stacking property falls back
-deterministically to client-list order. `_NET_ACTIVE_WINDOW` set to X11 `None`
-is canonicalized to no active window. A malformed, oversized, or torn root
-observation is rejected as a whole so the caller can retain its prior immutable
-snapshot.
+Each mandatory client list is limited to 256 nonzero, unique XIDs. An absent
+stacking property falls back deterministically to client-list order. A valid,
+bounded stacking list whose set disagrees with the mandatory client list also
+falls back to client-list order and records that optional contradiction. A
+valid active-window XID outside the mandatory list is cleared and records that
+it was stale. `_NET_ACTIVE_WINDOW` set to X11 `None` is canonicalized to no
+active window. Malformed, wrongly typed, zero-containing, duplicate, or
+oversized mandatory data is rejected immediately. Malformed or oversized
+optional data is also rejected immediately rather than retried; optional data
+degrades only when its syntax is valid and its value contradicts the mandatory
+set.
+
+The Qt task controller retains the prior immutable publication while one owned
+single-shot timer schedules transient owner/client stabilization retries after
+10, 20, 40, 80, and 160 milliseconds, for a total deferred window of 310
+milliseconds. Relevant real X11 events are coalesced while that epoch is
+pending. Checked requests remain unavailable until a complete authoritative
+refresh succeeds. Exhaustion emits one recoverable diagnostic exactly once and
+does not rearm or poll; a later real X11 event may begin a fresh bounded epoch.
 
 The source observes properties only. It selects `PropertyChange` on advertised
 clients through the same `X11Connection` whose `RootEventStream` is the sole
@@ -138,6 +153,37 @@ root lists; bounded title, class, enum, workspace, hint, transient, and icon
 decoding; task filtering, reorder, immutable prior generations, stale removal,
 XID reuse, and invalid-observation retention; and delivery versus confirmation,
 expiry refusal, filtered targets, disappearance, and replacement.
+Controller integration coverage includes owner appearance during the startup
+epoch, a later real event after exhaustion, checked-request rejection while a
+stale publication is stabilizing, actual X-server connection loss with
+exact-once shutdown, and back-to-back Openbox maps followed by removal.
+
+### 2026-07-18 Openbox stabilization trace
+
+A redacted diagnostic run in `prismdrake-vm` held one Openbox session under a
+bounded 400-sample observation at 25-millisecond intervals. The verified owner
+remained stable. The mandatory client count advanced
+`0 -> 1 -> 2 -> 2 -> 3 -> 3`, then remained at three for approximately eight
+seconds. Every live stacking
+observation agreed with the mandatory client set, although valid order could
+differ, and the live active window belonged to that set. A stale active window
+appeared only during teardown while the mandatory list was shrinking.
+
+From the VM build containing EWMH revision `3ae1d0c`, controller revision
+`d3ded0b`, and demonstration revision `8ce2e13`, the complete PD1 demonstration
+passed 25 of 25 consecutive bounded runs. After the stress run, process checks
+found zero lingering `prismdrake-shell`, fixture, Openbox, or Xvfb processes.
+
+The exact final source archive at revision `0e223cf`, including the bounded
+Openbox map-fixture readiness fix at `d9149f3`, has SHA-256
+`abe75c49bdd28fc79d02b32e5f4ab1d37f6c46cbcb3faf7b3d14e19ad0412e35`.
+Clean VM configure and build completed with GCC 15.3.0 and Clang 22.1.8. Each
+compiler then passed all 559 registered tests, including the real Openbox task
+controller lane, with zero failures and the same single root-inapplicable
+permission test skipped. GitHub Actions run `29653471728` passed the GCC,
+Clang 18, repository-contract, and C++/QML formatting jobs. These results close
+the task-stabilization blocker; they do not claim that the broader PD1 exit gate
+or its installed-artifact requirements are complete.
 
 ## Impact and remaining boundary
 

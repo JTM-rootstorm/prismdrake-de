@@ -93,6 +93,28 @@ All three documents passed the strict external schema and semantic validator
 after transfer through the VM shared artifact boundary. They remain untracked
 review artifacts rather than repository source.
 
+A separate redacted 2026-07-18 Openbox diagnostic used EWMH revision `3ae1d0c`,
+controller revision `d3ded0b`, and complete-demonstration revision `8ce2e13`.
+The verified owner remained stable. The mandatory client count advanced
+`0 -> 1 -> 2 -> 2 -> 3 -> 3`, then remained at three for approximately eight
+seconds. Live stacking observations agreed with the mandatory client set, and
+the live active window belonged to that set; a stale active value occurred only
+during teardown while the mandatory set shrank. The complete PD1 demonstration
+then passed 25 of 25 consecutive bounded VM runs, followed by zero lingering
+shell, fixture, Openbox, or Xvfb processes. This focused result closes the
+observed task-mirror stabilization blocker.
+
+The exact final source archive at revision `0e223cf`, including the
+event-readiness harness fix at `d9149f3`, has SHA-256
+`abe75c49bdd28fc79d02b32e5f4ab1d37f6c46cbcb3faf7b3d14e19ad0412e35`.
+Clean VM configure and build completed with GCC 15.3.0 and Clang 22.1.8. Each
+compiler then passed all 559 registered tests, with zero failures and the same
+single root-inapplicable permission test skipped. GitHub Actions run
+`29653471728` also passed the GCC, Clang 18, repository-contract, and C++/QML
+formatting jobs. These results validate the blocker candidate; they do not by
+themselves close the broader PD1 exit gate or its remaining installed-artifact
+requirements.
+
 ## In-process measurements
 
 The runner measures five narrow operations. Each operation validates its
@@ -157,9 +179,17 @@ missing endpoint. Every supervised restart publishes the structured
 the bounded session diagnostic stream through the endpoint, rejects that exact
 field or any other pre-endpoint diagnostic, and records
 `child_restart_observed=false` only after that check.
-The authoritative EWMH task reader permits exactly four coherence attempts so
-the short Openbox property burst around the dock map can settle without polling;
-four torn or malformed snapshots still fail closed and surface a diagnostic.
+The authoritative EWMH task reader confirms one observation against the same
+verified owner and ordered mandatory client list. Valid contradictory optional
+stacking data falls back to mandatory client-list order, and a valid active XID
+outside the mandatory set is cleared. Malformed, wrongly typed, or oversized
+mandatory or optional data is rejected immediately. Transient owner or
+mandatory-client unavailability and exact owner/client-list change retain the
+prior immutable publication while an owned Qt single-shot timer schedules
+retries after 10, 20, 40, 80, and 160 milliseconds, a total deferred window of
+310 milliseconds. Relevant X11 events coalesce during that epoch and checked
+requests remain unavailable. Exhaustion reports once without polling or
+automatic rearming; a later real event may start a fresh bounded epoch.
 
 The collector parses the exact atom, cardinal, and ICCCM state fields from one
 bounded `xprop` read; substring matches are not evidence. It cross-checks the
