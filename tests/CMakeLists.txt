@@ -5,41 +5,8 @@ if(NOT Python3_Interpreter_FOUND)
         "tool checks. Install Python 3.11+, or configure with -DBUILD_TESTING=OFF.")
 endif()
 
-add_test(
-    NAME GentooVmToolsTest
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/gentoo/test_vm_tools.py")
-set_tests_properties(GentooVmToolsTest PROPERTIES
-    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
-
-add_test(
-    NAME GentooProductEbuildTest
-    COMMAND "${Python3_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/gentoo/test_product_ebuild.py")
-set_tests_properties(GentooProductEbuildTest PROPERTIES
-    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
-
-add_test(
-    NAME GentooPortageLifecycleEvidenceTest
-    COMMAND "${Python3_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/gentoo/test_portage_lifecycle_evidence.py")
-set_tests_properties(GentooPortageLifecycleEvidenceTest PROPERTIES
-    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
-
-add_test(
-    NAME GentooInstalledArtifactAttestationTest
-    COMMAND "${Python3_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/gentoo/test_installed_artifact_attestation.py")
-set_tests_properties(GentooInstalledArtifactAttestationTest PROPERTIES
-    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
-
-add_test(
-    NAME GentooPortageLifecycleCollectorTest
-    COMMAND "${Python3_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/gentoo/test_portage_lifecycle_collector.py")
-set_tests_properties(GentooPortageLifecycleCollectorTest PROPERTIES
-    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
-
 add_subdirectory(fixtures)
+add_subdirectory(gentoo)
 add_subdirectory(accessibility)
 add_subdirectory(unit)
 add_subdirectory(integration)

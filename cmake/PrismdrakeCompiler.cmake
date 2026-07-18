@@ -49,6 +49,7 @@ function(prismdrake_configure_cpp_target target)
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO)
     target_link_libraries("${target}" PRIVATE Prismdrake::cpp-policy)
+    prismdrake_register_target_format_sources("${target}")
 
     if(PRISMDRAKE_ENABLE_LTO)
         set_property(TARGET "${target}" PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)

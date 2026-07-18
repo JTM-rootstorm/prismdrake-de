@@ -5,6 +5,7 @@ configure_file(
     BuildInfoConfig.hpp.in
     "${prismdrake_foundation_generated_dir}/BuildInfoConfig.hpp"
     @ONLY)
+prismdrake_register_format_sources(BuildInfoConfig.hpp.in)
 
 add_library(prismdrake-foundation STATIC
     AtomicFile.cpp
