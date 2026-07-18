@@ -10,8 +10,10 @@ fallback behavior.
 Qt 6.11 is the minimum supported visible-shell toolkit version. The Gentoo
 reference environment supplies the authoritative Qt-bound build, compiler,
 formatting, QML-lint, and integration evidence. GitHub Actions remains a
-repository-contract lane while its Ubuntu system Qt is below that floor; the
-missing hosted product-build automation remains an open WP15 exit item.
+repository-contract lane while its Ubuntu system Qt is below that floor.
+Hosted product-build automation may be added later on a supported system
+runner, but it is not a PD1 exit requirement when the recorded Gentoo reference
+matrix satisfies the product gate.
 
 ## Active workstreams
 
