@@ -486,7 +486,10 @@ class AccessibilityEvidenceContractTests(unittest.TestCase):
     def test_rejects_non_fixture_description(self) -> None:
         evidence = example_evidence_document()
         evidence["phases"][0]["controls"][0]["description"] = "Unexpected user content"
-        with self.assertRaisesRegex(EvidenceError, "outside the redacted fixture allow-list"):
+        with self.assertRaisesRegex(
+            EvidenceError,
+            "outside the redacted fixture allow-list for 'Open applications'",
+        ):
             validate_evidence_document(evidence)
 
     def test_rejects_missing_button_action(self) -> None:

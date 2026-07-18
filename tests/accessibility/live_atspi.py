@@ -119,7 +119,8 @@ def validate_evidence_document(document: Any) -> None:
             _require(len(control["description"]) <= 160, "accessible description is oversized")
             _require(
                 control["description"] in EXPECTED_DESCRIPTIONS[control["name"]],
-                "accessible description is outside the redacted fixture allow-list",
+                "accessible description is outside the redacted fixture allow-list for "
+                f"{control['name']!r}",
             )
             _require(control["actions"] in ([], ["Press"]), "unexpected accessible action")
             _require(set(control["states"]) == STATE_KEYS, "wrong accessible-state fields")
@@ -792,12 +793,6 @@ def _grab_focus(node: Any) -> bool:
     return bool(component.grab_focus())
 
 
-def _send_key(xdotool: Path, key: str, window: str) -> None:
-    command = [str(xdotool), "key", "--window", window, key]
-    result = _run_checked(command)
-    _require(result.returncode == 0, f"keyboard injection failed for {key}")
-
-
 def _focus_and_send_key(
     xdotool: Path, key: str, window: str, expected_process_id: int
 ) -> None:
@@ -996,9 +991,9 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
         phases.append(_phase(Atspi, PHASE_IDS[3], PHASE_FOCUS[3], result_specs))
         _focus_and_send_key(arguments.xdotool, "Escape", launcher, shell.pid)
         phases.append(_phase(Atspi, PHASE_IDS[4], PHASE_FOCUS[4], panel_specs))
-        _send_key(arguments.xdotool, "Tab", panel)
+        _focus_and_send_key(arguments.xdotool, "Tab", panel, shell.pid)
         phases.append(_phase(Atspi, PHASE_IDS[5], PHASE_FOCUS[5], panel_specs))
-        _send_key(arguments.xdotool, "shift+Tab", panel)
+        _focus_and_send_key(arguments.xdotool, "shift+Tab", panel, shell.pid)
         phases.append(_phase(Atspi, PHASE_IDS[6], PHASE_FOCUS[6], panel_specs))
 
         evidence = {
