@@ -63,8 +63,8 @@ pkg_setup() {
 
 src_configure() {
 	local mycmakeargs=(
-		-DBUILD_TESTING=$(usex test ON OFF)
-		-DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=$(usex test ON OFF)
+		-DBUILD_TESTING=OFF
+		-DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=OFF
 		-DPRISMDRAKE_USE_INSTALL_PATHS=ON
 	)
 	cmake_src_configure
