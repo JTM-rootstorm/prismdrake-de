@@ -28,6 +28,13 @@ This covers the platform-bridge portion of `PD-A11Y-001` through
 QML and visual lanes remain responsible for visible focus, minimum targets,
 profile/fallback parity, text scale, reduced motion, and non-color cues.
 
+The integrated PD1 demonstration extends this coverage to the production task
+presentation. It verifies that the exact shell and AT-SPI owners agree, then
+exercises keyboard minimization and reactivation, pointer secondary-menu entry,
+AT-SPI Close, and keyboard Close against two private fixture windows. Later
+EWMH observations and exact process disappearance confirm the requests; the
+shell never becomes authoritative for window state.
+
 ## Build-tree command
 
 Configure and build the two real processes, then run the focused contract and
@@ -42,6 +49,22 @@ ctest --test-dir build/accessibility \
   -R 'AccessibilityEvidenceContractTest|LiveAtspiAccessibilityTest' \
   --output-on-failure
 ```
+
+To run the strict task-action contract and live extension from the same exact
+build tree:
+
+```bash
+cmake --build build/accessibility --parallel 2 --target \
+  prismdrake-session prismdrake-settingsd prismdrake-shell \
+  prismdrake-controlled-window-fixture
+ctest --test-dir build/accessibility \
+  -R 'Pd1DevelopmentDemoContractTest|Pd1DevelopmentDemonstrationTest' \
+  --output-on-failure
+```
+
+This extension additionally requires `xprop`. Its live evidence is written as
+`tests/integration/pd1-development-demo-evidence.json` under the selected build
+directory. The file must remain private and is not a visual artifact.
 
 The live case requires `Xvfb`, Openbox, `xdotool`, `dbus-run-session`,
 `gdbus`, Python GObject introspection, and the `Atspi` 2.0 typelib. CMake

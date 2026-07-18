@@ -7,6 +7,12 @@ dependency boundary, scope, and non-goals. Each work package must cite `PD-*`
 requirements and include testable acceptance criteria, fault behavior, and
 fallback behavior.
 
+Qt 6.11 is the minimum supported visible-shell toolkit version. The Gentoo
+reference environment supplies the authoritative Qt-bound build, compiler,
+formatting, QML-lint, and integration evidence. GitHub Actions remains a
+repository-contract lane while its Ubuntu system Qt is below that floor; the
+missing hosted product-build automation remains an open WP15 exit item.
+
 ## Active workstreams
 
 1. **Build and language scaffolding:** implement the Accepted CMake, CTest, and
@@ -40,9 +46,10 @@ fallback behavior.
 ## Current implementation boundary
 
 The Experimental tree now contains the shared Lustre/Forge theme projection,
-passive launcher/task/notification presentation adapters, one token-driven and
-keyboard-operable panel component, a Qt/X11 window host that applies the
-documented primary-output bottom-dock policy through standard EWMH properties,
+passive launcher and notification presentation adapters, an actionable task
+presentation, one token-driven and keyboard-operable panel component, and a
+Qt/X11 window host that applies the documented primary-output bottom-dock
+policy through standard EWMH properties,
 and an event-driven controller that mirrors authoritative EWMH task state and
 sends only checked standard WM requests. A live asynchronous settings client
 now consumes complete owner-epoch-scoped snapshots through the Experimental
@@ -52,6 +59,11 @@ epoch to the shared theme projection, panel and launcher Quick views,
 asynchronous launcher controller, EWMH task controller, and standards-only
 panel window host. Settings-owner loss removes only the presentation epoch; a
 later complete owner epoch rebuilds it without terminating the shell process.
+Task buttons expose a code-native generic glyph and one bounded in-panel action
+surface. Keyboard Menu or Shift+F10 and pointer secondary activation open the
+exact target's accessible Minimize and Close actions; every request still flows
+through the checked EWMH controller and is confirmed only from a later
+authoritative observation.
 An init-neutral Experimental session executable validates its environment and
 display, starts settingsd before the shell, waits for bounded settings
 readiness, then waits on a private exact-child channel until the shell has one
@@ -64,8 +76,8 @@ session entry now share one CMake install contract. This is still a development
 prototype, not a complete shell: Portage-installed end-to-end and AT-SPI replay
 evidence, reviewed visual baselines, a global launcher-entry contract, and
 harness-owned isolated D-Bus lifecycle remain open PD1 work. The production
-build tree now has bounded live AT-SPI metadata and forward/reverse focus
-evidence on the reference guest.
+build tree now has bounded live AT-SPI metadata, forward/reverse focus, and
+exact task activation, minimization, and close evidence on the reference guest.
 
 ## Activation gate
 

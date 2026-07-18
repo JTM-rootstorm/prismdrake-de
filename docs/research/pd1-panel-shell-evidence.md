@@ -13,6 +13,10 @@ The implemented slice contains:
   authoritative task presentation;
 - deterministic keyboard traversal, focus recovery, explicit active, inactive,
   minimized, urgent, and modal cues, and typed activation intents;
+- a code-native, token-sized generic task glyph and one bounded in-panel action
+  surface with accessible Minimize and Close menu items;
+- keyboard Menu and Shift+F10, pointer secondary activation, Escape dismissal,
+  and deterministic exact-target recovery across coherent model replacement;
 - plain-text rendering of untrusted task metadata;
 - one Qt/X11 host for the documented bottom-edge primary-output policy;
 - checked standard `_NET_WM_WINDOW_TYPE_DOCK`, `_NET_WM_STRUT`, and
@@ -40,9 +44,9 @@ desktop-entry no-shell boundary in `PD-SEC-002` by emitting a typed launch
 intent instead of expanding or executing `Exec` in the presentation layer.
 
 This prototype does not complete the full 1.0 `PD-PANEL-002` contract. Pinned
-applications, grouping, and production context actions are outside this bounded
-panel slice. Wallpaper contrast, live assistive-technology inspection, and the
-remaining visual matrix also remain explicitly open below.
+applications, grouping, and richer production context policy are outside this
+bounded panel slice. Wallpaper contrast and the remaining visual matrix also
+remain explicitly open below.
 
 ## Host validation
 
@@ -51,7 +55,7 @@ passed:
 
 - warnings-as-errors builds for the launcher, panel, and window targets;
 - 9 launcher-presentation tests;
-- 9 panel Quick Test cases with no QML warnings;
+- 17 panel Quick Test cases with no QML warnings;
 - 8 display-free panel-window controller tests;
 - 7 display-free task-controller tests plus one deterministic no-Xvfb skip;
 - 4 strict runtime-snapshot parser tests and 5 isolated-bus client cases;
@@ -104,6 +108,23 @@ Qt XCB QPA process-fatal boundary with status 1 before application callbacks;
 the session supervisor therefore treats that process exit as restartable rather
 than claiming in-process X-transport recovery.
 
+The exact task-action demonstration source is archived as
+`prismdrake-pd1-action-demo-final-v6.tar.gz` with SHA-256
+`7d41d316dd21184a009087bd494134e7f65ecf3022b48a468c5d766a01fda437`.
+The guest archive matched that hash and its integration inputs were
+byte-identical to the staged host files. The clean GCC build at
+`/var/tmp/prismdrake-pd1-action-demo-final-v6-build` passed both registered
+PD1 demonstration cases. The strict live case completed in 2.55 seconds under
+Xvfb, Openbox, D-Bus, and AT-SPI.
+
+The emitted evidence document has SHA-256
+`524764a6517a6fc282386b3d06496c270412cc3ed25915a38171f71b5fd93957`.
+It records shell and accessibility-tree owner checks, exact focus and target
+selection, keyboard minimization and reactivation, pointer opening followed by
+AT-SPI Close, and keyboard Close. It also verifies the minimized EWMH state and
+later removal of each exact task and fixture process. Cleanup left no fixture,
+shell, settings daemon, Openbox, or Xvfb process from the isolated run.
+
 `ldd` on the validated Gentoo shell target resolved the selected `libbasu`,
 Qt 6 Core/GUI/QML/Quick/Quick Controls libraries, `libxcb`, `libxcb-randr`, and
 the system transitive graphics, font, C++ runtime, D-Bus, and Qt support
@@ -117,8 +138,10 @@ The component uses the same QML tree for Lustre and Forge. Tests cover complete
 profile-generation replacement, high contrast, reduced motion, disabled
 transparency, the opaque material fallback, minimum targets, accessible names,
 roles, descriptions, checked state, deterministic Tab and Backtab exits, task
-removal, and authoritative task reorder. Color is not the only active or urgent
-cue.
+removal, authoritative task reorder, accessible popup-menu and menu-item roles,
+disabled minimization for an already-minimized task, right-click opening,
+Escape focus restoration, and one-open-menu behavior. Color is not the only
+active or urgent cue.
 
 No animation is required by this slice, so reduced motion introduces no delayed
 input. No compositor blur is executed. Missing blur or disabled transparency is
@@ -130,6 +153,13 @@ QML receives no desktop-entry path, `Exec` value, raw catalog index, X11 window
 identifier, task lifetime, or numeric model generation. Launcher and task
 actions are typed C++ intents from the current coherent publication. Displayed
 task strings use `Text.PlainText`.
+
+The action surface retains no X11 identifier or presentation object across a
+replacement. It closes whenever its presentation object changes and reopens
+only on the surviving delegate serial selected during coherent reconciliation.
+Minimize and Close recheck the exact current presentation before emitting a
+typed request. A stale or replaced target therefore closes the action surface
+instead of redirecting the operation.
 
 Malformed, stale, conflicting, reentrant, cross-thread, and oversized model
 publications retain the previous coherent presentation. The window host stages
@@ -169,7 +199,8 @@ exposed to QML.
   that Qt survives physical X-server termination: killing Qt's sole platform X
   server can still abort `QGuiApplication` before application callback
   dispatch, and the session supervisor remains the recovery boundary.
-- Reviewed visual baselines, mixed-scale captures, right-to-left evidence, and
-  live AT-SPI inspection remain WP13 work.
+- Reviewed visual baselines and real mixed-scale/multi-output captures remain
+  WP13 work. The deterministic lane covers RTL layout, while the reference VM
+  now covers bounded live AT-SPI task actions.
 - Complete dynamic runtime closure and installed-package behavior remain WP15
   work.

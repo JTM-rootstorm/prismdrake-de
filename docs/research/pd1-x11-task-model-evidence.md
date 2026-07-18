@@ -7,7 +7,8 @@
 **Source revisions:** task contracts commit `ca48a8b`; task-source and
 confirmation commit `ce34ada`; EWMH stabilization commit `3ae1d0c`; controller
 stabilization commit `d3ded0b`; complete demonstration commit `8ce2e13`;
-Openbox harness readiness commit `d9149f3`; final validation revision `0e223cf`
+Openbox harness readiness commit `d9149f3`; blocker validation revision
+`0e223cf`; bounded task-action revisions `e17a4d2`, `91652fb`, and `1e1dcc6`
 
 ## Scope
 
@@ -19,10 +20,11 @@ confirming activation, minimization, and close requests only from later
 authoritative observations. It also establishes the metadata-mirroring portion
 of `PD-WS-001` and `PD-WS-002` through `_NET_WM_DESKTOP`.
 
-This slice does not implement a task-strip UI, workspace navigation, window
-movement, thumbnails, capture, or a Glasswyrm-native interface. It therefore
-does not complete the broader presentation, interaction, or accessibility
-requirements attached to those features.
+The model slice itself does not implement workspace navigation, window movement,
+thumbnails, capture, or a Glasswyrm-native interface. A later bounded panel
+slice now consumes this model for activation, minimization, and close actions;
+it does not broaden the model's authority or complete the wider production task
+presentation contract.
 
 ## Authoritative snapshot boundary
 
@@ -185,12 +187,34 @@ Clang 18, repository-contract, and C++/QML formatting jobs. These results close
 the task-stabilization blocker; they do not claim that the broader PD1 exit gate
 or its installed-artifact requirements are complete.
 
+### Bounded task-action integration
+
+The later production-panel integration adds a generic code-native task glyph
+and a single in-panel action surface. Keyboard Menu or Shift+F10 and pointer
+secondary activation open Minimize and Close for the exact coherent task
+presentation. The UI stores no XID and emits only the existing typed controller
+intents. Presentation replacement closes the surface; reconciliation may reopen
+it only for the exact surviving delegate serial. An already-minimized task
+disables Minimize and focuses Close.
+
+The exact source archive
+`prismdrake-pd1-action-demo-final-v6.tar.gz` has SHA-256
+`7d41d316dd21184a009087bd494134e7f65ecf3022b48a468c5d766a01fda437`.
+On the Gentoo reference VM, the strict contract and live development
+demonstration passed 2/2. The live path proved keyboard minimization followed by
+authoritative `_NET_WM_STATE_HIDDEN`, keyboard reactivation followed by removal
+of that state, pointer action-menu entry followed by AT-SPI Close, and a second
+keyboard Close. Exact process and window disappearance completed both close
+claims. The evidence document has SHA-256
+`524764a6517a6fc282386b3d06496c270412cc3ed25915a38171f71b5fd93957`.
+
 ## Impact and remaining boundary
 
-- **Accessibility:** this display-free model adds no controls, focus behavior,
-  motion, color, or accessibility tree. A later task-strip UI must still meet
-  the keyboard, screen-reader, focus, contrast, motion, and target-size
-  requirements.
+- **Accessibility:** the display-free model remains independent of controls,
+  focus, motion, color, and the accessibility tree. Its bounded panel consumer
+  now has keyboard and pointer entry, accessible popup-menu and menu-item roles,
+  visible focus, semantic state descriptions, and token-enforced targets. Full
+  screen-reader, mixed-scale, and production task-strip evidence remains open.
 - **Security and privacy:** all X11 metadata is treated as untrusted and bounded.
   Validation errors are static and do not include XIDs, titles, class values,
   icon pixels, or other property contents. The task model retains only the
