@@ -65,6 +65,7 @@ target_include_directories(prismdrake-panel-visual-baseline-tests PRIVATE
 target_link_libraries(prismdrake-panel-visual-baseline-tests
     PRIVATE
         Prismdrake::settings-core
+        Prismdrake::grouped-task-presentation
         Prismdrake::shell-task-presentation
         Prismdrake::shell-panel-qml
         prismdrake-visual-baseline-recorder
