@@ -36,6 +36,7 @@ from pd2_live_evidence import (  # noqa: E402
 )
 from collect_pd2_live_evidence import (  # noqa: E402
     build_observer_environment,
+    observer_commands,
     reviewed_skip,
 )
 
@@ -312,6 +313,35 @@ class CommandAdapterTests(unittest.TestCase):
                 "rtl_fixture",
             ],
         )
+
+    def test_unified_observer_accepts_only_dedicated_accessibility_override(self) -> None:
+        options = SimpleNamespace(
+            observer=Path("/observer"),
+            environment_observer=None,
+            performance_observer=None,
+            accessibility_observer=Path("/accessibility"),
+            internationalization_observer=None,
+            cleanup_observer=None,
+        )
+        commands = observer_commands(options)
+        self.assertEqual(commands.accessibility, Path("/accessibility"))
+        self.assertEqual(commands.environment.executable, Path("/observer"))
+        self.assertEqual(
+            commands.internationalization.prefix_arguments,
+            ("--role", "internationalization"),
+        )
+
+        for field in (
+            "environment_observer",
+            "performance_observer",
+            "internationalization_observer",
+            "cleanup_observer",
+        ):
+            with self.subTest(field=field):
+                conflicting = SimpleNamespace(**vars(options))
+                setattr(conflicting, field, Path("/conflict"))
+                with self.assertRaisesRegex(Exception, "^observer_mode_conflict$"):
+                    observer_commands(conflicting)
 
     def test_stderr_duplicate_json_and_oversized_output_fail_closed(self) -> None:
         commands = ObserverCommands(*([Path("/bin/true")] * 5))

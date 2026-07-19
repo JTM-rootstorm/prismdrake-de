@@ -202,12 +202,17 @@ env \
     --search-catalog-size 16 --search-catalog-size 64 \
     --limitation "Reference VM measurements do not define release budgets" \
     --observer "$PWD/tests/performance/pd2_reference_observer.py" \
+    --accessibility-observer "$PWD/tests/accessibility/pd2_accessibility_observer.py" \
     --output "$PWD/pd2-performance-accessibility.json"
 ```
 
 `PD1_REVISION` above is a placeholder for the exact lowercase PD1 evidence
 revision. The remaining documented observer dependencies and any reviewed
 accessibility skips must also be supplied for a complete live collection.
+The dedicated accessibility observer uses the VM's GI `Atspi` binding. The RTL
+and expanded-string routes pass only when CTest reports the complete exact
+five-test and six-test selections respectively; a partial or broadened regex
+selection fails closed.
 
 Model endpoints compare only with the matching validated PD1 model series.
 Installed-runtime, production-asset, and idle-wakeup endpoints report

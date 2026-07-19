@@ -235,6 +235,67 @@ class ReferenceObserverTests(unittest.TestCase):
         ):
             observer.ctest_result("locale_aware_clock")
 
+    def test_visual_i18n_checks_require_the_exact_intended_test_selection(self) -> None:
+        selections = {
+            "rtl_fixture": observer.I18N_EXACT_TESTS["rtl_fixture"],
+            "long_string_fixture": observer.I18N_EXACT_TESTS["long_string_fixture"],
+        }
+        for check, names in selections.items():
+            output = "".join(
+                f"{index}/{len(names)} Test #{index}: {name} .... Passed\n"
+                for index, name in enumerate(sorted(names), 1)
+            ).encode("utf-8")
+            with (
+                self.subTest(check=check),
+                tempfile.TemporaryDirectory() as temporary,
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        **BINDING_ENVIRONMENT,
+                        "PRISMDRAKE_PD2_BUILD_DIRECTORY": temporary,
+                        "PRISMDRAKE_PD2_CTEST": "/bin/true",
+                    },
+                    clear=True,
+                ),
+                mock.patch.object(
+                    observer,
+                    "run_command",
+                    return_value=subprocess.CompletedProcess([], 0, output, b""),
+                ),
+            ):
+                self.assertEqual(observer.ctest_result(check)["status"], "passed")
+
+                missing = output.splitlines(keepends=True)[:-1]
+                with (
+                    mock.patch.object(
+                        observer,
+                        "run_command",
+                        return_value=subprocess.CompletedProcess(
+                            [], 0, b"".join(missing), b""
+                        ),
+                    ),
+                    self.assertRaisesRegex(
+                        observer.ObserverError, "^ctest_selection_mismatch$"
+                    ),
+                ):
+                    observer.ctest_result(check)
+
+                extra = output + (
+                    f"{len(names) + 1}/{len(names) + 1} Test #{len(names) + 1}: "
+                    "UnrelatedTest .... Passed\n"
+                ).encode("utf-8")
+                with (
+                    mock.patch.object(
+                        observer,
+                        "run_command",
+                        return_value=subprocess.CompletedProcess([], 0, extra, b""),
+                    ),
+                    self.assertRaisesRegex(
+                        observer.ObserverError, "^ctest_selection_mismatch$"
+                    ),
+                ):
+                    observer.ctest_result(check)
+
     def test_model_runner_maps_exact_supported_endpoints_and_compares_pd1(self) -> None:
         baseline = performance_document(PD1_REVISION, [2_000_000, 3_000_000, 4_000_000])
         current = performance_document(REVISION, [1_000_000, 2_000_000, 3_000_000])

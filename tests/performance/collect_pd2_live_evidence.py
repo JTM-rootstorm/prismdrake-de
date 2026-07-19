@@ -126,6 +126,40 @@ def build_observer_environment(options: object) -> dict[str, str]:
     return environment
 
 
+def observer_commands(options: object) -> ObserverCommands:
+    """Resolve the unified observer with the dedicated AT-SPI implementation."""
+
+    individual = (
+        options.environment_observer,
+        options.performance_observer,
+        options.accessibility_observer,
+        options.internationalization_observer,
+        options.cleanup_observer,
+    )
+    if options.observer is not None:
+        forbidden_overrides = (
+            options.environment_observer,
+            options.performance_observer,
+            options.internationalization_observer,
+            options.cleanup_observer,
+        )
+        if any(value is not None for value in forbidden_overrides):
+            raise CollectorError("observer_mode_conflict")
+        commands = ObserverCommands.unified(options.observer)
+        if options.accessibility_observer is not None:
+            commands = ObserverCommands(
+                commands.environment,
+                commands.performance,
+                options.accessibility_observer,
+                commands.internationalization,
+                commands.cleanup,
+            )
+        return commands
+    if any(value is None for value in individual):
+        raise CollectorError("observer_set_incomplete")
+    return ObserverCommands(*individual)
+
+
 def run(options: object) -> None:
     skips = dict(options.reviewed_skip)
     if len(skips) != len(options.reviewed_skip):
@@ -142,21 +176,7 @@ def run(options: object) -> None:
         reviewed_skips=skips,
         limitations=tuple(options.limitation),
     )
-    individual = (
-        options.environment_observer,
-        options.performance_observer,
-        options.accessibility_observer,
-        options.internationalization_observer,
-        options.cleanup_observer,
-    )
-    if options.observer is not None:
-        if any(value is not None for value in individual):
-            raise CollectorError("observer_mode_conflict")
-        commands = ObserverCommands.unified(options.observer)
-    else:
-        if any(value is None for value in individual):
-            raise CollectorError("observer_set_incomplete")
-        commands = ObserverCommands(*individual)
+    commands = observer_commands(options)
     port = CommandLiveEvidencePort(commands, build_observer_environment(options))
     write_evidence(options.output, collect_evidence(config, port))
 

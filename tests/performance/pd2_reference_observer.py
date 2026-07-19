@@ -79,6 +79,28 @@ I18N_TESTS = {
     ),
 }
 
+I18N_EXACT_TESTS = {
+    "rtl_fixture": frozenset(
+        {
+            "TranslationCatalogTest.LoadsRtlPseudoLocaleWithoutOwningLayoutPolicy",
+            "PanelSurfaceQmlTest",
+            "LauncherSurfaceQmlTest",
+            "NotificationCenterQmlTest",
+            "QuickSettingsSurfaceQmlTest",
+        }
+    ),
+    "long_string_fixture": frozenset(
+        {
+            "TranslationCatalogTest.LoadsExpandedPseudoLocaleAndRestoresSourceStrings",
+            "TranslationCatalogTest.PreservesPlaceholdersInExpandedPseudoLocale",
+            "PanelSurfaceQmlTest",
+            "LauncherSurfaceQmlTest",
+            "NotificationCenterQmlTest",
+            "QuickSettingsSurfaceQmlTest",
+        }
+    ),
+}
+
 # These combinations have no corresponding state on the named semantic object.
 # The collector still requires the operator to list every returned skip.
 NOT_APPLICABLE_ACCESSIBILITY = {
@@ -556,7 +578,15 @@ def accessibility_result(surface: str | None, check: str | None,
                 "The isolated graphical session is not active",
             )
         if global_check == "live_atspi":
-            dependency = run_command((sys.executable, "-c", "import pyatspi"), 10.0)
+            dependency = run_command(
+                (
+                    sys.executable,
+                    "-c",
+                    "import gi; gi.require_version('Atspi', '2.0'); "
+                    "from gi.repository import Atspi",
+                ),
+                10.0,
+            )
             if dependency.returncode != 0:
                 return reviewed_skip(
                     "dependency_unavailable",
@@ -608,6 +638,16 @@ def ctest_result(check: str) -> dict[str, Any]:
         raise ObserverError("ctest_output_invalid") from error
     require(re.search(r"(?m)^\s*[1-9][0-9]*/[1-9][0-9]* Test", output) is not None,
             "ctest_selection_empty")
+    exact_tests = I18N_EXACT_TESTS.get(check)
+    if exact_tests is not None:
+        selected = re.findall(
+            r"(?m)^\s*[0-9]+/[0-9]+\s+Test\s+#[0-9]+:\s+([^\s]+)",
+            output,
+        )
+        require(
+            len(selected) == len(exact_tests) and set(selected) == exact_tests,
+            "ctest_selection_mismatch",
+        )
     return {"status": "passed", "method": method}
 
 
