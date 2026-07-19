@@ -1,6 +1,8 @@
 add_library(prismdrake-wallpaper-core STATIC
     WallpaperLayout.cpp
     WallpaperLayout.hpp
+    WallpaperLoader.cpp
+    WallpaperLoader.hpp
     WallpaperModel.cpp
     WallpaperModel.hpp)
 add_library(Prismdrake::wallpaper-core ALIAS prismdrake-wallpaper-core)
