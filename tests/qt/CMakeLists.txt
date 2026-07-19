@@ -112,6 +112,7 @@ target_compile_definitions(prismdrake-panel-surface-qml-tests PRIVATE
 target_link_libraries(prismdrake-panel-surface-qml-tests
     PRIVATE
         Prismdrake::settings-core
+        Prismdrake::grouped-task-presentation
         Prismdrake::shell-task-presentation
         Prismdrake::shell-theme
         Prismdrake::shell-panel-qml

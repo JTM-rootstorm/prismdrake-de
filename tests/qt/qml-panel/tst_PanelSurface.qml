@@ -12,6 +12,7 @@ TestCase {
     width: 1420
     height: 180
     visible: true
+    property bool groupedTasks: false
 
     Panel.PanelSurface {
         id: panel
@@ -21,12 +22,17 @@ TestCase {
         height: implicitHeight
         themeGeneration: panelFixture.themeGeneration
         taskModel: panelFixture.taskModel
+        groupedTaskModel: testCase.groupedTasks ? panelFixture.groupedTaskModel : null
+        outputName: "DP-1"
+        clockText: testCase.groupedTasks ? "1:05 PM" : ""
         notificationAffordanceVisible: true
     }
 
     SignalSpy { id: forwardExit; target: panel; signalName: "focusExitForward" }
     SignalSpy { id: backwardExit; target: panel; signalName: "focusExitBackward" }
     SignalSpy { id: launcherRequest; target: panel; signalName: "launcherRequested" }
+    SignalSpy { id: notificationCenterRequest; target: panel; signalName: "notificationCenterRequested" }
+    SignalSpy { id: quickSettingsRequest; target: panel; signalName: "quickSettingsRequested" }
 
     function launcher() {
         return findChild(panel, "panelLauncherButton")
@@ -68,12 +74,52 @@ TestCase {
     }
 
     function init() {
+        groupedTasks = false
         verify(panelFixture.resetLustre())
         verify(panelFixture.publishRepresentativeTasks())
         forwardExit.clear()
         backwardExit.clear()
         launcherRequest.clear()
         tryCompare(panel, "taskCount", 3)
+    }
+
+    function test_groupedTasksExposeProductionActionsAndOutputScopedAffordances() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const editor = panel.taskAt(0)
+        const terminal = panel.taskAt(1)
+        verify(editor !== null)
+        verify(terminal !== null)
+        compare(editor.Accessible.role, Accessible.Button)
+        compare(editor.Accessible.name, "Editor")
+        compare(editor.presentation.windowCount, 2)
+        compare(editor.presentation.pinned, true)
+        compare(editor.presentation.urgent, true)
+        compare(editor.presentation.modal, true)
+        verify(editor.width >= panel.themeGeneration.panel.minimumTargetSize)
+        verify(terminal.width >= panel.themeGeneration.panel.minimumTargetSize)
+
+        editor.Accessible.pressAction()
+        const groupPopup = findChild(editor, "panelTaskGroupPopup")
+        tryCompare(groupPopup, "opened", true)
+        keyClick(Qt.Key_Escape)
+        tryCompare(groupPopup, "opened", false)
+
+        const notificationCenter = findChild(panel, "panelNotificationCenterButton")
+        const quickSettings = findChild(panel, "panelQuickSettingsButton")
+        const clock = findChild(panel, "panelClock")
+        verify(notificationCenter.visible)
+        verify(quickSettings.visible)
+        compare(clock.text, "1:05 PM")
+        verify(clock.Accessible.name.indexOf("1:05 PM") >= 0)
+        notificationCenter.Accessible.pressAction()
+        quickSettings.Accessible.pressAction()
+        tryCompare(notificationCenterRequest, "count", 1)
+        tryCompare(quickSettingsRequest, "count", 1)
+        compare(notificationCenterRequest.signalArguments[0][0], "DP-1")
+        compare(quickSettingsRequest.signalArguments[0][0], "DP-1")
     }
 
     function test_accessibleLauncherPressEmitsExactlyOneRequest() {

@@ -8,14 +8,21 @@ FocusScope {
     id: root
 
     required property var themeGeneration
-    required property var taskModel
+    property var taskModel: null
+    property var groupedTaskModel: null
+    property string outputName: ""
+    property string clockText: ""
     property bool notificationAffordanceVisible: false
+    property bool productionAffordancesVisible: groupedTaskModel !== null
     property int pendingFocusIndex: -1
     property double pendingFocusSerial: 0
     property bool pendingActionMenuRecovery: false
     property double nextTaskFocusSerial: 1
 
-    readonly property int taskCount: taskRepeater.count
+    readonly property bool groupedTasksActive: groupedTaskModel !== null
+    readonly property var activeTaskModel: groupedTasksActive ? groupedTaskModel : taskModel
+    readonly property int taskCount: groupedTasksActive ? groupedTaskRepeater.count
+                                                        : taskRepeater.count
     readonly property string generationLabel: qsTr("%1, generation %2")
                                                  .arg(themeGeneration.profileDisplayName)
                                                  .arg(themeGeneration.generationId)
@@ -24,11 +31,14 @@ FocusScope {
     signal launcherRequested
     signal diagnosticsRequested
     signal notificationRequested
+    signal notificationCenterRequested(string outputName)
+    signal quickSettingsRequested(string outputName)
     signal focusExitForward
     signal focusExitBackward
 
     function taskAt(index) {
-        return taskRepeater.itemAt(index)
+        return groupedTasksActive ? groupedTaskRepeater.itemAt(index)
+                                  : taskRepeater.itemAt(index)
     }
 
     function focusLauncher() {
@@ -36,7 +46,9 @@ FocusScope {
     }
 
     function focusNotification() {
-        if (notificationAffordanceVisible)
+        if (productionAffordancesVisible)
+            notificationCenter.forceActiveFocus(Qt.OtherFocusReason)
+        else if (notificationAffordanceVisible)
             notification.forceActiveFocus(Qt.OtherFocusReason)
         else
             diagnostics.forceActiveFocus(Qt.OtherFocusReason)
@@ -50,6 +62,8 @@ FocusScope {
         }
         if (backward)
             launcher.forceActiveFocus(Qt.BacktabFocusReason)
+        else if (productionAffordancesVisible)
+            notificationCenter.forceActiveFocus(Qt.TabFocusReason)
         else
             diagnostics.forceActiveFocus(Qt.TabFocusReason)
     }
@@ -58,6 +72,21 @@ FocusScope {
         pendingFocusIndex = -1
         pendingFocusSerial = 0
         pendingActionMenuRecovery = false
+        if (groupedTasksActive) {
+            for (let index = 0; index < groupedTaskRepeater.count; ++index) {
+                const candidate = root.taskAt(index)
+                if (candidate !== null
+                        && (candidate.activeFocus || candidate.actionMenuOpen
+                            || candidate.groupPopupOpen)) {
+                    pendingFocusIndex = index
+                    pendingActionMenuRecovery = candidate.groupPopupOpen
+                    groupedTaskModel.rememberFocus(candidate.focusTarget,
+                                                   candidate.groupPopupOpen)
+                    return
+                }
+            }
+            return
+        }
         for (let index = 0; index < taskRepeater.count; ++index) {
             const candidate = root.taskAt(index)
             if (candidate !== null
@@ -81,24 +110,28 @@ FocusScope {
     }
 
     function prepareTaskActionMenu(originIndex) {
-        for (let index = 0; index < taskRepeater.count; ++index) {
+        for (let index = 0; index < root.taskCount; ++index) {
             const candidate = root.taskAt(index)
             if (candidate !== null && index !== originIndex) {
-                candidate.closeActionMenu(false)
+                candidate.closePopups !== undefined
+                        ? candidate.closePopups(false) : candidate.closeActionMenu(false)
             }
         }
     }
 
     function closeTaskActionMenus() {
-        for (let index = 0; index < taskRepeater.count; ++index) {
+        for (let index = 0; index < root.taskCount; ++index) {
             const candidate = root.taskAt(index)
             if (candidate !== null) {
-                candidate.closeActionMenu(false)
+                candidate.closePopups !== undefined
+                        ? candidate.closePopups(false) : candidate.closeActionMenu(false)
             }
         }
     }
 
     function recoverFocus() {
+        if (groupedTasksActive)
+            return
         const recoveryIndex = pendingFocusIndex
         const recoverySerial = pendingFocusSerial
         const recoverActionMenu = pendingActionMenuRecovery
@@ -135,6 +168,17 @@ FocusScope {
         diagnostics.forceActiveFocus(Qt.OtherFocusReason)
     }
 
+    function recoverGroupedFocus(groupIndex, memberIndex, reopenGroupPopup) {
+        const candidate = root.taskAt(groupIndex)
+        if (candidate !== null)
+            candidate.recoverFocus(memberIndex, reopenGroupPopup)
+        else if (root.taskCount > 0)
+            root.taskAt(Math.min(groupIndex, root.taskCount - 1))
+                .forceActiveFocus(Qt.OtherFocusReason)
+        else
+            diagnostics.forceActiveFocus(Qt.OtherFocusReason)
+    }
+
     implicitWidth: 960
     implicitHeight: Math.max(themeGeneration.panel.minimumTargetSize,
                              themeGeneration.panel.panelHeight)
@@ -147,12 +191,22 @@ FocusScope {
     }
 
     Connections {
-        target: root.taskModel
+        target: root.groupedTasksActive ? null : root.taskModel
         function onPublicationReconciliationStarted() {
             root.captureFocusRecovery()
         }
         function onPublicationApplied() {
             focusRecoveryTimer.restart()
+        }
+    }
+
+    Connections {
+        target: root.groupedTasksActive ? root.groupedTaskModel : null
+        function onPublicationReconciliationStarted() {
+            root.captureFocusRecovery()
+        }
+        function onFocusRecoveryRequested(groupIndex, memberIndex, reopenGroupPopup) {
+            root.recoverGroupedFocus(groupIndex, memberIndex, reopenGroupPopup)
         }
     }
 
@@ -231,13 +285,15 @@ FocusScope {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            contentWidth: tasks.width
+            contentWidth: root.groupedTasksActive ? groupedTasks.width : tasks.width
             contentHeight: height
             boundsBehavior: Flickable.StopAtBounds
             interactive: contentWidth > width
 
             Row {
                 id: tasks
+                visible: !root.groupedTasksActive
+                width: visible ? implicitWidth : 0
                 height: parent.height
                 spacing: 4
 
@@ -261,6 +317,119 @@ FocusScope {
                     }
                 }
             }
+
+            Row {
+                id: groupedTasks
+                visible: root.groupedTasksActive
+                width: visible ? implicitWidth : 0
+                height: parent.height
+                spacing: 4
+
+                Repeater {
+                    id: groupedTaskRepeater
+                    model: root.groupedTaskModel
+
+                    delegate: GroupedTaskButton {
+                        required property int index
+                        required property var group
+
+                        height: groupedTasks.height
+                        presentation: group
+                        tokens: root.themeGeneration.panel
+                        onFocusExitForward: root.focusTask(index + 1, false)
+                        onFocusExitBackward: root.focusTask(index - 1, true)
+                        onActionMenuOpening: root.prepareTaskActionMenu(index)
+                        onClicked: root.closeTaskActionMenus()
+                    }
+                }
+            }
+        }
+
+        Button {
+            id: notificationCenter
+            objectName: "panelNotificationCenterButton"
+            visible: root.productionAffordancesVisible
+            enabled: visible
+            activeFocusOnTab: false
+            text: qsTr("Notifications")
+            implicitWidth: Math.max(root.themeGeneration.panel.minimumTargetSize,
+                                    contentItem.implicitWidth
+                                    + (2 * root.themeGeneration.panel.taskPadding))
+            implicitHeight: Math.max(root.themeGeneration.panel.minimumTargetSize,
+                                     root.themeGeneration.panel.panelHeight)
+
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Open notification center")
+            Accessible.description: qsTr("Show notification history on this panel's output")
+            Accessible.focusable: visible
+            Accessible.focused: activeFocus
+            Accessible.onPressAction: notificationCenter.clicked()
+
+            Keys.priority: Keys.BeforeItem
+            Keys.onTabPressed: event => {
+                event.accepted = true
+                quickSettings.forceActiveFocus(Qt.TabFocusReason)
+            }
+            Keys.onBacktabPressed: event => {
+                event.accepted = true
+                root.focusTask(root.taskCount - 1, true)
+            }
+            onClicked: {
+                root.closeTaskActionMenus()
+                root.notificationCenterRequested(root.outputName)
+            }
+        }
+
+        Button {
+            id: quickSettings
+            objectName: "panelQuickSettingsButton"
+            visible: root.productionAffordancesVisible
+            enabled: visible
+            activeFocusOnTab: false
+            text: qsTr("Quick settings")
+            implicitWidth: Math.max(root.themeGeneration.panel.minimumTargetSize,
+                                    contentItem.implicitWidth
+                                    + (2 * root.themeGeneration.panel.taskPadding))
+            implicitHeight: Math.max(root.themeGeneration.panel.minimumTargetSize,
+                                     root.themeGeneration.panel.panelHeight)
+
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Open quick settings")
+            Accessible.description: qsTr("Show shell and notification controls on this panel's output")
+            Accessible.focusable: visible
+            Accessible.focused: activeFocus
+            Accessible.onPressAction: quickSettings.clicked()
+
+            Keys.priority: Keys.BeforeItem
+            Keys.onTabPressed: event => {
+                event.accepted = true
+                diagnostics.forceActiveFocus(Qt.TabFocusReason)
+            }
+            Keys.onBacktabPressed: event => {
+                event.accepted = true
+                notificationCenter.forceActiveFocus(Qt.BacktabFocusReason)
+            }
+            onClicked: {
+                root.closeTaskActionMenus()
+                root.quickSettingsRequested(root.outputName)
+            }
+        }
+
+        Label {
+            id: clock
+            objectName: "panelClock"
+            visible: root.clockText.length > 0
+            text: root.clockText
+            color: root.themeGeneration.panel.textPrimaryColor
+            textFormat: Text.PlainText
+            font.family: root.themeGeneration.panel.bodyFontFamily
+            font.pixelSize: root.themeGeneration.panel.bodyFontPixels
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+
+            Accessible.role: Accessible.StaticText
+            Accessible.name: qsTr("Local time, %1").arg(root.clockText)
+            Accessible.description: qsTr("Clock formatted with the configured locale and hour style")
         }
 
         Button {
@@ -292,7 +461,10 @@ FocusScope {
             }
             Keys.onBacktabPressed: event => {
                 event.accepted = true
-                root.focusTask(root.taskCount - 1, true)
+                if (root.productionAffordancesVisible)
+                    quickSettings.forceActiveFocus(Qt.BacktabFocusReason)
+                else
+                    root.focusTask(root.taskCount - 1, true)
             }
             onClicked: {
                 root.closeTaskActionMenus()

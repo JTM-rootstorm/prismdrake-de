@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GroupedTaskPresentationModel.hpp"
 #include "SettingsEngine.hpp"
 #include "ShellThemeSnapshotAdapter.hpp"
 #include "TaskModel.hpp"
@@ -24,6 +25,7 @@ class PanelSurfaceQmlFixture final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QObject *themeGeneration READ themeGeneration NOTIFY themeGenerationChanged)
     Q_PROPERTY(QAbstractItemModel *taskModel READ taskModel NOTIFY taskModelChanged)
+    Q_PROPERTY(QAbstractItemModel *groupedTaskModel READ groupedTaskModel NOTIFY taskModelChanged)
     Q_PROPERTY(int activationCount READ activationCount NOTIFY activationCaptured)
     Q_PROPERTY(QString lastActivationTitle READ lastActivationTitle NOTIFY activationCaptured)
     Q_PROPERTY(
@@ -43,6 +45,7 @@ class PanelSurfaceQmlFixture final : public QObject {
 
     [[nodiscard]] QObject *themeGeneration() const noexcept;
     [[nodiscard]] QAbstractItemModel *taskModel() const noexcept;
+    [[nodiscard]] QAbstractItemModel *groupedTaskModel() const noexcept;
     [[nodiscard]] int activationCount() const noexcept { return activation_count_; }
     [[nodiscard]] const QString &lastActivationTitle() const noexcept {
         return last_activation_title_;
@@ -71,6 +74,7 @@ class PanelSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool resetTransparencyDisabled();
     Q_INVOKABLE bool publishForge();
     Q_INVOKABLE bool publishRepresentativeTasks();
+    Q_INVOKABLE bool publishRepresentativeGroups();
     Q_INVOKABLE bool swapFirstTwoTasks();
     Q_INVOKABLE bool removeTask(int row);
     Q_INVOKABLE bool setTaskMinimized(int row, bool minimized);
@@ -114,6 +118,8 @@ class PanelSurfaceQmlFixture final : public QObject {
     std::unique_ptr<prismdrake::shell::theme::ShellThemeSnapshotAdapter> theme_adapter_;
     std::unique_ptr<prismdrake::x11::TaskModel> task_source_;
     std::unique_ptr<prismdrake::shell::tasks::TaskPresentationModel> task_presentation_;
+    std::unique_ptr<prismdrake::shell::panel::GroupedTaskPresentationModel>
+        grouped_task_presentation_;
     std::vector<FixtureTask> tasks_;
     int activation_count_{0};
     QString last_activation_title_;

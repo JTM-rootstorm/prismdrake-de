@@ -9,7 +9,9 @@ qt_add_qml_module(prismdrake-shell-panel-qml
     RESOURCE_PREFIX /qt/qml
     NO_PLUGIN
     QML_FILES
+        GroupedTaskButton.qml
         PanelSurface.qml
+        TaskGroupPopup.qml
         TaskButton.qml)
 add_library(Prismdrake::shell-panel-qml ALIAS prismdrake-shell-panel-qml)
 

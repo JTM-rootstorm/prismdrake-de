@@ -67,6 +67,7 @@ PanelSurfaceQmlFixture::PanelSurfaceQmlFixture(QObject *parent) : QObject(parent
 }
 
 PanelSurfaceQmlFixture::~PanelSurfaceQmlFixture() {
+    grouped_task_presentation_.reset();
     task_presentation_.reset();
     task_source_.reset();
     theme_adapter_.reset();
@@ -80,6 +81,10 @@ QObject *PanelSurfaceQmlFixture::themeGeneration() const noexcept {
 
 QAbstractItemModel *PanelSurfaceQmlFixture::taskModel() const noexcept {
     return task_presentation_.get();
+}
+
+QAbstractItemModel *PanelSurfaceQmlFixture::groupedTaskModel() const noexcept {
+    return grouped_task_presentation_.get();
 }
 
 QString PanelSurfaceQmlFixture::taskGeneration() const {
@@ -167,6 +172,8 @@ bool PanelSurfaceQmlFixture::resetFromConfigurationText(
     }
     auto nextTaskSource = std::make_unique<prismdrake::x11::TaskModel>();
     auto nextTaskPresentation = std::make_unique<prismdrake::shell::tasks::TaskPresentationModel>();
+    auto nextGroupedTaskPresentation =
+        std::make_unique<prismdrake::shell::panel::GroupedTaskPresentationModel>();
 
     connect(nextTheme.get(), &prismdrake::shell::theme::ShellThemeSnapshotAdapter::currentChanged,
             this, &PanelSurfaceQmlFixture::themeGenerationChanged);
@@ -179,18 +186,29 @@ bool PanelSurfaceQmlFixture::resetFromConfigurationText(
     connect(nextTaskPresentation.get(),
             &prismdrake::shell::tasks::TaskPresentationModel::closeRequested, this,
             &PanelSurfaceQmlFixture::captureClose);
+    connect(nextGroupedTaskPresentation.get(),
+            &prismdrake::shell::panel::GroupedTaskPresentationModel::activationRequested, this,
+            &PanelSurfaceQmlFixture::captureActivation);
+    connect(nextGroupedTaskPresentation.get(),
+            &prismdrake::shell::panel::GroupedTaskPresentationModel::minimizationRequested, this,
+            &PanelSurfaceQmlFixture::captureMinimization);
+    connect(nextGroupedTaskPresentation.get(),
+            &prismdrake::shell::panel::GroupedTaskPresentationModel::closeRequested, this,
+            &PanelSurfaceQmlFixture::captureClose);
 
     const auto previousTemporaryDirectory = std::move(temporary_directory_);
     auto previousSettings = std::move(settings_);
     auto previousTheme = std::move(theme_adapter_);
     auto previousTaskSource = std::move(task_source_);
     auto previousTaskPresentation = std::move(task_presentation_);
+    auto previousGroupedTaskPresentation = std::move(grouped_task_presentation_);
 
     temporary_directory_ = nextTemporaryDirectory;
     settings_ = std::move(nextSettings);
     theme_adapter_ = std::move(nextTheme);
     task_source_ = std::move(nextTaskSource);
     task_presentation_ = std::move(nextTaskPresentation);
+    grouped_task_presentation_ = std::move(nextGroupedTaskPresentation);
     tasks_.clear();
     activation_count_ = 0;
     last_activation_title_.clear();
@@ -208,6 +226,7 @@ bool PanelSurfaceQmlFixture::resetFromConfigurationText(
     emit closeCaptured();
 
     previousTaskPresentation.reset();
+    previousGroupedTaskPresentation.reset();
     previousTaskSource.reset();
     previousTheme.reset();
     previousSettings.reset();
@@ -233,6 +252,69 @@ bool PanelSurfaceQmlFixture::publishRepresentativeTasks() {
               {303U, 3003U, "Urgent dialog", "org.prismdrake.Dialog.desktop", "dialog-warning",
                false, true, true}};
     return publishTasks();
+}
+
+bool PanelSurfaceQmlFixture::publishRepresentativeGroups() {
+    tasks_ = {{101U, 1001U, "Editor document", "org.prismdrake.Editor.desktop",
+               "application-x-executable"},
+              {202U, 2002U, "Editor settings", "org.prismdrake.Editor.desktop",
+               "application-x-executable", false, true, true},
+              {303U, 3003U, "Terminal", "org.prismdrake.Terminal.desktop", "utilities-terminal"}};
+    if (!publishTasks() || !grouped_task_presentation_) {
+        return false;
+    }
+    const auto taskSnapshot = task_source_->current();
+    if (!taskSnapshot || taskSnapshot->tasks().size() != 3U) {
+        return false;
+    }
+    auto editorId = prismdrake::launcher::deriveDesktopFileId("org.prismdrake.Editor.desktop");
+    auto terminalId = prismdrake::launcher::deriveDesktopFileId("org.prismdrake.Terminal.desktop");
+    if (!editorId || !terminalId) {
+        return false;
+    }
+    const auto &editor = taskSnapshot->tasks()[0];
+    const auto &editorSettings = taskSnapshot->tasks()[1];
+    const auto &terminal = taskSnapshot->tasks()[2];
+    std::vector<PanelTaskGroup> groups;
+    groups.push_back(
+        {PanelTaskGroupKind::desktopEntry,
+         "desktop:org.prismdrake.Editor.desktop",
+         std::move(editorId).value(),
+         "Editor",
+         "application-x-executable",
+         true,
+         true,
+         editor.active(),
+         editor.hidden(),
+         editor.urgent() || editorSettings.urgent(),
+         editor.modal() || editorSettings.modal(),
+         PanelTaskPrimaryAction::openGroup,
+         {{editor.lifetime(), editor.title(), editor.active(), editor.hidden(), editor.urgent(),
+           editor.modal()},
+          {editorSettings.lifetime(), editorSettings.title(), editorSettings.active(),
+           editorSettings.hidden(), editorSettings.urgent(), editorSettings.modal()}}});
+    groups.push_back({PanelTaskGroupKind::desktopEntry,
+                      "desktop:org.prismdrake.Terminal.desktop",
+                      std::move(terminalId).value(),
+                      "Terminal",
+                      "utilities-terminal",
+                      false,
+                      true,
+                      terminal.active(),
+                      terminal.hidden(),
+                      terminal.urgent(),
+                      terminal.modal(),
+                      PanelTaskPrimaryAction::activateOrMinimize,
+                      {{terminal.lifetime(), terminal.title(), terminal.active(), terminal.hidden(),
+                        terminal.urgent(), terminal.modal()}}});
+    auto grouped = std::make_shared<const GroupedTaskSnapshot>(GroupedTaskSnapshot{
+        taskSnapshot->generation(), 1U, 1U, 1U, 1U, 1U, config::GroupingMode::always,
+        config::GroupingMode::always, std::move(groups)});
+    if (!grouped_task_presentation_->applySnapshot(std::move(grouped))) {
+        return false;
+    }
+    emit taskModelChanged();
+    return true;
 }
 
 bool PanelSurfaceQmlFixture::swapFirstTwoTasks() {
