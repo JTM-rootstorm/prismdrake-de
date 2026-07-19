@@ -16,3 +16,12 @@ prismdrake_add_gentoo_python_test(
     GentooInstalledArtifactAttestationTest test_installed_artifact_attestation.py)
 prismdrake_add_gentoo_python_test(
     GentooPortageLifecycleCollectorTest test_portage_lifecycle_collector.py)
+prismdrake_add_gentoo_python_test(
+    GentooPd2InstalledArtifactAttestationTest
+    test_pd2_installed_artifact_attestation.py)
+prismdrake_add_gentoo_python_test(
+    GentooPd2PortageLifecycleEvidenceTest
+    test_pd2_portage_lifecycle_evidence.py)
+prismdrake_add_gentoo_python_test(
+    GentooPd2PortageLifecycleCollectorTest
+    test_pd2_portage_lifecycle_collector.py)
