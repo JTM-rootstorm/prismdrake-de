@@ -1491,6 +1491,12 @@ class LivePortTests(unittest.TestCase):
             port._settings_surface_window("quick_settings"), quick_window
         )
 
+        port._desktop_surfaces = None  # noqa: SLF001
+        port._surface_shell_identity = None  # noqa: SLF001
+        self.assertEqual(port._settings_surface_window("panel_primary"), PANEL_LEFT)
+        self.assertIsNotNone(port._desktop_surfaces)  # noqa: SLF001
+        self.assertIsNotNone(port._surface_shell_identity)  # noqa: SLF001
+
         operations.window_geometry_payloads[quick_window] = xwininfo_payload(
             quick_window, WindowGeometry(1219, 452, 380, 400)
         )

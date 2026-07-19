@@ -1800,9 +1800,12 @@ class LiveXorgHarnessPort:
         )
 
     def _settings_surface_window(self, surface: str) -> int:
+        if surface in {"panel_primary", "panel_secondary"}:
+            if self._desktop_surfaces is None or self._surface_shell_identity is None:
+                self._require_desktop_wallpaper_surfaces()
+            self._require_panel_surfaces()
         shell = self._shell_identity()
         if surface in {"panel_primary", "panel_secondary"}:
-            self._require_panel_surfaces()
             panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
             x = 0 if surface == "panel_primary" else OUTPUT_WIDTH
             expected = WindowGeometry(
