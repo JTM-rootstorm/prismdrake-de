@@ -82,6 +82,7 @@ TestCase {
         groupedTasks = false
         explicitProductionAffordances = false
         developmentDiagnostics = true
+        panel.layoutDirection = Qt.LeftToRight
         verify(panelFixture.resetLustre())
         verify(panelFixture.publishRepresentativeTasks())
         forwardExit.clear()
@@ -143,6 +144,66 @@ TestCase {
         tryCompare(quickSettingsRequest, "count", 1)
         compare(notificationCenterRequest.signalArguments[0][0], "DP-1")
         compare(quickSettingsRequest.signalArguments[0][0], "DP-1")
+    }
+
+    function test_groupPopupKeyboardActionsAndAccessibilityAreDeterministic() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const editor = panel.taskAt(0)
+        editor.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Return)
+        const popup = findChild(editor, "panelTaskGroupPopup")
+        tryCompare(popup, "opened", true)
+        const firstMember = popup.memberAt(0)
+        const secondMember = popup.memberAt(1)
+        verify(firstMember !== null)
+        verify(secondMember !== null)
+        tryCompare(firstMember, "activeFocus", true)
+        compare(firstMember.Accessible.role, Accessible.ListItem)
+        verify(firstMember.Accessible.description.indexOf("Press Enter") >= 0)
+
+        keyClick(Qt.Key_Menu)
+        const activate = findChild(firstMember, "panelTaskGroupActivate")
+        const minimize = findChild(firstMember, "panelTaskGroupMinimize")
+        const close = findChild(firstMember, "panelTaskGroupClose")
+        tryCompare(activate, "activeFocus", true)
+        compare(activate.Accessible.role, Accessible.MenuItem)
+        verify(activate.width >= panel.themeGeneration.panel.minimumTargetSize)
+        verify(activate.height >= panel.themeGeneration.panel.minimumTargetSize)
+        keyClick(Qt.Key_Right)
+        tryCompare(minimize, "activeFocus", true)
+        keyClick(Qt.Key_Right)
+        tryCompare(close, "activeFocus", true)
+        keyClick(Qt.Key_Down)
+        tryCompare(findChild(secondMember, "panelTaskGroupClose"), "activeFocus", true)
+        keyClick(Qt.Key_Escape)
+        tryCompare(popup, "opened", false)
+        tryCompare(editor, "activeFocus", true)
+
+        keyClick(Qt.Key_Return)
+        tryCompare(popup, "opened", true)
+        tryCompare(firstMember, "activeFocus", true)
+        keyClick(Qt.Key_Return)
+        tryCompare(panelFixture, "activationCount", 1)
+        tryCompare(popup, "opened", false)
+        compare(panelFixture.lastActivationTitle, "Editor document")
+    }
+
+    function test_taskArrowTraversalMirrorsForRightToLeft() {
+        panel.taskAt(1).forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Left)
+        tryCompare(panel.taskAt(0), "activeFocus", true)
+        keyClick(Qt.Key_Right)
+        tryCompare(panel.taskAt(1), "activeFocus", true)
+
+        panel.layoutDirection = Qt.RightToLeft
+        compare(panel.LayoutMirroring.enabled, true)
+        keyClick(Qt.Key_Right)
+        tryCompare(panel.taskAt(0), "activeFocus", true)
+        keyClick(Qt.Key_Left)
+        tryCompare(panel.taskAt(1), "activeFocus", true)
     }
 
     function test_accessibleLauncherPressEmitsExactlyOneRequest() {

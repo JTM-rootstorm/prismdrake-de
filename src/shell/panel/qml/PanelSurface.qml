@@ -12,6 +12,7 @@ FocusScope {
     property var groupedTaskModel: null
     property string outputName: ""
     property string clockText: ""
+    property int layoutDirection: Qt.locale().textDirection
     property bool notificationAffordanceVisible: false
     property bool productionAffordancesVisible: false
     property bool developmentDiagnosticsVisible: false
@@ -198,6 +199,8 @@ FocusScope {
     implicitWidth: 960
     implicitHeight: Math.max(themeGeneration.panel.minimumTargetSize,
                              themeGeneration.panel.panelHeight)
+    LayoutMirroring.enabled: layoutDirection === Qt.RightToLeft
+    LayoutMirroring.childrenInherit: true
 
     Timer {
         id: focusRecoveryTimer
@@ -325,6 +328,7 @@ FocusScope {
                         height: tasks.height
                         presentation: task
                         tokens: root.themeGeneration.panel
+                        rightToLeft: root.layoutDirection === Qt.RightToLeft
                         Component.onCompleted: focusRecoverySerial = root.allocateTaskFocusSerial()
                         onFocusExitForward: root.focusTask(index + 1, false)
                         onFocusExitBackward: root.focusTask(index - 1, true)
@@ -352,6 +356,7 @@ FocusScope {
                         height: groupedTasks.height
                         presentation: group
                         tokens: root.themeGeneration.panel
+                        rightToLeft: root.layoutDirection === Qt.RightToLeft
                         onFocusExitForward: root.focusTask(index + 1, false)
                         onFocusExitBackward: root.focusTask(index - 1, true)
                         onActionMenuOpening: root.prepareTaskActionMenu(index)

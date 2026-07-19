@@ -8,6 +8,7 @@ Control {
 
     required property var presentation
     required property var tokens
+    property bool rightToLeft: false
 
     readonly property string title: presentation !== null ? presentation.displayName : ""
     readonly property string statusText: presentation !== null ? presentation.statusText : ""
@@ -78,11 +79,16 @@ Control {
 
     Accessible.role: Accessible.Button
     Accessible.name: title
-    Accessible.description: qsTr("%1. %2").arg(title).arg(statusText)
+    Accessible.description: groupPopupOpen
+                            ? qsTr("Application group %1. Status: %2. Window list shown.")
+                                .arg(title).arg(statusText)
+                            : qsTr("Application group %1. Status: %2.")
+                                .arg(title).arg(statusText)
     Accessible.focusable: true
     Accessible.focused: activeFocus
     Accessible.checkable: true
     Accessible.checked: activeState
+    Accessible.pressed: down
     Accessible.onPressAction: root.requestPrimary()
 
     Keys.priority: Keys.BeforeItem
@@ -93,6 +99,20 @@ Control {
     Keys.onBacktabPressed: event => {
         event.accepted = true
         root.focusExitBackward()
+    }
+    Keys.onLeftPressed: event => {
+        event.accepted = true
+        if (root.rightToLeft)
+            root.focusExitForward()
+        else
+            root.focusExitBackward()
+    }
+    Keys.onRightPressed: event => {
+        event.accepted = true
+        if (root.rightToLeft)
+            root.focusExitBackward()
+        else
+            root.focusExitForward()
     }
     Keys.onSpacePressed: event => {
         event.accepted = root.requestPrimary()
@@ -274,6 +294,7 @@ Control {
         id: groupPopup
         presentation: root.presentation
         tokens: root.tokens
+        rightToLeft: root.rightToLeft
         onClosedToOrigin: focusRestoreTimer.restart()
     }
 }

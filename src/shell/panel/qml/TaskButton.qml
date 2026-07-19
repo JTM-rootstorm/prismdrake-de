@@ -8,6 +8,7 @@ Control {
 
     required property var presentation
     required property var tokens
+    property bool rightToLeft: false
 
     readonly property string presentationTitle: presentation !== null ? presentation.title : ""
     readonly property string presentationApplicationId: presentation !== null
@@ -145,6 +146,7 @@ Control {
     Accessible.focused: activeFocus
     Accessible.checkable: true
     Accessible.checked: presentationActive
+    Accessible.pressed: down
     Accessible.onPressAction: root.clicked()
 
     Keys.priority: Keys.BeforeItem
@@ -155,6 +157,20 @@ Control {
     Keys.onBacktabPressed: event => {
         event.accepted = true
         root.focusExitBackward()
+    }
+    Keys.onLeftPressed: event => {
+        event.accepted = true
+        if (root.rightToLeft)
+            root.focusExitForward()
+        else
+            root.focusExitBackward()
+    }
+    Keys.onRightPressed: event => {
+        event.accepted = true
+        if (root.rightToLeft)
+            root.focusExitBackward()
+        else
+            root.focusExitForward()
     }
     Keys.onSpacePressed: event => {
         event.accepted = true

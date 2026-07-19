@@ -9,6 +9,7 @@ Popup {
 
     required property var presentation
     required property var tokens
+    property bool rightToLeft: false
     property int pendingMemberFocus: 0
     property bool restoreFocusWhenClosed: true
 
@@ -69,6 +70,8 @@ Popup {
 
     contentItem: Column {
         spacing: root.tokens.menuItemPadding
+        LayoutMirroring.enabled: root.rightToLeft
+        LayoutMirroring.childrenInherit: true
 
         Accessible.role: Accessible.PopupMenu
         Accessible.name: qsTr("Windows for %1").arg(root.presentation !== null
@@ -89,9 +92,62 @@ Popup {
                 width: Math.max(320, memberActions.implicitWidth)
                 height: Math.max(root.tokens.minimumTargetSize, memberActions.implicitHeight)
 
+                function actionAt(actionIndex) {
+                    switch (actionIndex) {
+                    case 0: return activate
+                    case 1: return minimize
+                    case 2: return closeWindow
+                    default: return null
+                    }
+                }
+
+                function focusAction(actionIndex, direction, reason) {
+                    for (let candidateIndex = actionIndex;
+                         candidateIndex >= 0 && candidateIndex < 3;
+                         candidateIndex += direction) {
+                        const candidate = actionAt(candidateIndex)
+                        if (candidate !== null && candidate.enabled) {
+                            candidate.forceActiveFocus(reason)
+                            return true
+                        }
+                    }
+                    return false
+                }
+
+                function focusAdjacentMember(direction, actionIndex, reason) {
+                    const candidate = root.memberAt((index + direction + memberRepeater.count)
+                                                    % memberRepeater.count)
+                    if (candidate === null)
+                        return
+                    if (actionIndex >= 0
+                            && candidate.focusAction(actionIndex, direction > 0 ? 1 : -1,
+                                                     reason))
+                        return
+                    candidate.forceActiveFocus(reason)
+                }
+
+                function moveFromAction(actionIndex, direction) {
+                    const reason = direction > 0 ? Qt.TabFocusReason : Qt.BacktabFocusReason
+                    if (focusAction(actionIndex + direction, direction, reason))
+                        return
+                    if (direction < 0) {
+                        forceActiveFocus(reason)
+                        return
+                    }
+                    focusAdjacentMember(1, -1, reason)
+                }
+
+                function moveActionHorizontally(actionIndex, visualDirection) {
+                    const logicalDirection = root.rightToLeft ? -visualDirection : visualDirection
+                    moveFromAction(actionIndex, logicalDirection)
+                }
+
                 Accessible.role: Accessible.ListItem
                 Accessible.name: member !== null ? member.title : ""
-                Accessible.description: member !== null ? member.statusText : ""
+                Accessible.description: member !== null
+                    ? qsTr("Window %1. Status: %2. Press Enter to activate or Menu for actions.")
+                        .arg(member.title).arg(member.statusText)
+                    : ""
                 Accessible.focusable: true
                 Accessible.focused: activeFocus
 
@@ -112,6 +168,34 @@ Popup {
                     const candidate = root.memberAt((index + 1) % memberRepeater.count)
                     if (candidate !== null)
                         candidate.forceActiveFocus(Qt.TabFocusReason)
+                }
+                Keys.onTabPressed: event => {
+                    event.accepted = true
+                    memberRow.focusAction(0, 1, Qt.TabFocusReason)
+                }
+                Keys.onBacktabPressed: event => {
+                    event.accepted = true
+                    memberRow.focusAdjacentMember(-1, -1, Qt.BacktabFocusReason)
+                }
+                Keys.onReturnPressed: event => {
+                    event.accepted = true
+                    activate.clicked()
+                }
+                Keys.onEnterPressed: event => {
+                    event.accepted = true
+                    activate.clicked()
+                }
+                Keys.onSpacePressed: event => {
+                    event.accepted = true
+                    activate.clicked()
+                }
+                Keys.onPressed: event => {
+                    if (event.key === Qt.Key_Menu
+                            || (event.key === Qt.Key_F10
+                                && (event.modifiers & Qt.ShiftModifier))) {
+                        event.accepted = true
+                        memberRow.focusAction(0, 1, Qt.TabFocusReason)
+                    }
                 }
 
                 Row {
@@ -137,12 +221,45 @@ Popup {
                         id: activate
                         objectName: "panelTaskGroupActivate"
                         text: qsTr("Activate")
+                        activeFocusOnTab: false
                         implicitWidth: root.tokens.minimumTargetSize
                         implicitHeight: root.tokens.minimumTargetSize
                         Accessible.role: Accessible.MenuItem
                         Accessible.name: qsTr("Activate %1").arg(memberRow.member !== null
                                                                    ? memberRow.member.title : "")
                         Accessible.description: qsTr("Request that the window manager activate this window")
+                        Accessible.focusable: true
+                        Accessible.focused: activeFocus
+                        Accessible.pressed: down
+                        Accessible.onPressAction: activate.clicked()
+                        Keys.onTabPressed: event => {
+                            event.accepted = true
+                            memberRow.moveFromAction(0, 1)
+                        }
+                        Keys.onBacktabPressed: event => {
+                            event.accepted = true
+                            memberRow.moveFromAction(0, -1)
+                        }
+                        Keys.onLeftPressed: event => {
+                            event.accepted = true
+                            memberRow.moveActionHorizontally(0, -1)
+                        }
+                        Keys.onRightPressed: event => {
+                            event.accepted = true
+                            memberRow.moveActionHorizontally(0, 1)
+                        }
+                        Keys.onUpPressed: event => {
+                            event.accepted = true
+                            memberRow.focusAdjacentMember(-1, 0, Qt.BacktabFocusReason)
+                        }
+                        Keys.onDownPressed: event => {
+                            event.accepted = true
+                            memberRow.focusAdjacentMember(1, 0, Qt.TabFocusReason)
+                        }
+                        Keys.onEscapePressed: event => {
+                            event.accepted = true
+                            root.closeToOrigin()
+                        }
                         onClicked: {
                             if (memberRow.member !== null
                                     && memberRow.member.requestActivation())
@@ -154,6 +271,7 @@ Popup {
                         id: minimize
                         objectName: "panelTaskGroupMinimize"
                         text: qsTr("Minimize")
+                        activeFocusOnTab: false
                         enabled: memberRow.member !== null && !memberRow.member.minimized
                         implicitWidth: root.tokens.minimumTargetSize
                         implicitHeight: root.tokens.minimumTargetSize
@@ -161,6 +279,38 @@ Popup {
                         Accessible.name: qsTr("Minimize %1").arg(memberRow.member !== null
                                                                    ? memberRow.member.title : "")
                         Accessible.description: qsTr("Request that the window manager minimize this window")
+                        Accessible.focusable: enabled
+                        Accessible.focused: activeFocus
+                        Accessible.pressed: down
+                        Accessible.onPressAction: minimize.clicked()
+                        Keys.onTabPressed: event => {
+                            event.accepted = true
+                            memberRow.moveFromAction(1, 1)
+                        }
+                        Keys.onBacktabPressed: event => {
+                            event.accepted = true
+                            memberRow.moveFromAction(1, -1)
+                        }
+                        Keys.onLeftPressed: event => {
+                            event.accepted = true
+                            memberRow.moveActionHorizontally(1, -1)
+                        }
+                        Keys.onRightPressed: event => {
+                            event.accepted = true
+                            memberRow.moveActionHorizontally(1, 1)
+                        }
+                        Keys.onUpPressed: event => {
+                            event.accepted = true
+                            memberRow.focusAdjacentMember(-1, 1, Qt.BacktabFocusReason)
+                        }
+                        Keys.onDownPressed: event => {
+                            event.accepted = true
+                            memberRow.focusAdjacentMember(1, 1, Qt.TabFocusReason)
+                        }
+                        Keys.onEscapePressed: event => {
+                            event.accepted = true
+                            root.closeToOrigin()
+                        }
                         onClicked: {
                             if (memberRow.member !== null
                                     && memberRow.member.requestMinimization())
@@ -172,12 +322,45 @@ Popup {
                         id: closeWindow
                         objectName: "panelTaskGroupClose"
                         text: qsTr("Close")
+                        activeFocusOnTab: false
                         implicitWidth: root.tokens.minimumTargetSize
                         implicitHeight: root.tokens.minimumTargetSize
                         Accessible.role: Accessible.MenuItem
                         Accessible.name: qsTr("Close %1").arg(memberRow.member !== null
                                                                 ? memberRow.member.title : "")
                         Accessible.description: qsTr("Request that the window close")
+                        Accessible.focusable: true
+                        Accessible.focused: activeFocus
+                        Accessible.pressed: down
+                        Accessible.onPressAction: closeWindow.clicked()
+                        Keys.onTabPressed: event => {
+                            event.accepted = true
+                            memberRow.moveFromAction(2, 1)
+                        }
+                        Keys.onBacktabPressed: event => {
+                            event.accepted = true
+                            memberRow.moveFromAction(2, -1)
+                        }
+                        Keys.onLeftPressed: event => {
+                            event.accepted = true
+                            memberRow.moveActionHorizontally(2, -1)
+                        }
+                        Keys.onRightPressed: event => {
+                            event.accepted = true
+                            memberRow.moveActionHorizontally(2, 1)
+                        }
+                        Keys.onUpPressed: event => {
+                            event.accepted = true
+                            memberRow.focusAdjacentMember(-1, 2, Qt.BacktabFocusReason)
+                        }
+                        Keys.onDownPressed: event => {
+                            event.accepted = true
+                            memberRow.focusAdjacentMember(1, 2, Qt.TabFocusReason)
+                        }
+                        Keys.onEscapePressed: event => {
+                            event.accepted = true
+                            root.closeToOrigin()
+                        }
                         onClicked: {
                             if (memberRow.member !== null && memberRow.member.requestClose())
                                 root.closeToOrigin()
