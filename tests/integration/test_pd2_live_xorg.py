@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation  # noqa: E402
+from pd2_live_notification_workflow import WorkflowResult  # noqa: E402
 from pd2_live_xorg import (  # noqa: E402
     CONTROLLED_APPLICATION_NAME,
     CONTROLLED_WINDOW_ONE,
@@ -23,9 +24,11 @@ from pd2_live_xorg import (  # noqa: E402
     CommandResult,
     LiveXorgConfig,
     LiveXorgHarnessPort,
+    LiveNotificationSurfaceAdapter,
     ProcessIdentity,
     WindowGeometry,
     XrandrOutput,
+    _NotificationEpoch,
     _session_config,
     _xorg_config,
     parse_cardinals,
@@ -505,6 +508,29 @@ class FakeAccessibility:
             self.operations.controlled_hidden.discard(identifier)
         return True
 
+    def observe_state(
+        self,
+        shell_pid: int,
+        selector: object,
+        state_name: str,
+        expected: bool,
+        environment: Mapping[str, str],
+    ) -> bool:
+        return (
+            self.observe(shell_pid, selector, environment)
+            and state_name == "CHECKED"
+            and expected is True
+        )
+
+    def observe_absent(
+        self, shell_pid: int, selector: object, environment: Mapping[str, str]
+    ) -> bool:
+        return (
+            shell_pid == self.operations.surface_owner
+            and "DBUS_SESSION_BUS_ADDRESS" in environment
+            and selector.name == "Transient notifications"
+        )
+
     def reject_stale_action(
         self, shell_pid: int, selector: object, environment: Mapping[str, str]
     ) -> bool:
@@ -535,6 +561,113 @@ def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
 
 def installed_paths() -> dict[str, Path]:
     return {name: Path("/usr/bin") / name for name in EXECUTABLE_NAMES}
+
+
+class FakeNotificationWorkflow:
+    _RESULTS = {
+        "create_normal": "pd2_notification_normal_created",
+        "replace_normal": "pd2_notification_replaced",
+        "invoke_live_action": "pd2_notification_action_completed",
+        "open_center": "pd2_notification_center_opened",
+        "enable_do_not_disturb": "pd2_notification_dnd_enabled",
+        "create_suppressed_normal": "pd2_notification_normal_suppressed",
+        "create_critical_bypass": "pd2_notification_critical_bypassed",
+        "clear_history": "pd2_notification_history_cleared",
+    }
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def _run(self, name: str) -> WorkflowResult:
+        self.calls.append(name)
+        return WorkflowResult(self._RESULTS[name])
+
+    def create_normal(self) -> WorkflowResult:
+        return self._run("create_normal")
+
+    def replace_normal(self) -> WorkflowResult:
+        return self._run("replace_normal")
+
+    def invoke_live_action(self) -> WorkflowResult:
+        return self._run("invoke_live_action")
+
+    def open_center(self) -> WorkflowResult:
+        return self._run("open_center")
+
+    def enable_do_not_disturb(self) -> WorkflowResult:
+        return self._run("enable_do_not_disturb")
+
+    def create_suppressed_normal(self) -> WorkflowResult:
+        return self._run("create_suppressed_normal")
+
+    def create_critical_bypass(self) -> WorkflowResult:
+        return self._run("create_critical_bypass")
+
+    def clear_history(self) -> WorkflowResult:
+        return self._run("clear_history")
+
+
+class FakeClosable:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class FakeNotificationEpochFactory:
+    def __init__(self) -> None:
+        self.workflow = FakeNotificationWorkflow()
+        self.sender = FakeClosable()
+        self.dbus_probe = FakeClosable()
+        self.calls: list[tuple[dict[str, str], object, object]] = []
+
+    def __call__(self, environment, endpoint, surface):
+        self.calls.append((dict(environment), endpoint, surface))
+        return _NotificationEpoch(
+            self.workflow, self.sender, self.dbus_probe  # type: ignore[arg-type]
+        )
+
+
+class ScriptedNotificationAccessibility:
+    def __init__(self) -> None:
+        self.visible: dict[str, list[bool]] = {}
+        self.states: dict[str, list[bool]] = {}
+        self.absent: dict[str, list[bool]] = {}
+        self.invoked: list[str] = []
+        self.calls: list[tuple[str, str]] = []
+
+    @staticmethod
+    def _next(values: dict[str, list[bool]], name: str) -> bool:
+        sequence = values.get(name, [])
+        return sequence.pop(0) if sequence else False
+
+    def observe(self, shell_pid, selector, environment) -> bool:
+        del shell_pid, environment
+        self.calls.append(("visible", selector.name))
+        return self._next(self.visible, selector.name)
+
+    def invoke(self, shell_pid, selector, environment) -> bool:
+        del shell_pid, environment
+        self.calls.append(("invoke", selector.name))
+        self.invoked.append(selector.name)
+        return True
+
+    def observe_state(
+        self, shell_pid, selector, state_name, expected, environment
+    ) -> bool:
+        del shell_pid, environment
+        self.calls.append((state_name, selector.name))
+        return expected is True and self._next(self.states, selector.name)
+
+    def observe_absent(self, shell_pid, selector, environment) -> bool:
+        del shell_pid, environment
+        self.calls.append(("absent", selector.name))
+        return self._next(self.absent, selector.name)
+
+    def reject_stale_action(self, shell_pid, selector, environment) -> bool:
+        del shell_pid, selector, environment
+        return False
 
 
 class XrandrParserTests(unittest.TestCase):
@@ -632,6 +765,62 @@ class SurfaceParserTests(unittest.TestCase):
         self.assertNotIn("/home/", payload)
 
 
+class NotificationSurfaceAdapterTests(unittest.TestCase):
+    def test_observes_only_reviewed_shell_owned_notification_controls(self) -> None:
+        operations = FakeOperations()
+        accessibility = ScriptedNotificationAccessibility()
+        accessibility.visible = {
+            "Review": [False, True],
+            "Notification center": [True],
+            "Transient notifications": [True],
+        }
+        accessibility.states = {"Do not disturb": [True]}
+        accessibility.absent = {"Transient notifications": [True]}
+        environment = {
+            "DISPLAY": ":140",
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/private-bus",
+        }
+        adapter = LiveNotificationSurfaceAdapter(
+            accessibility,
+            lambda: ProcessIdentity(2004, 20_040),
+            lambda: environment,
+            operations.monotonic,
+            operations.pause,
+        )
+
+        adapter.invoke_live_action(0.2)
+        adapter.observe_center(0.2)
+        adapter.observe_do_not_disturb(True, 0.2)
+        adapter.observe_transient(False, 0.2)
+        adapter.observe_transient(True, 0.2)
+
+        self.assertEqual(accessibility.invoked, ["Review"])
+        self.assertIn(("CHECKED", "Do not disturb"), accessibility.calls)
+        self.assertIn(("absent", "Transient notifications"), accessibility.calls)
+        self.assertIn(("visible", "Transient notifications"), accessibility.calls)
+
+    def test_transient_absence_times_out_when_inspection_cannot_prove_it(self) -> None:
+        operations = FakeOperations()
+        accessibility = ScriptedNotificationAccessibility()
+        adapter = LiveNotificationSurfaceAdapter(
+            accessibility,
+            lambda: ProcessIdentity(2004, 20_040),
+            lambda: {
+                "DISPLAY": ":140",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/private-bus",
+            },
+            operations.monotonic,
+            operations.pause,
+        )
+
+        with self.assertRaisesRegex(
+            HarnessError, "^notification_surface_transient_absence_timeout$"
+        ):
+            adapter.observe_transient(False, 0.1)
+        self.assertTrue(accessibility.calls)
+        self.assertTrue(all(kind == "absent" for kind, _name in accessibility.calls))
+
+
 class LivePortTests(unittest.TestCase):
     def test_starts_real_adapter_commands_and_observes_two_output_topology(self) -> None:
         operations = FakeOperations()
@@ -667,7 +856,7 @@ class LivePortTests(unittest.TestCase):
         port = LiveXorgHarnessPort(config(), operations)
 
         with self.assertRaisesRegex(HarnessError, "^live_step_not_implemented$"):
-            port.run_step("installed_workflow", "create_normal_notification")
+            port.run_step("installed_workflow", "open_quick_settings")
         with self.assertRaisesRegex(
             HarnessError, "^live_process_ownership_unavailable$"
         ):
@@ -752,6 +941,89 @@ class LivePortTests(unittest.TestCase):
 
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
         self.assertEqual(operations.stop_calls, list(reversed(operations.children)))
+
+    def test_keeps_one_attested_notification_epoch_across_steps_17_to_24(self) -> None:
+        operations = FakeOperations()
+        accessibility = FakeAccessibility(operations)
+        factory = FakeNotificationEpochFactory()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility, factory
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+        self.assertEqual(factory.calls, [])
+
+        identifiers = (
+            "create_normal_notification",
+            "create_replacement_notification",
+            "invoke_live_notification_action",
+            "open_notification_center",
+            "toggle_do_not_disturb",
+            "verify_history_without_transient",
+            "verify_critical_bypass_policy",
+            "clear_notification_history",
+        )
+        for identifier in identifiers:
+            self.assertEqual(
+                port.run_step("installed_workflow", identifier),
+                Observation(True, True),
+            )
+
+        self.assertEqual(len(factory.calls), 1)
+        environment, endpoint, surface = factory.calls[0]
+        self.assertEqual(environment["DISPLAY"], ":140")
+        self.assertEqual(
+            environment["DBUS_SESSION_BUS_ADDRESS"], endpoint.address
+        )
+        self.assertEqual((endpoint.socket_device, endpoint.socket_inode), (1, 100))
+        self.assertIsInstance(surface, LiveNotificationSurfaceAdapter)
+        self.assertEqual(
+            factory.workflow.calls,
+            [
+                "create_normal",
+                "replace_normal",
+                "invoke_live_action",
+                "open_center",
+                "enable_do_not_disturb",
+                "create_suppressed_normal",
+                "create_critical_bypass",
+                "clear_history",
+            ],
+        )
+
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+        self.assertEqual(factory.sender.close_calls, 1)
+        self.assertEqual(factory.dbus_probe.close_calls, 1)
+
+    def test_notification_epoch_initialization_failure_is_categorical(self) -> None:
+        operations = FakeOperations()
+
+        def fail_factory(environment, endpoint, surface):
+            del environment, endpoint, surface
+            raise RuntimeError("private detail")
+
+        port = LiveXorgHarnessPort(
+            config(installed_paths()),
+            operations,
+            FakeAccessibility(operations),
+            fail_factory,
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+
+        with self.assertRaisesRegex(
+            HarnessError, "^live_notification_epoch_initialization_failed$"
+        ):
+            port.run_step("installed_workflow", "create_normal_notification")
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_observes_two_coherent_wallpaper_desktops_and_bottom_panels(self) -> None:
         operations = FakeOperations()

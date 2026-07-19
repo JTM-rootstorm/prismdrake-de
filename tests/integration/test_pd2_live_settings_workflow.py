@@ -21,6 +21,7 @@ from pd2_live_settings_workflow import (  # noqa: E402
 
 
 SURFACES = ("desktop_primary", "panel_primary", "quick_settings")
+SAMPLE_POINTS = tuple((((0, 0),)) for _surface in SURFACES)
 STEPS = (
     "open_quick_settings",
     "switch_lustre_to_forge",
@@ -29,23 +30,25 @@ STEPS = (
 )
 
 
-def xwd(pixel: int) -> bytes:
+def xwd(pixel: int, unsampled_pixel: int = 0x80) -> bytes:
     name = b"Private controlled surface"
-    pixels = bytes((pixel, 0x20, 0x30, 0))
+    pixels = bytes(
+        (pixel, 0x20, 0x30, 0, unsampled_pixel, 0x50, 0x60, 0)
+    )
     fields = (
         100 + len(name) + 1,
         7,
         2,
         24,
+        2,
         1,
-        1,
         0,
         0,
         32,
         0,
         32,
         32,
-        4,
+        8,
         4,
         0x00FF0000,
         0x0000FF00,
@@ -53,7 +56,7 @@ def xwd(pixel: int) -> bytes:
         8,
         256,
         0,
-        1,
+        2,
         1,
         0,
         0,
@@ -175,7 +178,10 @@ class InstalledSettingsWorkflowTests(unittest.TestCase):
         accessibility = FakeAccessibility()
         surfaces = FakeSurfaces()
         workflow = InstalledSettingsWorkflow(
-            SettingsWorkflowConfig(SURFACES), dbus, accessibility, surfaces
+            SettingsWorkflowConfig(SURFACES, SAMPLE_POINTS),
+            dbus,
+            accessibility,
+            surfaces,
         )
         return workflow, dbus, accessibility, surfaces
 
@@ -291,6 +297,18 @@ class InstalledSettingsWorkflowTests(unittest.TestCase):
         )
         self.assert_category(
             "settings_step_order_invalid",
+            lambda: workflow.run_step("verify_complete_settings_generation"),
+        )
+
+    def test_unsampled_dynamic_pixels_cannot_satisfy_profile_transition(self) -> None:
+        workflow, _dbus, _accessibility, surfaces = self.make_workflow()
+        self.run_through(workflow, 2)
+        for index, surface in enumerate(SURFACES):
+            surfaces.epochs[1][surface] = xwd(
+                0x10 + index, unsampled_pixel=0xE0 + index
+            )
+        self.assert_category(
+            "settings_surface_transition_incomplete",
             lambda: workflow.run_step("verify_complete_settings_generation"),
         )
 
@@ -429,7 +447,23 @@ class InstalledSettingsWorkflowTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 SettingsWorkflowError, "^settings_surface_set_invalid$"
             ):
-                SettingsWorkflowConfig(surfaces)
+                SettingsWorkflowConfig(
+                    surfaces,
+                    tuple((((0, 0),)) for _surface in surfaces),
+                )
+
+        invalid_samples = (
+            (),
+            (((0, 0),),),
+            tuple(() for _surface in SURFACES),
+            tuple((((0, 0), (0, 0))) for _surface in SURFACES),
+            tuple((((8192, 0),)) for _surface in SURFACES),
+        )
+        for sample_points in invalid_samples:
+            with self.assertRaisesRegex(
+                SettingsWorkflowError, "^settings_surface_samples_invalid$"
+            ):
+                SettingsWorkflowConfig(SURFACES, sample_points)
 
 
 if __name__ == "__main__":

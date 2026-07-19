@@ -11,9 +11,10 @@ from typing import Any, Protocol
 
 from pd2_live_dbus import METHODS, ProbeResult
 from pd2_xwd import (
+    MAX_DIMENSION,
     MAX_SURFACES,
     XwdEvidenceError,
-    fingerprint_xwd,
+    fingerprint_xwd_samples,
     require_complete_surface_transition,
 )
 
@@ -49,6 +50,7 @@ CLOSED_ERROR_CATEGORIES = frozenset(
         "settings_step_order_invalid",
         "settings_surface_capture_invalid",
         "settings_surface_not_settled",
+        "settings_surface_samples_invalid",
         "settings_surface_set_changed",
         "settings_surface_set_invalid",
         "settings_surface_transition_incomplete",
@@ -77,7 +79,8 @@ class SurfaceObservationPort(Protocol):
 
     The port may open or focus surfaces sequentially.  Each capture pair must
     come from two consecutive observations after that surface is visible and
-    settled; the workflow accepts it only when both pixel-plane hashes match.
+    settled; the workflow accepts it only when both reviewed sample hashes
+    match. Dynamic pixels outside those coordinates are deliberately ignored.
     """
 
     def reviewed_surface_sequence(self) -> Sequence[str]: ...
@@ -87,12 +90,39 @@ class SurfaceObservationPort(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class SettingsWorkflowConfig:
-    """Fixed controlled surface identities selected by the live adapter."""
+    """Fixed controlled surfaces and profile-sensitive sample coordinates."""
 
     reviewed_surfaces: tuple[str, ...]
+    sample_points: tuple[tuple[tuple[int, int], ...], ...]
 
     def __post_init__(self) -> None:
         _validate_surface_set(self.reviewed_surfaces)
+        if len(self.sample_points) != len(self.reviewed_surfaces):
+            _fail("settings_surface_samples_invalid")
+        for points in self.sample_points:
+            if (
+                not isinstance(points, tuple)
+                or not 1 <= len(points) <= 16
+                or len(set(points)) != len(points)
+            ):
+                _fail("settings_surface_samples_invalid")
+            for point in points:
+                if (
+                    not isinstance(point, tuple)
+                    or len(point) != 2
+                    or type(point[0]) is not int
+                    or type(point[1]) is not int
+                    or not 0 <= point[0] < MAX_DIMENSION
+                    or not 0 <= point[1] < MAX_DIMENSION
+                ):
+                    _fail("settings_surface_samples_invalid")
+
+    def points_for(self, surface: str) -> tuple[tuple[int, int], ...]:
+        try:
+            index = self.reviewed_surfaces.index(surface)
+        except ValueError:
+            _fail("settings_surface_samples_invalid")
+        return self.sample_points[index]
 
 
 @dataclass(frozen=True, slots=True)
@@ -435,8 +465,9 @@ class InstalledSettingsWorkflow:
                 pair = self._surfaces.capture_settled_xwds(surface)
                 if not isinstance(pair, tuple) or len(pair) != 2:
                     _fail("settings_surface_capture_invalid")
-                first = fingerprint_xwd(pair[0])
-                second = fingerprint_xwd(pair[1])
+                points = self._config.points_for(surface)
+                first = fingerprint_xwd_samples(pair[0], points)
+                second = fingerprint_xwd_samples(pair[1], points)
             except XwdEvidenceError:
                 _fail("settings_surface_capture_invalid")
             if first != second:

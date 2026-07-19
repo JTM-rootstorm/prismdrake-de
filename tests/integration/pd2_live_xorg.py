@@ -20,7 +20,7 @@ import stat
 import subprocess
 import tempfile
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,8 +31,19 @@ from pd2_live_atspi import (
     ControlSelector,
     LiveAtspiError,
     invoke_reviewed_action,
+    observe_control_absence,
+    observe_control_state,
     observe_showing_control,
 )
+from pd2_live_dbus import LiveDbusProbe, PrivateBusEndpoint
+from pd2_live_notification_workflow import (
+    InstalledNotificationWorkflow,
+    LiveDbusNotificationPort,
+    NotificationSurfacePort,
+    WorkflowResult,
+    validate_workflow_result,
+)
+from pd2_live_notifications import PersistentNotificationProbe
 
 
 MAX_COMMAND_OUTPUT_BYTES = 65_536
@@ -126,6 +137,19 @@ class AccessibilityOperations(Protocol):
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> bool: ...
 
+    def observe_state(
+        self,
+        shell_pid: int,
+        selector: ControlSelector,
+        state_name: str,
+        expected: bool,
+        environment: Mapping[str, str],
+    ) -> bool: ...
+
+    def observe_absent(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> bool: ...
+
     def reject_stale_action(
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> bool: ...
@@ -199,6 +223,39 @@ class SystemAccessibilityOperations:
         try:
             with self._environment(environment):
                 invoke_reviewed_action(
+                    self._binding(), self._owner(shell_pid), selector
+                )
+        except LiveAtspiError:
+            return False
+        return True
+
+    def observe_state(
+        self,
+        shell_pid: int,
+        selector: ControlSelector,
+        state_name: str,
+        expected: bool,
+        environment: Mapping[str, str],
+    ) -> bool:
+        try:
+            with self._environment(environment):
+                observe_control_state(
+                    self._binding(),
+                    self._owner(shell_pid),
+                    selector,
+                    state_name,
+                    expected,
+                )
+        except LiveAtspiError:
+            return False
+        return True
+
+    def observe_absent(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> bool:
+        try:
+            with self._environment(environment):
+                observe_control_absence(
                     self._binding(), self._owner(shell_pid), selector
                 )
         except LiveAtspiError:
@@ -450,6 +507,157 @@ class SystemOperations:
 
     def pause(self, duration: float) -> None:
         time.sleep(duration)
+
+
+class LiveNotificationSurfaceAdapter:
+    """Narrow bounded AT-SPI surface for installed notification evidence."""
+
+    _ACTION = ControlSelector("Review", "push_button", "Press")
+    _CENTER = ControlSelector("Notification center", "panel")
+    _DO_NOT_DISTURB = ControlSelector("Do not disturb", "check_box")
+    _TRANSIENT = ControlSelector("Transient notifications", "notification")
+
+    def __init__(
+        self,
+        accessibility: AccessibilityOperations,
+        shell_identity: Callable[[], ProcessIdentity],
+        environment: Callable[[], Mapping[str, str]],
+        monotonic: Callable[[], float],
+        pause: Callable[[float], None],
+    ) -> None:
+        self._accessibility = accessibility
+        self._shell_identity = shell_identity
+        self._environment = environment
+        self._monotonic = monotonic
+        self._pause = pause
+
+    def _wait(
+        self, predicate: Callable[[int, Mapping[str, str]], bool], timeout: float,
+        category: str,
+    ) -> None:
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not 0.05 <= timeout <= 10.0
+        ):
+            raise HarnessError("notification_surface_timeout_invalid")
+        deadline = self._monotonic() + float(timeout)
+        while self._monotonic() < deadline:
+            shell = self._shell_identity()
+            environment = self._environment()
+            if predicate(shell.pid, environment):
+                return
+            remaining = deadline - self._monotonic()
+            if remaining > 0:
+                self._pause(min(0.05, remaining))
+        raise HarnessError(category)
+
+    def invoke_live_action(self, timeout_seconds: float) -> None:
+        self._wait(
+            lambda pid, environment: self._accessibility.observe(
+                pid, self._ACTION, environment
+            ),
+            timeout_seconds,
+            "notification_surface_action_timeout",
+        )
+        shell = self._shell_identity()
+        if not self._accessibility.invoke(
+            shell.pid, self._ACTION, self._environment()
+        ):
+            raise HarnessError("notification_surface_action_rejected")
+
+    def observe_center(self, timeout_seconds: float) -> None:
+        self._wait(
+            lambda pid, environment: self._accessibility.observe(
+                pid, self._CENTER, environment
+            ),
+            timeout_seconds,
+            "notification_surface_center_timeout",
+        )
+
+    def observe_do_not_disturb(
+        self, enabled: bool, timeout_seconds: float
+    ) -> None:
+        if enabled is not True:
+            raise HarnessError("notification_surface_state_not_reviewed")
+        self._wait(
+            lambda pid, environment: self._accessibility.observe_state(
+                pid, self._DO_NOT_DISTURB, "CHECKED", True, environment
+            ),
+            timeout_seconds,
+            "notification_surface_dnd_timeout",
+        )
+
+    def observe_transient(self, present: bool, timeout_seconds: float) -> None:
+        if not isinstance(present, bool):
+            raise HarnessError("notification_surface_state_not_reviewed")
+        if present:
+            predicate = lambda pid, environment: self._accessibility.observe(
+                pid, self._TRANSIENT, environment
+            )
+            category = "notification_surface_transient_presence_timeout"
+        else:
+            predicate = lambda pid, environment: self._accessibility.observe_absent(
+                pid, self._TRANSIENT, environment
+            )
+            category = "notification_surface_transient_absence_timeout"
+        self._wait(predicate, timeout_seconds, category)
+
+
+class _Closable(Protocol):
+    def close(self) -> None: ...
+
+
+@dataclass
+class _NotificationEpoch:
+    workflow: InstalledNotificationWorkflow
+    sender: _Closable
+    dbus_probe: _Closable
+
+    def close(self) -> bool:
+        clean = True
+        for resource in (self.sender, self.dbus_probe):
+            try:
+                resource.close()
+            except Exception:
+                clean = False
+        return clean
+
+
+NotificationEpochFactory = Callable[
+    [Mapping[str, str], PrivateBusEndpoint, NotificationSurfacePort],
+    _NotificationEpoch,
+]
+
+
+def _create_notification_epoch(
+    environment: Mapping[str, str],
+    endpoint: PrivateBusEndpoint,
+    surface: NotificationSurfacePort,
+) -> _NotificationEpoch:
+    sender: PersistentNotificationProbe | None = None
+    dbus_probe: LiveDbusProbe | None = None
+    try:
+        import gi
+
+        gi.require_version("Gio", "2.0")
+        gi.require_version("GLib", "2.0")
+        from gi.repository import Gio, GLib
+
+        sender = PersistentNotificationProbe.connect_private(environment, Gio, GLib)
+        dbus_probe = LiveDbusProbe(environment, endpoint=endpoint)
+        workflow = InstalledNotificationWorkflow(
+            sender, LiveDbusNotificationPort(dbus_probe), surface, PRIMARY_OUTPUT
+        )
+        return _NotificationEpoch(workflow, sender, dbus_probe)
+    except Exception:
+        for resource in (sender, dbus_probe):
+            if resource is not None:
+                try:
+                    resource.close()
+                except Exception:
+                    pass
+        raise HarnessError("live_notification_epoch_initialization_failed") from None
 
 
 @dataclass(frozen=True)
@@ -747,6 +955,17 @@ EndSection
 class LiveXorgHarnessPort:
     """Fail-closed live adapter for the X11-owned subset of the PD2 contract."""
 
+    _NOTIFICATION_STEPS = {
+        "create_normal_notification": "create_normal",
+        "create_replacement_notification": "replace_normal",
+        "invoke_live_notification_action": "invoke_live_action",
+        "open_notification_center": "open_center",
+        "toggle_do_not_disturb": "enable_do_not_disturb",
+        "verify_history_without_transient": "create_suppressed_normal",
+        "verify_critical_bypass_policy": "create_critical_bypass",
+        "clear_notification_history": "clear_history",
+    }
+
     _SUPPORTED_STEPS = {
         ("installed_workflow", "start_isolated_two_output_x11"),
         ("installed_workflow", "start_installed_prismdrake_session"),
@@ -764,6 +983,14 @@ class LiveXorgHarnessPort:
         ("installed_workflow", "reactivate_one_window"),
         ("installed_workflow", "close_both_windows_through_panel"),
         ("installed_workflow", "verify_authoritative_task_removal"),
+        ("installed_workflow", "create_normal_notification"),
+        ("installed_workflow", "create_replacement_notification"),
+        ("installed_workflow", "invoke_live_notification_action"),
+        ("installed_workflow", "open_notification_center"),
+        ("installed_workflow", "toggle_do_not_disturb"),
+        ("installed_workflow", "verify_history_without_transient"),
+        ("installed_workflow", "verify_critical_bypass_policy"),
+        ("installed_workflow", "clear_notification_history"),
         ("failure_replay", "two_same_scale_outputs_at_startup"),
         ("failure_replay", "add_second_output_after_startup"),
         ("failure_replay", "remove_primary_output"),
@@ -786,10 +1013,14 @@ class LiveXorgHarnessPort:
         config: LiveXorgConfig,
         operations: Operations | None = None,
         accessibility: AccessibilityOperations | None = None,
+        notification_epoch_factory: NotificationEpochFactory | None = None,
     ) -> None:
         self._config = config
         self._operations = operations or SystemOperations()
         self._accessibility = accessibility or SystemAccessibilityOperations()
+        self._notification_epoch_factory = (
+            notification_epoch_factory or _create_notification_epoch
+        )
         self._runtime: Path | None = None
         self._display: str | None = None
         self._xorg: ChildProcess | None = None
@@ -802,6 +1033,7 @@ class LiveXorgHarnessPort:
         self._surface_shell_identity: ProcessIdentity | None = None
         self._controlled_windows: dict[str, int] = {}
         self._controlled_processes: dict[str, ProcessIdentity] = {}
+        self._notification_epoch: _NotificationEpoch | None = None
 
     def installed_executable_hashes(self) -> Mapping[str, str]:
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
@@ -941,6 +1173,8 @@ class LiveXorgHarnessPort:
             ):
                 raise HarnessError("stale_task_action_accepted")
             self._controlled_windows.clear()
+        elif identifier in self._NOTIFICATION_STEPS:
+            self._run_notification_step(identifier)
         elif identifier == "two_same_scale_outputs_at_startup":
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
@@ -1068,6 +1302,46 @@ class LiveXorgHarnessPort:
             self._require_desktop_wallpaper_surfaces()
         return Observation(True, True)
 
+    def _run_notification_step(self, identifier: str) -> None:
+        method_name = self._NOTIFICATION_STEPS.get(identifier)
+        if method_name is None:
+            raise HarnessError("live_notification_step_not_reviewed")
+        workflow = self._notification_workflow_epoch().workflow
+        try:
+            operation = getattr(workflow, method_name)
+            result = operation()
+            validate_workflow_result(result)
+        except Exception:
+            raise HarnessError("live_notification_workflow_failed") from None
+        if not isinstance(result, WorkflowResult):
+            raise HarnessError("live_notification_workflow_failed")
+
+    def _notification_workflow_epoch(self) -> _NotificationEpoch:
+        if self._notification_epoch is not None:
+            return self._notification_epoch
+        environment = dict(self.probe_environment())
+        socket_identity = self._bus_socket_identity
+        if socket_identity is None:
+            raise HarnessError("private_session_bus_not_started")
+        endpoint = PrivateBusEndpoint(
+            self._private_bus_address(), socket_identity[0], socket_identity[1]
+        )
+        surface = LiveNotificationSurfaceAdapter(
+            self._accessibility,
+            self._shell_identity,
+            self.probe_environment,
+            self._operations.monotonic,
+            self._operations.pause,
+        )
+        try:
+            epoch = self._notification_epoch_factory(environment, endpoint, surface)
+        except Exception:
+            raise HarnessError("live_notification_epoch_initialization_failed") from None
+        if not isinstance(epoch, _NotificationEpoch):
+            raise HarnessError("live_notification_epoch_initialization_failed")
+        self._notification_epoch = epoch
+        return epoch
+
     def capture_process_ownership(self) -> Mapping[str, object]:
         if (
             self._xorg is None
@@ -1106,6 +1380,9 @@ class LiveXorgHarnessPort:
     def cleanup(self, phase: str) -> Observation:
         del phase
         clean = True
+        if self._notification_epoch is not None:
+            clean = self._notification_epoch.close() and clean
+            self._notification_epoch = None
         fixture = self._config.controlled_window_fixture
         if fixture is not None:
             for identity in self._controlled_processes.values():
