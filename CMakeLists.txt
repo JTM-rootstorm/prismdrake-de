@@ -70,6 +70,7 @@ if(NOT nlohmann_json_FOUND)
         "dev-cpp/nlohmann_json on Gentoo or the equivalent development package. "
         "Prismdrake does not download or vendor JSON parsers.")
 endif()
+add_subdirectory(src/notifyd)
 add_subdirectory(src/theme)
 add_subdirectory(src/settings)
 add_subdirectory(src/ipc)

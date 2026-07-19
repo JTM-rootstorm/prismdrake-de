@@ -1,6 +1,8 @@
 add_library(prismdrake-notification-model STATIC
     NotificationModel.cpp
-    NotificationModel.hpp)
+    NotificationModel.hpp
+    NotificationTypes.cpp
+    NotificationTypes.hpp)
 add_library(Prismdrake::notification-model ALIAS prismdrake-notification-model)
 
 target_include_directories(prismdrake-notification-model
