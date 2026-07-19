@@ -70,7 +70,7 @@ Button {
                                 .arg(terminalRequired ? qsTr("Yes") : qsTr("No"))
                                 .arg(pinned ? qsTr("Yes") : qsTr("No"))
                                 .arg(applicationResult ? qsTr("Yes") : qsTr("No"))
-    Accessible.focusable: true
+    Accessible.focusable: enabled
     Accessible.focused: activeFocus
     Accessible.selectable: true
     Accessible.selected: selected

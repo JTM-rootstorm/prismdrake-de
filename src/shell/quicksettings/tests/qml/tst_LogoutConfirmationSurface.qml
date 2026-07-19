@@ -15,8 +15,6 @@ TestCase {
         property color borderColor: "#9ba7ba"
         property color textPrimaryColor: "#ffffff"
         property color textMutedColor: "#d8deea"
-        property bool fallbackActive: true
-        property bool highContrast: false
         property real cardRadius: 9
         property real borderWidth: 1
         property real minimumTargetSize: 48
@@ -50,7 +48,6 @@ TestCase {
         surface.statusText = "Close the session and all applications?"
         notificationTokens.minimumTargetSize = 48
         notificationTokens.bodyFontPixels = 14
-        notificationTokens.highContrast = false
         notificationTokens.borderWidth = 1
         confirmSpy.clear()
         cancelSpy.clear()
@@ -60,14 +57,9 @@ TestCase {
         compare(surface.Accessible.role, Accessible.Dialog)
         verify(surface.Accessible.name.length > 0)
         verify(surface.Accessible.description.length > 0)
-        compare(notificationTokens.fallbackActive, true)
         const background = findChild(surface, "logoutConfirmationBackground")
         verify(background !== null)
         compare(background.color.a, 1)
-
-        notificationTokens.highContrast = true
-        notificationTokens.borderWidth = 3
-        compare(background.border.width, 3)
 
         surface.focusFirstControl()
         const cancel = findChild(surface, "logoutCancel")

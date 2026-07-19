@@ -438,7 +438,14 @@ TestCase {
         verify(firstMember.Accessible.description.indexOf("Minimized") < 0)
         keyClick(Qt.Key_Down)
         tryCompare(secondMember, "activeFocus", true)
+        compare(secondMember.Accessible.selectable, true)
+        compare(secondMember.Accessible.selected, true)
+        compare(firstMember.Accessible.selected, false)
+        verify(secondMember.Accessible.description.indexOf("Minimized") >= 0)
         verify(secondMember.Accessible.description.indexOf("Urgent") >= 0)
+        const secondMinimize = findChild(secondMember, "panelTaskGroupMinimize")
+        compare(secondMinimize.enabled, false)
+        compare(secondMinimize.Accessible.focusable, false)
         keyClick(Qt.Key_Backtab)
         tryCompare(firstMember, "activeFocus", true)
         keyClick(Qt.Key_Tab)
@@ -514,6 +521,51 @@ TestCase {
         tryCompare(popup, "opened", false)
     }
 
+    function test_longRunningTaskRemainsBoundedAndScrollable() {
+        verify(panelFixture.publishLongTasks())
+        tryCompare(panel, "taskCount", 1)
+        const strip = findChild(panel, "panelTaskStrip")
+        const task = panel.taskAt(0)
+        verify(task.Accessible.name.length > 900)
+        verify(task.width > strip.width)
+        tryVerify(() => strip.contentWidth > strip.width)
+        compare(strip.clip, true)
+    }
+
+    function test_longPinnedTaskRemainsBoundedAndScrollable() {
+        groupedTasks = true
+        verify(panelFixture.publishLongPinnedGroup())
+        tryCompare(panel, "taskCount", 1)
+        const strip = findChild(panel, "panelTaskStrip")
+        const pinned = panel.taskAt(0)
+        verify(pinned.Accessible.name.length > 900)
+        verify(pinned.width > strip.width)
+        tryVerify(() => strip.contentWidth > strip.width)
+        compare(strip.clip, true)
+    }
+
+    function test_longGroupedTaskAndMembersRemainBoundedAndScrollable() {
+        groupedTasks = true
+        verify(panelFixture.publishLongGroups())
+        tryCompare(panel, "taskCount", 2)
+        const strip = findChild(panel, "panelTaskStrip")
+        const editor = panel.taskAt(0)
+        verify(editor.Accessible.name.length > 900)
+        verify(editor.width > strip.width)
+        tryVerify(() => strip.contentWidth > strip.width)
+        compare(strip.clip, true)
+
+        editor.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Return)
+        const popup = findChild(editor, "panelTaskGroupPopup")
+        tryCompare(popup, "opened", true)
+        verify(popup.width <= testCase.width)
+        verify(popup.memberAt(0).Accessible.name.length > 900)
+        verify(popup.memberAt(0).Accessible.description.length > 900)
+        keyClick(Qt.Key_Escape)
+        tryCompare(popup, "opened", false)
+    }
+
     function test_groupPopupOverflowRevealMirrorsForRightToLeft() {
         testCase.width = 420
         panel.width = 400
@@ -563,6 +615,11 @@ TestCase {
         tryCompare(launcherRequest, "count", 1)
         wait(0)
         compare(launcherRequest.count, 1)
+        launcher().forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Return)
+        tryCompare(launcherRequest, "count", 2)
+        keyClick(Qt.Key_Space)
+        tryCompare(launcherRequest, "count", 3)
     }
 
     function test_profilesUseOneTreeAndCoherentGenerationLabel() {

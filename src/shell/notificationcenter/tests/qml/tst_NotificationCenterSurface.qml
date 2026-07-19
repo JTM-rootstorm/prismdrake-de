@@ -145,6 +145,24 @@ TestCase {
         compare(transients.Accessible.name, "Transient notifications")
     }
 
+    function test_longNotificationContentWrapsInsideTheCenter() {
+        verify(notificationCenterFixture.publishLong())
+        const history = findChild(center, "notificationCenterHistoryScroll")
+        const summary = findChild(history, "notificationSummary")
+        const body = findChild(history, "notificationBody")
+        const card = findChild(history, "notificationCardBackground").parent
+        verify(summary !== null)
+        verify(body !== null)
+        verify(card !== null)
+        verify(summary.text.length > 900)
+        verify(body.text.length > 900)
+        compare(summary.wrapMode, Text.Wrap)
+        compare(body.wrapMode, Text.Wrap)
+        verify(card.width <= center.width)
+        verify(card.Accessible.name.length > 900)
+        verify(card.Accessible.description.length > 900)
+    }
+
     function test_rtlFallbackContrastAndScaledTargetsUsePublishedThemeInputs() {
         verify(notificationCenterFixture.publish(1))
         center.layoutDirection = Qt.RightToLeft

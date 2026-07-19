@@ -169,6 +169,13 @@ TestCase {
         surface.focusControl(2, Qt.OtherFocusReason)
         keyClick(Qt.Key_Escape)
         compare(closeSpy.count, 1)
+
+        surface.focusControl(3, Qt.OtherFocusReason)
+        keyClick(Qt.Key_Return)
+        compare(centerRequests, 1)
+        surface.focusControl(4, Qt.OtherFocusReason)
+        keyClick(Qt.Key_Enter)
+        compare(logoutRequests, 1)
     }
 
     function test_accessibleNamesRolesStatesAndTargetSizes() {
@@ -278,4 +285,5 @@ TestCase {
         compare(profileDescription.font.pixelSize, 22)
         verify(surface.Accessible.description.indexOf("Opaque fallback") >= 0)
     }
+
 }

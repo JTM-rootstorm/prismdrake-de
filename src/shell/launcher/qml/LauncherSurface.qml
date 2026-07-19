@@ -293,6 +293,7 @@ FocusScope {
                                                       root.height
                                                       - (4 * root.tokens.tilePadding))
                     selected: ListView.isCurrentItem
+                    enabled: !root.searchPending
                     onFocusPrevious: root.focusResult(index - 1, true)
                     onFocusNext: root.focusResult(index + 1, false)
                     onDismissRequested: root.dismissRequested()

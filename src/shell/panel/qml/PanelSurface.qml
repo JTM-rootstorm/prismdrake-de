@@ -295,6 +295,18 @@ FocusScope {
                 event.accepted = true
                 root.focusExitBackward()
             }
+            Keys.onSpacePressed: event => {
+                event.accepted = true
+                launcher.clicked()
+            }
+            Keys.onReturnPressed: event => {
+                event.accepted = true
+                launcher.clicked()
+            }
+            Keys.onEnterPressed: event => {
+                event.accepted = true
+                launcher.clicked()
+            }
             onClicked: {
                 root.closeTaskActionMenus()
                 root.launcherRequested()

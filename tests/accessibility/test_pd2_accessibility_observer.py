@@ -76,11 +76,12 @@ class AccessibilityObserverTests(unittest.TestCase):
         self.assertTrue(
             all(result["status"] in {"passed", "skipped"} for result in results.values())
         )
-        self.assertEqual(results[("running_task", "long_string_layout")]["status"], "skipped")
+        self.assertEqual(results[("running_task", "state_expanded")]["status"], "skipped")
         self.assertEqual(
-            results[("running_task", "long_string_layout")]["reason_code"],
+            results[("running_task", "state_expanded")]["reason_code"],
             "live_adapter_unimplemented",
         )
+        self.assertEqual(results[("running_task", "long_string_layout")]["status"], "passed")
         self.assertEqual(results[("running_task", "state_active")]["status"], "passed")
         self.assertEqual(
             results[("running_task", "escape_recovery")]["status"], "passed"
@@ -200,14 +201,19 @@ class AccessibilityObserverTests(unittest.TestCase):
             if (result := self.observed(*key))["status"] == "skipped"
         })
         for key in unimplemented:
-            self.assertEqual(
-                self.observed(*key)["reason_code"], "live_adapter_unimplemented"
-            )
+            result = self.observed(*key)
+            self.assertEqual(result["reason_code"], "live_adapter_unimplemented")
+            if key[1] == "state_expanded":
+                self.assertIn("QQuickAccessibleAttached", result["reason"])
+                self.assertIn("C++ accessibility backend", result["reason"])
+            else:
+                self.assertIn("resolver-derived", result["reason"])
+                self.assertIn("causally proves rendered", result["reason"])
 
     def test_new_ctest_cells_name_existing_exact_qml_cases(self) -> None:
-        self.assertEqual(len(observer.CTEST_OBSERVED), 161)
-        self.assertEqual(len(observer.CTEST_CASE_EVIDENCE), 63)
-        self.assertEqual(len(observer.UNIMPLEMENTED), 20)
+        self.assertEqual(len(observer.CTEST_OBSERVED), 173)
+        self.assertEqual(len(observer.CTEST_CASE_EVIDENCE), 75)
+        self.assertEqual(len(observer.UNIMPLEMENTED), 8)
         sources = {
             "PanelSurfaceRealAdapters": (
                 ACCESSIBILITY.parents[1] / "tests/qt/qml-panel/tst_PanelSurface.qml"

@@ -24,6 +24,12 @@ namespace {
     return prismdrake::x11::WindowIncarnationId::fromObserved(value).value();
 }
 
+[[nodiscard]] std::string longFixtureText(std::string_view prefix) {
+    std::string value{prefix};
+    value.append(900U, 'D');
+    return value;
+}
+
 [[nodiscard]] bool writeTextFile(const std::filesystem::path &destination,
                                  std::string_view contents) {
     std::error_code error;
@@ -254,11 +260,17 @@ bool PanelSurfaceQmlFixture::publishRepresentativeTasks() {
     return publishTasks();
 }
 
+bool PanelSurfaceQmlFixture::publishLongTasks() {
+    tasks_ = {{101U, 1001U, longFixtureText("Long running task "), "org.prismdrake.Long.desktop",
+               "application-x-executable"}};
+    return publishTasks();
+}
+
 bool PanelSurfaceQmlFixture::publishRepresentativeGroups() {
     tasks_ = {{101U, 1001U, "Editor document", "org.prismdrake.Editor.desktop",
                "application-x-executable"},
               {202U, 2002U, "Editor settings", "org.prismdrake.Editor.desktop",
-               "application-x-executable", false, true, true},
+               "application-x-executable", true, true, true},
               {303U, 3003U, "Terminal", "org.prismdrake.Terminal.desktop", "utilities-terminal"}};
     if (!publishTasks() || !grouped_task_presentation_) {
         return false;
@@ -317,6 +329,69 @@ bool PanelSurfaceQmlFixture::publishRepresentativeGroups() {
     return true;
 }
 
+bool PanelSurfaceQmlFixture::publishLongGroups() {
+    tasks_ = {{101U, 1001U, longFixtureText("Long editor document "),
+               "org.prismdrake.Editor.desktop", "application-x-executable"},
+              {202U, 2002U, longFixtureText("Long editor settings "),
+               "org.prismdrake.Editor.desktop", "application-x-executable", true, true, true},
+              {303U, 3003U, "Terminal", "org.prismdrake.Terminal.desktop", "utilities-terminal"}};
+    if (!publishTasks() || !grouped_task_presentation_) {
+        return false;
+    }
+    const auto taskSnapshot = task_source_->current();
+    if (!taskSnapshot || taskSnapshot->tasks().size() != 3U) {
+        return false;
+    }
+    auto editorId = prismdrake::launcher::deriveDesktopFileId("org.prismdrake.Editor.desktop");
+    auto terminalId = prismdrake::launcher::deriveDesktopFileId("org.prismdrake.Terminal.desktop");
+    if (!editorId || !terminalId) {
+        return false;
+    }
+    const auto &editor = taskSnapshot->tasks()[0];
+    const auto &editorSettings = taskSnapshot->tasks()[1];
+    const auto &terminal = taskSnapshot->tasks()[2];
+    std::vector<PanelTaskGroup> groups;
+    groups.push_back(
+        {PanelTaskGroupKind::desktopEntry,
+         "desktop:org.prismdrake.Editor.desktop",
+         std::move(editorId).value(),
+         longFixtureText("Long grouped task "),
+         "application-x-executable",
+         true,
+         true,
+         editor.active(),
+         editor.hidden(),
+         editor.urgent() || editorSettings.urgent(),
+         editor.modal() || editorSettings.modal(),
+         PanelTaskPrimaryAction::openGroup,
+         {{editor.lifetime(), editor.title(), editor.active(), editor.hidden(), editor.urgent(),
+           editor.modal()},
+          {editorSettings.lifetime(), editorSettings.title(), editorSettings.active(),
+           editorSettings.hidden(), editorSettings.urgent(), editorSettings.modal()}}});
+    groups.push_back({PanelTaskGroupKind::desktopEntry,
+                      "desktop:org.prismdrake.Terminal.desktop",
+                      std::move(terminalId).value(),
+                      "Terminal",
+                      "utilities-terminal",
+                      false,
+                      true,
+                      terminal.active(),
+                      terminal.hidden(),
+                      terminal.urgent(),
+                      terminal.modal(),
+                      PanelTaskPrimaryAction::activateOrMinimize,
+                      {{terminal.lifetime(), terminal.title(), terminal.active(), terminal.hidden(),
+                        terminal.urgent(), terminal.modal()}}});
+    auto grouped = std::make_shared<const GroupedTaskSnapshot>(GroupedTaskSnapshot{
+        taskSnapshot->generation(), 1U, 1U, 1U, 1U, 1U, config::GroupingMode::always,
+        config::GroupingMode::always, std::move(groups)});
+    if (!grouped_task_presentation_->applySnapshot(std::move(grouped))) {
+        return false;
+    }
+    emit taskModelChanged();
+    return true;
+}
+
 bool PanelSurfaceQmlFixture::publishPinnedOnlyGroup() {
     tasks_.clear();
     if (!publishTasks() || !grouped_task_presentation_) {
@@ -332,6 +407,40 @@ bool PanelSurfaceQmlFixture::publishPinnedOnlyGroup() {
                       "desktop:org.prismdrake.Notes.desktop",
                       std::move(notesId).value(),
                       "Notes",
+                      "accessories-text-editor",
+                      true,
+                      true,
+                      false,
+                      false,
+                      false,
+                      false,
+                      PanelTaskPrimaryAction::launch,
+                      {}});
+    auto grouped = std::make_shared<const GroupedTaskSnapshot>(GroupedTaskSnapshot{
+        taskSnapshot->generation(), 1U, 1U, 2U, 1U, 1U, config::GroupingMode::always,
+        config::GroupingMode::always, std::move(groups)});
+    if (!grouped_task_presentation_->applySnapshot(std::move(grouped))) {
+        return false;
+    }
+    emit taskModelChanged();
+    return true;
+}
+
+bool PanelSurfaceQmlFixture::publishLongPinnedGroup() {
+    tasks_.clear();
+    if (!publishTasks() || !grouped_task_presentation_) {
+        return false;
+    }
+    const auto taskSnapshot = task_source_->current();
+    auto notesId = prismdrake::launcher::deriveDesktopFileId("org.prismdrake.Notes.desktop");
+    if (!taskSnapshot || !taskSnapshot->tasks().empty() || !notesId) {
+        return false;
+    }
+    std::vector<PanelTaskGroup> groups;
+    groups.push_back({PanelTaskGroupKind::desktopEntry,
+                      "desktop:org.prismdrake.Notes.desktop",
+                      std::move(notesId).value(),
+                      longFixtureText("Long pinned task "),
                       "accessories-text-editor",
                       true,
                       true,

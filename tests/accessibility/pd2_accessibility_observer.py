@@ -224,8 +224,9 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
     "panel": (
         "PanelSurfaceQmlTest",
         frozenset({
-            "arrow_navigation", "minimum_target_size", "high_contrast", "reduced_motion",
-            "disabled_transparency", "text_scale", "rtl_smoke",
+            "arrow_navigation", "enter_activation", "space_activation", "minimum_target_size",
+            "high_contrast", "reduced_motion", "disabled_transparency", "text_scale",
+            "rtl_smoke", "long_string_layout",
         }),
     ),
     "pinned_task": (
@@ -237,6 +238,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "state_focused", "state_active", "state_minimized", "state_disabled",
             "state_urgent", "state_checked", "minimum_target_size", "high_contrast",
             "reduced_motion", "disabled_transparency", "text_scale", "rtl_smoke",
+            "long_string_layout",
         }),
     ),
     "running_task": (
@@ -246,7 +248,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "space_activation", "accessible_description", "state_checked",
             "state_active", "state_minimized", "state_disabled", "state_urgent",
             "minimum_target_size", "high_contrast", "reduced_motion",
-            "disabled_transparency", "text_scale", "rtl_smoke",
+            "disabled_transparency", "text_scale", "rtl_smoke", "long_string_layout",
         }),
     ),
     "grouped_task": (
@@ -257,6 +259,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "state_focused", "state_active", "state_minimized", "state_disabled",
             "state_urgent", "state_checked", "minimum_target_size", "high_contrast",
             "reduced_motion", "disabled_transparency", "text_scale", "rtl_smoke",
+            "long_string_layout",
         }),
     ),
     "group_popup": (
@@ -267,7 +270,8 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "accessible_name", "accessible_role", "accessible_description",
             "state_focused", "state_active", "state_minimized", "state_urgent",
             "minimum_target_size", "high_contrast", "reduced_motion",
-            "disabled_transparency", "text_scale", "rtl_smoke",
+            "disabled_transparency", "text_scale", "rtl_smoke", "long_string_layout",
+            "state_disabled", "state_selected",
         }),
     ),
     "launcher": (
@@ -284,8 +288,9 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         "LauncherSurfaceQmlTest",
         frozenset({
             "tab_backtab", "space_activation", "menu_key", "accessible_description",
-            "state_selected", "state_checked", "state_focused", "minimum_target_size",
-            "high_contrast", "reduced_motion", "disabled_transparency", "text_scale",
+            "state_selected", "state_checked", "state_focused", "state_disabled",
+            "minimum_target_size", "high_contrast", "reduced_motion",
+            "disabled_transparency", "text_scale",
             "rtl_smoke", "long_string_layout",
         }),
     ),
@@ -306,13 +311,13 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "accessible_description", "state_disabled", "minimum_target_size",
             "high_contrast",
             "reduced_motion", "disabled_transparency", "state_unavailable",
-            "text_scale", "rtl_smoke",
+            "text_scale", "rtl_smoke", "long_string_layout",
         }),
     ),
     "quick_settings": (
         "QuickSettingsSurfaceQmlTest",
         frozenset({
-            "arrow_navigation", "escape_recovery", "minimum_target_size",
+            "arrow_navigation", "enter_activation", "escape_recovery", "minimum_target_size",
             "state_disabled", "state_unavailable", "disabled_transparency",
             "text_scale", "rtl_smoke", "long_string_layout",
         }),
@@ -486,6 +491,42 @@ CTEST_CASE_EVIDENCE.update({
     )
     for check in ("disabled_transparency",)
 })
+CTEST_CASE_EVIDENCE.update({
+    ("panel", check): (
+        "PanelSurfaceRealAdapters::test_accessibleLauncherPressEmitsExactlyOneRequest",
+    )
+    for check in ("enter_activation", "space_activation")
+})
+CTEST_CASE_EVIDENCE[("panel", "long_string_layout")] = (
+    "PanelSurfaceRealAdapters::test_longRunningTaskRemainsBoundedAndScrollable",
+)
+CTEST_CASE_EVIDENCE[("pinned_task", "long_string_layout")] = (
+    "PanelSurfaceRealAdapters::test_longPinnedTaskRemainsBoundedAndScrollable",
+)
+CTEST_CASE_EVIDENCE[("running_task", "long_string_layout")] = (
+    "PanelSurfaceRealAdapters::test_longRunningTaskRemainsBoundedAndScrollable",
+)
+CTEST_CASE_EVIDENCE[("grouped_task", "long_string_layout")] = (
+    "PanelSurfaceRealAdapters::test_longGroupedTaskAndMembersRemainBoundedAndScrollable",
+)
+CTEST_CASE_EVIDENCE[("group_popup", "long_string_layout")] = (
+    "PanelSurfaceRealAdapters::test_longGroupedTaskAndMembersRemainBoundedAndScrollable",
+)
+CTEST_CASE_EVIDENCE.update({
+    ("group_popup", check): (
+        "PanelSurfaceRealAdapters::test_groupedTaskAndPopupExposeCompleteKeyboardStateTransitions",
+    )
+    for check in ("state_disabled", "state_selected")
+})
+CTEST_CASE_EVIDENCE[("launcher_results", "state_disabled")] = (
+    "LauncherSurfaceRealAdapters::test_boundedSearchKeyboardActivationAndFocusExit",
+)
+CTEST_CASE_EVIDENCE[("notification_center", "long_string_layout")] = (
+    "NotificationCenterSurface::test_longNotificationContentWrapsInsideTheCenter",
+)
+CTEST_CASE_EVIDENCE[("quick_settings", "enter_activation")] = (
+    "QuickSettingsSurface::test_keyboardTraversalAndEscapeRecovery",
+)
 if not set(CTEST_CASE_EVIDENCE) <= set(CTEST_OBSERVED):
     raise RuntimeError("accessibility_ctest_case_map_invalid")
 
@@ -562,38 +603,26 @@ _MATRIX_KEYS = {
     (surface, check) for surface in SURFACES for check in MATRIX_CHECKS
 }
 UNIMPLEMENTED_CHECKS = {
-    "panel": frozenset({
-        "enter_activation", "long_string_layout",
-        "space_activation",
-    }),
+    "panel": frozenset(),
     "pinned_task": frozenset({
-        "long_string_layout", "state_expanded",
+        "state_expanded",
     }),
     "running_task": frozenset({
-        "long_string_layout", "state_expanded",
+        "state_expanded",
     }),
     "grouped_task": frozenset({
-        "long_string_layout", "state_expanded",
+        "state_expanded",
     }),
-    "group_popup": frozenset({
-        "long_string_layout", "state_disabled", "state_selected",
-    }),
+    "group_popup": frozenset(),
     "launcher": frozenset(),
     "launcher_results": frozenset({
-        "state_disabled", "state_expanded",
+        "state_expanded",
     }),
     "desktop_surface_exclusion": frozenset(),
-    "transient_notification": frozenset({
-    }),
-    "notification_center": frozenset({
-        "long_string_layout",
-    }),
-    "quick_settings": frozenset({
-        "enter_activation", "high_contrast", "reduced_motion",
-    }),
-    "logout_confirmation": frozenset({
-        "high_contrast", "reduced_motion",
-    }),
+    "transient_notification": frozenset(),
+    "notification_center": frozenset(),
+    "quick_settings": frozenset({"high_contrast", "reduced_motion"}),
+    "logout_confirmation": frozenset({"high_contrast", "reduced_motion"}),
     "output_migration": frozenset(),
     "service_restart_focus_recovery": frozenset(),
 }
@@ -602,6 +631,25 @@ UNIMPLEMENTED = {
     for surface, checks in UNIMPLEMENTED_CHECKS.items()
     for check in checks
 }
+UNIMPLEMENTED_REASONS = {
+    key: (
+        "Qt 6.11 QQuickAccessibleAttached cannot publish the expanded accessibility "
+        "state for this real menu or popup; closing this cell requires a reviewed "
+        "C++ accessibility backend path"
+    )
+    for key in UNIMPLEMENTED
+    if key[1] == "state_expanded"
+}
+UNIMPLEMENTED_REASONS.update({
+    key: (
+        "This surface lacks a resolver-derived Quick Test generation fixture that "
+        "causally proves rendered high-contrast or reduced-motion behavior"
+    )
+    for key in UNIMPLEMENTED
+    if key[1] in {"high_contrast", "reduced_motion"}
+})
+if set(UNIMPLEMENTED_REASONS) != UNIMPLEMENTED:
+    raise RuntimeError("accessibility_unimplemented_reason_map_invalid")
 if (
     set(OBSERVED) & set(CTEST_OBSERVED)
     or set(OBSERVED) & set(NOT_APPLICABLE)
@@ -950,7 +998,7 @@ def accessibility_result(
     require(key in UNIMPLEMENTED, "accessibility_coverage_map_incomplete")
     return reviewed_skip(
         "live_adapter_unimplemented",
-        "This applicable matrix cell lacks exact installed or source-bound QML evidence",
+        UNIMPLEMENTED_REASONS[key],
     )
 
 

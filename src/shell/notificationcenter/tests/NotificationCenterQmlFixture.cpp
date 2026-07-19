@@ -47,6 +47,27 @@ bool NotificationCenterQmlFixture::publish(int recordCount, bool doNotDisturb) {
     return presentation_.applySnapshot(std::move(snapshot)).hasValue();
 }
 
+bool NotificationCenterQmlFixture::publishLong() {
+    auto snapshot = std::make_shared<NotificationCenterSnapshot>();
+    snapshot->generation = ++generation_;
+    snapshot->historyMode = notifications::HistoryMode::persistent;
+    NotificationCenterRecord record;
+    record.recordId = 1U;
+    record.contentGeneration = 1U;
+    record.notificationId = 1U;
+    record.applicationName = "Fixture";
+    record.summary = "Long notification " + std::string(900U, 'S');
+    record.body = "Long body " + std::string(900U, 'B');
+    record.urgency = notifications::ServiceUrgency::critical;
+    record.receivedAtUnixMilliseconds = 1U;
+    record.dismissible = true;
+    record.transientPresentation = true;
+    record.actions = {{"open", "Open", true}};
+    snapshot->records.push_back(std::move(record));
+    snapshot->serializedJson = "qml-generation-" + std::to_string(generation_);
+    return presentation_.applySnapshot(std::move(snapshot)).hasValue();
+}
+
 void NotificationCenterQmlSetup::qmlEngineAvailable(QQmlEngine *engine) {
     engine->rootContext()->setContextProperty(QStringLiteral("notificationCenterFixture"),
                                               new NotificationCenterQmlFixture(engine));

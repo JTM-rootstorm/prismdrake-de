@@ -72,6 +72,18 @@ FocusScope {
         closeRequested()
     }
 
+    function activateButton(control, event) {
+        event.accepted = true
+        if (control.enabled)
+            control.clicked()
+    }
+
+    function activateDoNotDisturb(event) {
+        event.accepted = true
+        if (doNotDisturb.enabled)
+            quickSettingsModel.requestDoNotDisturb(!doNotDisturb.checked)
+    }
+
     function accessibleAdapterDescription(adapter) {
         return qsTr("%1 Current state: %2.")
             .arg(adapter.description.length > 0 ? adapter.description : qsTr("No description."))
@@ -168,6 +180,8 @@ FocusScope {
                 Keys.onDownPressed: event => root.handleVertical(0, 1, event)
                 Keys.onLeftPressed: event => root.handleHorizontal(0, -1, event)
                 Keys.onRightPressed: event => root.handleHorizontal(0, 1, event)
+                Keys.onReturnPressed: event => root.activateButton(lustreProfile, event)
+                Keys.onEnterPressed: event => root.activateButton(lustreProfile, event)
                 onClicked: root.quickSettingsModel.requestLustreProfile()
             }
 
@@ -200,6 +214,8 @@ FocusScope {
                 Keys.onDownPressed: event => root.handleVertical(1, 1, event)
                 Keys.onLeftPressed: event => root.handleHorizontal(1, -1, event)
                 Keys.onRightPressed: event => root.handleHorizontal(1, 1, event)
+                Keys.onReturnPressed: event => root.activateButton(forgeProfile, event)
+                Keys.onEnterPressed: event => root.activateButton(forgeProfile, event)
                 onClicked: root.quickSettingsModel.requestForgeProfile()
             }
         }
@@ -243,6 +259,8 @@ FocusScope {
             Keys.onEscapePressed: event => root.closeFromEscape(event)
             Keys.onUpPressed: event => root.handleVertical(2, -1, event)
             Keys.onDownPressed: event => root.handleVertical(2, 1, event)
+            Keys.onReturnPressed: event => root.activateDoNotDisturb(event)
+            Keys.onEnterPressed: event => root.activateDoNotDisturb(event)
             onClicked: root.quickSettingsModel.requestDoNotDisturb(checked)
         }
 
@@ -283,6 +301,8 @@ FocusScope {
             Keys.onEscapePressed: event => root.closeFromEscape(event)
             Keys.onUpPressed: event => root.handleVertical(3, -1, event)
             Keys.onDownPressed: event => root.handleVertical(3, 1, event)
+            Keys.onReturnPressed: event => root.activateButton(notificationCenter, event)
+            Keys.onEnterPressed: event => root.activateButton(notificationCenter, event)
             onClicked: root.quickSettingsModel.requestNotificationCenter()
         }
 
@@ -311,6 +331,8 @@ FocusScope {
             Keys.onEscapePressed: event => root.closeFromEscape(event)
             Keys.onUpPressed: event => root.handleVertical(4, -1, event)
             Keys.onDownPressed: event => root.handleVertical(4, 1, event)
+            Keys.onReturnPressed: event => root.activateButton(logout, event)
+            Keys.onEnterPressed: event => root.activateButton(logout, event)
             onClicked: root.quickSettingsModel.requestLogout()
         }
 

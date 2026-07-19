@@ -188,6 +188,8 @@ Popup {
                     : ""
                 Accessible.focusable: true
                 Accessible.focused: activeFocus
+                Accessible.selectable: true
+                Accessible.selected: activeFocus
 
                 Keys.priority: Keys.BeforeItem
                 Keys.onEscapePressed: event => {

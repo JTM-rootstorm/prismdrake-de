@@ -19,6 +19,7 @@ class NotificationCenterQmlFixture final : public QObject {
 
     Q_INVOKABLE void reset();
     Q_INVOKABLE bool publish(int recordCount, bool doNotDisturb = false);
+    Q_INVOKABLE bool publishLong();
 
   private:
     NotificationCenterPresentation presentation_;
