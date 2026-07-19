@@ -49,7 +49,11 @@
       <arg name="generation" type="t" direction="out"/>
     </method>
 
-    <!-- Invokes one enabled live action on the exact current record content. -->
+    <!--
+      Invokes one enabled live action on the exact current record content. A
+      successful invocation does not mutate state and returns the unchanged
+      current state generation after the standard action signal is sent.
+    -->
     <method name="InvokeAction">
       <arg name="record_id" type="t" direction="in"/>
       <arg name="content_generation" type="t" direction="in"/>

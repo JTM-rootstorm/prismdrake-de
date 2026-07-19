@@ -85,6 +85,10 @@ constexpr std::size_t maximumHintByteArrayBytes = 1024U * 1024U;
 constexpr std::size_t maximumSettingsSnapshotBytes = 1024U * 1024U;
 constexpr std::size_t maximumSettingsDepth = 16U;
 constexpr std::size_t maximumSettingsNodes = 16U * 1024U;
+constexpr auto settingsCallTimeout = std::chrono::seconds{1};
+constexpr std::array settingsRetryDelays{
+    std::chrono::milliseconds{100}, std::chrono::milliseconds{250}, std::chrono::milliseconds{500},
+    std::chrono::milliseconds{1000}, std::chrono::milliseconds{2000}};
 
 class SettingsSaxBoundary final : public nlohmann::json_sax<nlohmann::json> {
   public:
@@ -476,53 +480,36 @@ class NotificationService final {
         return Result<void>::success();
     }
 
-    [[nodiscard]] Result<void> refreshSettings() {
-        settings_refresh_requested_ = false;
+    void driveSettingsRefresh() {
+        const auto now = std::chrono::steady_clock::now();
+        if (settings_refresh_in_flight_ && now >= settings_refresh_deadline_) {
+            settings_call_slot_.reset();
+            settings_refresh_in_flight_ = false;
+            scheduleSettingsRetry(now);
+        }
+        if (!settings_refresh_requested_ || settings_refresh_in_flight_ ||
+            now < settings_retry_at_) {
+            return;
+        }
+
         sdbus::Message call;
-        sdbus::Message reply;
         if (sd_bus_message_new_method_call(bus_, call.put(), settingsServiceName,
                                            settingsObjectPath, settingsSnapshotInterface,
                                            "GetCurrentSnapshot") < 0 ||
             sd_bus_message_append(call.get(), "u", 2U) < 0) {
-            return Result<void>::success();
+            scheduleSettingsRetry(now);
+            return;
         }
-        sd_bus_error error{};
-        constexpr std::uint64_t timeoutMicroseconds = 1000000U;
-        const int called = sd_bus_call(bus_, call.get(), timeoutMicroseconds, &error, reply.put());
-        sd_bus_error_free(&error);
-        if (called < 0) {
-            return Result<void>::success();
+        const auto timeoutMicroseconds = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(settingsCallTimeout).count());
+        if (sd_bus_call_async(bus_, settings_call_slot_.put(), call.get(), handleSettingsReply,
+                              this, timeoutMicroseconds) < 0) {
+            scheduleSettingsRetry(now);
+            return;
         }
-        std::uint64_t generation = 0U;
-        const void *bytes = nullptr;
-        std::size_t size = 0U;
-        if (sd_bus_message_read(reply.get(), "t", &generation) < 0 || generation == 0U ||
-            sd_bus_message_read_array(reply.get(), SD_BUS_TYPE_BYTE, &bytes, &size) < 0 ||
-            size == 0U || size > maximumSettingsSnapshotBytes || bytes == nullptr ||
-            generation <= settings_generation_) {
-            return Result<void>::success();
-        }
-        auto settings = parseSettingsSnapshot(
-            {static_cast<const char *>(bytes), static_cast<std::size_t>(size)});
-        if (!settings) {
-            return Result<void>::success();
-        }
-        const auto prior = authority_.generation();
-        auto applied = authority_.applySettings(*settings);
-        if (!applied) {
-            return Result<void>::success();
-        }
-        settings_generation_ = generation;
-        reportPersistenceDegradation();
-        if (authority_.generation() != prior) {
-            observePostCommitSignal(
-                emitStateChanged({"records", "do_not_disturb", "history_mode"}));
-        }
-        return Result<void>::success();
-    }
-
-    [[nodiscard]] bool settingsRefreshRequested() const noexcept {
-        return settings_refresh_requested_;
+        settings_refresh_in_flight_ = true;
+        settings_in_flight_request_ = settings_request_serial_;
+        settings_refresh_deadline_ = now + settingsCallTimeout;
     }
 
     [[nodiscard]] bool transportDegraded() const noexcept {
@@ -547,17 +534,29 @@ class NotificationService final {
 
     [[nodiscard]] int pollTimeoutMilliseconds() const noexcept {
         int timeout = -1;
+        const auto nowSteady = std::chrono::steady_clock::now();
+        const auto considerSteadyDeadline = [&timeout, nowSteady](auto deadline) {
+            if (deadline <= nowSteady) {
+                timeout = 0;
+                return;
+            }
+            const auto remaining = deadline - nowSteady;
+            const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          remaining + std::chrono::microseconds{999})
+                                          .count();
+            const int bounded = milliseconds > INT_MAX ? INT_MAX : static_cast<int>(milliseconds);
+            timeout = timeout < 0 ? bounded : std::min(timeout, bounded);
+        };
+
+        if (settings_refresh_in_flight_) {
+            considerSteadyDeadline(settings_refresh_deadline_);
+        } else if (settings_refresh_requested_) {
+            considerSteadyDeadline(settings_retry_at_);
+        }
+
         const auto expiry = authority_.nextExpiry();
         if (expiry) {
-            const auto remaining = *expiry - std::chrono::steady_clock::now();
-            if (remaining <= std::chrono::steady_clock::duration::zero()) {
-                timeout = 0;
-            } else {
-                const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                              remaining + std::chrono::microseconds{999})
-                                              .count();
-                timeout = milliseconds > INT_MAX ? INT_MAX : static_cast<int>(milliseconds);
-            }
+            considerSteadyDeadline(*expiry);
         }
 
         std::uint64_t busDeadline = UINT64_MAX;
@@ -584,6 +583,72 @@ class NotificationService final {
     [[nodiscard]] Result<void> flushHistory() const { return authority_.flushHistory(); }
 
   private:
+    void requestSettingsRefresh() noexcept {
+        settings_request_serial_ =
+            settings_request_serial_ == std::numeric_limits<std::uint64_t>::max()
+                ? 1U
+                : settings_request_serial_ + 1U;
+        settings_refresh_requested_ = true;
+        settings_retry_attempt_ = 0U;
+        settings_retry_at_ = std::chrono::steady_clock::now();
+    }
+
+    void cancelSettingsRefresh() noexcept {
+        settings_call_slot_.reset();
+        settings_refresh_in_flight_ = false;
+        settings_refresh_requested_ = false;
+        settings_retry_attempt_ = 0U;
+        settings_refresh_deadline_ = {};
+        settings_retry_at_ = {};
+    }
+
+    void scheduleSettingsRetry(std::chrono::steady_clock::time_point now) noexcept {
+        settings_call_slot_.reset();
+        settings_refresh_in_flight_ = false;
+        settings_refresh_requested_ = true;
+        const auto delay =
+            settingsRetryDelays[std::min(settings_retry_attempt_, settingsRetryDelays.size() - 1U)];
+        if (settings_retry_attempt_ + 1U < settingsRetryDelays.size()) {
+            ++settings_retry_attempt_;
+        }
+        settings_retry_at_ = now + delay;
+    }
+
+    [[nodiscard]] bool applySettingsReply(sd_bus_message *reply) {
+        if (reply == nullptr || sd_bus_message_is_method_error(reply, nullptr) > 0) {
+            return false;
+        }
+        std::uint64_t generation = 0U;
+        const void *bytes = nullptr;
+        std::size_t size = 0U;
+        if (sd_bus_message_read(reply, "t", &generation) < 0 || generation == 0U ||
+            sd_bus_message_read_array(reply, SD_BUS_TYPE_BYTE, &bytes, &size) < 0 || size == 0U ||
+            size > maximumSettingsSnapshotBytes || bytes == nullptr ||
+            generation < settings_generation_) {
+            return false;
+        }
+        auto settings = parseSettingsSnapshot(
+            {static_cast<const char *>(bytes), static_cast<std::size_t>(size)});
+        if (!settings) {
+            return false;
+        }
+        if (generation == settings_generation_) {
+            return true;
+        }
+        const auto prior = authority_.generation();
+        auto applied = authority_.applySettings(*settings);
+        if (!applied) {
+            return false;
+        }
+        settings_generation_ = generation;
+        reportPersistenceDegradation();
+        if (authority_.generation() != prior) {
+            observePostCommitSignal(
+                emitStateChanged({"records", "do_not_disturb", "history_mode"}));
+        }
+        return true;
+    }
+
     [[nodiscard]] static const sd_bus_vtable *standardVtable() {
         static const sd_bus_vtable vtable[] = {
             SD_BUS_VTABLE_START(0),
@@ -836,7 +901,10 @@ class NotificationService final {
         auto &service = from(userData);
         if (std::string_view{name} == settingsServiceName) {
             service.settings_generation_ = 0U;
-            service.settings_refresh_requested_ = *newOwner != '\0';
+            service.cancelSettingsRefresh();
+            if (*newOwner != '\0') {
+                service.requestSettingsRefresh();
+            }
         }
         if (*name == ':' && *oldOwner != '\0' && *newOwner == '\0') {
             auto lost = service.authority_.senderDisappeared(name);
@@ -849,7 +917,27 @@ class NotificationService final {
 
     [[nodiscard]] static int handleSettingsChanged(sd_bus_message *, void *userData,
                                                    sd_bus_error *) {
-        from(userData).settings_refresh_requested_ = true;
+        from(userData).requestSettingsRefresh();
+        return 0;
+    }
+
+    [[nodiscard]] static int handleSettingsReply(sd_bus_message *message, void *userData,
+                                                 sd_bus_error *) {
+        auto &service = from(userData);
+        const auto completedRequest = service.settings_in_flight_request_;
+        service.settings_call_slot_.reset();
+        service.settings_refresh_in_flight_ = false;
+        if (!service.applySettingsReply(message)) {
+            service.scheduleSettingsRetry(std::chrono::steady_clock::now());
+            return 0;
+        }
+        service.settings_retry_attempt_ = 0U;
+        if (service.settings_request_serial_ == completedRequest) {
+            service.settings_refresh_requested_ = false;
+        } else {
+            service.settings_refresh_requested_ = true;
+            service.settings_retry_at_ = std::chrono::steady_clock::now();
+        }
         return 0;
     }
 
@@ -930,8 +1018,15 @@ class NotificationService final {
     sdbus::Slot center_slot_;
     sdbus::Slot owner_slot_;
     sdbus::Slot settings_slot_;
+    sdbus::Slot settings_call_slot_;
     std::uint64_t settings_generation_{0U};
     bool settings_refresh_requested_{true};
+    bool settings_refresh_in_flight_{false};
+    std::uint64_t settings_request_serial_{1U};
+    std::uint64_t settings_in_flight_request_{0U};
+    std::size_t settings_retry_attempt_{0U};
+    std::chrono::steady_clock::time_point settings_refresh_deadline_{};
+    std::chrono::steady_clock::time_point settings_retry_at_{};
     bool persistence_diagnostic_emitted_{false};
     PostCommitTransportGuard post_commit_transport_;
 };
@@ -971,7 +1066,7 @@ Result<ServiceEpochOutcome> runServiceEpoch(NotificationAuthority authority,
         return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::disconnected);
     }
 
-    (void)service.refreshSettings();
+    service.driveSettingsRefresh();
     while (stopRequested == 0) {
         int processed = 0;
         do {
@@ -980,9 +1075,7 @@ Result<ServiceEpochOutcome> runServiceEpoch(NotificationAuthority authority,
         if (processed < 0) {
             return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::disconnected);
         }
-        if (service.settingsRefreshRequested()) {
-            (void)service.refreshSettings();
-        }
+        service.driveSettingsRefresh();
         if (service.transportDegraded()) {
             return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::disconnected);
         }

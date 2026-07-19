@@ -116,6 +116,11 @@ defined in [PD2 state ownership](pd2-state-ownership.md#do-not-disturb-authority
 - `SetDoNotDisturb` updates only notifyd state and never writes configuration.
 - An accepted complete settings generation clears the ephemeral override and
   makes its configured baseline effective.
+- Snapshot refresh is asynchronous. One request may be in flight, notifications
+  continue dispatching while it is pending, and a monotonic one-second deadline
+  converts a missing reply into bounded retry backoff. Transient failures and a
+  late settings owner are retried from 100 milliseconds up to a two-second cap;
+  a newer settings signal is never lost behind an older in-flight reply.
 
 This is the documented critical-information policy required by
 `PD-NOTIFY-004`.
@@ -175,10 +180,12 @@ StateChanged(generation: t, changed_domains: as)
 
 `GetCurrentState` returns one schema-versioned, bounded, complete immutable JSON
 snapshot. The nonzero generation is scoped to the current well-known-name owner
-epoch. A mutation either validates and publishes one complete higher generation
-or fails without consuming a generation. `Dismiss` and `InvokeAction` reject a
-stale `content_generation`. `StateChanged` is only a fetch hint; clients fetch
-and atomically replace complete state.
+epoch. A state mutation either validates and publishes one complete higher
+generation or fails without consuming a generation. `Dismiss` and
+`InvokeAction` reject a stale `content_generation`; successful `InvokeAction`
+does not mutate state and returns the unchanged current state generation after
+the standard action signal is sent. `StateChanged` is only a fetch hint; clients
+fetch and atomically replace complete state.
 
 Notification-center state adds the effective do-not-disturb value, nullable
 runtime override, configured history mode, and presentation state to the closed

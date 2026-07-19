@@ -6,12 +6,14 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
+#include <future>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -42,6 +44,21 @@ constexpr char standardInterface[] = "org.freedesktop.Notifications";
 constexpr char centerService[] = "org.prismdrake.NotificationCenter1";
 constexpr char centerPath[] = "/org/prismdrake/NotificationCenter1";
 constexpr char centerInterface[] = "org.prismdrake.NotificationCenter1";
+constexpr char settingsService[] = "org.prismdrake.Settings1";
+constexpr char settingsPath[] = "/org/prismdrake/Settings1";
+constexpr char settingsSnapshotInterface[] = "org.prismdrake.SettingsSnapshot1";
+
+constexpr std::string_view doNotDisturbSnapshot = R"json({
+  "schema_version": 2,
+  "settings": {
+    "notifications": {
+      "enabled": true,
+      "history": "session",
+      "default_timeout_ms": 5000,
+      "do_not_disturb": true
+    }
+  }
+})json";
 
 TEST(NotificationServiceTransportTest, FailedPostCommitSignalLatchesEpochDegradation) {
     prismdrake::notifyd::PostCommitTransportGuard guard;
@@ -80,6 +97,111 @@ class TemporaryDirectory final {
 
   private:
     std::filesystem::path path_;
+};
+
+class FakeSettingsService final {
+  public:
+    explicit FakeSettingsService(bool holdFirstReply) : hold_first_reply_(holdFirstReply) {
+        std::promise<bool> ready;
+        auto result = ready.get_future();
+        thread_ =
+            std::thread([this, signal = std::move(ready)]() mutable { run(std::move(signal)); });
+        if (!result.get()) {
+            running_.store(false);
+            thread_.join();
+            throw std::runtime_error{"unable to start fake settings service"};
+        }
+    }
+
+    ~FakeSettingsService() {
+        running_.store(false);
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+    FakeSettingsService(const FakeSettingsService &) = delete;
+    FakeSettingsService &operator=(const FakeSettingsService &) = delete;
+
+    [[nodiscard]] std::size_t calls() const noexcept { return calls_.load(); }
+
+  private:
+    [[nodiscard]] static const sd_bus_vtable *vtable() {
+        static const sd_bus_vtable entries[] = {SD_BUS_VTABLE_START(0),
+                                                SD_BUS_METHOD("GetCurrentSnapshot", "u", "tay",
+                                                              getCurrentSnapshot,
+                                                              SD_BUS_VTABLE_UNPRIVILEGED),
+                                                SD_BUS_VTABLE_END};
+        return entries;
+    }
+
+    static int getCurrentSnapshot(sd_bus_message *message, void *userData,
+                                  sd_bus_error *error) noexcept {
+        auto &self = *static_cast<FakeSettingsService *>(userData);
+        std::uint32_t version = 0U;
+        if (sd_bus_message_read(message, "u", &version) <= 0 || version != 2U ||
+            sd_bus_message_at_end(message, 1) <= 0) {
+            return sd_bus_error_set_const(error, "org.prismdrake.Settings1.Error.Unsupported",
+                                          "Unsupported snapshot version.");
+        }
+        const auto call = self.calls_.fetch_add(1U) + 1U;
+        if (self.hold_first_reply_ && call == 1U) {
+            self.held_reply_.reset(sd_bus_message_ref(message));
+            return self.held_reply_ ? 1 : -ENOMEM;
+        }
+        return self.sendReply(message);
+    }
+
+    int sendReply(sd_bus_message *message) const noexcept {
+        Message reply;
+        if (sd_bus_message_new_method_return(message, reply.put()) < 0 ||
+            sd_bus_message_append(reply.get(), "t", std::uint64_t{1U}) < 0 ||
+            sd_bus_message_append_array(reply.get(), SD_BUS_TYPE_BYTE, doNotDisturbSnapshot.data(),
+                                        doNotDisturbSnapshot.size()) < 0) {
+            return -ENOMEM;
+        }
+        return sd_bus_send(bus_, reply.get(), nullptr);
+    }
+
+    void run(std::promise<bool> ready) noexcept {
+        Bus bus;
+        if (sd_bus_open_user(bus.put()) < 0) {
+            ready.set_value(false);
+            return;
+        }
+        bus_ = bus.get();
+        Slot object;
+        if (sd_bus_add_object_vtable(bus.get(), object.put(), settingsPath,
+                                     settingsSnapshotInterface, vtable(), this) < 0 ||
+            sd_bus_request_name(bus.get(), settingsService, 0) <= 0) {
+            bus_ = nullptr;
+            ready.set_value(false);
+            return;
+        }
+        ready.set_value(true);
+
+        while (running_.load()) {
+            int processed = 0;
+            do {
+                processed = sd_bus_process(bus.get(), nullptr);
+            } while (processed > 0);
+            if (processed < 0) {
+                break;
+            }
+            pollfd descriptor{sd_bus_get_fd(bus.get()),
+                              static_cast<short>(sd_bus_get_events(bus.get())), 0};
+            (void)::poll(&descriptor, 1U, 10);
+        }
+        held_reply_.reset();
+        bus_ = nullptr;
+    }
+
+    const bool hold_first_reply_;
+    std::atomic_bool running_{true};
+    std::atomic_size_t calls_{0U};
+    std::thread thread_;
+    sd_bus *bus_{nullptr};
+    Message held_reply_;
 };
 
 struct NotifyReply final {
@@ -331,6 +453,42 @@ TEST_F(NotificationServiceFixture, PublishesConservativeVersionedReadinessContra
     ASSERT_TRUE(state);
     EXPECT_EQ(state->at("generation"), 1U);
     EXPECT_TRUE(state->at("records").empty());
+}
+
+TEST_F(NotificationServiceFixture, AppliesSettingsWhenTheOwnerAppearsAfterStartup) {
+    const auto started = std::chrono::steady_clock::now();
+    const auto created = notify(bus_.get(), 0U, "Before settings owner");
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    ASSERT_GE(created.result, 0);
+    EXPECT_LT(elapsed, 500ms);
+
+    FakeSettingsService settings{false};
+    ASSERT_TRUE(processUntil(
+        bus_.get(),
+        [&] {
+            const auto state = currentState(bus_.get());
+            return settings.calls() >= 1U && state && state->at("effective_do_not_disturb") == true;
+        },
+        4s));
+}
+
+TEST_F(NotificationServiceFixture, FirstSettingsTimeoutDoesNotBlockAndRetriesToRecovery) {
+    FakeSettingsService settings{true};
+    ASSERT_TRUE(processUntil(bus_.get(), [&] { return settings.calls() >= 1U; }, 2s));
+
+    const auto started = std::chrono::steady_clock::now();
+    const auto created = notify(bus_.get(), 0U, "While settings reply is late");
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    ASSERT_GE(created.result, 0);
+    EXPECT_LT(elapsed, 500ms);
+
+    ASSERT_TRUE(processUntil(
+        bus_.get(),
+        [&] {
+            const auto state = currentState(bus_.get());
+            return settings.calls() >= 2U && state && state->at("effective_do_not_disturb") == true;
+        },
+        5s));
 }
 
 TEST_F(NotificationServiceFixture, NativeStateMutationsUseTypedGenerationAndStaleGuards) {
