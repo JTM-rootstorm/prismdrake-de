@@ -8,6 +8,7 @@ import hashlib
 import io
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
@@ -187,6 +188,30 @@ class InstalledExecutionTests(unittest.TestCase):
             )
         self.assertFalse(loaded)
 
+    def test_rejects_existing_regular_output_before_loading_or_running(self) -> None:
+        self.output.write_bytes(b"retained evidence\n")
+        self.output.chmod(0o640)
+        loaded = False
+
+        def load(path: Path) -> object:
+            nonlocal loaded
+            del path
+            loaded = True
+            return self.document
+
+        with self.assertRaisesRegex(pd2_demo.HarnessError, "^output_target_exists$"):
+            pd2_demo.execute_installed_demonstration(
+                self.preflight,
+                self.fixture,
+                self.output,
+                attestation_api=(load, lambda *args: None),
+                port_factory=lambda fixture: FakeLivePort(self.hashes),
+            )
+
+        self.assertFalse(loaded)
+        self.assertEqual(self.output.read_bytes(), b"retained evidence\n")
+        self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o640)
+
     def test_rejects_writable_or_linked_controlled_fixture(self) -> None:
         self.fixture.chmod(0o777)
         with self.assertRaisesRegex(pd2_demo.HarnessError, "^controlled_fixture_invalid$"):
@@ -199,6 +224,40 @@ class InstalledExecutionTests(unittest.TestCase):
 
 
 class DriverCliTests(unittest.TestCase):
+    def test_live_cli_refuses_existing_regular_output_without_replacing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            output = root / "evidence.json"
+            output.write_bytes(b"retained evidence\n")
+            output.chmod(0o640)
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    os.fspath(DRIVER),
+                    "--attestation",
+                    os.fspath(root / "missing-attestation.json"),
+                    "--controlled-window-fixture",
+                    os.fspath(root / "missing-fixture"),
+                    "--output",
+                    os.fspath(output),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=10,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, b"")
+            self.assertEqual(
+                completed.stderr,
+                b"PD2 installed demonstration failed closed: output_target_exists\n",
+            )
+            self.assertEqual(output.read_bytes(), b"retained evidence\n")
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o640)
+
     def test_actual_attested_script_validation_entrypoint(self) -> None:
         document = pd2_demo.run_harness(
             REVISION, HARNESS_MANIFEST_SHA256, FakeLivePort(executable_hashes())

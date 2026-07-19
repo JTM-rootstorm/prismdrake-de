@@ -601,15 +601,11 @@ def validate_evidence(document: Any) -> None:
 
 
 def write_evidence(path: Path, document: Any) -> None:
-    """Atomically write validated evidence as a private regular file."""
+    """Atomically create validated evidence as a private regular file."""
 
     validate_evidence(document)
-    require(path.is_absolute() and path.name not in {"", ".", ".."}, "output_target_invalid")
-    require(path.parent.is_dir() and not path.parent.is_symlink(), "output_parent_invalid")
-    if path.exists() or path.is_symlink():
-        require(path.is_file() and not path.is_symlink(), "output_target_invalid")
+    _require_output_target(path)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    require(not temporary.exists() and not temporary.is_symlink(), "output_temporary_exists")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -624,7 +620,14 @@ def write_evidence(path: Path, document: Any) -> None:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        try:
+            # Linking a fully flushed same-directory temporary into a previously
+            # absent name makes the complete record visible atomically without
+            # allowing a concurrent or retained evidence file to be replaced.
+            os.link(temporary, path, follow_symlinks=False)
+        except FileExistsError as error:
+            raise HarnessError("output_target_exists") from error
+        temporary.unlink()
         require(stat.S_IMODE(path.stat().st_mode) == 0o600, "output_permissions_invalid")
     except OSError as error:
         raise HarnessError("output_write_failed") from error
@@ -712,8 +715,10 @@ def _require_output_target(path: Path) -> None:
             "output_target_invalid")
     require(path.parent.is_dir() and not path.parent.is_symlink(),
             "output_parent_invalid")
-    if path.exists() or path.is_symlink():
-        require(path.is_file() and not path.is_symlink(), "output_target_invalid")
+    require(not path.is_symlink(), "output_target_invalid")
+    if path.exists():
+        require(path.is_file(), "output_target_invalid")
+        raise HarnessError("output_target_exists")
     temporary = path.with_suffix(path.suffix + ".tmp")
     require(not temporary.exists() and not temporary.is_symlink(),
             "output_temporary_exists")

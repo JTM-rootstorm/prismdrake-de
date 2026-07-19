@@ -56,9 +56,10 @@ rather than silently skipping a required observer.
 
 ## Run and validate
 
-Use an absolute private output path whose parent already exists. The controlled
-window fixture must be an absolute regular executable from the matching tested
-build artifact:
+Use an absolute private output path whose parent already exists and whose final
+path does not exist. The driver atomically creates the completed record at mode
+`0600`; it never replaces retained evidence. The controlled window fixture must
+be an absolute regular executable from the matching tested build artifact:
 
 ```sh
 python3 tests/integration/pd2_demo.py \

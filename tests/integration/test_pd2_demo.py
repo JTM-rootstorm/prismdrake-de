@@ -274,6 +274,36 @@ class EvidenceValidationTests(unittest.TestCase):
             self.assertEqual(load_evidence(output), self.document)
             self.assertFalse(output.with_suffix(".json.tmp").exists())
 
+    def test_writer_refuses_existing_regular_output_without_replacing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary).resolve() / "evidence.json"
+            output.write_bytes(b"retained evidence\n")
+            output.chmod(0o640)
+
+            with self.assertRaisesRegex(HarnessError, "^output_target_exists$"):
+                write_evidence(output, self.document)
+
+            self.assertEqual(output.read_bytes(), b"retained evidence\n")
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o640)
+            self.assertFalse(output.with_suffix(".json.tmp").exists())
+
+    def test_writer_preserves_symlink_and_nonregular_output_rejection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            retained = root / "retained.json"
+            retained.write_bytes(b"retained evidence\n")
+            linked = root / "linked.json"
+            linked.symlink_to(retained)
+            directory = root / "directory.json"
+            directory.mkdir()
+
+            for output in (linked, directory):
+                with self.subTest(output=output.name):
+                    with self.assertRaisesRegex(HarnessError, "^output_target_invalid$"):
+                        write_evidence(output, self.document)
+
+            self.assertEqual(retained.read_bytes(), b"retained evidence\n")
+
     def test_validator_cli_accepts_only_supplied_closed_evidence(self) -> None:
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(main([]), 2)
