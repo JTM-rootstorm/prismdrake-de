@@ -122,6 +122,13 @@ set_tests_properties(Pd2LiveXorgHarnessContractTest PROPERTIES
     TIMEOUT 10)
 
 add_test(
+    NAME Pd2X11TraceParserContractTest
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_x11trace.py")
+set_tests_properties(Pd2X11TraceParserContractTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    TIMEOUT 10)
+
+add_test(
     NAME Pd2LiveAtspiHelperContractTest
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_live_atspi.py")
 set_tests_properties(Pd2LiveAtspiHelperContractTest PROPERTIES
