@@ -36,8 +36,12 @@ Control {
         contextMenu.open()
         if (openNewAction.enabled)
             openNewAction.forceActiveFocus(Qt.OtherFocusReason)
-        else
+        else if (pinAction.enabled)
             pinAction.forceActiveFocus(Qt.OtherFocusReason)
+        else if (minimizeAction.enabled)
+            minimizeAction.forceActiveFocus(Qt.OtherFocusReason)
+        else
+            closeAction.forceActiveFocus(Qt.OtherFocusReason)
         return true
     }
 
@@ -293,6 +297,25 @@ Control {
                 Accessible.description: qsTr("Change the shared panel pin order")
                 onClicked: {
                     if (root.presentation.requestPinToggle())
+                        root.closeActionMenu(true)
+                }
+            }
+
+            Button {
+                id: minimizeAction
+                objectName: "panelGroupedTaskMinimize"
+                text: qsTr("Minimize")
+                visible: root.presentation !== null && root.presentation.windowCount === 1
+                         && !root.presentation.minimized
+                enabled: visible
+                implicitWidth: root.tokens.minimumTargetSize
+                implicitHeight: root.tokens.minimumTargetSize
+                Accessible.role: Accessible.MenuItem
+                Accessible.name: qsTr("Minimize %1").arg(root.title)
+                Accessible.description: qsTr("Request that the only application window minimize")
+                Accessible.onPressAction: minimizeAction.clicked()
+                onClicked: {
+                    if (root.presentation.requestOnlyWindowMinimization())
                         root.closeActionMenu(true)
                 }
             }

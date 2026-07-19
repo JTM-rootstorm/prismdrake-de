@@ -152,7 +152,7 @@ TestCase {
         compare(quickSettingsRequest.signalArguments[0][0], "DP-1")
     }
 
-    function test_singleWindowGroupedTaskExposesAccessibleCloseAction() {
+    function test_singleWindowGroupedTaskExposesAccessibleWindowActions() {
         groupedTasks = true
         verify(panelFixture.publishRepresentativeGroups())
         tryCompare(panel, "taskCount", 2)
@@ -163,12 +163,26 @@ TestCase {
         compare(terminal.presentation.windowCount, 1)
 
         verify(editor.openActionMenu())
+        const editorMinimize = findChild(editor, "panelGroupedTaskMinimize")
         const editorClose = findChild(editor, "panelGroupedTaskClose")
+        compare(editorMinimize.visible, false)
         compare(editorClose.visible, false)
         editor.closeActionMenu(false)
 
         verify(terminal.openActionMenu())
+        const terminalMinimize = findChild(terminal, "panelGroupedTaskMinimize")
         const terminalClose = findChild(terminal, "panelGroupedTaskClose")
+        compare(terminalMinimize.visible, true)
+        compare(terminalMinimize.enabled, true)
+        compare(terminalMinimize.Accessible.role, Accessible.MenuItem)
+        compare(terminalMinimize.Accessible.name, "Minimize Terminal")
+        terminalMinimize.Accessible.pressAction()
+
+        tryCompare(panelFixture, "minimizationCount", 1)
+        compare(panelFixture.lastMinimizationTitle, "Terminal")
+        compare(panelFixture.lastMinimizationGeneration, panelFixture.taskGeneration)
+
+        verify(terminal.openActionMenu())
         compare(terminalClose.visible, true)
         compare(terminalClose.enabled, true)
         compare(terminalClose.Accessible.role, Accessible.MenuItem)

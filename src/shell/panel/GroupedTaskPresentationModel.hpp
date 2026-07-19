@@ -97,6 +97,7 @@ class GroupedTaskPresentation final : public QObject {
     Q_INVOKABLE bool requestPrimaryAction();
     Q_INVOKABLE bool requestOpenNew();
     Q_INVOKABLE bool requestPinToggle();
+    Q_INVOKABLE bool requestOnlyWindowMinimization();
     Q_INVOKABLE bool requestOnlyWindowClose();
 
   private:

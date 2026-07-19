@@ -173,6 +173,13 @@ bool GroupedTaskPresentation::requestOpenNew() { return owner_->requestOpenNew(*
 
 bool GroupedTaskPresentation::requestPinToggle() { return owner_->requestPinToggle(*this); }
 
+bool GroupedTaskPresentation::requestOnlyWindowMinimization() {
+    if (members_.size() != 1U) {
+        return false;
+    }
+    return owner_->requestMinimization(*members_.front());
+}
+
 bool GroupedTaskPresentation::requestOnlyWindowClose() {
     if (members_.size() != 1U) {
         return false;
