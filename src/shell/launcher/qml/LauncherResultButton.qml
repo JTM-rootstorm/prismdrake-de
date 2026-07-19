@@ -9,7 +9,6 @@ Button {
     required property var presentation
     required property var tokens
     property bool selected: false
-    property var actionMenuItems: []
 
     readonly property string presentationName: presentation !== null ? presentation.name : ""
     readonly property string presentationGenericName: presentation !== null
@@ -35,7 +34,7 @@ Button {
     }
 
     function actionMenuItemAt(index) {
-        return index >= 0 && index < actionMenuItems.length ? actionMenuItems[index] : null
+        return index >= 0 && index < actionRepeater.count ? actionRepeater.itemAt(index) : null
     }
 
     function pinMenuItem() {
@@ -99,7 +98,7 @@ Button {
                                  && (event.modifiers & Qt.ShiftModifier)
         if (root.applicationResult && (menuKey || alternateMenuKey)) {
             event.accepted = true
-            actionsMenu.popup()
+            actionsMenu.open()
         }
     }
 
@@ -112,14 +111,23 @@ Button {
         acceptedButtons: Qt.RightButton
         onTapped: {
             if (root.applicationResult)
-                actionsMenu.popup()
+                actionsMenu.open()
         }
     }
 
-    Menu {
+    Popup {
         id: actionsMenu
         objectName: "launcherActionsMenu"
-        onOpened: root.actionMenuOpened()
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: root.tokens.tilePadding
+        onOpened: {
+            root.actionMenuOpened()
+            const first = actionRepeater.count > 0 ? actionRepeater.itemAt(0) : pinItem
+            if (first !== null)
+                first.forceActiveFocus(Qt.OtherFocusReason)
+        }
         onClosed: {
             root.actionMenuClosed()
             root.forceActiveFocus(Qt.OtherFocusReason)
@@ -132,107 +140,129 @@ Button {
             border.color: root.tokens.borderColor
         }
 
-        Instantiator {
-            id: actionInstantiator
-            model: root.presentation !== null ? root.presentation.actionCount : 0
-            delegate: MenuItem {
-                id: actionItem
-                required property int index
-                readonly property var actionPresentation: root.presentation.actionAt(index)
-                objectName: "launcherActionMenuItem" + index
-                text: actionPresentation !== null ? actionPresentation.name : ""
+        contentItem: Column {
+            spacing: root.tokens.tilePadding
+            Accessible.role: Accessible.PopupMenu
+            Accessible.name: qsTr("Application actions for %1").arg(root.presentationName)
+            Accessible.description: qsTr("Launch an application action or change its pinned state")
+
+            Repeater {
+                id: actionRepeater
+                model: root.presentation !== null ? root.presentation.actionCount : 0
+                delegate: Button {
+                    id: actionItem
+                    required property int index
+                    readonly property var actionPresentation: root.presentation !== null
+                                                              ? root.presentation.actionAt(index)
+                                                              : null
+                    objectName: "launcherActionMenuItem" + index
+                    text: actionPresentation !== null ? actionPresentation.name : ""
+                    activeFocusOnTab: false
+                    implicitWidth: Math.max(root.tokens.minimumTargetSize,
+                                            contentItem.implicitWidth + leftPadding + rightPadding)
+                    implicitHeight: Math.max(root.tokens.minimumTargetSize,
+                                             contentItem.implicitHeight + topPadding + bottomPadding)
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: text
+                    Accessible.description: qsTr("Launch the %1 action for %2")
+                                                .arg(text).arg(root.presentationName)
+                    Accessible.focusable: enabled
+                    Accessible.focused: activeFocus
+                    Keys.onTabPressed: event => {
+                        event.accepted = true
+                        const next = index + 1 < actionRepeater.count
+                                   ? actionRepeater.itemAt(index + 1) : pinItem
+                        if (next !== null)
+                            next.forceActiveFocus(Qt.TabFocusReason)
+                    }
+                    Keys.onBacktabPressed: event => {
+                        event.accepted = true
+                        const previous = index > 0 ? actionRepeater.itemAt(index - 1) : pinItem
+                        if (previous !== null)
+                            previous.forceActiveFocus(Qt.BacktabFocusReason)
+                    }
+                    onClicked: {
+                        if (actionPresentation !== null)
+                            actionPresentation.request()
+                        actionsMenu.close()
+                    }
+                    contentItem: Text {
+                        color: root.tokens.textPrimaryColor
+                        textFormat: Text.PlainText
+                        font.family: root.tokens.bodyFontFamily
+                        font.pixelSize: root.tokens.bodyFontPixels
+                        text: actionItem.text
+                    }
+                    background: Rectangle {
+                        radius: root.tokens.tileRadius
+                        color: actionItem.down ? root.tokens.selectionColor
+                                               : root.tokens.controlColor
+                        border.width: actionItem.activeFocus ? root.tokens.focusWidth
+                                                             : root.tokens.tileBorderWidth
+                        border.color: actionItem.activeFocus ? root.tokens.focusColor
+                                                             : root.tokens.borderColor
+                    }
+                }
+            }
+
+            MenuSeparator {
+                width: parent.width
+                visible: root.presentation !== null && root.presentation.actionCount > 0
+            }
+
+            Button {
+                id: pinItem
+                objectName: "launcherPinMenuItem"
+                visible: root.applicationResult
+                text: root.pinned ? qsTr("Unpin from panel") : qsTr("Pin to panel")
+                activeFocusOnTab: false
                 implicitWidth: Math.max(root.tokens.minimumTargetSize,
                                         contentItem.implicitWidth + leftPadding + rightPadding)
                 implicitHeight: Math.max(root.tokens.minimumTargetSize,
                                          contentItem.implicitHeight + topPadding + bottomPadding)
-                width: implicitWidth
-                height: implicitHeight
                 Accessible.role: Accessible.MenuItem
                 Accessible.name: text
-                Accessible.description: qsTr("Launch the %1 action for %2")
-                                            .arg(text).arg(root.presentationName)
-                Accessible.focusable: enabled
+                Accessible.description: root.pinned
+                                        ? qsTr("Remove %1 from the shared panel pins")
+                                            .arg(root.presentationName)
+                                        : qsTr("Add %1 to the shared panel pins")
+                                            .arg(root.presentationName)
+                Accessible.focusable: visible
                 Accessible.focused: activeFocus
-                Accessible.onPressAction: actionItem.clicked()
-                onTriggered: {
-                    if (actionPresentation !== null)
-                        actionPresentation.request()
+                Accessible.checkable: true
+                Accessible.checked: root.pinned
+                Keys.onTabPressed: event => {
+                    event.accepted = true
+                    const first = actionRepeater.count > 0 ? actionRepeater.itemAt(0) : pinItem
+                    if (first !== null)
+                        first.forceActiveFocus(Qt.TabFocusReason)
+                }
+                Keys.onBacktabPressed: event => {
+                    event.accepted = true
+                    const last = actionRepeater.count > 0
+                               ? actionRepeater.itemAt(actionRepeater.count - 1) : pinItem
+                    if (last !== null)
+                        last.forceActiveFocus(Qt.BacktabFocusReason)
+                }
+                onClicked: {
+                    root.presentation.requestPinToggle()
+                    actionsMenu.close()
                 }
                 contentItem: Text {
                     color: root.tokens.textPrimaryColor
                     textFormat: Text.PlainText
                     font.family: root.tokens.bodyFontFamily
                     font.pixelSize: root.tokens.bodyFontPixels
-                    text: actionItem.text
+                    text: pinItem.text
                 }
                 background: Rectangle {
                     radius: root.tokens.tileRadius
-                    color: actionItem.down ? root.tokens.selectionColor
-                                           : root.tokens.controlColor
-                    border.width: actionItem.activeFocus ? root.tokens.focusWidth
-                                                         : root.tokens.tileBorderWidth
-                    border.color: actionItem.activeFocus ? root.tokens.focusColor
-                                                         : root.tokens.borderColor
+                    color: pinItem.down ? root.tokens.selectionColor : root.tokens.controlColor
+                    border.width: pinItem.activeFocus ? root.tokens.focusWidth
+                                                      : root.tokens.tileBorderWidth
+                    border.color: pinItem.activeFocus ? root.tokens.focusColor
+                                                      : root.tokens.borderColor
                 }
-            }
-            onObjectAdded: (index, object) => {
-                const items = root.actionMenuItems.slice()
-                items.splice(index, 0, object)
-                root.actionMenuItems = items
-                actionsMenu.insertItem(index, object)
-            }
-            onObjectRemoved: (index, object) => {
-                const items = root.actionMenuItems.slice()
-                const itemIndex = items.indexOf(object)
-                if (itemIndex >= 0)
-                    items.splice(itemIndex, 1)
-                root.actionMenuItems = items
-                actionsMenu.removeItem(object)
-            }
-        }
-
-        MenuSeparator {
-            visible: root.presentation !== null && root.presentation.actionCount > 0
-        }
-
-        MenuItem {
-            id: pinItem
-            objectName: "launcherPinMenuItem"
-            visible: root.applicationResult
-            text: root.pinned ? qsTr("Unpin from panel") : qsTr("Pin to panel")
-            implicitWidth: Math.max(root.tokens.minimumTargetSize,
-                                    contentItem.implicitWidth + leftPadding + rightPadding)
-            implicitHeight: Math.max(root.tokens.minimumTargetSize,
-                                     contentItem.implicitHeight + topPadding + bottomPadding)
-            width: implicitWidth
-            height: implicitHeight
-            Accessible.role: Accessible.MenuItem
-            Accessible.name: text
-            Accessible.description: root.pinned
-                                    ? qsTr("Remove %1 from the shared panel pins")
-                                        .arg(root.presentationName)
-                                    : qsTr("Add %1 to the shared panel pins")
-                                        .arg(root.presentationName)
-            Accessible.focusable: visible
-            Accessible.focused: activeFocus
-            Accessible.checkable: true
-            Accessible.checked: root.pinned
-            Accessible.onPressAction: pinItem.clicked()
-            onTriggered: root.presentation.requestPinToggle()
-            contentItem: Text {
-                color: root.tokens.textPrimaryColor
-                textFormat: Text.PlainText
-                font.family: root.tokens.bodyFontFamily
-                font.pixelSize: root.tokens.bodyFontPixels
-                text: pinItem.text
-            }
-            background: Rectangle {
-                radius: root.tokens.tileRadius
-                color: pinItem.down ? root.tokens.selectionColor : root.tokens.controlColor
-                border.width: pinItem.activeFocus ? root.tokens.focusWidth
-                                                  : root.tokens.tileBorderWidth
-                border.color: pinItem.activeFocus ? root.tokens.focusColor
-                                                  : root.tokens.borderColor
             }
         }
     }

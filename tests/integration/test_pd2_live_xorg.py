@@ -197,6 +197,10 @@ class FakeOperations:
         self.controlled_windows: dict[str, int] = {}
         self.controlled_hidden: set[int] = set()
         self.active_window: int | None = None
+        self.visible_named_windows: dict[str, int] = {
+            live_xorg.LAUNCHER_WINDOW_TITLE: 0x510001,
+        }
+        self.focused_window: int | None = None
         self.component_stop_succeeds = True
         self.component_replacement_published = True
         self.unrelated_replacement: str | None = None
@@ -245,6 +249,12 @@ class FakeOperations:
         command = tuple(argv)
         self.events.append(("run", Path(command[0]).name))
         self.run_calls.append((command, dict(env)))
+        if command[:3] == (
+            "/usr/bin/prismdrake-shellctl", "launcher", "toggle"
+        ):
+            self.visible_named_windows.setdefault(
+                live_xorg.LAUNCHER_WINDOW_TITLE, 0x510001
+            )
         if command[-1] == "--query":
             if self.xorg_stopped and not self.xorg_query_survives_stop:
                 return CommandResult(1, b"", b"cannot open display")
@@ -260,11 +270,22 @@ class FakeOperations:
                 "--name",
             ):
                 title = command[4].removeprefix("^").removesuffix("$")
-                identifier = self.controlled_windows.get(title)
+                identifier = self.visible_named_windows.get(
+                    title, self.controlled_windows.get(title)
+                )
                 return (
                     CommandResult(0, f"{identifier}\n".encode("ascii"))
                     if identifier is not None
                     else CommandResult(1)
+                )
+            if len(command) == 4 and command[1:3] == ("windowfocus", "--sync"):
+                self.focused_window = int(command[3])
+                return CommandResult(0)
+            if command[1:] == ("getwindowfocus",):
+                if self.focused_window is None:
+                    return CommandResult(1)
+                return CommandResult(
+                    0, f"{self.focused_window}\n".encode("ascii")
                 )
             return CommandResult(0)
         if command[-1] == "_NET_ACTIVE_WINDOW":
@@ -512,10 +533,16 @@ class FakeAccessibility:
                 )
                 pins.chmod(0o600)
         elif selector.name == CONTROLLED_APPLICATION_NAME:
+            self.operations.visible_named_windows.pop(
+                live_xorg.LAUNCHER_WINDOW_TITLE, None
+            )
             if CONTROLLED_WINDOW_ONE not in self.operations.controlled_windows:
                 self.operations.controlled_windows[CONTROLLED_WINDOW_ONE] = CONTROLLED_ONE_ID
                 self.operations.active_window = CONTROLLED_ONE_ID
         elif selector.name == "Second window":
+            self.operations.visible_named_windows.pop(
+                live_xorg.LAUNCHER_WINDOW_TITLE, None
+            )
             self.operations.controlled_windows[CONTROLLED_WINDOW_TWO] = CONTROLLED_TWO_ID
             self.operations.active_window = CONTROLLED_TWO_ID
         elif selector.name.startswith("Activate "):
@@ -1275,6 +1302,9 @@ class LivePortTests(unittest.TestCase):
                     operations.controlled_windows.pop(
                         live_xorg.LAUNCHER_WINDOW_TITLE, None
                     )
+                    operations.visible_named_windows.pop(
+                        live_xorg.LAUNCHER_WINDOW_TITLE, None
+                    )
                     operations.controlled_windows[CONTROLLED_WINDOW_ONE] = (
                         CONTROLLED_ONE_ID
                     )
@@ -1802,6 +1832,7 @@ class LivePortTests(unittest.TestCase):
 
     def test_runs_controlled_launcher_pin_and_two_window_panel_lifecycle(self) -> None:
         operations = FakeOperations()
+        operations.visible_named_windows[live_xorg.LAUNCHER_WINDOW_TITLE] = 0x510001
         accessibility = FakeAccessibility(operations)
         port = LiveXorgHarnessPort(
             config(installed_paths()), operations, accessibility
@@ -1851,6 +1882,34 @@ class LivePortTests(unittest.TestCase):
         self.assertIn("Second window", accessibility.invoked)
         self.assertIn(
             f"Close {CONTROLLED_APPLICATION_NAME}", accessibility.invoked
+        )
+        launcher_focus_calls = [
+            argv
+            for argv, _environment in operations.run_calls
+            if argv[:3] == ("/usr/bin/xdotool", "windowfocus", "--sync")
+        ]
+        self.assertEqual(
+            launcher_focus_calls,
+            [
+                ("/usr/bin/xdotool", "windowfocus", "--sync", "5308417"),
+                ("/usr/bin/xdotool", "windowfocus", "--sync", "5308417"),
+            ],
+        )
+        self.assertEqual(
+            [
+                argv[-1]
+                for argv, _environment in operations.run_calls
+                if argv[:3] == ("/usr/bin/xdotool", "key", "--clearmodifiers")
+            ],
+            [
+                "Down",
+                "Shift_L+F10",
+                "Shift_L+F10",
+                "Escape",
+                "Down",
+                "Shift_L+F10",
+                "Shift_L+F10",
+            ],
         )
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 

@@ -1482,18 +1482,23 @@ class LiveXorgHarnessPort:
                 "controlled_launcher_result_timeout",
             )
         elif identifier == "pin_controlled_application":
-            self._xdotool("key", "Down")
-            self._xdotool("key", "shift+F10")
+            self._focus_launcher_result("controlled_launcher_result_focus_timeout")
+            self._xdotool("key", "--clearmodifiers", "Shift_L+F10")
             self._invoke_accessible(ControlSelector("Pin to panel", "menu_item", "Press"))
-            self._xdotool("key", "shift+F10")
+            self._xdotool("key", "--clearmodifiers", "Shift_L+F10")
             self._wait_accessible(
                 ControlSelector("Unpin from panel", "menu_item"),
                 "controlled_pin_publication_timeout",
             )
-            self._xdotool("key", "Escape")
+            self._xdotool("key", "--clearmodifiers", "Escape")
         elif identifier == "launch_controlled_application":
             self._invoke_accessible(
-                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button", "Press")
+                ControlSelector(
+                    CONTROLLED_APPLICATION_NAME,
+                    "push_button",
+                    "Press",
+                    require_focused=True,
+                )
             )
             self._controlled_windows[CONTROLLED_WINDOW_ONE] = self._wait_controlled_window(
                 CONTROLLED_WINDOW_ONE
@@ -1501,12 +1506,8 @@ class LiveXorgHarnessPort:
             self._record_controlled_process(CONTROLLED_WINDOW_ONE)
         elif identifier == "launch_second_window":
             self._invoke_shellctl("launcher", "toggle")
-            self._wait_accessible(
-                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
-                "controlled_launcher_result_timeout",
-            )
-            self._xdotool("key", "Down")
-            self._xdotool("key", "shift+F10")
+            self._focus_launcher_result("controlled_launcher_result_focus_timeout")
+            self._xdotool("key", "--clearmodifiers", "Shift_L+F10")
             self._invoke_accessible(ControlSelector("Second window", "menu_item", "Press"))
             self._controlled_windows[CONTROLLED_WINDOW_TWO] = self._wait_controlled_window(
                 CONTROLLED_WINDOW_TWO
@@ -1558,7 +1559,7 @@ class LiveXorgHarnessPort:
                 ),
                 "controlled_task_focus_timeout",
             )
-            self._xdotool("key", "shift+F10")
+            self._xdotool("key", "--clearmodifiers", "Shift_L+F10")
             self._invoke_accessible(
                 ControlSelector(
                     f"Close {CONTROLLED_APPLICATION_NAME}", "menu_item", "Press"
@@ -2034,6 +2035,34 @@ class LiveXorgHarnessPort:
         if len(identifiers) > 1:
             raise HarnessError("live_settings_surface_query_invalid")
         return tuple(identifiers)
+
+    def _focus_named_shell_surface(self, title: str) -> None:
+        windows = self._visible_named_window_ids(title)
+        if len(windows) != 1:
+            raise HarnessError("shell_surface_focus_target_invalid")
+        window = windows[0]
+        shell = self._shell_identity()
+        if self._window_cardinals(window, b"_NET_WM_PID", 1) != (shell.pid,):
+            raise HarnessError("shell_surface_focus_owner_invalid")
+        self._xdotool("windowfocus", "--sync", str(window))
+        focused = self._xdotool("getwindowfocus")
+        if (
+            focused.stderr
+            or len(focused.stdout) > 32
+            or re.fullmatch(rb"[1-9][0-9]{0,19}\n?", focused.stdout) is None
+            or int(focused.stdout) != window
+        ):
+            raise HarnessError("shell_surface_focus_failed")
+
+    def _focus_launcher_result(self, timeout_error: str) -> None:
+        self._focus_named_shell_surface(LAUNCHER_WINDOW_TITLE)
+        self._xdotool("key", "--clearmodifiers", "Down")
+        self._wait_accessible(
+            ControlSelector(
+                CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
+            ),
+            timeout_error,
+        )
 
     def _installed_tier_c(self) -> TierCReplayWorkflow:
         if self._tier_c_workflow is not None:
@@ -2638,24 +2667,22 @@ class LiveXorgHarnessPort:
         self._controlled_windows.clear()
         self._controlled_processes.clear()
         self._invoke_shellctl("launcher", "toggle")
-        self._wait_accessible(
-            ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
-            "lifecycle_survival_launcher_timeout",
-        )
+        self._focus_launcher_result("lifecycle_survival_launcher_timeout")
         self._invoke_accessible(
-            ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button", "Press")
+            ControlSelector(
+                CONTROLLED_APPLICATION_NAME,
+                "push_button",
+                "Press",
+                require_focused=True,
+            )
         )
         self._controlled_windows[CONTROLLED_WINDOW_ONE] = self._wait_controlled_window(
             CONTROLLED_WINDOW_ONE
         )
         self._record_controlled_process(CONTROLLED_WINDOW_ONE)
         self._invoke_shellctl("launcher", "toggle")
-        self._wait_accessible(
-            ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
-            "lifecycle_survival_launcher_timeout",
-        )
-        self._xdotool("key", "Down")
-        self._xdotool("key", "shift+F10")
+        self._focus_launcher_result("lifecycle_survival_launcher_focus_timeout")
+        self._xdotool("key", "--clearmodifiers", "Shift_L+F10")
         self._invoke_accessible(ControlSelector("Second window", "menu_item", "Press"))
         self._controlled_windows[CONTROLLED_WINDOW_TWO] = self._wait_controlled_window(
             CONTROLLED_WINDOW_TWO

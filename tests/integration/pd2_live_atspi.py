@@ -237,8 +237,6 @@ def _interface_action_names(interface: Any) -> list[str]:
         )
         for index in range(count)
     ]
-    if len(names) != len(set(names)):
-        _fail("atspi_action_identity")
     return names
 
 
@@ -404,10 +402,13 @@ def invoke_reviewed_action(
         _fail("atspi_action_missing")
     actions = _interface_action_names(interface)
     matches = [index for index, name in enumerate(actions) if name == selector.action]
-    if len(matches) != 1:
+    if not matches:
         _fail("atspi_action_identity")
     try:
-        accepted = interface.do_action(matches[0])
+        # Qt Quick controls can advertise their native action and an explicit
+        # Accessible handler under the same reviewed name. The attached handler
+        # is appended, so choose the last exact match deterministically.
+        accepted = interface.do_action(matches[-1])
     except Exception:
         _fail("atspi_action_unavailable")
     if accepted is not True:

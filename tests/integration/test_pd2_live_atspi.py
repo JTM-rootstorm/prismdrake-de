@@ -290,6 +290,16 @@ class LiveAtspiHelperTests(unittest.TestCase):
         self.assertEqual(self.action.calls, [0])
         self.assertEqual(calls, [self.application, self.application])
 
+    def test_invokes_last_exact_duplicate_qt_action_deterministically(self) -> None:
+        self.control.action = FakeAction(["Press", "SetFocus", "Press"])
+
+        result = invoke_reviewed_action(
+            self.atspi, exact_owner(self.application), self.selector
+        )
+
+        self.assertEqual(result.category, "atspi_action_invoked")
+        self.assertEqual(self.control.action.calls, [2])
+
     def test_observes_reviewed_checked_state_on_exact_control(self) -> None:
         control = FakeNode(
             "Do not disturb",
