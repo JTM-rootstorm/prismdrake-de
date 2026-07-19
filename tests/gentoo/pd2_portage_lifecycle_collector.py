@@ -540,7 +540,7 @@ def _parse_vdb_contents(payload: bytes) -> list[dict[str, str]]:
 
 def _parse_equery_paths(output: str) -> tuple[str, ...]:
     lines = tuple(line.strip() for line in output.splitlines() if line.strip())
-    _require(lines and all(line.startswith("/usr/") for line in lines),
+    _require(lines and all(line == "/usr" or line.startswith("/usr/") for line in lines),
              "equery_output_invalid")
     _require(len(set(lines)) == len(lines), "equery_output_invalid")
     return tuple(sorted(lines))

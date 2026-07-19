@@ -205,6 +205,13 @@ class Pd2InstalledAttestationTests(unittest.TestCase):
         ])
         self.assertEqual([record["path"] for record in normalized],
                          ["/usr/share/a", "/usr/share/z"])
+        self.assertEqual(normalize_ownership_records([
+            {"kind": "directory", "path": "/usr"},
+        ]), [{"kind": "directory", "path": "/usr"}])
+        for kind in ("regular", "symlink"):
+            with self.subTest(kind=kind), self.assertRaisesRegex(
+                    Pd2LifecycleHashError, "^ownership_root_kind_invalid$"):
+                normalize_ownership_records([{"kind": kind, "path": "/usr"}])
 
     def test_loader_is_strict_bounded_and_private_fixture_is_absent(self) -> None:
         encoded = json.dumps(example_attestation_document(), ensure_ascii=True, sort_keys=True)

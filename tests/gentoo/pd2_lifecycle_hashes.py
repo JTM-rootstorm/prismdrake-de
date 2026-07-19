@@ -11,7 +11,7 @@ from typing import Any
 
 MAX_OWNED_PATHS = 4096
 OWNED_PATH_KINDS = ("directory", "regular", "symlink")
-_INSTALLED_PATH = re.compile(r"/usr(?:/[A-Za-z0-9._+@-]+)+")
+_INSTALLED_PATH = re.compile(r"/usr(?:/[A-Za-z0-9._+@-]+)*")
 
 
 class Pd2LifecycleHashError(RuntimeError):
@@ -54,7 +54,10 @@ def normalize_ownership_records(records: Any) -> list[dict[str, str]]:
         kind = record["kind"]
         if kind not in OWNED_PATH_KINDS:
             raise Pd2LifecycleHashError("ownership_kind_invalid")
-        normalized.append({"kind": kind, "path": validate_installed_path(record["path"])})
+        path = validate_installed_path(record["path"])
+        if path == "/usr" and kind != "directory":
+            raise Pd2LifecycleHashError("ownership_root_kind_invalid")
+        normalized.append({"kind": kind, "path": path})
     normalized.sort(key=lambda item: item["path"])
     if len({item["path"] for item in normalized}) != len(normalized):
         raise Pd2LifecycleHashError("ownership_paths_duplicate")

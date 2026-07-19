@@ -280,6 +280,7 @@ def example_attestation_document() -> dict[str, Any]:
         for path, digest in zip(INSTALLED_EXECUTABLE_PATHS, digests)
     ]
     ownership_records = normalize_ownership_records([
+        {"kind": "directory", "path": "/usr"},
         *({"kind": "regular", "path": path} for path in INSTALLED_EXECUTABLE_PATHS),
         *({"kind": "regular", "path": alternatives[0]}
           for alternatives in REQUIRED_INSTALLED_FILE_GROUPS),
