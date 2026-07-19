@@ -529,12 +529,14 @@ Result<std::uint64_t> NotificationAuthority::applySettings(SettingsInput setting
         return Result<std::uint64_t>::failure(authorityError(
             ErrorCode::invalid_argument, "The notification settings generation is invalid."));
     }
+    const bool firstSettingsObservation = !settings_observed_;
     const bool changed = history_mode_ != settings.historyMode ||
                          default_timeout_ != settings.defaultTimeout ||
                          configured_do_not_disturb_ != settings.configuredDoNotDisturb ||
                          notifications_enabled_ != settings.notificationsEnabled ||
                          runtime_do_not_disturb_override_.has_value();
     if (!changed) {
+        settings_observed_ = true;
         return Result<std::uint64_t>::success(generation_);
     }
 
@@ -544,13 +546,36 @@ Result<std::uint64_t> NotificationAuthority::applySettings(SettingsInput setting
     }
 
     auto candidate = records_;
+    auto candidateNextRecordId = next_record_id_;
+    bool attemptedStartupRestore = false;
+    if (firstSettingsObservation && history_mode_ != HistoryMode::persistent &&
+        settings.historyMode == HistoryMode::persistent && candidate.empty() &&
+        persistent_history_path_) {
+        attemptedStartupRestore = true;
+        auto loaded = loadNotificationHistory(*persistent_history_path_);
+        if (loaded) {
+            candidate = std::move(loaded).value();
+            candidateNextRecordId = 1U;
+            for (const auto &record : candidate) {
+                if (record.recordId == std::numeric_limits<std::uint64_t>::max()) {
+                    return Result<std::uint64_t>::failure(
+                        authorityError(ErrorCode::too_large,
+                                       "The notification record identifier space is exhausted."));
+                }
+                candidateNextRecordId = std::max(candidateNextRecordId, record.recordId + 1U);
+            }
+        }
+        // Missing history stays absent. Malformed or inaccessible history is
+        // preserved for diagnosis. A later successful mutation may replace it
+        // with validated state.
+    }
     if (settings.historyMode == HistoryMode::disabled) {
         std::erase_if(candidate,
                       [](const NotificationRecord &record) { return !record.notificationId; });
     }
     if ((history_mode_ == HistoryMode::persistent ||
          settings.historyMode == HistoryMode::persistent) &&
-        persistent_history_path_) {
+        persistent_history_path_ && !attemptedStartupRestore) {
         auto persisted = writeNotificationHistory(*persistent_history_path_, candidate);
         if (!persisted) {
             persistence_degraded_ = true;
@@ -563,6 +588,7 @@ Result<std::uint64_t> NotificationAuthority::applySettings(SettingsInput setting
     notifications_enabled_ = settings.notificationsEnabled;
     runtime_do_not_disturb_override_.reset();
     records_ = std::move(candidate);
+    next_record_id_ = candidateNextRecordId;
     for (auto &record : records_) {
         refreshTransientPresentation(record);
     }
@@ -570,6 +596,7 @@ Result<std::uint64_t> NotificationAuthority::applySettings(SettingsInput setting
     if (!published) {
         return Result<std::uint64_t>::failure(published.error());
     }
+    settings_observed_ = true;
     return Result<std::uint64_t>::success(generation_);
 }
 

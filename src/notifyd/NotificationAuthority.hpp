@@ -165,6 +165,7 @@ class NotificationAuthority final {
     std::uint64_t next_record_id_{1U};
     std::uint64_t generation_{1U};
     bool persistence_degraded_{false};
+    bool settings_observed_{false};
 };
 
 } // namespace prismdrake::notifyd

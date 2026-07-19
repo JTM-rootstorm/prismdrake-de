@@ -328,6 +328,202 @@ TEST(NotificationAuthorityTest, PersistentHistoryIsPrivateBoundedAndRestoresDisa
     EXPECT_FALSE(restarted.records().front().actions.front().enabled);
 }
 
+TEST(NotificationAuthorityTest, FirstSettingsObservationRestoresPersistentHistoryWithoutRewrite) {
+    TemporaryDirectory temporary;
+    const auto stateHome = temporary.path() / "state";
+    ASSERT_TRUE(std::filesystem::create_directory(stateHome));
+    ASSERT_EQ(::chmod(stateHome.c_str(), 0700), 0);
+    const auto history = stateHome / "prismdrake" / "notifications" / "history-v1.json";
+    auto clock = std::make_shared<TestMonotonicClock>();
+    AuthorityOptions persistentOptions{HistoryMode::persistent, 5s, false, true, history};
+    auto seed = authority(clock, persistentOptions);
+    auto durable = notification("Durable startup record", ":1.71");
+    durable.body = "Private durable body";
+    const auto created = seed.notify(std::move(durable));
+    ASSERT_TRUE(created);
+    ASSERT_TRUE(seed.close(created.value().notificationId, CloseReason::requested));
+
+    std::ifstream beforeStream(history);
+    const std::string before{std::istreambuf_iterator<char>{beforeStream}, {}};
+    ASSERT_FALSE(before.empty());
+
+    AuthorityOptions startupOptions{HistoryMode::session, 5s, false, true, history};
+    auto restarted = authority(clock, startupOptions);
+    const auto applied = restarted.applySettings({HistoryMode::persistent, 5s, false, true});
+
+    ASSERT_TRUE(applied);
+    ASSERT_EQ(restarted.records().size(), 1U);
+    const auto &restored = restarted.records().front();
+    EXPECT_EQ(restored.recordId, created.value().recordId);
+    EXPECT_EQ(restored.summary, "Durable startup record");
+    EXPECT_FALSE(restored.notificationId);
+    EXPECT_FALSE(restored.sender);
+    ASSERT_EQ(restored.actions.size(), 1U);
+    EXPECT_FALSE(restored.actions.front().enabled);
+    const auto restoredRecordId = restored.recordId;
+    const auto unavailable =
+        restarted.invokeAction(restored.recordId, restored.contentGeneration, "default");
+    ASSERT_FALSE(unavailable);
+    EXPECT_EQ(unavailable.error().code, ErrorCode::not_found);
+
+    std::ifstream afterStream(history);
+    const std::string after{std::istreambuf_iterator<char>{afterStream}, {}};
+    EXPECT_EQ(after, before);
+
+    const auto next = restarted.notify(notification("Fresh"));
+    ASSERT_TRUE(next);
+    EXPECT_GT(next.value().recordId, restoredRecordId);
+}
+
+TEST(NotificationAuthorityTest, FirstPersistentSettingsPreserveCurrentRecordsWithoutMergingDisk) {
+    TemporaryDirectory temporary;
+    const auto stateHome = temporary.path() / "state";
+    ASSERT_TRUE(std::filesystem::create_directory(stateHome));
+    ASSERT_EQ(::chmod(stateHome.c_str(), 0700), 0);
+    const auto history = stateHome / "prismdrake" / "notifications" / "history-v1.json";
+    auto clock = std::make_shared<TestMonotonicClock>();
+    AuthorityOptions persistentOptions{HistoryMode::persistent, 5s, false, true, history};
+    auto seed = authority(clock, persistentOptions);
+    auto stale = notification("Stale disk record", ":1.72");
+    stale.body = "Private stale disk body";
+    const auto staleCreated = seed.notify(std::move(stale));
+    ASSERT_TRUE(staleCreated);
+    ASSERT_TRUE(seed.close(staleCreated.value().notificationId, CloseReason::requested));
+
+    AuthorityOptions sessionOptions{HistoryMode::session, 5s, false, true, history};
+    auto current = authority(clock, sessionOptions);
+    auto fresh = notification("Current session record", ":1.73");
+    fresh.body = "Current session body";
+    const auto freshCreated = current.notify(std::move(fresh));
+    ASSERT_TRUE(freshCreated);
+    ASSERT_TRUE(current.close(freshCreated.value().notificationId, CloseReason::requested));
+
+    ASSERT_TRUE(current.applySettings({HistoryMode::persistent, 5s, false, true}));
+    ASSERT_EQ(current.records().size(), 1U);
+    EXPECT_EQ(current.records().front().summary, "Current session record");
+    EXPECT_FALSE(current.records().front().actions.front().enabled);
+
+    const auto loaded = loadNotificationHistory(history);
+    ASSERT_TRUE(loaded);
+    ASSERT_EQ(loaded.value().size(), 1U);
+    EXPECT_EQ(loaded.value().front().summary, "Current session record");
+    EXPECT_EQ(loaded.value().front().body, "Current session body");
+    EXPECT_FALSE(loaded.value().front().actions.front().enabled);
+    std::ifstream stream(history);
+    const std::string bytes{std::istreambuf_iterator<char>{stream}, {}};
+    EXPECT_EQ(bytes.find("Private stale disk body"), std::string::npos);
+}
+
+TEST(NotificationAuthorityTest, LaterPersistentModeSwitchDoesNotResurrectStaleDiskHistory) {
+    TemporaryDirectory temporary;
+    const auto stateHome = temporary.path() / "state";
+    ASSERT_TRUE(std::filesystem::create_directory(stateHome));
+    ASSERT_EQ(::chmod(stateHome.c_str(), 0700), 0);
+    const auto history = stateHome / "prismdrake" / "notifications" / "history-v1.json";
+    auto clock = std::make_shared<TestMonotonicClock>();
+    AuthorityOptions persistentOptions{HistoryMode::persistent, 5s, false, true, history};
+    auto seed = authority(clock, persistentOptions);
+    auto stale = notification("Stale runtime record", ":1.74");
+    stale.body = "Private runtime body";
+    const auto created = seed.notify(std::move(stale));
+    ASSERT_TRUE(created);
+    ASSERT_TRUE(seed.close(created.value().notificationId, CloseReason::requested));
+
+    AuthorityOptions sessionOptions{HistoryMode::session, 5s, false, true, history};
+    auto current = authority(clock, sessionOptions);
+    ASSERT_TRUE(current.applySettings({HistoryMode::session, 5s, false, true}));
+    ASSERT_TRUE(current.applySettings({HistoryMode::persistent, 5s, false, true}));
+
+    EXPECT_TRUE(current.records().empty());
+    const auto loaded = loadNotificationHistory(history);
+    ASSERT_TRUE(loaded);
+    EXPECT_TRUE(loaded.value().empty());
+    std::ifstream stream(history);
+    const std::string bytes{std::istreambuf_iterator<char>{stream}, {}};
+    EXPECT_EQ(bytes.find("Private runtime body"), std::string::npos);
+}
+
+TEST(NotificationAuthorityTest, StartupPersistentSettingsPreserveMalformedHistoryForDiagnosis) {
+    TemporaryDirectory temporary;
+    const auto history =
+        temporary.path() / "state" / "prismdrake" / "notifications" / "history-v1.json";
+    ASSERT_TRUE(std::filesystem::create_directories(history.parent_path()));
+    ASSERT_EQ(::chmod((temporary.path() / "state" / "prismdrake").c_str(), 0700), 0);
+    ASSERT_EQ(::chmod(history.parent_path().c_str(), 0700), 0);
+    constexpr std::string_view malformed = R"({"schema_version":1,"records":[private]})";
+    {
+        std::ofstream stream(history);
+        stream << malformed;
+    }
+    ASSERT_EQ(::chmod(history.c_str(), 0600), 0);
+
+    auto clock = std::make_shared<TestMonotonicClock>();
+    AuthorityOptions sessionOptions{HistoryMode::session, 5s, false, true, history};
+    auto current = authority(clock, sessionOptions);
+    const auto applied = current.applySettings({HistoryMode::persistent, 5s, false, true});
+
+    ASSERT_TRUE(applied);
+    EXPECT_TRUE(current.records().empty());
+    EXPECT_FALSE(current.takePersistenceDegradation());
+    std::ifstream stream(history);
+    const std::string bytes{std::istreambuf_iterator<char>{stream}, {}};
+    EXPECT_EQ(bytes, malformed);
+    struct stat metadata = {};
+    ASSERT_EQ(::stat(history.c_str(), &metadata), 0);
+    EXPECT_EQ(metadata.st_mode & 0777U, 0600U);
+}
+
+TEST(NotificationAuthorityTest, StartupPersistentSettingsDoNotCreateEmptyHistoryFile) {
+    TemporaryDirectory temporary;
+    const auto stateHome = temporary.path() / "state";
+    ASSERT_TRUE(std::filesystem::create_directory(stateHome));
+    ASSERT_EQ(::chmod(stateHome.c_str(), 0700), 0);
+    const auto history = stateHome / "prismdrake" / "notifications" / "history-v1.json";
+
+    auto clock = std::make_shared<TestMonotonicClock>();
+    AuthorityOptions sessionOptions{HistoryMode::session, 5s, false, true, history};
+    auto current = authority(clock, sessionOptions);
+    const auto applied = current.applySettings({HistoryMode::persistent, 5s, false, true});
+
+    ASSERT_TRUE(applied);
+    EXPECT_EQ(current.historyMode(), HistoryMode::persistent);
+    EXPECT_TRUE(current.records().empty());
+    EXPECT_FALSE(std::filesystem::exists(history));
+}
+
+TEST(NotificationAuthorityTest, ExhaustedStartupHistoryLeavesSessionStateUnchanged) {
+    TemporaryDirectory temporary;
+    const auto stateHome = temporary.path() / "state";
+    ASSERT_TRUE(std::filesystem::create_directory(stateHome));
+    ASSERT_EQ(::chmod(stateHome.c_str(), 0700), 0);
+    const auto history = stateHome / "prismdrake" / "notifications" / "history-v1.json";
+    NotificationRecord exhausted;
+    exhausted.recordId = std::numeric_limits<std::uint64_t>::max();
+    exhausted.contentGeneration = 1U;
+    exhausted.summary = "Exhausted";
+    exhausted.body = "Private exhausted body";
+    exhausted.actions = {{"default", "Open", false}};
+    const std::array<NotificationRecord, 1U> records{exhausted};
+    ASSERT_TRUE(writeNotificationHistory(history, records));
+
+    std::ifstream beforeStream(history);
+    const std::string before{std::istreambuf_iterator<char>{beforeStream}, {}};
+    auto clock = std::make_shared<TestMonotonicClock>();
+    AuthorityOptions sessionOptions{HistoryMode::session, 5s, false, true, history};
+    auto current = authority(clock, sessionOptions);
+    const auto priorGeneration = current.generation();
+    const auto applied = current.applySettings({HistoryMode::persistent, 5s, false, true});
+
+    ASSERT_FALSE(applied);
+    EXPECT_EQ(applied.error().code, ErrorCode::too_large);
+    EXPECT_EQ(current.historyMode(), HistoryMode::session);
+    EXPECT_EQ(current.generation(), priorGeneration);
+    EXPECT_TRUE(current.records().empty());
+    std::ifstream afterStream(history);
+    const std::string after{std::istreambuf_iterator<char>{afterStream}, {}};
+    EXPECT_EQ(after, before);
+}
+
 TEST(NotificationAuthorityTest, TransientHintNeverEntersPersistentHistory) {
     TemporaryDirectory temporary;
     const auto stateHome = temporary.path() / "state";
