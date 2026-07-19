@@ -12,6 +12,18 @@ namespace prismdrake::shell::notificationcenter {
 
 inline constexpr std::uint32_t notificationCenterStateSchemaVersion = 1U;
 
+/// Exact private identity required by mutating notification-center methods.
+///
+/// This remains a C++ value type so 64-bit identifiers are never rounded through
+/// QML's numeric representation.
+struct NotificationRecordCommandIdentity final {
+    std::uint64_t recordId{0U};
+    std::uint64_t contentGeneration{0U};
+
+    friend bool operator==(const NotificationRecordCommandIdentity &,
+                           const NotificationRecordCommandIdentity &) = default;
+};
+
 struct NotificationCenterRecord final {
     std::uint64_t recordId{0U};
     std::uint64_t contentGeneration{0U};

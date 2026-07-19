@@ -16,14 +16,6 @@
 
 namespace prismdrake::shell::notificationcenter {
 
-struct NotificationRecordCommandIdentity final {
-    std::uint64_t recordId{0U};
-    std::uint64_t contentGeneration{0U};
-
-    friend bool operator==(const NotificationRecordCommandIdentity &,
-                           const NotificationRecordCommandIdentity &) = default;
-};
-
 class NotificationActionPresentation final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString label READ label CONSTANT)
