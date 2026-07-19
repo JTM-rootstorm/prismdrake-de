@@ -239,9 +239,12 @@ respectively; a partial or broadened regex selection fails closed.
 The CTest, translated-fragment, model, and asset routes read the build's
 configured source revision and source directory from `CMakeCache.txt`, then
 require that directory to be a clean Git checkout at the requested revision.
-A stale build or tracked source modification is rejected. Cache metadata alone
-is not cryptographic source proof; final evidence must be collected from the
-reviewed clean exact checkout.
+The model and asset executables must resolve to their exact expected paths in
+that build tree; public environment overrides cannot replace Git or the other
+system inspection tools used by the final collector. A stale build, external
+runner, or tracked source modification is rejected. Cache metadata alone is not
+cryptographic source proof; final evidence must be collected from the reviewed
+clean exact checkout.
 
 Model endpoints compare only with the matching validated PD1 model series.
 Installed-runtime, production-asset, and idle-wakeup endpoints report
