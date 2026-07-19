@@ -61,6 +61,24 @@
       "reason": "The shell icon resolver directly uses system Qt SVG to validate and decode bounded SVG icons. The Gentoo reference build and icon tests verify the maintainer-selected Qt 6.11 floor with qtsvg 6.11.1."
     },
     {
+      "name": "qttools",
+      "gentoo_atom": "dev-qt/qttools:6",
+      "scope": "build",
+      "relationship": "tool",
+      "feature": "translation_catalog_compilation",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": "6.11",
+        "verified_minimum": "6.11.1",
+        "observed": "6.11.1",
+        "evidence": "verified_component"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The Qt Linguist lrelease tool compiles committed Prismdrake pseudo-locale TS sources into installed QM shell data. It is required only while building and is not an installed runtime library."
+    },
+    {
       "name": "nlohmann-json",
       "gentoo_atom": "dev-cpp/nlohmann_json",
       "scope": "build",

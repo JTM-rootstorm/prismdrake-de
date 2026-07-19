@@ -100,7 +100,7 @@ media-libs/libglvnd X
 media-libs/mesa X llvm
 dev-qt/qtbase:6 X accessibility dbus gui opengl -gtk
 dev-qt/qtdeclarative:6 accessibility opengl qmlls
-dev-qt/qttools:6 opengl qdbus qtdiag qtplugininfo
+dev-qt/qttools:6 linguist opengl qdbus qtdiag qtplugininfo
 ```
 
 These flags were checked against the Gentoo repository visible to the reference
@@ -254,7 +254,10 @@ or execute an actual automated depclean to force resolution.
 enables the upstream install-path contract. Its runtime dependency set contains
 only the libraries and broker required by the five installed Experimental
 executables. Qt SVG is a direct shell dependency at the project-wide Qt 6.11
-floor; unused Qt image-format plugins and libnotify are not declared.
+floor. Qt Linguist tools are an unconditional build-only dependency used to
+compile the installed pseudo-locale catalogs; qttools is not retained in the
+runtime dependency set. Unused Qt image-format plugins and libnotify are not
+declared.
 GoogleTest, Python, Xvfb, the Xorg dummy driver, Openbox, X11 RandR,
 window-tree inspection, bounded XWD capture, protocol tracing, and input tools,
 the hicolor icon fixture, AT-SPI/PyGObject

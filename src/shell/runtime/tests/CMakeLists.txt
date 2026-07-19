@@ -17,7 +17,9 @@ if(GTest_FOUND)
         tests/ShellControlBusOwnerTests.cpp
         tests/ShellOutputMonitorTests.cpp
         tests/ShellRuntimeOptionsTests.cpp
+        tests/TranslationCatalogTests.cpp
         tests/TerminationSignalBridgeTests.cpp)
+    add_dependencies(prismdrake-shell-runtime-tests prismdrake-translations)
     target_link_libraries(prismdrake-shell-runtime-tests
         PRIVATE
             GTest::gtest

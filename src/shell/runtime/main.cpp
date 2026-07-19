@@ -3,8 +3,10 @@
 #include "ExitStatus.hpp"
 #include "ShellRuntimeOptions.hpp"
 #include "TerminationSignalBridge.hpp"
+#include "TranslationCatalog.hpp"
 
 #include <QGuiApplication>
+#include <QLocale>
 
 #include <exception>
 #include <iostream>
@@ -16,6 +18,9 @@ namespace {
     application.setQuitOnLastWindowClosed(false);
     QCoreApplication::setApplicationName(QStringLiteral("prismdrake-shell"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("prismdrake.org"));
+    const auto translations = prismdrake::shell::runtime::TranslationCatalog::install(
+        application, prismdrake::shell::runtime::defaultTranslationDirectory(),
+        QLocale::system().uiLanguages());
 
     auto termination = prismdrake::shell::runtime::TerminationSignalBridge::create(
         [&application]() { application.quit(); });

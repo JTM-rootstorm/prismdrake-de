@@ -33,6 +33,8 @@ add_library(prismdrake-shell-runtime STATIC
     ShellRuntimeOptions.hpp
     ShellOutputMonitor.cpp
     ShellOutputMonitor.hpp
+    TranslationCatalog.cpp
+    TranslationCatalog.hpp
     TerminationSignalBridge.cpp
     TerminationSignalBridge.hpp)
 add_library(Prismdrake::shell-runtime ALIAS prismdrake-shell-runtime)
@@ -63,11 +65,21 @@ if(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES)
     target_compile_definitions(prismdrake-shell-runtime
         PRIVATE PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES=1)
 endif()
+if(PRISMDRAKE_USE_INSTALL_PATHS)
+    set(prismdrake_translation_directory
+        "${CMAKE_INSTALL_FULL_DATADIR}/prismdrake/translations")
+else()
+    set(prismdrake_translation_directory
+        "${prismdrake_translation_build_directory}")
+endif()
+target_compile_definitions(prismdrake-shell-runtime
+    PRIVATE PRISMDRAKE_TRANSLATION_DIRECTORY="${prismdrake_translation_directory}")
 prismdrake_configure_cpp_target(prismdrake-shell-runtime)
 prismdrake_enable_warnings(prismdrake-shell-runtime)
 prismdrake_enable_sanitizers(prismdrake-shell-runtime)
 
 add_executable(prismdrake-shell main.cpp)
+add_dependencies(prismdrake-shell prismdrake-translations)
 target_link_libraries(prismdrake-shell
     PRIVATE
         Prismdrake::shell-runtime

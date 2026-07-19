@@ -106,6 +106,11 @@ carry a verified or observed version.
   compiled panel, launcher, and notification modules use QML, Quick, and Quick
   Controls. Its icon resolver directly uses system Qt SVG for bounded raster
   and SVG icon loading; the product dependency retains the Qt 6.11 floor.
+  System Qt Linguist tools compile committed long-string and right-to-left
+  pseudo-locale catalogs at build time. The resulting QM files are installed as
+  shell data; qttools is not a runtime dependency. A missing catalog fails soft
+  to source strings, and the loader accepts only bounded language tags beneath
+  its trusted packaged directory.
   The panel window host and event-driven task controller use Qt GUI/Core and the
   internal standards-only X11 adapter; Quick Test is test-only. The live
   snapshot client directly uses the selected sd-bus provider and session D-Bus,

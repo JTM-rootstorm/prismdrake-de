@@ -19,6 +19,7 @@ RESTRICT="!test? ( test )"
 
 BDEPEND="
 	virtual/pkgconfig
+	>=dev-qt/qttools-6.11:6[linguist]
 	test? (
 		${PYTHON_DEPS}
 		app-accessibility/at-spi2-core[X,introspection]

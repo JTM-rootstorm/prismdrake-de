@@ -55,6 +55,22 @@ if(NOT Qt6_FOUND)
         "or equivalent Qt 6.11-or-newer system packages on another supported host. "
         "Prismdrake does not download or vendor Qt.")
 endif()
+find_package(Qt6 6.11 CONFIG REQUIRED COMPONENTS LinguistTools)
+
+set(prismdrake_translation_build_directory
+    "${CMAKE_CURRENT_BINARY_DIR}/translations")
+qt6_add_lrelease(
+    LRELEASE_TARGET prismdrake-translations
+    TS_FILES
+        translations/prismdrake_ar_XB.ts
+        translations/prismdrake_en_XA.ts
+    QM_OUTPUT_DIRECTORY "${prismdrake_translation_build_directory}"
+    QM_FILES_OUTPUT_VARIABLE prismdrake_translation_qm_files)
+install(
+    FILES ${prismdrake_translation_qm_files}
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake/translations"
+    COMPONENT Runtime)
+
 add_subdirectory(src/icons)
 find_package(tomlplusplus CONFIG QUIET)
 if(NOT tomlplusplus_FOUND)

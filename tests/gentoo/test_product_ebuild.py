@@ -86,6 +86,12 @@ class ProductEbuildContractTests(unittest.TestCase):
                 }
                 self.assertEqual(qt_atoms, expected)
 
+    def test_qt_linguist_tools_are_an_unconditional_build_dependency(self) -> None:
+        bdepend = dependency_body(self.source, "BDEPEND")
+        self.assertIn(">=dev-qt/qttools-6.11:6[linguist]", bdepend)
+        self.assertNotIn("dev-qt/qttools", dependency_body(self.source, "DEPEND"))
+        self.assertNotIn("dev-qt/qttools", dependency_body(self.source, "RDEPEND"))
+
     def test_unimplemented_qt_image_plugins_and_libnotify_are_not_declared(self) -> None:
         self.assertNotIn("dev-qt/qtimageformats", self.source)
         self.assertNotIn("x11-libs/libnotify", self.source)
@@ -173,6 +179,10 @@ class DevelopmentEbuildContractTests(unittest.TestCase):
         non_x11 = self.source.replace(f"\tx11? (\n{x11}\t)", "")
         self.assertNotIn("x11-apps/xwininfo", non_x11)
         self.assertNotIn("x11-misc/xtrace", non_x11)
+
+    def test_qt_tooling_layer_includes_linguist_catalog_compiler(self) -> None:
+        qt6 = use_dependency_body(self.source, "qt6")
+        self.assertIn(">=dev-qt/qttools-6.11:6[linguist]", qt6)
 
     def test_x11_protocol_tracer_is_not_promoted_to_other_tooling_layers(self) -> None:
         self.assertNotIn(
