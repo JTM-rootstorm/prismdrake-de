@@ -96,6 +96,7 @@ target_include_directories(prismdrake-launcher-visual-baseline-tests PRIVATE
 target_link_libraries(prismdrake-launcher-visual-baseline-tests
     PRIVATE
         Prismdrake::settings-core
+        Prismdrake::shell-accessibility
         Prismdrake::shell-launcher-presentation
         Prismdrake::shell-launcher-qml
         prismdrake-visual-baseline-recorder
