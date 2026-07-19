@@ -121,6 +121,13 @@ set_tests_properties(Pd2LiveXorgHarnessContractTest PROPERTIES
     ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
     TIMEOUT 10)
 
+add_test(
+    NAME Pd2LiveAtspiHelperContractTest
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_live_atspi.py")
+set_tests_properties(Pd2LiveAtspiHelperContractTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    TIMEOUT 10)
+
 find_program(PRISMDRAKE_DEMO_GDBUS_EXECUTABLE NAMES gdbus)
 find_program(PRISMDRAKE_DEMO_XDOTOOL_EXECUTABLE NAMES xdotool)
 execute_process(
