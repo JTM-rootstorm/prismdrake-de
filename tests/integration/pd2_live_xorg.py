@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import tempfile
@@ -86,6 +87,10 @@ class Operations(Protocol):
     def descendants(
         self, child: ChildProcess, executable: Path
     ) -> Sequence[ProcessIdentity]: ...
+
+    def socket_identity(self, path: Path) -> tuple[int, int] | None: ...
+
+    def socket_connectable(self, path: Path) -> bool: ...
 
     def monotonic(self) -> float: ...
 
@@ -211,6 +216,28 @@ class SystemOperations:
             if self._executable_matches(pid, executable):
                 matches.append(ProcessIdentity(pid, start_time))
         return tuple(sorted(matches, key=lambda identity: identity.pid))
+
+    def socket_identity(self, path: Path) -> tuple[int, int] | None:
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise HarnessError("private_session_bus_socket_invalid") from error
+        if not stat.S_ISSOCK(metadata.st_mode) or metadata.st_uid != os.geteuid():
+            raise HarnessError("private_session_bus_socket_invalid")
+        return metadata.st_dev, metadata.st_ino
+
+    def socket_connectable(self, path: Path) -> bool:
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            client.settimeout(0.05)
+            client.connect(os.fspath(path))
+        except OSError:
+            return False
+        finally:
+            client.close()
+        return True
 
     @staticmethod
     def _process_record(pid: int) -> tuple[int, int] | None:
@@ -504,7 +531,6 @@ class LiveXorgConfig:
     openbox: Path
     xprop: Path
     xwininfo: Path
-    dbus_run_session: Path
     dbus_daemon: Path
     installed_executables: Mapping[str, Path]
     first_display: int = 120
@@ -586,7 +612,10 @@ class LiveXorgHarnessPort:
         self._display: str | None = None
         self._xorg: ChildProcess | None = None
         self._openbox: ChildProcess | None = None
+        self._bus: ChildProcess | None = None
         self._session: ChildProcess | None = None
+        self._bus_process_identity: ProcessIdentity | None = None
+        self._bus_socket_identity: tuple[int, int] | None = None
         self._desktop_surfaces: dict[int, WindowGeometry] | None = None
         self._surface_shell_identity: ProcessIdentity | None = None
 
@@ -667,7 +696,12 @@ class LiveXorgHarnessPort:
         return Observation(True, True)
 
     def capture_process_ownership(self) -> Mapping[str, object]:
-        if self._xorg is None or self._openbox is None or self._session is None:
+        if (
+            self._xorg is None
+            or self._openbox is None
+            or self._bus is None
+            or self._session is None
+        ):
             raise HarnessError("live_process_ownership_unavailable")
         session_executable = self._config.installed_executables.get(
             "prismdrake-session"
@@ -676,11 +710,11 @@ class LiveXorgHarnessPort:
             raise HarnessError("live_process_ownership_invalid")
         xorg = self._operations.identify(self._xorg, self._config.xorg)
         openbox = self._operations.identify(self._openbox, self._config.openbox)
-        buses = self._operations.descendants(self._session, self._config.dbus_daemon)
-        sessions = self._operations.descendants(self._session, session_executable)
-        if xorg is None or openbox is None or len(buses) != 1 or len(sessions) != 1:
+        bus = self._attest_private_bus()
+        session = self._operations.identify(self._session, session_executable)
+        if xorg is None or openbox is None or session is None:
             raise HarnessError("live_process_ownership_invalid")
-        identities = (xorg, openbox, buses[0], sessions[0])
+        identities = (xorg, openbox, bus, session)
         if len(set(identities)) != len(identities):
             raise HarnessError("live_process_ownership_invalid")
         return dict(
@@ -699,12 +733,14 @@ class LiveXorgHarnessPort:
     def cleanup(self, phase: str) -> Observation:
         del phase
         clean = True
-        for attribute in ("_session", "_openbox", "_xorg"):
+        for attribute in ("_session", "_bus", "_openbox", "_xorg"):
             child = getattr(self, attribute)
             if child is not None:
                 clean = self._operations.stop(child, self._config.stop_timeout) and clean
                 setattr(self, attribute, None)
         self._display = None
+        self._bus_process_identity = None
+        self._bus_socket_identity = None
         self._desktop_surfaces = None
         self._surface_shell_identity = None
         if self._runtime is not None:
@@ -813,13 +849,20 @@ class LiveXorgHarnessPort:
         env["DISPLAY"] = self._display
         return env
 
+    def probe_environment(self) -> Mapping[str, str]:
+        """Return the private live epoch environment for bounded observers."""
+
+        if self._session is None or self._session.poll() is not None:
+            raise HarnessError("prismdrake_session_not_started")
+        return self._private_bus_environment()
+
     def _run_x11(self, argv: Sequence[str]) -> CommandResult:
         return self._operations.run(argv, self._x11_environment(), 3.0)
 
     def _start_session(self) -> None:
         if self._runtime is None or self._xorg is None or self._openbox is None:
             raise HarnessError("live_environment_not_started")
-        if self._session is not None:
+        if self._session is not None or self._bus is not None:
             raise HarnessError("live_session_already_started")
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
             raise HarnessError("installed_executable_set_invalid")
@@ -832,7 +875,8 @@ class LiveXorgHarnessPort:
             configuration.chmod(0o600)
         except OSError as error:
             raise HarnessError("private_session_configuration_failed") from error
-        environment = self._x11_environment()
+        self._start_private_bus()
+        environment = self._private_bus_environment()
         environment.update(
             {
                 "QSG_RHI_BACKEND": "software",
@@ -841,9 +885,6 @@ class LiveXorgHarnessPort:
             }
         )
         argv = (
-            str(self._config.dbus_run_session),
-            f"--dbus-daemon={self._config.dbus_daemon}",
-            "--",
             str(executables["prismdrake-session"]),
             "--settingsd",
             str(executables["prismdrake-settingsd"]),
@@ -858,11 +899,93 @@ class LiveXorgHarnessPort:
             self._session = None
             raise HarnessError("prismdrake_session_start_failed")
 
+    def _start_private_bus(self) -> None:
+        if self._runtime is None:
+            raise HarnessError("live_environment_not_started")
+        address = self._private_bus_address()
+        argv = (
+            str(self._config.dbus_daemon),
+            "--session",
+            "--nofork",
+            "--nopidfile",
+            f"--address={address}",
+        )
+        child = self._operations.spawn(argv, self._base_environment())
+        self._bus = child
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if child.poll() is not None:
+                raise HarnessError("private_session_bus_exited_before_readiness")
+            process_identity = self._operations.identify(
+                child, self._config.dbus_daemon
+            )
+            socket_identity = self._inspect_private_bus_socket()
+            if (
+                process_identity is not None
+                and socket_identity is not None
+                and self._private_bus_accepts_connections()
+            ):
+                self._bus_process_identity = process_identity
+                self._bus_socket_identity = socket_identity
+                return
+            self._operations.pause(0.05)
+        raise HarnessError("private_session_bus_readiness_failed")
+
+    def _private_bus_address(self) -> str:
+        if self._runtime is None:
+            raise HarnessError("private_session_bus_not_started")
+        return f"unix:path={self._runtime / 'bus'}"
+
+    def _private_bus_environment(self) -> dict[str, str]:
+        self._attest_private_bus()
+        environment = self._x11_environment()
+        environment["DBUS_SESSION_BUS_ADDRESS"] = self._private_bus_address()
+        return environment
+
+    def _inspect_private_bus_socket(self) -> tuple[int, int] | None:
+        if self._runtime is None:
+            raise HarnessError("private_session_bus_not_started")
+        try:
+            runtime_metadata = self._runtime.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise HarnessError("private_session_bus_socket_invalid") from error
+        if (
+            not stat.S_ISDIR(runtime_metadata.st_mode)
+            or stat.S_ISLNK(runtime_metadata.st_mode)
+            or runtime_metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(runtime_metadata.st_mode) != 0o700
+        ):
+            raise HarnessError("private_session_bus_socket_invalid")
+        return self._operations.socket_identity(self._runtime / "bus")
+
+    def _private_bus_accepts_connections(self) -> bool:
+        if self._runtime is None:
+            return False
+        return self._operations.socket_connectable(self._runtime / "bus")
+
+    def _attest_private_bus(self) -> ProcessIdentity:
+        if (
+            self._bus is None
+            or self._bus_process_identity is None
+            or self._bus_socket_identity is None
+        ):
+            raise HarnessError("private_session_bus_not_started")
+        identity = self._operations.identify(self._bus, self._config.dbus_daemon)
+        if identity != self._bus_process_identity:
+            raise HarnessError("private_session_bus_owner_changed")
+        socket_identity = self._inspect_private_bus_socket()
+        if socket_identity != self._bus_socket_identity:
+            raise HarnessError("private_session_bus_socket_replaced")
+        return identity
+
     def _wait_for_session_readiness(self) -> None:
         if self._session is None or self._runtime is None:
             raise HarnessError("prismdrake_session_not_started")
         deadline = self._operations.monotonic() + self._config.readiness_timeout
         while self._operations.monotonic() < deadline:
+            self._attest_private_bus()
             if self._session.poll() is not None:
                 raise HarnessError("prismdrake_session_exited_before_readiness")
             state = self._session_marker_state()

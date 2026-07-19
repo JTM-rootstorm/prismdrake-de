@@ -37,7 +37,7 @@
         "artifact_provenance": { "const": "portage_installed" },
         "display_topology": { "const": "isolated_xorg_dummy_two_output_same_scale" },
         "window_manager": { "const": "openbox_ewmh" },
-        "session_bus": { "const": "isolated_dbus_run_session" },
+        "session_bus": { "const": "isolated_private_session_bus" },
         "capability_tier": { "const": "tier_b_standards_only" },
         "glasswyrm_native_capabilities": { "const": "withheld" }
       }

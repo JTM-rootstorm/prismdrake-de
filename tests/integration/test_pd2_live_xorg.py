@@ -122,7 +122,8 @@ class FakeOperations:
         query_payloads: Sequence[bytes] = (),
         query_results: Sequence[CommandResult] = (),
         session_marker: str = "ready",
-        ambiguous_descendant: bool = False,
+        bus_socket_ready: bool = True,
+        bus_exits_early: bool = False,
     ) -> None:
         self.query_payload = query_payload
         self.query_payloads = list(query_payloads)
@@ -134,7 +135,11 @@ class FakeOperations:
         self.now = 0.0
         self.stop_succeeds = True
         self.session_marker = session_marker
-        self.ambiguous_descendant = ambiguous_descendant
+        self.bus_socket_ready = bus_socket_ready
+        self.bus_exits_early = bus_exits_early
+        self.bus_socket_path: Path | None = None
+        self.bus_socket_identity: tuple[int, int] | None = None
+        self.identity_offsets: dict[int, int] = {}
         self.surface_geometries = dict(SURFACE_GEOMETRIES)
         self.surface_types = dict(SURFACE_TYPES)
         self.surface_owner = 2004
@@ -151,10 +156,23 @@ class FakeOperations:
         child = FakeChild(1000 + len(self.children))
         self.children.append(child)
         self.spawn_calls.append((tuple(argv), dict(env)))
-        if argv and Path(argv[0]).name == "dbus-run-session":
+        if argv and Path(argv[0]).name == "dbus-daemon":
+            if self.bus_exits_early:
+                child.returncode = 1
+            elif self.bus_socket_ready:
+                prefix = "--address=unix:path="
+                self.bus_socket_path = Path(
+                    next(
+                        argument[len(prefix) :]
+                        for argument in argv
+                        if argument.startswith(prefix)
+                    )
+                )
+                self.bus_socket_identity = (1, 100)
+        if argv and Path(argv[0]).name == "prismdrake-session":
             root = Path(env["XDG_RUNTIME_DIR"]) / "prismdrake"
             root.mkdir(mode=0o700)
-            instance = root / "session-2002-0"
+            instance = root / f"session-{child.pid}-0"
             instance.mkdir(mode=0o700)
             if self.session_marker in {"ready", "safe-mode"}:
                 marker = instance / self.session_marker
@@ -241,6 +259,9 @@ class FakeOperations:
         del timeout
         self.stop_calls.append(child)
         if self.stop_succeeds:
+            if Path(self.spawn_calls[child.pid - 1000][0][0]).name == "dbus-daemon":
+                self.bus_socket_path = None
+                self.bus_socket_identity = None
             child.returncode = 0
         return self.stop_succeeds
 
@@ -256,31 +277,40 @@ class FakeOperations:
         argv, _environment = self.spawn_calls[child.pid - 1000]
         if Path(argv[0]) != executable:
             return None
-        return ProcessIdentity(child.pid, child.pid * 10)
+        return ProcessIdentity(
+            child.pid, child.pid * 10 + self.identity_offsets.get(child.pid, 0)
+        )
 
     def descendants(
         self, child: FakeChild, executable: Path
     ) -> Sequence[ProcessIdentity]:
         argv, _environment = self.spawn_calls[child.pid - 1000]
-        if child.poll() is not None or Path(argv[0]).name != "dbus-run-session":
+        if child.poll() is not None or Path(argv[0]).name != "prismdrake-session":
             return ()
-        if executable.name == "dbus-daemon":
-            identities = [ProcessIdentity(2001, 20_010)]
-        elif executable.name == "prismdrake-session":
-            identities = [ProcessIdentity(2002, 20_020)]
-        elif executable.name == "prismdrake-shell":
+        if executable.name == "prismdrake-shell":
             identities = [ProcessIdentity(2004, self.shell_start_time)]
         else:
             return ()
-        if self.ambiguous_descendant:
-            identities.append(ProcessIdentity(2003, 20_030))
         return tuple(identities)
+
+    def socket_identity(self, path: Path) -> tuple[int, int] | None:
+        if path != self.bus_socket_path:
+            return None
+        return self.bus_socket_identity
+
+    def socket_connectable(self, path: Path) -> bool:
+        return path == self.bus_socket_path and self.bus_socket_identity is not None
 
     def monotonic(self) -> float:
         return self.now
 
     def pause(self, duration: float) -> None:
         self.now += duration
+
+    def replace_bus_socket(self) -> None:
+        if self.bus_socket_identity is None:
+            raise AssertionError("private bus socket is not ready")
+        self.bus_socket_identity = (1, 101)
 
 
 def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
@@ -290,7 +320,6 @@ def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
         openbox=Path("/usr/bin/openbox"),
         xprop=Path("/usr/bin/xprop"),
         xwininfo=Path("/usr/bin/xwininfo"),
-        dbus_run_session=Path("/usr/bin/dbus-run-session"),
         dbus_daemon=Path("/usr/bin/dbus-daemon"),
         installed_executables=installed or {},
         first_display=140,
@@ -455,13 +484,26 @@ class LivePortTests(unittest.TestCase):
             Observation(True, True),
         )
 
-        session_argv, session_environment = operations.spawn_calls[2]
+        bus_argv, bus_environment = operations.spawn_calls[2]
+        session_argv, session_environment = operations.spawn_calls[3]
+        self.assertEqual(
+            bus_argv[:4],
+            (
+                "/usr/bin/dbus-daemon",
+                "--session",
+                "--nofork",
+                "--nopidfile",
+            ),
+        )
+        self.assertEqual(len(bus_argv), 5)
+        self.assertRegex(
+            bus_argv[4], r"^--address=unix:path=/tmp/prismdrake-pd2-.+/bus$"
+        )
+        self.assertNotIn("DISPLAY", bus_environment)
+        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", bus_environment)
         self.assertEqual(
             session_argv,
             (
-                "/usr/bin/dbus-run-session",
-                "--dbus-daemon=/usr/bin/dbus-daemon",
-                "--",
                 "/usr/bin/prismdrake-session",
                 "--settingsd",
                 "/usr/bin/prismdrake-settingsd",
@@ -473,7 +515,23 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertEqual(session_environment["QT_QPA_PLATFORM"], "xcb")
         self.assertEqual(session_environment["QSG_RHI_BACKEND"], "software")
-        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", session_environment)
+        self.assertEqual(
+            session_environment["DBUS_SESSION_BUS_ADDRESS"],
+            bus_argv[4].removeprefix("--address="),
+        )
+        self.assertEqual(
+            port.probe_environment(),
+            {
+                key: value
+                for key, value in session_environment.items()
+                if key
+                not in {
+                    "QT_QPA_PLATFORM",
+                    "QSG_RHI_BACKEND",
+                    "QT_QUICK_CONTROLS_STYLE",
+                }
+            },
+        )
         ownership = port.capture_process_ownership()
         self.assertEqual(
             tuple(ownership),
@@ -510,7 +568,7 @@ class LivePortTests(unittest.TestCase):
             Observation(True, True),
         )
 
-        _argv, environment = operations.spawn_calls[2]
+        _argv, environment = operations.spawn_calls[3]
         configuration = (
             Path(environment["XDG_CONFIG_HOME"]) / "prismdrake" / "config.toml"
         )
@@ -593,23 +651,61 @@ class LivePortTests(unittest.TestCase):
                     port.cleanup("installed_workflow"), Observation(True, True)
                 )
 
-    def test_session_readiness_rejects_safe_mode_and_ambiguous_process_owner(self) -> None:
+    def test_session_readiness_rejects_safe_mode(self) -> None:
+        operations = FakeOperations(session_marker="safe-mode")
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port.run_step("installed_workflow", "start_isolated_two_output_x11")
+        port.run_step("installed_workflow", "start_installed_prismdrake_session")
+
+        with self.assertRaisesRegex(
+            HarnessError, "^prismdrake_session_safe_mode_unexpected$"
+        ):
+            port.run_step("installed_workflow", "verify_component_readiness")
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_private_bus_fails_closed_for_early_exit_and_readiness_timeout(
+        self,
+    ) -> None:
         for operations, expected in (
             (
-                FakeOperations(session_marker="safe-mode"),
-                "prismdrake_session_safe_mode_unexpected",
+                FakeOperations(bus_exits_early=True),
+                "private_session_bus_exited_before_readiness",
             ),
             (
-                FakeOperations(ambiguous_descendant=True),
-                "live_process_ownership_invalid",
+                FakeOperations(bus_socket_ready=False),
+                "private_session_bus_readiness_failed",
             ),
         ):
             with self.subTest(expected=expected):
                 port = LiveXorgHarnessPort(config(installed_paths()), operations)
                 port.run_step("installed_workflow", "start_isolated_two_output_x11")
-                port.run_step("installed_workflow", "start_installed_prismdrake_session")
                 with self.assertRaisesRegex(HarnessError, f"^{expected}$"):
-                    port.run_step("installed_workflow", "verify_component_readiness")
+                    port.run_step(
+                        "installed_workflow", "start_installed_prismdrake_session"
+                    )
+                self.assertEqual(
+                    port.cleanup("installed_workflow"), Observation(True, True)
+                )
+
+    def test_private_bus_attestation_rejects_socket_replacement_and_owner_drift(
+        self,
+    ) -> None:
+        for mutation, expected in (
+            ("socket", "private_session_bus_socket_replaced"),
+            ("owner", "private_session_bus_owner_changed"),
+        ):
+            with self.subTest(mutation=mutation):
+                operations = FakeOperations()
+                port = LiveXorgHarnessPort(config(installed_paths()), operations)
+                port.run_step("installed_workflow", "start_isolated_two_output_x11")
+                port.run_step("installed_workflow", "start_installed_prismdrake_session")
+                if mutation == "socket":
+                    operations.replace_bus_socket()
+                else:
+                    bus = operations.children[2]
+                    operations.identity_offsets[bus.pid] = 1
+                with self.assertRaisesRegex(HarnessError, f"^{expected}$"):
+                    port.capture_process_ownership()
                 self.assertEqual(
                     port.cleanup("installed_workflow"), Observation(True, True)
                 )
@@ -619,11 +715,11 @@ class LivePortTests(unittest.TestCase):
         port = LiveXorgHarnessPort(config(installed_paths()), operations)
         port.run_step("installed_workflow", "start_isolated_two_output_x11")
         port.run_step("installed_workflow", "start_installed_prismdrake_session")
-        _argv, environment = operations.spawn_calls[2]
+        _argv, environment = operations.spawn_calls[3]
         ready = (
             Path(environment["XDG_RUNTIME_DIR"])
             / "prismdrake"
-            / "session-2002-0"
+            / "session-1003-0"
             / "ready"
         )
         ready.unlink()

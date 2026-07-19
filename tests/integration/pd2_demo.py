@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run or validate the versioned PD2 installed demonstration contract.
 
-The production Xorg/WM/D-Bus adapter is intentionally supplied later by the
-installed-session integration lane. This module owns the closed workflow,
-privacy boundary, cleanup semantics, evidence schema binding, and dependency
-injection seam without manufacturing live evidence.
+The live Xorg/WM/D-Bus adapter is supplied by the installed-session integration
+lane. This module owns the closed workflow, privacy boundary, cleanup semantics,
+evidence schema binding, and dependency injection seam without manufacturing
+live evidence.
 """
 
 from __future__ import annotations
@@ -395,7 +395,7 @@ def run_harness(source_revision: str, port: HarnessPort) -> dict[str, Any]:
             "artifact_provenance": "portage_installed",
             "display_topology": "isolated_xorg_dummy_two_output_same_scale",
             "window_manager": "openbox_ewmh",
-            "session_bus": "isolated_dbus_run_session",
+            "session_bus": "isolated_private_session_bus",
             "capability_tier": "tier_b_standards_only",
             "glasswyrm_native_capabilities": "withheld",
         },
@@ -480,7 +480,7 @@ def validate_evidence(document: Any) -> None:
         "artifact_provenance": "portage_installed",
         "display_topology": "isolated_xorg_dummy_two_output_same_scale",
         "window_manager": "openbox_ewmh",
-        "session_bus": "isolated_dbus_run_session",
+        "session_bus": "isolated_private_session_bus",
         "capability_tier": "tier_b_standards_only",
         "glasswyrm_native_capabilities": "withheld",
     }, "environment_contract_invalid")

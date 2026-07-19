@@ -126,10 +126,18 @@ class HarnessExecutionTests(unittest.TestCase):
         )
         self.assertEqual(port.ownership_calls, 1)
         self.assertEqual(
+            document["environment"]["session_bus"],
+            "isolated_private_session_bus",
+        )
+        self.assertEqual(
             [record["id"] for record in document["workflow"]],
             list(WORKFLOW_STEPS),
         )
-        self.assertNotIn("identity", json.dumps(document))
+        serialized = json.dumps(document)
+        self.assertNotIn("identity", serialized)
+        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", serialized)
+        self.assertNotIn("unix:path=", serialized)
+        self.assertNotIn("/tmp/", serialized)
 
     def test_unobserved_step_fails_closed_after_cleanup(self) -> None:
         port = FakeHarnessPort()
