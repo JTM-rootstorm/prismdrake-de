@@ -1987,6 +1987,16 @@ class LiveXorgHarnessPort:
         elif identifier == "restart_settingsd":
             self._prepare_restart_state()
             self._restart_component("prismdrake-settingsd")
+            self._invoke_shellctl("quick-settings", "open")
+            self._wait_accessible(
+                ControlSelector("Quick settings", "pane"),
+                "settings_owner_reacquisition_timeout",
+            )
+            self._xdotool("key", "--clearmodifiers", "Escape")
+            self._wait_accessible_absent(
+                ControlSelector("Quick settings", "pane"),
+                "settings_surface_dismissal_timeout",
+            )
         elif identifier == "restart_notifyd":
             self._prepare_restart_state()
             self._restart_component("prismdrake-notifyd")
@@ -2005,6 +2015,11 @@ class LiveXorgHarnessPort:
                 ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
                 "pin_state_reacquisition_timeout",
             )
+            self._invoke_shellctl("panel", "focus")
+            self._wait_accessible(
+                ControlSelector("Open applications", "push_button", require_focused=True),
+                "shell_control_reacquisition_timeout",
+            )
         elif identifier == "replace_or_restart_window_manager":
             self._prepare_restart_state()
             components = self._component_identities()
@@ -2021,6 +2036,16 @@ class LiveXorgHarnessPort:
             self._require_topology(two_outputs=True)
             self._require_controlled_windows_unchanged(windows)
             self._require_panel_surfaces()
+            self._focus_controlled_panel_task("window_manager_task_focus_timeout")
+            self._invoke_accessible(
+                ControlSelector(
+                    CONTROLLED_APPLICATION_NAME,
+                    "push_button",
+                    "Press",
+                    require_focused=True,
+                )
+            )
+            self._wait_window_active(CONTROLLED_WINDOW_ONE, minimized=False)
             if self._component_identities() != components:
                 raise HarnessError("prismdrake_child_changed_during_window_manager_restart")
         elif identifier == "run_without_compositor":
@@ -2047,6 +2072,7 @@ class LiveXorgHarnessPort:
             self._require_desktop_wallpaper_surfaces()
             self._require_panel_surfaces()
             self._component_identities()
+            self._require_shell_primary_control()
         elif identifier == "start_with_malformed_pin_state":
             self._start_environment(two_outputs=True)
             malformed = self._write_malformed_pin_state()
@@ -2087,6 +2113,7 @@ class LiveXorgHarnessPort:
             self._exhaust_shell_restart_budget()
             self._wait_for_safe_mode()
             self._require_desktop_wallpaper_surfaces(allow_safe_mode=True)
+            self._require_panel_surfaces(allow_safe_mode=True)
             self.cleanup("safe_mode_epoch")
             self._start_environment(two_outputs=True)
             self._start_session()
@@ -2094,6 +2121,8 @@ class LiveXorgHarnessPort:
             if self._session_marker_state() != "ready":
                 raise HarnessError("fresh_normal_session_not_ready")
             self._require_desktop_wallpaper_surfaces()
+            self._require_panel_surfaces()
+            self._require_shell_primary_control()
         return Observation(True, True)
 
     def _replay_malformed_notification_history(self) -> None:
@@ -3951,6 +3980,14 @@ class LiveXorgHarnessPort:
         self._require_desktop_wallpaper_surfaces()
         self._require_panel_surfaces()
         self._require_controlled_windows_unchanged(self._controlled_windows)
+        self._require_shell_primary_control()
+
+    def _require_shell_primary_control(self) -> None:
+        self._invoke_shellctl("panel", "focus")
+        self._wait_accessible(
+            ControlSelector("Open applications", "push_button", require_focused=True),
+            "shell_primary_control_timeout",
+        )
 
     def _exhaust_shell_restart_budget(self) -> None:
         executable = self._config.installed_executables.get("prismdrake-shell")
@@ -4066,6 +4103,7 @@ class LiveXorgHarnessPort:
                 ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
                 "shell_owner_reacquisition_timeout",
             )
+            self._require_panel_surfaces()
 
     def _require_controlled_windows_unchanged(
         self, expected: Mapping[str, int]
@@ -4810,11 +4848,11 @@ class LiveXorgHarnessPort:
         self._desktop_surfaces = desktops
         self._surface_shell_identity = shell
 
-    def _require_panel_surfaces(self) -> None:
+    def _require_panel_surfaces(self, *, allow_safe_mode: bool = False) -> None:
         if self._desktop_surfaces is None or self._surface_shell_identity is None:
             raise HarnessError("desktop_surface_observation_missing")
         self._require_topology(two_outputs=True)
-        shell = self._require_surface_shell()
+        shell = self._require_surface_shell(allow_safe_mode=allow_safe_mode)
         if shell != self._surface_shell_identity:
             raise HarnessError("surface_shell_identity_changed")
         desktops = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DESKTOP", shell)

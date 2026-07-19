@@ -3006,7 +3006,9 @@ class LivePortTests(unittest.TestCase):
 
     def test_safe_mode_consumes_crash_budget_then_starts_a_fresh_normal_epoch(self) -> None:
         operations = FakeOperations()
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
 
         self.assertEqual(
             port.run_step("failure_replay", "enter_and_exit_safe_mode"),
