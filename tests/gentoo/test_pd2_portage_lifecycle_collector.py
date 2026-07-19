@@ -24,6 +24,7 @@ from pd2_harness_manifest import HARNESS_RELATIVE_PATHS
 from pd2_portage_lifecycle_collector import (
     BUILD_PROVENANCE_PATH,
     OPTIONAL_PACKAGE_SKIP_TEST,
+    PKGCHECK_EXIT_POLICY,
     Pd2CollectorError,
     atomic_write_json,
     capture_preflight_attestation,
@@ -520,6 +521,22 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             self.assertEqual(qa["result"], "passed")
             self.assertFalse((repository / "Manifest").exists())
             self.assertRegex(qa["repository_tree_sha256"], r"^[0-9a-f]{64}$")
+            pkgcheck_calls = [command for command, _cwd in calls
+                              if command[0] == "/usr/bin/pkgcheck"]
+            self.assertEqual(pkgcheck_calls[0][2:4],
+                             ["--exit", PKGCHECK_EXIT_POLICY])
+
+            def qa_finding(command: list[str], cwd: Path | None) -> str:
+                if command[0] == "/usr/bin/pkgcheck":
+                    raise Pd2CollectorError("observer_command_failed")
+                return runner(command, cwd)
+
+            with self.assertRaisesRegex(Pd2CollectorError,
+                                        "^observer_command_failed$"):
+                capture_portage_qa(
+                    attestation, source, hash_file=hash_file,
+                    command_runner=qa_finding,
+                )
 
             records = capture_portage_resolutions(
                 attestation, source, hash_file=hash_file, command_runner=runner,

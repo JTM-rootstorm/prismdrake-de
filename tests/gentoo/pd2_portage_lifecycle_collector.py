@@ -71,6 +71,7 @@ SCANELF_PATH = Path("/usr/bin/scanelf")
 EQUERY_PATH = Path("/usr/bin/equery")
 PKGDEV_PATH = Path("/usr/bin/pkgdev")
 PKGCHECK_PATH = Path("/usr/bin/pkgcheck")
+PKGCHECK_EXIT_POLICY = "error,warning,style,info"
 PORTAGEQ_PATH = Path("/usr/bin/portageq")
 ENV_PATH = Path("/usr/bin/env")
 EMERGE_PATH = Path("/usr/bin/emerge")
@@ -422,7 +423,8 @@ def capture_portage_qa(
             [str(pkgdev), "manifest"], disposable_repository,
         )
         pkgcheck_output = command_runner([
-            str(pkgcheck), "scan", "--cache-dir", str(cache),
+            str(pkgcheck), "scan", "--exit", PKGCHECK_EXIT_POLICY,
+            "--cache-dir", str(cache),
             str(disposable_repository),
         ], None)
         tree_hash = _repository_tree_sha256(disposable_repository)
