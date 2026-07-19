@@ -19,6 +19,38 @@ prismdrake_configure_cpp_target(prismdrake-pd1-performance-evidence)
 prismdrake_enable_warnings(prismdrake-pd1-performance-evidence)
 prismdrake_enable_sanitizers(prismdrake-pd1-performance-evidence)
 
+add_executable(prismdrake-pd2-asset-performance
+    Pd2AssetPerformanceRunner.cpp)
+target_link_libraries(prismdrake-pd2-asset-performance
+    PRIVATE
+        Prismdrake::icon-resolver
+        Prismdrake::wallpaper-core
+        Qt6::Core
+        Qt6::Gui
+        nlohmann_json::nlohmann_json)
+prismdrake_configure_cpp_target(prismdrake-pd2-asset-performance)
+prismdrake_enable_warnings(prismdrake-pd2-asset-performance)
+prismdrake_enable_sanitizers(prismdrake-pd2-asset-performance)
+
+add_test(
+    NAME Pd2AssetPerformanceRunnerTest
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/validate_pd2_asset_performance.py"
+        "$<TARGET_FILE:prismdrake-pd2-asset-performance>")
+set_tests_properties(Pd2AssetPerformanceRunnerTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    LABELS "performance;contract"
+    TIMEOUT 30)
+
+add_test(
+    NAME Pd2AssetPerformanceContractTest
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_asset_performance.py")
+set_tests_properties(Pd2AssetPerformanceContractTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    LABELS "performance;contract"
+    TIMEOUT 10)
+
 add_test(
     NAME Pd1PerformanceEvidenceHarnessTest
     COMMAND prismdrake-pd1-performance-evidence
