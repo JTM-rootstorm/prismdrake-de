@@ -1632,9 +1632,7 @@ class LiveXorgHarnessPort:
         elif identifier == "verify_accessible_descriptions_states_and_backtab":
             self._verify_accessible_metadata_and_backtab()
         elif identifier == "verify_output_migration_accessibility":
-            self._verify_accessibility_reference(
-                "output_migration", stale=True, replacement_shell=False, reacquire=False
-            )
+            self._verify_output_migration_accessibility()
         elif identifier == "verify_settingsd_focus_recovery":
             self._verify_accessibility_reference(
                 "settingsd", stale=True, replacement_shell=False, reacquire=True
@@ -2676,7 +2674,7 @@ class LiveXorgHarnessPort:
         if current.generation != topology_generation or current.primary != output:
             raise HarnessError("lifecycle_stale_topology_mutation")
         survivor = next(item for item in current.outputs if item.active and item != output)
-        self._focus_and_capture_reference("output_migration")
+        self._capture_output_migration_reference()
         self._xrandr("--output", survivor.name, "--primary")
         self._xrandr("--output", output.name, "--off")
         self._lifecycle_topology_generation += 1
@@ -2777,6 +2775,7 @@ class LiveXorgHarnessPort:
             ControlSelector("Quick settings", "pane"),
             "lifecycle_quick_settings_restore_timeout",
         )
+        self.surface_placements()
 
     def window_authority(self) -> LifecycleWindowAuthorityObservation:
         if self._openbox is None:
@@ -3648,13 +3647,30 @@ class LiveXorgHarnessPort:
         raise HarnessError(timeout_error)
 
     def _focus_and_capture_reference(self, key: str) -> None:
-        if key in self._accessibility_references:
-            raise HarnessError("accessibility_reference_reused")
         self._invoke_shellctl("panel", "focus")
         selector = ControlSelector(
             "Open applications", "push_button", require_focused=True
         )
         self._wait_accessible(selector, "accessibility_focus_precondition_timeout")
+        self._capture_accessibility_reference(key, selector)
+
+    def _capture_output_migration_reference(self) -> None:
+        selector = ControlSelector(
+            "Use Prismdrake Lustre",
+            "radio_button",
+            require_focused=True,
+            require_description=True,
+        )
+        self._wait_accessible(
+            selector, "accessibility_output_migration_focus_precondition_timeout"
+        )
+        self._capture_accessibility_reference("output_migration", selector)
+
+    def _capture_accessibility_reference(
+        self, key: str, selector: ControlSelector
+    ) -> None:
+        if key in self._accessibility_references:
+            raise HarnessError("accessibility_reference_reused")
         shell = self._shell_identity()
         reference = self._accessibility.capture_reference(
             shell.pid, selector, self.probe_environment()
@@ -3663,6 +3679,41 @@ class LiveXorgHarnessPort:
             raise HarnessError("accessibility_reference_capture_failed")
         self._accessibility_references[key] = reference
         self._accessibility_reference_shells[key] = shell
+
+    def _verify_output_migration_accessibility(self) -> None:
+        key = "output_migration"
+        reference = self._accessibility_references.get(key)
+        previous_shell = self._accessibility_reference_shells.get(key)
+        if reference is None or previous_shell is None:
+            raise HarnessError("accessibility_reference_missing")
+        shell = self._shell_identity()
+        if shell != previous_shell:
+            raise HarnessError("accessibility_focus_owner_invalid")
+        environment = self.probe_environment()
+        if not self._accessibility.observe_reference(
+            shell.pid, reference, environment
+        ):
+            raise HarnessError("accessibility_focus_not_retained")
+
+        lustre = ControlSelector(
+            "Use Prismdrake Lustre",
+            "radio_button",
+            require_focused=True,
+            require_description=True,
+        )
+        forge = ControlSelector(
+            "Use Prismdrake Forge",
+            "radio_button",
+            require_focused=True,
+            require_description=True,
+        )
+        self._wait_accessible(lustre, "accessibility_focus_recovery_timeout")
+        self._xdotool("key", "--clearmodifiers", "Tab")
+        self._wait_accessible(forge, "accessibility_keyboard_continuation_timeout")
+        self._xdotool("key", "--clearmodifiers", "shift+Tab")
+        self._wait_accessible(lustre, "accessibility_backtab_recovery_timeout")
+        del self._accessibility_references[key]
+        del self._accessibility_reference_shells[key]
 
     def _verify_accessible_metadata_and_backtab(self) -> None:
         self._xdotool("key", "--clearmodifiers", "Escape")

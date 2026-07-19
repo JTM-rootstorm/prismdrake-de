@@ -1529,13 +1529,42 @@ class LivePortTests(unittest.TestCase):
         port = LiveXorgHarnessPort(config(installed_paths()), FakeOperations())
         with patch.object(port, "_invoke_shellctl") as shellctl, patch.object(
             port, "_wait_accessible"
-        ) as wait_accessible:
+        ) as wait_accessible, patch.object(port, "surface_placements") as placements:
             port._restore_lifecycle_quick_settings()  # noqa: SLF001
 
         shellctl.assert_called_once_with("quick-settings", "open")
         selector, timeout_error = wait_accessible.call_args.args
         self.assertEqual((selector.name, selector.role), ("Quick settings", "pane"))
         self.assertEqual(timeout_error, "lifecycle_quick_settings_restore_timeout")
+        placements.assert_called_once_with()
+
+    def test_output_migration_retains_quick_settings_focus_and_navigation(self) -> None:
+        operations = FakeOperations()
+        accessibility = FakeAccessibility(operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+
+        port._capture_output_migration_reference()  # noqa: SLF001
+        port._verify_output_migration_accessibility()  # noqa: SLF001
+
+        self.assertEqual(
+            [
+                argv[-1]
+                for argv, _environment in operations.run_calls
+                if argv[:3] == ("/usr/bin/xdotool", "key", "--clearmodifiers")
+            ],
+            ["Tab", "shift+Tab"],
+        )
+        self.assertIn("Use Prismdrake Lustre", accessibility.observed)
+        self.assertIn("Use Prismdrake Forge", accessibility.observed)
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_starts_real_adapter_commands_and_observes_two_output_topology(self) -> None:
         operations = FakeOperations()
