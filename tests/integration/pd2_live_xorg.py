@@ -28,6 +28,8 @@ from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation
 
 MAX_COMMAND_OUTPUT_BYTES = 65_536
 MAX_EXECUTABLE_BYTES = 128 * 1024 * 1024
+MAX_PROCESS_SCAN_ENTRIES = 32_768
+MAX_PROCESS_ANCESTRY_DEPTH = 64
 OUTPUT_MODE = "1600x900"
 OUTPUT_WIDTH = 1600
 OUTPUT_HEIGHT = 900
@@ -42,6 +44,14 @@ class CommandResult:
     returncode: int
     stdout: bytes = b""
     stderr: bytes = b""
+
+
+@dataclass(frozen=True)
+class ProcessIdentity:
+    """Ephemeral identity used only to prove distinct live process owners."""
+
+    pid: int
+    start_time: int
 
 
 class ChildProcess(Protocol):
@@ -66,6 +76,14 @@ class Operations(Protocol):
     def stop(self, child: ChildProcess, timeout: float) -> bool: ...
 
     def display_available(self, number: int) -> bool: ...
+
+    def identify(
+        self, child: ChildProcess, executable: Path
+    ) -> ProcessIdentity | None: ...
+
+    def descendants(
+        self, child: ChildProcess, executable: Path
+    ) -> Sequence[ProcessIdentity]: ...
 
     def monotonic(self) -> float: ...
 
@@ -111,27 +129,135 @@ class SystemOperations:
         return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
     def stop(self, child: ChildProcess, timeout: float) -> bool:
-        if child.poll() is not None:
-            return True
+        deadline = time.monotonic() + timeout
+        group = child.pid
         try:
-            group = os.getpgid(child.pid)
-            os.killpg(group, signal.SIGTERM)
-            child.wait(timeout=timeout)
-            return True
+            if child.poll() is None:
+                group = os.getpgid(child.pid)
+            if self._process_group_alive(group):
+                os.killpg(group, signal.SIGTERM)
+                try:
+                    child.wait(timeout=max(timeout / 2.0, 0.01))
+                except subprocess.TimeoutExpired:
+                    pass
+        except OSError:
+            return child.poll() is not None
+        if not self._process_group_alive(group):
+            return child.poll() is not None
+        try:
+            os.killpg(group, signal.SIGKILL)
+            if child.poll() is None:
+                child.wait(timeout=max(deadline - time.monotonic(), 0.01))
         except (OSError, subprocess.TimeoutExpired):
             pass
+        while time.monotonic() < deadline:
+            if not self._process_group_alive(group):
+                return child.poll() is not None
+            time.sleep(0.01)
+        return child.poll() is not None and not self._process_group_alive(group)
+
+    @staticmethod
+    def _process_group_alive(group: int) -> bool:
         try:
-            group = os.getpgid(child.pid)
-            os.killpg(group, signal.SIGKILL)
-            child.wait(timeout=timeout)
-        except (OSError, subprocess.TimeoutExpired):
-            return child.poll() is not None
-        return child.poll() is not None
+            os.killpg(group, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
 
     def display_available(self, number: int) -> bool:
         return not Path(f"/tmp/.X{number}-lock").exists() and not Path(
             f"/tmp/.X11-unix/X{number}"
         ).exists()
+
+    def identify(
+        self, child: ChildProcess, executable: Path
+    ) -> ProcessIdentity | None:
+        if child.poll() is not None:
+            return None
+        record = self._process_record(child.pid)
+        if record is None or not self._executable_matches(child.pid, executable):
+            return None
+        _parent, start_time = record
+        return ProcessIdentity(child.pid, start_time)
+
+    def descendants(
+        self, child: ChildProcess, executable: Path
+    ) -> Sequence[ProcessIdentity]:
+        if child.poll() is not None:
+            return ()
+        records: dict[int, tuple[int, int]] = {}
+        try:
+            entries = tuple(Path("/proc").iterdir())
+        except OSError:
+            return ()
+        if len(entries) > MAX_PROCESS_SCAN_ENTRIES:
+            return ()
+        for entry in entries:
+            if not entry.name.isascii() or not entry.name.isdecimal():
+                continue
+            pid = int(entry.name)
+            record = self._process_record(pid)
+            if record is not None:
+                records[pid] = record
+
+        matches: list[ProcessIdentity] = []
+        for pid, (_parent, start_time) in records.items():
+            if pid == child.pid or not self._is_descendant(pid, child.pid, records):
+                continue
+            if self._executable_matches(pid, executable):
+                matches.append(ProcessIdentity(pid, start_time))
+        return tuple(sorted(matches, key=lambda identity: identity.pid))
+
+    @staticmethod
+    def _process_record(pid: int) -> tuple[int, int] | None:
+        try:
+            payload = Path(f"/proc/{pid}/stat").read_bytes()
+        except OSError:
+            return None
+        closing = payload.rfind(b")")
+        if closing < 1 or closing + 2 >= len(payload):
+            return None
+        fields = payload[closing + 2 :].split()
+        if len(fields) <= 19:
+            return None
+        try:
+            parent = int(fields[1])
+            start_time = int(fields[19])
+        except ValueError:
+            return None
+        if parent < 0 or start_time <= 0:
+            return None
+        return parent, start_time
+
+    @staticmethod
+    def _is_descendant(
+        pid: int, ancestor: int, records: Mapping[int, tuple[int, int]]
+    ) -> bool:
+        visited: set[int] = set()
+        current = pid
+        for _depth in range(MAX_PROCESS_ANCESTRY_DEPTH):
+            record = records.get(current)
+            if record is None:
+                return False
+            parent = record[0]
+            if parent == ancestor:
+                return True
+            if parent <= 1 or parent in visited:
+                return False
+            visited.add(parent)
+            current = parent
+        return False
+
+    @staticmethod
+    def _executable_matches(pid: int, executable: Path) -> bool:
+        try:
+            expected = executable.stat()
+            observed = Path(f"/proc/{pid}/exe").stat()
+        except OSError:
+            return False
+        return (expected.st_dev, expected.st_ino) == (observed.st_dev, observed.st_ino)
 
     def monotonic(self) -> float:
         return time.monotonic()
@@ -216,6 +342,8 @@ class LiveXorgConfig:
     xrandr: Path
     openbox: Path
     xprop: Path
+    dbus_run_session: Path
+    dbus_daemon: Path
     installed_executables: Mapping[str, Path]
     first_display: int = 120
     last_display: int = 159
@@ -274,6 +402,8 @@ class LiveXorgHarnessPort:
 
     _SUPPORTED_STEPS = {
         ("installed_workflow", "start_isolated_two_output_x11"),
+        ("installed_workflow", "start_installed_prismdrake_session"),
+        ("installed_workflow", "verify_component_readiness"),
         ("failure_replay", "two_same_scale_outputs_at_startup"),
         ("failure_replay", "add_second_output_after_startup"),
         ("failure_replay", "remove_primary_output"),
@@ -292,6 +422,7 @@ class LiveXorgHarnessPort:
         self._display: str | None = None
         self._xorg: ChildProcess | None = None
         self._openbox: ChildProcess | None = None
+        self._session: ChildProcess | None = None
 
     def installed_executable_hashes(self) -> Mapping[str, str]:
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
@@ -312,7 +443,15 @@ class LiveXorgHarnessPort:
             # the phase boundary, so carrying one scenario's topology into the
             # next would make the observation ambiguous.
             self.cleanup("failure_scenario_reset")
-        if phase == "installed_workflow" or identifier == "two_same_scale_outputs_at_startup":
+        if identifier == "start_isolated_two_output_x11":
+            self._start_environment(two_outputs=True)
+            self._require_topology(two_outputs=True)
+        elif identifier == "start_installed_prismdrake_session":
+            self._start_session()
+        elif identifier == "verify_component_readiness":
+            self._wait_for_session_readiness()
+            self.capture_process_ownership()
+        elif identifier == "two_same_scale_outputs_at_startup":
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
         elif identifier == "add_second_output_after_startup":
@@ -358,14 +497,39 @@ class LiveXorgHarnessPort:
         return Observation(True, True)
 
     def capture_process_ownership(self) -> Mapping[str, object]:
-        # The Xorg adapter cannot attest the bus or Prismdrake session owner.
-        # Returning partial or invented identities would violate the evidence contract.
-        raise HarnessError("live_process_ownership_not_implemented")
+        if self._xorg is None or self._openbox is None or self._session is None:
+            raise HarnessError("live_process_ownership_unavailable")
+        session_executable = self._config.installed_executables.get(
+            "prismdrake-session"
+        )
+        if session_executable is None:
+            raise HarnessError("live_process_ownership_invalid")
+        xorg = self._operations.identify(self._xorg, self._config.xorg)
+        openbox = self._operations.identify(self._openbox, self._config.openbox)
+        buses = self._operations.descendants(self._session, self._config.dbus_daemon)
+        sessions = self._operations.descendants(self._session, session_executable)
+        if xorg is None or openbox is None or len(buses) != 1 or len(sessions) != 1:
+            raise HarnessError("live_process_ownership_invalid")
+        identities = (xorg, openbox, buses[0], sessions[0])
+        if len(set(identities)) != len(identities):
+            raise HarnessError("live_process_ownership_invalid")
+        return dict(
+            zip(
+                (
+                    "xorg_dummy_server",
+                    "openbox_window_manager",
+                    "isolated_session_bus",
+                    "prismdrake_session",
+                ),
+                identities,
+                strict=True,
+            )
+        )
 
     def cleanup(self, phase: str) -> Observation:
         del phase
         clean = True
-        for attribute in ("_openbox", "_xorg"):
+        for attribute in ("_session", "_openbox", "_xorg"):
             child = getattr(self, attribute)
             if child is not None:
                 clean = self._operations.stop(child, self._config.stop_timeout) and clean
@@ -411,6 +575,9 @@ class LiveXorgHarnessPort:
             raise HarnessError("live_environment_already_started")
         self._runtime = Path(tempfile.mkdtemp(prefix="prismdrake-pd2-"))
         self._runtime.chmod(0o700)
+        for directory in ("home", "config", "cache", "data", "state"):
+            path = self._runtime / directory
+            path.mkdir(mode=0o700)
         config_path = self._runtime / "xorg.conf"
         config_path.write_text(_xorg_config(), encoding="ascii")
         config_path.chmod(0o600)
@@ -456,9 +623,13 @@ class LiveXorgHarnessPort:
         if self._runtime is not None:
             env.update(
                 {
-                    "HOME": str(self._runtime),
+                    "HOME": str(self._runtime / "home"),
+                    "XDG_CACHE_HOME": str(self._runtime / "cache"),
                     "XDG_CONFIG_HOME": str(self._runtime / "config"),
+                    "XDG_DATA_DIRS": "/usr/local/share:/usr/share",
+                    "XDG_DATA_HOME": str(self._runtime / "data"),
                     "XDG_RUNTIME_DIR": str(self._runtime),
+                    "XDG_STATE_HOME": str(self._runtime / "state"),
                 }
             )
         return env
@@ -472,6 +643,112 @@ class LiveXorgHarnessPort:
 
     def _run_x11(self, argv: Sequence[str]) -> CommandResult:
         return self._operations.run(argv, self._x11_environment(), 3.0)
+
+    def _start_session(self) -> None:
+        if self._runtime is None or self._xorg is None or self._openbox is None:
+            raise HarnessError("live_environment_not_started")
+        if self._session is not None:
+            raise HarnessError("live_session_already_started")
+        if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
+            raise HarnessError("installed_executable_set_invalid")
+        executables = self._config.installed_executables
+        environment = self._x11_environment()
+        environment.update(
+            {
+                "QSG_RHI_BACKEND": "software",
+                "QT_QPA_PLATFORM": "xcb",
+                "QT_QUICK_CONTROLS_STYLE": "Basic",
+            }
+        )
+        argv = (
+            str(self._config.dbus_run_session),
+            f"--dbus-daemon={self._config.dbus_daemon}",
+            "--",
+            str(executables["prismdrake-session"]),
+            "--settingsd",
+            str(executables["prismdrake-settingsd"]),
+            "--notifyd",
+            str(executables["prismdrake-notifyd"]),
+            "--shell",
+            str(executables["prismdrake-shell"]),
+        )
+        self._session = self._operations.spawn(argv, environment)
+        self._operations.pause(0.05)
+        if self._session.poll() is not None:
+            self._session = None
+            raise HarnessError("prismdrake_session_start_failed")
+
+    def _wait_for_session_readiness(self) -> None:
+        if self._session is None or self._runtime is None:
+            raise HarnessError("prismdrake_session_not_started")
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._session.poll() is not None:
+                raise HarnessError("prismdrake_session_exited_before_readiness")
+            state = self._session_marker_state()
+            if state == "ready":
+                return
+            if state == "safe_mode":
+                raise HarnessError("prismdrake_session_safe_mode_unexpected")
+            self._operations.pause(0.05)
+        raise HarnessError("prismdrake_session_readiness_failed")
+
+    def _session_marker_state(self) -> str:
+        if self._runtime is None:
+            raise HarnessError("prismdrake_session_not_started")
+        root = self._runtime / "prismdrake"
+        try:
+            root_metadata = root.lstat()
+            entries = tuple(root.iterdir())
+        except FileNotFoundError:
+            return "pending"
+        except OSError as error:
+            raise HarnessError("prismdrake_session_runtime_invalid") from error
+        if (
+            stat.S_ISLNK(root_metadata.st_mode)
+            or not stat.S_ISDIR(root_metadata.st_mode)
+            or root_metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(root_metadata.st_mode) != 0o700
+            or len(entries) != 1
+        ):
+            raise HarnessError("prismdrake_session_runtime_invalid")
+        instance = entries[0]
+        if re.fullmatch(r"session-[1-9][0-9]{0,19}-[0-9]{1,3}", instance.name) is None:
+            raise HarnessError("prismdrake_session_runtime_invalid")
+        try:
+            metadata = instance.lstat()
+        except OSError as error:
+            raise HarnessError("prismdrake_session_runtime_invalid") from error
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o700
+        ):
+            raise HarnessError("prismdrake_session_runtime_invalid")
+        ready = self._valid_marker(instance / "ready")
+        safe_mode = self._valid_marker(instance / "safe-mode")
+        if safe_mode:
+            return "safe_mode"
+        return "ready" if ready else "pending"
+
+    @staticmethod
+    def _valid_marker(path: Path) -> bool:
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            return False
+        except OSError as error:
+            raise HarnessError("prismdrake_session_runtime_invalid") from error
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_size != 0
+        ):
+            raise HarnessError("prismdrake_session_runtime_invalid")
+        return True
 
     def _wait_for_xorg(self) -> bool:
         deadline = self._operations.monotonic() + self._config.readiness_timeout
