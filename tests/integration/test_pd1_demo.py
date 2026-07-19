@@ -25,9 +25,11 @@ from pd1_demo import (
     capture_process_identity,
     children,
     close_identities,
+    close_test_notification,
     example_evidence,
     environment_has_marker,
     focused_window_id,
+    has_showing_focused_node,
     named_action_nodes,
     showing_named_action_nodes,
     openbox_command,
@@ -43,6 +45,7 @@ from pd1_demo import (
     require_distinct_process_identity,
     require_normal_ready,
     require_normal_snapshot,
+    send_test_notification,
     send_focused_shell_action_key,
     send_focused_window_action_key,
     select_sole_owned_panel,
@@ -137,6 +140,7 @@ class EvidenceContractTests(unittest.TestCase):
             dbus_run_session=Path("/usr/bin/dbus-run-session"),
             accessible_config=Path("/fixture/config.toml"),
             gdbus=Path("/usr/bin/gdbus"),
+            notifyd=None,
             openbox=Path("/usr/bin/openbox"),
             output=Path("/private/demo.json"),
             session=Path("/usr/bin/prismdrake-session"),
@@ -149,6 +153,13 @@ class EvidenceContractTests(unittest.TestCase):
         command = session_child_command(arguments)
         option = command.index("--installed-artifact-attestation")
         self.assertEqual(command[option + 1], "/private/attestation.json")
+        notifyd = command.index("--notifyd")
+        self.assertEqual(command[notifyd + 1], "/usr/bin/prismdrake-notifyd")
+
+        arguments.notifyd = Path("/fixture/prismdrake-notifyd")
+        command = session_child_command(arguments)
+        notifyd = command.index("--notifyd")
+        self.assertEqual(command[notifyd + 1], "/fixture/prismdrake-notifyd")
 
     def test_rejects_unknown_provenance(self) -> None:
         with self.assertRaises(DemoError):
@@ -679,6 +690,48 @@ class EvidenceContractTests(unittest.TestCase):
                 )
         key_sender.assert_not_called()
 
+    def test_notification_fixture_uses_typed_standard_dbus_calls(self) -> None:
+        connection = mock.Mock()
+        connection.call_sync.side_effect = (
+            mock.Mock(unpack=mock.Mock(return_value=(17,))),
+            mock.Mock(unpack=mock.Mock(return_value=())),
+        )
+        gio = mock.Mock(DBusCallFlags=mock.Mock(NO_AUTO_START=4))
+        glib = mock.Mock()
+        glib.Variant.side_effect = lambda signature, value: (signature, value)
+        glib.VariantType.new.side_effect = lambda signature: signature
+
+        notification_id = send_test_notification(connection, gio, glib)
+        close_test_notification(connection, gio, glib, notification_id)
+        self.assertEqual(notification_id, 17)
+        notify = connection.call_sync.call_args_list[0].args
+        self.assertEqual(notify[0:4], (
+            "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications", "Notify",
+        ))
+        self.assertEqual(notify[5:8], ("(u)", 4, 2_000))
+        close = connection.call_sync.call_args_list[1].args
+        self.assertEqual(close[0:4], (
+            "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications", "CloseNotification",
+        ))
+        self.assertEqual(close[4], ("(u)", (17,)))
+        self.assertEqual(close[5:8], ("()", 4, 2_000))
+
+    def test_notification_fixture_rejects_malformed_identities_before_close(self) -> None:
+        connection = mock.Mock()
+        connection.call_sync.return_value.unpack.return_value = (0,)
+        gio = mock.Mock(DBusCallFlags=mock.Mock(NO_AUTO_START=4))
+        glib = mock.Mock()
+        with self.assertRaisesRegex(DemoError, "^notification_identity_invalid$"):
+            send_test_notification(connection, gio, glib)
+        for value in (False, 0, -1, 0x100000000):
+            connection.reset_mock()
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(DemoError, "^notification_identity_invalid$"):
+                    close_test_notification(connection, gio, glib, value)
+                connection.call_sync.assert_not_called()
+
     def test_task_pointer_center_is_bounded_to_panel_extents(self) -> None:
         rectangle = mock.Mock(x=100, y=660, width=200, height=48)
         component = mock.Mock()
@@ -792,6 +845,15 @@ class EvidenceContractTests(unittest.TestCase):
         atspi = mock.Mock(StateType=mock.Mock(SHOWING=2, VISIBLE=3))
         with mock.patch.object(pd1_demo, "named_action_nodes", return_value=[showing, hidden]):
             self.assertEqual(showing_named_action_nodes(atspi, "Demo", "Press"), [showing])
+
+    def test_showing_focused_node_excludes_hidden_surface_duplicates(self) -> None:
+        showing = mock.Mock()
+        hidden = mock.Mock()
+        showing.get_state_set.return_value.contains.side_effect = lambda state: state in (1, 2, 3)
+        hidden.get_state_set.return_value.contains.return_value = False
+        atspi = mock.Mock(StateType=mock.Mock(FOCUSED=1, SHOWING=2, VISIBLE=3))
+        with mock.patch.object(pd1_demo, "named_nodes", return_value=[showing, hidden]):
+            self.assertTrue(has_showing_focused_node(atspi, "Demo"))
 
     def test_wait_until_surfaces_last_safe_closed_demo_error(self) -> None:
         with mock.patch.object(pd1_demo.time, "monotonic", side_effect=(0.0, 0.0, 1.0)), \

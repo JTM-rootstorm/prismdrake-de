@@ -26,7 +26,8 @@ from typing import Any, Callable, Mapping
 SHELL_APPLICATION = "prismdrake-shell"
 PANEL_TITLE = "Prismdrake Panel"
 LAUNCHER_TITLE = "Prismdrake Launcher"
-NOTIFICATION_TITLE = "Prismdrake Test Notification"
+NOTIFICATION_TITLE = "Prismdrake Notifications"
+NOTIFICATION_SUMMARY = "Prismdrake PD1 notification"
 APP_TITLES = ("Prismdrake Demo App One", "Prismdrake Demo App Two")
 LIMITATIONS = [
     "pd1_demo_complete_validation_external",
@@ -520,8 +521,8 @@ def validate_schema(document: Any) -> None:
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     for name in (
-        "accessible-config", "dbus-run-session", "gdbus", "openbox", "output", "session",
-        "settingsd", "shell", "test-app", "xdotool", "xprop", "xvfb",
+        "accessible-config", "dbus-run-session", "gdbus", "notifyd", "openbox", "output",
+        "session", "settingsd", "shell", "test-app", "xdotool", "xprop", "xvfb",
     ):
         parser.add_argument(f"--{name}", type=Path)
     parser.add_argument("--session-child", action="store_true", help=argparse.SUPPRESS)
@@ -728,6 +729,16 @@ def has_showing_focused_action(atspi: Any, name: str, action: str = "Press") -> 
     matches = [
         node for node in showing_named_action_nodes(atspi, name, action)
         if node.get_state_set().contains(atspi.StateType.FOCUSED)
+    ]
+    return len(matches) == 1
+
+
+def has_showing_focused_node(atspi: Any, name: str) -> bool:
+    matches = [
+        node for node in named_nodes(atspi, name)
+        if node.get_state_set().contains(atspi.StateType.SHOWING)
+        and node.get_state_set().contains(atspi.StateType.VISIBLE)
+        and node.get_state_set().contains(atspi.StateType.FOCUSED)
     ]
     return len(matches) == 1
 
@@ -1052,6 +1063,47 @@ def request_profile(gdbus: Path, profile: str) -> int:
     return int(match.group(1))
 
 
+def send_test_notification(connection: Any, gio: Any, glib: Any) -> int:
+    try:
+        parameters = glib.Variant(
+            "(susssasa{sv}i)",
+            (
+                "Prismdrake PD1 demonstration", 0, "", NOTIFICATION_SUMMARY,
+                "Controlled notification fixture", ["acknowledge", "Acknowledge"],
+                {"urgency": glib.Variant("y", 1)}, 0,
+            ),
+        )
+        reply = connection.call_sync(
+            "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications", "Notify", parameters,
+            glib.VariantType.new("(u)"), gio.DBusCallFlags.NO_AUTO_START, 2_000, None,
+        )
+        unpacked = reply.unpack()
+    except Exception as error:
+        raise DemoError("notification_request_failed") from error
+    require(isinstance(unpacked, tuple) and len(unpacked) == 1 and
+            isinstance(unpacked[0], int) and not isinstance(unpacked[0], bool) and
+            0 < unpacked[0] <= 0xFFFFFFFF, "notification_identity_invalid")
+    return unpacked[0]
+
+
+def close_test_notification(connection: Any, gio: Any, glib: Any,
+                            notification_id: int) -> None:
+    require(isinstance(notification_id, int) and not isinstance(notification_id, bool) and
+            0 < notification_id <= 0xFFFFFFFF, "notification_identity_invalid")
+    try:
+        reply = connection.call_sync(
+            "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications", "CloseNotification",
+            glib.Variant("(u)", (notification_id,)), glib.VariantType.new("()"),
+            gio.DBusCallFlags.NO_AUTO_START, 2_000, None,
+        )
+        unpacked = reply.unpack()
+    except Exception as error:
+        raise DemoError("notification_close_failed") from error
+    require(isinstance(unpacked, tuple) and len(unpacked) == 0, "notification_close_failed")
+
+
 def desktop_exec(path: Path, instance: str) -> str:
     value = str(path).replace("\\", "\\\\").replace('"', '\\"')
     return f'"{value}" --instance {instance}'
@@ -1156,7 +1208,8 @@ def run_session_child(arguments: argparse.Namespace) -> None:
     import gi
 
     gi.require_version("Atspi", "2.0")
-    from gi.repository import Atspi
+    gi.require_version("Gio", "2.0")
+    from gi.repository import Atspi, Gio, GLib
 
     root_value = os.environ.get("PRISMDRAKE_DEMO_TEMPORARY", "")
     root = Path(root_value)
@@ -1201,10 +1254,14 @@ def run_session_child(arguments: argparse.Namespace) -> None:
         wait_until(ready_window_manager, "window_manager_start_timeout")
         initial_wm_identity = wm_identity(arguments.xprop)
         log = session_log.open("w", encoding="utf-8")
-        session = subprocess.Popen([
-            str(arguments.session), "--settingsd", str(arguments.settingsd), "--shell",
-            str(arguments.shell),
-        ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log)
+        require(arguments.notifyd is not None, "notifyd_executable_unavailable")
+        session_command = [
+            str(arguments.session), "--settingsd", str(arguments.settingsd), "--notifyd",
+            str(arguments.notifyd), "--shell", str(arguments.shell),
+        ]
+        session = subprocess.Popen(
+            session_command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log,
+        )
         processes.append(session)
 
         prismdrake_runtime = Path(os.environ["XDG_RUNTIME_DIR"]) / "prismdrake"
@@ -1313,18 +1370,26 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                     effective.get("transparency_disabled") is True,
                     "accessibility_override_lost")
 
-        require(press(Atspi, "Send test notification"), "notification_press_rejected")
+        notification_connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        require(notification_connection is not None, "notification_connection_failed")
+        notification_id = send_test_notification(notification_connection, Gio, GLib)
         notification = wait_until(lambda: visible_window_id(arguments.xdotool, NOTIFICATION_TITLE),
                                   "notification_window_timeout")
-        wait_until(lambda: bool(named_nodes(Atspi, "Acknowledge")),
-                   "notification_action_timeout")
-        send_key(arguments.xdotool, notification, "Tab")
-        wait_until(lambda: focused(Atspi, "Acknowledge"), "notification_focus_timeout")
-        send_key(arguments.xdotool, notification, "space")
+        wait_until(lambda: focused_window_id(arguments.xdotool) == notification and
+                   has_showing_focused_node(Atspi, NOTIFICATION_SUMMARY),
+                   "notification_card_focus_timeout")
+        send_focused_key(arguments.xdotool, "Tab")
+        wait_until(lambda: has_showing_focused_action(Atspi, "Acknowledge"),
+                   "notification_focus_timeout")
+        send_focused_shell_action_key(
+            Atspi, arguments.xdotool, panel, initial_shell_process_id, "Acknowledge", "space",
+        )
+        close_test_notification(notification_connection, Gio, GLib, notification_id)
         wait_until(lambda: visible_window_id(arguments.xdotool, NOTIFICATION_TITLE) is None,
                    "notification_dismiss_timeout")
-        wait_until(lambda: focused(Atspi, "Send test notification"),
-                   "notification_panel_return_timeout")
+        require(window_id(arguments.xdotool, PANEL_TITLE) == panel and
+                all(process_identity_alive(item) for item in detached_identities),
+                "notification_state_isolation_invalid")
 
         old_shell_identity = capture_process_identity(process_application_id(Atspi))
         restarted_shell_process_id = 0
@@ -1385,7 +1450,11 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                 task_has_generic_icon_semantics(Atspi, APP_TITLES[1]),
                 "task_generic_icon_semantics_invalid")
 
-        expected_children = {"settingsd": arguments.settingsd, "shell": arguments.shell}
+        expected_children = {
+            "settingsd": arguments.settingsd,
+            "notifyd": arguments.notifyd,
+            "shell": arguments.shell,
+        }
         pre_settings_restart = capture_exact_direct_children(session.pid, expected_children)
         observation_identities.extend(pre_settings_restart.values())
         old_settings_identity = pre_settings_restart["settingsd"]
@@ -1551,6 +1620,10 @@ def session_child_command(arguments: argparse.Namespace) -> list[str]:
         "shell", "test_app", "xdotool", "xprop",
     ):
         command.extend((f"--{name.replace('_', '-')}", str(getattr(arguments, name))))
+    notifyd = arguments.notifyd
+    if notifyd is None:
+        notifyd = arguments.session.with_name("prismdrake-notifyd")
+    command.extend(("--notifyd", str(notifyd)))
     command.extend(("--artifact-provenance", arguments.artifact_provenance))
     if arguments.artifact_provenance == "portage_installed":
         command.extend((
@@ -1569,6 +1642,11 @@ def run_parent(arguments: argparse.Namespace) -> None:
     for name in executable_names:
         path = getattr(arguments, name)
         require(path.is_file() and os.access(path, os.X_OK), "required_executable_unavailable")
+    notifyd = arguments.notifyd
+    if notifyd is None:
+        notifyd = arguments.session.with_name("prismdrake-notifyd")
+    require(notifyd.is_file() and os.access(notifyd, os.X_OK),
+            "required_executable_unavailable")
     require(arguments.accessible_config.is_file(), "accessible_config_unavailable")
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     validate_output_target(arguments.output)

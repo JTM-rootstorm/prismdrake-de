@@ -247,6 +247,7 @@ if(PRISMDRAKE_XVFB_EXECUTABLE
             --xvfb "${PRISMDRAKE_XVFB_EXECUTABLE}"
             --session "$<TARGET_FILE:prismdrake-session>"
             --settingsd "$<TARGET_FILE:prismdrake-settingsd>"
+            --notifyd "$<TARGET_FILE:prismdrake-notifyd>"
             --shell "$<TARGET_FILE:prismdrake-shell>"
             --test-app "$<TARGET_FILE:prismdrake-controlled-window-fixture>"
             --accessible-config "${PROJECT_SOURCE_DIR}/examples/config/accessible.toml"
