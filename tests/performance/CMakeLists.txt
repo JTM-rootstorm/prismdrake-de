@@ -81,6 +81,15 @@ set_tests_properties(Pd2PerformanceAccessibilityEvidenceContractTest PROPERTIES
     LABELS "performance;accessibility;contract"
     TIMEOUT 10)
 
+add_test(
+    NAME Pd2LivePerformanceAccessibilityCollectorTest
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_live_evidence.py")
+set_tests_properties(Pd2LivePerformanceAccessibilityCollectorTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    LABELS "performance;accessibility;contract"
+    TIMEOUT 20)
+
 find_program(prismdrake_performance_fc_match_executable fc-match REQUIRED)
 execute_process(
     COMMAND "${prismdrake_performance_fc_match_executable}"
