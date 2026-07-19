@@ -49,10 +49,8 @@ class DesktopWindowHost final {
                       ScreenResolver screenResolver) noexcept;
 
     [[nodiscard]] foundation::Result<std::unique_ptr<WindowEntry>>
-    createWindow(const DesktopSurfaceState &surface,
+    createWindow(QScreen &screen, const DesktopSurfaceState &surface,
                  const std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> &wallpaper);
-    [[nodiscard]] foundation::Result<void> republishIfRecreated(WindowEntry &entry,
-                                                                const DesktopSurfaceState &surface);
     void removeProperties(WindowEntry &entry) noexcept;
 
     x11::X11Connection connection_;

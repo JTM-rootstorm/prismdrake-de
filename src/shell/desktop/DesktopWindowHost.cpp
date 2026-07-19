@@ -47,6 +47,7 @@ struct DesktopWindowHost::WindowEntry final {
     std::unique_ptr<QQuickView> view;
     DesktopWallpaperItem *wallpaperItem;
     x11::WindowId publishedWindow;
+    double devicePixelRatio;
 };
 
 Result<std::unique_ptr<DesktopWindowHost>>
@@ -86,15 +87,10 @@ DesktopWindowHost::~DesktopWindowHost() {
 }
 
 Result<std::unique_ptr<DesktopWindowHost::WindowEntry>> DesktopWindowHost::createWindow(
-    const DesktopSurfaceState &surface,
+    QScreen &screen, const DesktopSurfaceState &surface,
     const std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> &wallpaper) {
-    QScreen *screen = screen_resolver_(surface.outputName);
-    if (screen == nullptr) {
-        return invalidPublication<std::unique_ptr<WindowEntry>>();
-    }
-
     auto view = std::make_unique<QQuickView>();
-    view->setScreen(screen);
+    view->setScreen(&screen);
     view->setResizeMode(QQuickView::SizeRootObjectToView);
     view->setColor(wallpaper->backgroundColor);
     view->setFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus |
@@ -119,29 +115,8 @@ Result<std::unique_ptr<DesktopWindowHost::WindowEntry>> DesktopWindowHost::creat
     if (!published) {
         return Result<std::unique_ptr<WindowEntry>>::failure(published.error());
     }
-    return Result<std::unique_ptr<WindowEntry>>::success(
-        std::make_unique<WindowEntry>(WindowEntry{std::move(view), wallpaperItem, id.value()}));
-}
-
-Result<void> DesktopWindowHost::republishIfRecreated(WindowEntry &entry,
-                                                     const DesktopSurfaceState &surface) {
-    QScreen *screen = screen_resolver_(surface.outputName);
-    if (screen == nullptr) {
-        return invalidPublication<void>();
-    }
-    entry.view->setScreen(screen);
-    auto id = windowId(*entry.view);
-    if (!id) {
-        return Result<void>::failure(id.error());
-    }
-    if (id.value() != entry.publishedWindow) {
-        auto published = x11::DesktopProperties::publish(connection_, atoms_, id.value());
-        if (!published) {
-            return published;
-        }
-        entry.publishedWindow = id.value();
-    }
-    return Result<void>::success();
+    return Result<std::unique_ptr<WindowEntry>>::success(std::make_unique<WindowEntry>(
+        WindowEntry{std::move(view), wallpaperItem, id.value(), surface.devicePixelRatio}));
 }
 
 void DesktopWindowHost::removeProperties(WindowEntry &entry) noexcept {
@@ -163,10 +138,23 @@ Result<void> DesktopWindowHost::apply(const DesktopSurfaceUpdate &update) {
         if (!desiredNames.insert(surface.outputName).second) {
             return invalidPublication<void>();
         }
-        if (windows_.contains(surface.outputName)) {
+        QScreen *screen = screen_resolver_(surface.outputName);
+        if (screen == nullptr) {
+            for (auto &[name, entry] : staged) {
+                (void)name;
+                removeProperties(*entry);
+            }
+            return invalidPublication<void>();
+        }
+        const auto existing = windows_.find(surface.outputName);
+        const bool needsReplacement =
+            existing == windows_.end() || existing->second->view->screen() != screen ||
+            existing->second->view->geometry() != surface.logicalGeometry ||
+            existing->second->devicePixelRatio != surface.devicePixelRatio;
+        if (!needsReplacement) {
             continue;
         }
-        auto created = createWindow(surface, snapshot->wallpaper());
+        auto created = createWindow(*screen, surface, snapshot->wallpaper());
         if (!created) {
             for (auto &[name, entry] : staged) {
                 (void)name;
@@ -177,33 +165,20 @@ Result<void> DesktopWindowHost::apply(const DesktopSurfaceUpdate &update) {
         staged.emplace(surface.outputName, std::move(created).value());
     }
 
+    // From this point onward there are no fallible operations. Existing
+    // windows have not been mutated, remapped, or republished during staging.
     for (const auto &surface : snapshot->surfaces()) {
-        auto existing = windows_.find(surface.outputName);
-        if (existing == windows_.end()) {
+        if (staged.contains(surface.outputName)) {
             continue;
         }
-        auto republished = republishIfRecreated(*existing->second, surface);
-        if (!republished) {
-            for (auto &[name, entry] : staged) {
-                (void)name;
-                removeProperties(*entry);
-            }
-            return republished;
-        }
-    }
-
-    for (const auto &surface : snapshot->surfaces()) {
-        auto existing = windows_.find(surface.outputName);
-        WindowEntry *entry = existing == windows_.end() ? staged.at(surface.outputName).get()
-                                                        : existing->second.get();
-        entry->view->setGeometry(surface.logicalGeometry);
-        entry->view->setColor(snapshot->wallpaper()->backgroundColor);
-        entry->wallpaperItem->setSurface(snapshot->wallpaper(), surface.wallpaperLayout,
-                                         surface.devicePixelRatio);
+        auto &entry = *windows_.at(surface.outputName);
+        entry.view->setColor(snapshot->wallpaper()->backgroundColor);
+        entry.wallpaperItem->setSurface(snapshot->wallpaper(), surface.wallpaperLayout,
+                                        surface.devicePixelRatio);
     }
 
     for (auto iterator = windows_.begin(); iterator != windows_.end();) {
-        if (desiredNames.contains(iterator->first)) {
+        if (desiredNames.contains(iterator->first) && !staged.contains(iterator->first)) {
             ++iterator;
             continue;
         }
@@ -211,9 +186,10 @@ Result<void> DesktopWindowHost::apply(const DesktopSurfaceUpdate &update) {
         iterator->second->view->hide();
         iterator = windows_.erase(iterator);
     }
-    for (auto &[name, entry] : staged) {
-        entry->view->show();
-        windows_.emplace(std::move(name), std::move(entry));
+    while (!staged.empty()) {
+        auto node = staged.extract(staged.begin());
+        node.mapped()->view->show();
+        windows_.insert(std::move(node));
     }
     for (auto &[name, entry] : windows_) {
         (void)name;

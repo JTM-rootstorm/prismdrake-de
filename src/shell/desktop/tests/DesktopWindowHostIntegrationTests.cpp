@@ -35,9 +35,12 @@ class DesktopWindowHostIntegrationTest : public ::testing::Test {
         ASSERT_NE(QGuiApplication::primaryScreen(), nullptr);
     }
 
-    [[nodiscard]] std::unique_ptr<DesktopWindowHost> host() const {
-        auto created = DesktopWindowHost::create(
-            display_, [](std::string_view) { return QGuiApplication::primaryScreen(); });
+    [[nodiscard]] std::unique_ptr<DesktopWindowHost>
+    host(DesktopWindowHost::ScreenResolver resolver = {}) const {
+        if (!resolver) {
+            resolver = [](std::string_view) { return QGuiApplication::primaryScreen(); };
+        }
+        auto created = DesktopWindowHost::create(display_, std::move(resolver));
         EXPECT_TRUE(created) << created.error().message;
         return created ? std::move(created).value() : nullptr;
     }
@@ -105,6 +108,65 @@ TEST_F(DesktopWindowHostIntegrationTest, MapsTwoTypedInputTransparentDesktopsAnd
     ASSERT_NE(desktopHost->window("LEFT-1"), nullptr);
     EXPECT_EQ(desktopHost->window("LEFT-1")->winId(), leftId);
     EXPECT_EQ(desktopHost->window("RIGHT-1"), nullptr);
+}
+
+TEST_F(DesktopWindowHostIntegrationTest, RetainsCompleteSetWhenLaterScreenStagingFails) {
+    test::RegistryHarness registry;
+    DesktopSurfaceController controller;
+    const std::array scales{OutputScaleObservation{"LEFT-1", 1.0},
+                            OutputScaleObservation{"RIGHT-1", 1.0}};
+    bool rejectRightScreen = false;
+    std::size_t resolvedScreens = 0U;
+    auto desktopHost = host([&](std::string_view outputName) -> QScreen * {
+        ++resolvedScreens;
+        if (rejectRightScreen && outputName == "RIGHT-1") {
+            return nullptr;
+        }
+        return QGuiApplication::primaryScreen();
+    });
+    ASSERT_NE(desktopHost, nullptr);
+
+    auto initial = controller.prepare(registry.observe(1U), scales, test::solidWallpaper(1U));
+    ASSERT_TRUE(initial);
+    ASSERT_TRUE(desktopHost->apply(initial.value()));
+    controller.commit(std::move(initial).value());
+    const auto retainedHostSnapshot = desktopHost->current();
+    const auto retainedControllerSnapshot = controller.current();
+    const auto leftId = desktopHost->window("LEFT-1")->winId();
+    const auto rightId = desktopHost->window("RIGHT-1")->winId();
+    const auto leftGeometry = desktopHost->window("LEFT-1")->geometry();
+    auto *leftRenderer = desktopHost->window("LEFT-1")->findChild<DesktopWallpaperItem *>(
+        QStringLiteral("prismdrakeDesktopWallpaper"));
+    ASSERT_NE(leftRenderer, nullptr);
+    ASSERT_EQ(leftRenderer->wallpaperGeneration(), 1U);
+
+    auto changed =
+        controller.prepare(registry.observe(2U, true, outputs::LogicalRect{0, 0, 480U, 768U}),
+                           scales, test::solidWallpaper(2U));
+    ASSERT_TRUE(changed);
+    rejectRightScreen = true;
+    resolvedScreens = 0U;
+    EXPECT_FALSE(desktopHost->apply(changed.value()));
+    EXPECT_EQ(resolvedScreens, 2U);
+    EXPECT_EQ(desktopHost->current(), retainedHostSnapshot);
+    EXPECT_EQ(controller.current(), retainedControllerSnapshot);
+    ASSERT_EQ(desktopHost->windowCount(), 2U);
+    EXPECT_EQ(desktopHost->window("LEFT-1")->winId(), leftId);
+    EXPECT_EQ(desktopHost->window("RIGHT-1")->winId(), rightId);
+    EXPECT_EQ(desktopHost->window("LEFT-1")->geometry(), leftGeometry);
+    EXPECT_EQ(leftRenderer->wallpaperGeneration(), 1U);
+
+    rejectRightScreen = false;
+    ASSERT_TRUE(desktopHost->apply(changed.value()));
+    controller.commit(std::move(changed).value());
+    EXPECT_NE(desktopHost->window("LEFT-1")->winId(), leftId);
+    EXPECT_EQ(desktopHost->window("RIGHT-1")->winId(), rightId);
+    EXPECT_EQ(desktopHost->window("LEFT-1")->geometry(), QRect(0, 0, 480, 768));
+    auto *replacementRenderer = desktopHost->window("LEFT-1")->findChild<DesktopWallpaperItem *>(
+        QStringLiteral("prismdrakeDesktopWallpaper"));
+    ASSERT_NE(replacementRenderer, nullptr);
+    EXPECT_EQ(replacementRenderer->wallpaperGeneration(), 2U);
+    EXPECT_EQ(desktopHost->current(), controller.current());
 }
 
 TEST_F(DesktopWindowHostIntegrationTest, OpenboxLeavesFocusAndStackingWithOrdinaryClient) {
