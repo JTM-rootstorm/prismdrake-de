@@ -1517,8 +1517,14 @@ class LiveXorgHarnessPort:
             if len(set(self._controlled_windows.values())) != 2:
                 raise HarnessError("controlled_window_identity_collision")
         elif identifier == "verify_task_grouping":
+            self._focus_controlled_panel_task("controlled_task_focus_timeout")
             self._invoke_accessible(
-                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button", "Press")
+                ControlSelector(
+                    CONTROLLED_APPLICATION_NAME,
+                    "push_button",
+                    "Press",
+                    require_focused=True,
+                )
             )
             for title in (CONTROLLED_WINDOW_ONE, CONTROLLED_WINDOW_TWO):
                 self._wait_accessible(
@@ -1548,18 +1554,7 @@ class LiveXorgHarnessPort:
                 ControlSelector(f"Close {CONTROLLED_WINDOW_TWO}", "menu_item", "Press")
             )
             self._wait_window_absent(CONTROLLED_WINDOW_TWO)
-            self._invoke_shellctl("panel", "focus")
-            self._wait_accessible(
-                ControlSelector("Open applications", "push_button", require_focused=True),
-                "panel_focus_timeout",
-            )
-            self._xdotool("key", "Tab")
-            self._wait_accessible(
-                ControlSelector(
-                    CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
-                ),
-                "controlled_task_focus_timeout",
-            )
+            self._focus_controlled_panel_task("controlled_task_focus_timeout")
             self._xdotool("key", "--clearmodifiers", "Shift_L+F10")
             self._invoke_accessible(
                 ControlSelector(
@@ -3797,12 +3792,32 @@ class LiveXorgHarnessPort:
         )
 
     def _open_controlled_group(self) -> None:
+        self._focus_controlled_panel_task("controlled_task_focus_timeout")
         self._invoke_accessible(
-            ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button", "Press")
+            ControlSelector(
+                CONTROLLED_APPLICATION_NAME,
+                "push_button",
+                "Press",
+                require_focused=True,
+            )
         )
         self._wait_accessible(
             ControlSelector(f"Activate {CONTROLLED_WINDOW_ONE}", "menu_item"),
             "controlled_task_group_timeout",
+        )
+
+    def _focus_controlled_panel_task(self, timeout_error: str) -> None:
+        self._invoke_shellctl("panel", "focus")
+        self._wait_accessible(
+            ControlSelector("Open applications", "push_button", require_focused=True),
+            "panel_focus_timeout",
+        )
+        self._xdotool("key", "--clearmodifiers", "Tab")
+        self._wait_accessible(
+            ControlSelector(
+                CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
+            ),
+            timeout_error,
         )
 
     def _x11_environment(self) -> dict[str, str]:

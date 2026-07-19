@@ -1891,6 +1891,10 @@ class LivePortTests(unittest.TestCase):
                 ("/usr/bin/prismdrake-shellctl", "launcher", "toggle"),
                 ("/usr/bin/prismdrake-shellctl", "launcher", "toggle"),
                 ("/usr/bin/prismdrake-shellctl", "panel", "focus"),
+                ("/usr/bin/prismdrake-shellctl", "panel", "focus"),
+                ("/usr/bin/prismdrake-shellctl", "panel", "focus"),
+                ("/usr/bin/prismdrake-shellctl", "panel", "focus"),
+                ("/usr/bin/prismdrake-shellctl", "panel", "focus"),
             ],
         )
         self.assertTrue(accessibility.pinned)
@@ -1925,6 +1929,11 @@ class LivePortTests(unittest.TestCase):
                 "Escape",
                 "Down",
                 "Shift_L+F10",
+                "Tab",
+                "Tab",
+                "Tab",
+                "Tab",
+                "Tab",
                 "Shift_L+F10",
             ],
         )
