@@ -52,10 +52,17 @@ struct IconCacheKey final {
 };
 
 struct ThemeLookupSnapshot final {
-    bool qtThemeHasIcon;
     QString themeName;
     QString fallbackThemeName;
     QStringList searchPaths;
+};
+
+class QtIconThemeMetadataProvider final : public IconThemeMetadataProvider {
+  public:
+    Result<IconThemeMetadata> snapshot() override {
+        return Result<IconThemeMetadata>::success(
+            {QIcon::themeName(), QIcon::fallbackThemeName(), QIcon::themeSearchPaths()});
+    }
 };
 
 template <typename Value>
@@ -395,9 +402,6 @@ struct ThemeCandidate final {
 
 [[nodiscard]] QImage resolveThemeImage(const ThemeLookupSnapshot &theme, const QString &iconName,
                                        int logicalSize, qreal dpr, const QSize &pixelSize) {
-    if (!theme.qtThemeHasIcon) {
-        return {};
-    }
     QStringList pending;
     for (const QString &candidate :
          {theme.themeName, theme.fallbackThemeName, QStringLiteral("hicolor")}) {
@@ -498,15 +502,22 @@ struct ThemeCandidate final {
 } // namespace
 
 struct IconResolver::State final {
+    explicit State(std::unique_ptr<IconThemeMetadataProvider> provider)
+        : metadataProvider(std::move(provider)) {}
+
     std::mutex mutex;
     std::map<IconCacheKey, IconResolution> cache;
     std::uint64_t cachedBytes{0U};
     std::size_t outstanding{0U};
     std::size_t maximumOutstanding{maximumOutstandingIconRequests};
+    std::unique_ptr<IconThemeMetadataProvider> metadataProvider;
 };
 
-IconResolver::IconResolver(std::size_t maximumOutstandingRequests)
-    : state_(std::make_shared<State>()) {
+IconResolver::IconResolver(std::size_t maximumOutstandingRequests,
+                           std::unique_ptr<IconThemeMetadataProvider> metadataProvider)
+    : state_(std::make_shared<State>(metadataProvider
+                                         ? std::move(metadataProvider)
+                                         : std::make_unique<QtIconThemeMetadataProvider>())) {
     initializePrismdrakeIconResources();
     state_->maximumOutstanding =
         std::clamp(maximumOutstandingRequests, std::size_t{1U}, maximumOutstandingIconRequests);
@@ -533,17 +544,6 @@ Result<void> IconResolver::resolve(IconRequest request, QObject *context,
                              "Submit icon requests from the receiving QObject thread.");
     }
 
-    ThemeLookupSnapshot theme{false, QIcon::themeName(), QIcon::fallbackThemeName(), {}};
-    const QStringList searchPaths = QIcon::themeSearchPaths();
-    const bool searchPathsValid = validThemeSearchPaths(searchPaths);
-    if (searchPathsValid) {
-        theme.searchPaths = searchPaths;
-    }
-    if (searchPathsValid && safeThemeName(request.iconField) &&
-        !QDir::isAbsolutePath(request.iconField)) {
-        theme.qtThemeHasIcon = !QIcon::fromTheme(request.iconField).isNull();
-    }
-
     const auto state = state_;
     const auto key = cacheKey(request);
     {
@@ -555,8 +555,7 @@ Result<void> IconResolver::resolve(IconRequest request, QObject *context,
         ++state->outstanding;
     }
     QPointer<QObject> guard{context};
-    QThreadPool::globalInstance()->start([state, key, request = std::move(request),
-                                          theme = std::move(theme), guard,
+    QThreadPool::globalInstance()->start([state, key, request = std::move(request), guard,
                                           completion = std::move(completion)]() mutable {
         IconResolution resolution;
         {
@@ -567,6 +566,22 @@ Result<void> IconResolver::resolve(IconRequest request, QObject *context,
             }
         }
         if (resolution.image.isNull()) {
+            ThemeLookupSnapshot theme;
+            if (safeThemeName(request.iconField) && !QDir::isAbsolutePath(request.iconField)) {
+                Result<IconThemeMetadata> metadata = Result<IconThemeMetadata>::failure(
+                    {ErrorCode::io_error, "Icon theme metadata is unavailable.",
+                     "Use the packaged generic icon fallback."});
+                try {
+                    metadata = state->metadataProvider->snapshot();
+                } catch (...) {
+                    // Provider failures are isolated to the generic icon fallback.
+                }
+                if (metadata && validThemeSearchPaths(metadata.value().searchPaths)) {
+                    theme = {std::move(metadata.value().themeName),
+                             std::move(metadata.value().fallbackThemeName),
+                             std::move(metadata.value().searchPaths)};
+                }
+            }
             resolution = resolveSynchronously(request, theme);
             const std::scoped_lock lock{state->mutex};
             const auto existing = state->cache.find(key);

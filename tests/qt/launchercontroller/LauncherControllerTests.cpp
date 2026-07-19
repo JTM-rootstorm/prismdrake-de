@@ -181,7 +181,7 @@ class BlockingWatchCandidateCollector final : public ApplicationWatchCandidateCo
         : state_(std::move(state)) {}
 
     foundation::Result<ApplicationWatchCandidates>
-    collect(const prismdrake::launcher::ApplicationPaths &, std::size_t,
+    collect(const prismdrake::launcher::ApplicationPaths &, std::size_t, std::size_t,
             std::stop_token stopToken) override {
         std::unique_lock lock(state_->mutex);
         const auto call = ++state_->calls;
@@ -208,7 +208,8 @@ class DegradedWatchCandidateCollector final : public ApplicationWatchCandidateCo
     explicit DegradedWatchCandidateCollector(std::filesystem::path path) : path_(std::move(path)) {}
 
     foundation::Result<ApplicationWatchCandidates>
-    collect(const prismdrake::launcher::ApplicationPaths &, std::size_t, std::stop_token) override {
+    collect(const prismdrake::launcher::ApplicationPaths &, std::size_t, std::size_t,
+            std::stop_token) override {
         ++calls;
         return foundation::Result<ApplicationWatchCandidates>::success({{path_}, true});
     }
@@ -217,6 +218,40 @@ class DegradedWatchCandidateCollector final : public ApplicationWatchCandidateCo
 
   private:
     std::filesystem::path path_;
+};
+
+struct BlockingWatcherState final {
+    std::mutex mutex;
+    std::condition_variable condition;
+    std::size_t calls{0U};
+    bool stopObserved{false};
+    std::thread::id workerThread;
+};
+
+class BlockingApplicationPathWatcher final : public ApplicationPathWatcher {
+  public:
+    explicit BlockingApplicationPathWatcher(std::shared_ptr<BlockingWatcherState> state)
+        : state_(std::move(state)) {}
+
+    void setChangeCallback(ChangeCallback callback) override { callback_ = std::move(callback); }
+
+    foundation::Result<ApplicationWatchRegistration>
+    replace(const std::vector<std::filesystem::path> &, std::stop_token stopToken) override {
+        std::unique_lock lock(state_->mutex);
+        ++state_->calls;
+        state_->workerThread = std::this_thread::get_id();
+        state_->condition.notify_all();
+        std::stop_callback wake{stopToken, [state = state_] { state->condition.notify_all(); }};
+        state_->condition.wait(lock, [&] { return stopToken.stop_requested(); });
+        state_->stopObserved = true;
+        state_->condition.notify_all();
+        return foundation::Result<ApplicationWatchRegistration>::failure(
+            {ErrorCode::cancelled, "fixture watch registration stopped", "destroy the fixture"});
+    }
+
+  private:
+    std::shared_ptr<BlockingWatcherState> state_;
+    ChangeCallback callback_;
 };
 
 [[nodiscard]] std::size_t collectorCalls(const std::shared_ptr<BlockingCollectorState> &state) {
@@ -354,6 +389,64 @@ TEST(ApplicationRootMonitorTest, PrioritizesEveryRootBeforeRecursiveDescendants)
     QTRY_COMPARE_WITH_TIMEOUT(refresh.count(), 1, 1000);
 }
 
+TEST(ApplicationRootMonitorTest, DiscoveryWorkBudgetCountsIrrelevantVisitedNodes) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const QString root = temporary.filePath(QStringLiteral("applications"));
+    ASSERT_TRUE(QDir{}.mkpath(root));
+    for (int index = 0; index < 32; ++index) {
+        QFile irrelevant{root + QStringLiteral("/irrelevant-%1.txt").arg(index)};
+        ASSERT_TRUE(irrelevant.open(QIODevice::WriteOnly));
+        irrelevant.write("ignored\n");
+    }
+
+    auto monitor = ApplicationRootMonitor::create(
+        {{{root.toStdString()}}},
+        {64U, std::chrono::milliseconds{20}, std::chrono::milliseconds{20}, 4U});
+    ASSERT_TRUE(monitor);
+    QTRY_VERIFY_WITH_TIMEOUT(monitor.value()->degraded(), 1000);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.value()->watchedPathCount(), 1, 1000);
+}
+
+TEST(ApplicationRootMonitorTest, BlockingWatchBoundaryIsWorkerOwnedAndCooperativelyStopped) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const auto root = temporary.filePath(QStringLiteral("applications")).toStdString();
+    ASSERT_TRUE(QDir{}.mkpath(QString::fromStdString(root)));
+    const auto state = std::make_shared<BlockingWatcherState>();
+    const auto ownerThread = std::this_thread::get_id();
+
+    const auto createStarted = std::chrono::steady_clock::now();
+    auto monitor = ApplicationRootMonitor::create(
+        {{{root}}}, {8U, std::chrono::milliseconds{10}, std::chrono::milliseconds{10}}, nullptr, {},
+        [state] { return std::make_unique<BlockingApplicationPathWatcher>(state); });
+    const auto createAcknowledgement = std::chrono::steady_clock::now() - createStarted;
+    ASSERT_TRUE(monitor);
+    EXPECT_LT(createAcknowledgement, std::chrono::milliseconds{100});
+    QTRY_VERIFY_WITH_TIMEOUT(([&state] {
+                                 std::lock_guard lock(state->mutex);
+                                 return state->calls == 1U;
+                             }()),
+                             1000);
+    {
+        std::lock_guard lock(state->mutex);
+        EXPECT_NE(state->workerThread, ownerThread);
+    }
+
+    const auto recoveryStarted = std::chrono::steady_clock::now();
+    monitor.value()->requestRecovery();
+    EXPECT_LT(std::chrono::steady_clock::now() - recoveryStarted, std::chrono::milliseconds{100});
+    bool ownerEventHandled = false;
+    QTimer::singleShot(0, [&ownerEventHandled] { ownerEventHandled = true; });
+    QTRY_VERIFY_WITH_TIMEOUT(ownerEventHandled, 1000);
+
+    const auto destroyStarted = std::chrono::steady_clock::now();
+    monitor.value().reset();
+    EXPECT_LT(std::chrono::steady_clock::now() - destroyStarted, std::chrono::milliseconds{100});
+    std::lock_guard lock(state->mutex);
+    EXPECT_TRUE(state->stopObserved);
+}
+
 TEST(ApplicationRootMonitorTest, BlockedCollectionKeepsOwnerEventLoopResponsiveAndStopsSafely) {
     QTemporaryDir temporary;
     ASSERT_TRUE(temporary.isValid());
@@ -361,10 +454,13 @@ TEST(ApplicationRootMonitorTest, BlockedCollectionKeepsOwnerEventLoopResponsiveA
     ASSERT_TRUE(QDir{}.mkpath(QString::fromStdString(root)));
     auto state = std::make_shared<BlockingCollectorState>();
     state->results.push_back({{{root}}, false});
+    const auto createStarted = std::chrono::steady_clock::now();
     auto monitor = ApplicationRootMonitor::create(
         {{{root}}}, {8U, std::chrono::milliseconds{10}, std::chrono::milliseconds{10}}, nullptr,
         std::make_unique<BlockingWatchCandidateCollector>(state));
+    const auto createAcknowledgement = std::chrono::steady_clock::now() - createStarted;
     ASSERT_TRUE(monitor);
+    EXPECT_LT(createAcknowledgement, std::chrono::milliseconds{100});
     QTRY_COMPARE_WITH_TIMEOUT(collectorCalls(state), 1U, 1000);
 
     bool ownerEventHandled = false;

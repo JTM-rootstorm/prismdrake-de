@@ -14,11 +14,15 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <condition_variable>
 #include <filesystem>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -76,6 +80,40 @@ struct CompletionResult final {
     bool callbackOnContextThread{false};
 };
 
+struct BlockingMetadataState final {
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool started{false};
+    bool released{false};
+    std::thread::id workerThread;
+};
+
+class BlockingMetadataProvider final : public IconThemeMetadataProvider {
+  public:
+    explicit BlockingMetadataProvider(std::shared_ptr<BlockingMetadataState> state)
+        : state_(std::move(state)) {}
+
+    foundation::Result<IconThemeMetadata> snapshot() override {
+        std::unique_lock lock(state_->mutex);
+        state_->workerThread = std::this_thread::get_id();
+        state_->started = true;
+        state_->condition.notify_all();
+        state_->condition.wait(lock, [this] { return state_->released; });
+        return foundation::Result<IconThemeMetadata>::success({});
+    }
+
+  private:
+    std::shared_ptr<BlockingMetadataState> state_;
+};
+
+void releaseMetadata(const std::shared_ptr<BlockingMetadataState> &state) {
+    {
+        std::lock_guard lock(state->mutex);
+        state->released = true;
+    }
+    state->condition.notify_all();
+}
+
 class ThemeStateGuard final {
   public:
     ThemeStateGuard() : paths_(QIcon::themeSearchPaths()), theme_(QIcon::themeName()) {}
@@ -127,6 +165,64 @@ TEST(IconResolverTest, GuaranteedFallbackResolvesAtMultipleSizesAndDpr) {
         EXPECT_EQ(result.resolution.image.height(), static_cast<int>(std::ceil(size * dpr)));
         EXPECT_DOUBLE_EQ(result.resolution.image.devicePixelRatio(), dpr);
     }
+}
+
+TEST(IconResolverTest, BlockingThemeMetadataNeverRunsOnOrDelaysTheContextThread) {
+    const auto state = std::make_shared<BlockingMetadataState>();
+    IconResolver resolver{1U, std::make_unique<BlockingMetadataProvider>(state)};
+    QObject context;
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    bool completed = false;
+    const auto ownerThread = std::this_thread::get_id();
+
+    const auto started = std::chrono::steady_clock::now();
+    const auto queued =
+        resolver.resolve(request("worker-theme-icon"), &context, [&](IconResolution) {
+            completed = true;
+            loop.quit();
+        });
+    const auto acknowledgement = std::chrono::steady_clock::now() - started;
+
+    ASSERT_TRUE(queued);
+    EXPECT_LT(acknowledgement, std::chrono::milliseconds{100});
+    {
+        std::unique_lock lock(state->mutex);
+        ASSERT_TRUE(state->condition.wait_for(lock, std::chrono::seconds{1},
+                                              [&state] { return state->started; }));
+        EXPECT_NE(state->workerThread, ownerThread);
+    }
+    bool ownerEventHandled = false;
+    QTimer::singleShot(0, [&ownerEventHandled] { ownerEventHandled = true; });
+    QCoreApplication::processEvents();
+    EXPECT_TRUE(ownerEventHandled);
+    EXPECT_FALSE(completed);
+
+    releaseMetadata(state);
+    timeout.start(1000);
+    loop.exec();
+    EXPECT_TRUE(completed);
+}
+
+TEST(IconResolverTest, DestroyedContextRejectsBlockedStaleThemeResult) {
+    const auto state = std::make_shared<BlockingMetadataState>();
+    IconResolver resolver{1U, std::make_unique<BlockingMetadataProvider>(state)};
+    auto context = std::make_unique<QObject>();
+    bool completed = false;
+    ASSERT_TRUE(resolver.resolve(request("stale-theme-icon"), context.get(),
+                                 [&](IconResolution) { completed = true; }));
+    {
+        std::unique_lock lock(state->mutex);
+        ASSERT_TRUE(state->condition.wait_for(lock, std::chrono::seconds{1},
+                                              [&state] { return state->started; }));
+    }
+    context.reset();
+    releaseMetadata(state);
+    QThreadPool::globalInstance()->waitForDone();
+    QCoreApplication::processEvents();
+    EXPECT_FALSE(completed);
 }
 
 TEST(IconResolverTest, ResolvesValidatedRasterAndSvgAbsolutePaths) {
