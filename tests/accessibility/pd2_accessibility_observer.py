@@ -318,7 +318,8 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         "QuickSettingsSurfaceQmlTest",
         frozenset({
             "arrow_navigation", "enter_activation", "escape_recovery", "minimum_target_size",
-            "state_disabled", "state_unavailable", "disabled_transparency",
+            "state_disabled", "state_unavailable", "high_contrast", "reduced_motion",
+            "disabled_transparency",
             "text_scale", "rtl_smoke", "long_string_layout",
         }),
     ),
@@ -327,7 +328,8 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({
             "tab_backtab", "arrow_navigation", "space_activation", "escape_recovery",
             "accessible_description", "state_disabled", "minimum_target_size", "text_scale",
-            "disabled_transparency", "rtl_smoke", "long_string_layout",
+            "high_contrast", "reduced_motion", "disabled_transparency", "rtl_smoke",
+            "long_string_layout",
         }),
     ),
 }
@@ -527,6 +529,14 @@ CTEST_CASE_EVIDENCE[("notification_center", "long_string_layout")] = (
 CTEST_CASE_EVIDENCE[("quick_settings", "enter_activation")] = (
     "QuickSettingsSurface::test_keyboardTraversalAndEscapeRecovery",
 )
+CTEST_CASE_EVIDENCE.update({
+    (surface, check): (
+        "QuickSettingsResolvedTheme::"
+        "test_accessibleGenerationCausallyControlsBothRenderedSurfaces",
+    )
+    for surface in ("quick_settings", "logout_confirmation")
+    for check in ("high_contrast", "reduced_motion")
+})
 if not set(CTEST_CASE_EVIDENCE) <= set(CTEST_OBSERVED):
     raise RuntimeError("accessibility_ctest_case_map_invalid")
 
@@ -621,8 +631,8 @@ UNIMPLEMENTED_CHECKS = {
     "desktop_surface_exclusion": frozenset(),
     "transient_notification": frozenset(),
     "notification_center": frozenset(),
-    "quick_settings": frozenset({"high_contrast", "reduced_motion"}),
-    "logout_confirmation": frozenset({"high_contrast", "reduced_motion"}),
+    "quick_settings": frozenset(),
+    "logout_confirmation": frozenset(),
     "output_migration": frozenset(),
     "service_restart_focus_recovery": frozenset(),
 }
@@ -640,14 +650,6 @@ UNIMPLEMENTED_REASONS = {
     for key in UNIMPLEMENTED
     if key[1] == "state_expanded"
 }
-UNIMPLEMENTED_REASONS.update({
-    key: (
-        "This surface lacks a resolver-derived Quick Test generation fixture that "
-        "causally proves rendered high-contrast or reduced-motion behavior"
-    )
-    for key in UNIMPLEMENTED
-    if key[1] in {"high_contrast", "reduced_motion"}
-})
 if set(UNIMPLEMENTED_REASONS) != UNIMPLEMENTED:
     raise RuntimeError("accessibility_unimplemented_reason_map_invalid")
 if (

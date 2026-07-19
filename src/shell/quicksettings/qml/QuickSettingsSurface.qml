@@ -117,6 +117,7 @@ FocusScope {
     LayoutMirroring.childrenInherit: true
 
     Rectangle {
+        objectName: "quickSettingsBackground"
         anchors.fill: parent
         color: root.tokens.surfaceColor
         border.color: root.tokens.borderColor
@@ -131,6 +132,7 @@ FocusScope {
         spacing: 10
 
         Label {
+            objectName: "quickSettingsHeading"
             Layout.fillWidth: true
             text: qsTr("Quick settings")
             color: root.tokens.textPrimaryColor

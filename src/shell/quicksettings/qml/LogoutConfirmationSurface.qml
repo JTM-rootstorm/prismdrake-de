@@ -71,6 +71,7 @@ FocusScope {
         spacing: 12
 
         Label {
+            objectName: "logoutHeading"
             Layout.fillWidth: true
             text: qsTr("Log out?")
             color: root.tokens.textPrimaryColor

@@ -206,14 +206,11 @@ class AccessibilityObserverTests(unittest.TestCase):
             if key[1] == "state_expanded":
                 self.assertIn("QQuickAccessibleAttached", result["reason"])
                 self.assertIn("C++ accessibility backend", result["reason"])
-            else:
-                self.assertIn("resolver-derived", result["reason"])
-                self.assertIn("causally proves rendered", result["reason"])
 
     def test_new_ctest_cells_name_existing_exact_qml_cases(self) -> None:
-        self.assertEqual(len(observer.CTEST_OBSERVED), 173)
-        self.assertEqual(len(observer.CTEST_CASE_EVIDENCE), 75)
-        self.assertEqual(len(observer.UNIMPLEMENTED), 8)
+        self.assertEqual(len(observer.CTEST_OBSERVED), 177)
+        self.assertEqual(len(observer.CTEST_CASE_EVIDENCE), 79)
+        self.assertEqual(len(observer.UNIMPLEMENTED), 4)
         sources = {
             "PanelSurfaceRealAdapters": (
                 ACCESSIBILITY.parents[1] / "tests/qt/qml-panel/tst_PanelSurface.qml"
@@ -239,6 +236,11 @@ class AccessibilityObserverTests(unittest.TestCase):
                 ACCESSIBILITY.parents[1]
                 / "src/shell/quicksettings/tests/qml"
                 / "tst_LogoutConfirmationSurface.qml"
+            ),
+            "QuickSettingsResolvedTheme": (
+                ACCESSIBILITY.parents[1]
+                / "src/shell/quicksettings/tests/qml"
+                / "tst_QuickSettingsResolvedTheme.qml"
             ),
         }
         source_text = {
