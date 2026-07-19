@@ -117,7 +117,7 @@ ExitStatus invoke(Command command) noexcept {
         return ExitStatus::internal_failure;
     }
 
-    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_error error{};
     ipc::sdbus::Message reply;
     const int result =
         sd_bus_call(bus.get(), request.get(), clientTimeoutMicroseconds, &error, reply.put());

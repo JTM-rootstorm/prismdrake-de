@@ -32,7 +32,7 @@ constexpr char sessionPath[] = "/org/prismdrake/Session1";
 constexpr char sessionInterface[] = "org.prismdrake.Session1";
 
 struct Error final {
-    sd_bus_error value = SD_BUS_ERROR_NULL;
+    sd_bus_error value{};
     ~Error() { sd_bus_error_free(&value); }
 };
 
