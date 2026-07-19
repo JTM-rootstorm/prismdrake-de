@@ -25,6 +25,12 @@ class DockProperties final {
     publishBottomPanel(X11Connection &connection, const AtomCache &atoms, WindowId window,
                        RootGeometry root, OutputGeometry output, std::uint32_t panelHeight);
 
+    /// Publishes one already validated reservation from the shell output registry. This preserves
+    /// the registry's complete topology generation instead of reconstructing geometry per window.
+    [[nodiscard]] static foundation::Result<void>
+    publishBottomPanelReservation(X11Connection &connection, const AtomCache &atoms,
+                                  WindowId window, const BottomPanelStrut &reservation);
+
     /// Removes the dock type and both reservations. A window destroyed before
     /// or during removal is already clean and is treated as success.
     [[nodiscard]] static foundation::Result<void> remove(X11Connection &connection,

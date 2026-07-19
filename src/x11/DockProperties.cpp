@@ -242,6 +242,19 @@ Result<BottomPanelStrut> DockProperties::publishBottomPanel(X11Connection &conne
     return reservation;
 }
 
+Result<void> DockProperties::publishBottomPanelReservation(X11Connection &connection,
+                                                           const AtomCache &atoms, WindowId window,
+                                                           const BottomPanelStrut &reservation) {
+    auto context = prepareContext(static_cast<xcb_connection_t *>(connection.nativeConnection()),
+                                  connection.identity(), connection.healthy(),
+                                  atoms.belongsTo(connection.identity()),
+                                  connection.screen().rootWindow, atoms, window);
+    if (!context) {
+        return Result<void>::failure(context.error());
+    }
+    return publishReservation(context.value(), reservation);
+}
+
 Result<void> DockProperties::remove(X11Connection &connection, const AtomCache &atoms,
                                     WindowId window) {
     const auto identity = connection.identity();
