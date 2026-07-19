@@ -189,6 +189,7 @@ class X11TraceSupervisorTests(unittest.TestCase):
     def test_exact_no_auth_proxy_contract_and_clean_summary(self) -> None:
         factory = ProcessFactory()
         supervisor = self.make_supervisor(factory)
+        self.assertFalse(supervisor.finished)
         self.assertEqual(supervisor.proxy_display, ":78")
         self.assertIsNotNone(factory.arguments)
         arguments = factory.arguments
@@ -223,6 +224,7 @@ class X11TraceSupervisorTests(unittest.TestCase):
         self.assertNotIn("XAUTHORITY", client)
         supervisor.poll()
         summary = supervisor.finish(clients_exited=True)
+        self.assertTrue(supervisor.finished)
         self.assertTrue(summary.trace_complete)
         self.assertEqual(summary.forbidden_request_count, 0)
         self.assertEqual(summary.request_count, 1)

@@ -138,6 +138,15 @@ set_tests_properties(Pd2X11TraceSupervisorContractTest PROPERTIES
     TIMEOUT 10)
 
 add_test(
+    NAME Pd2TierCFallbackWorkflowContractTest
+    COMMAND
+        "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_tier_c_workflow.py")
+set_tests_properties(Pd2TierCFallbackWorkflowContractTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    TIMEOUT 10)
+
+add_test(
     NAME Pd2XwdFingerprintContractTest
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_xwd.py")
 set_tests_properties(Pd2XwdFingerprintContractTest PROPERTIES

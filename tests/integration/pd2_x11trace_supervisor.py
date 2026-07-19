@@ -345,6 +345,12 @@ class X11TraceSupervisor:
     def proxy_display(self) -> str:
         return self._config.fake_display
 
+    @property
+    def finished(self) -> bool:
+        """Report only whether process/raw-trace cleanup has completed."""
+
+        return self._finished
+
     def client_environment(self, environment: Mapping[str, str]) -> dict[str, str]:
         """Return a bounded no-auth-copy client environment for the proxy."""
 
