@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/pd2-installed-demonstration-evidence-v1.json",
+  "title": "Prismdrake PD2 installed multi-output and failure demonstration evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence_kind",
+    "source_revision",
+    "environment",
+    "installed_executables",
+    "process_ownership",
+    "workflow",
+    "failure_replay",
+    "tier_c_replay",
+    "cleanup",
+    "scope",
+    "normalized_results_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evidence_kind": { "const": "pd2_installed_multi_output_failure_demonstration" },
+    "source_revision": { "type": "string", "pattern": "[0-9a-f]{40}" },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_provenance",
+        "display_topology",
+        "window_manager",
+        "session_bus",
+        "capability_tier",
+        "glasswyrm_native_capabilities"
+      ],
+      "properties": {
+        "artifact_provenance": { "const": "portage_installed" },
+        "display_topology": { "const": "isolated_xorg_dummy_two_output_same_scale" },
+        "window_manager": { "const": "openbox_ewmh" },
+        "session_bus": { "const": "isolated_dbus_run_session" },
+        "capability_tier": { "const": "tier_b_standards_only" },
+        "glasswyrm_native_capabilities": { "const": "withheld" }
+      }
+    },
+    "installed_executables": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/executable" }
+    },
+    "process_ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roles", "result"],
+      "properties": {
+        "roles": {
+          "const": [
+            "xorg_dummy_server",
+            "openbox_window_manager",
+            "isolated_session_bus",
+            "prismdrake_session"
+          ]
+        },
+        "result": { "$ref": "#/$defs/result" }
+      }
+    },
+    "workflow": {
+      "type": "array",
+      "minItems": 43,
+      "maxItems": 43,
+      "items": { "$ref": "#/$defs/result" }
+    },
+    "failure_replay": {
+      "type": "array",
+      "minItems": 17,
+      "maxItems": 17,
+      "items": { "$ref": "#/$defs/result" }
+    },
+    "tier_c_replay": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/result" }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installed_workflow", "failure_replay", "tier_c_replay"],
+      "properties": {
+        "installed_workflow": { "$ref": "#/$defs/result" },
+        "failure_replay": { "$ref": "#/$defs/result" },
+        "tier_c_replay": { "$ref": "#/$defs/result" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installed_artifacts_only",
+        "capture_mode",
+        "tier_c_without_compositor",
+        "glasswyrm_native_protocols",
+        "secure_session_claim",
+        "production_ready_claim"
+      ],
+      "properties": {
+        "installed_artifacts_only": { "const": true },
+        "capture_mode": { "const": "live_installed_observations_required" },
+        "tier_c_without_compositor": { "const": true },
+        "glasswyrm_native_protocols": { "const": false },
+        "secure_session_claim": { "const": false },
+        "production_ready_claim": { "const": false }
+      }
+    },
+    "normalized_results_sha256": { "type": "string", "pattern": "[0-9a-f]{64}" }
+  },
+  "$defs": {
+    "executable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sha256"],
+      "properties": {
+        "name": {
+          "enum": [
+            "prismdrake-session",
+            "prismdrake-settingsd",
+            "prismdrake-notifyd",
+            "prismdrake-shell",
+            "prismdrake-shellctl"
+          ]
+        },
+        "sha256": { "type": "string", "pattern": "[0-9a-f]{64}" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "id", "observed", "passed", "result", "result_sha256"],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "id": { "type": "string", "pattern": "[a-z][a-z0-9_]{1,79}" },
+        "observed": { "const": true },
+        "passed": { "const": true },
+        "result": { "const": "expected_state_observed" },
+        "result_sha256": { "type": "string", "pattern": "[0-9a-f]{64}" }
+      }
+    }
+  }
+}
