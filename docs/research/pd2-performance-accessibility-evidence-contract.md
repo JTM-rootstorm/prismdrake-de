@@ -158,14 +158,27 @@ measurements from four sources:
 - the assembled scheduler series supplies repeated whole-minute received
   wakeup totals across the exact session, settingsd, notifyd, and shell roles.
 
+The steady-state stack uses event-driven waits rather than fixed-cadence
+polling. The session supervisor waits for exact-child signals, session-bus
+activity or deadlines, and explicit shutdown activity. Settingsd similarly
+waits for its worker, a session-bus event or deadline, or an explicit signal
+wake. Their remaining timed waits are bounded readiness, recovery, and
+termination policy rather than idle polling. Until a matching validated
+multi-sample PD1 idle baseline exists, the final record must identify that
+comparison as unavailable instead of labeling the observed total a regression
+pass. PD2-specific shell work must not add an unbounded repeating timer.
+
 The installed demonstration artifact is authoritative for exact source
 revision, installed executable hashes, workflow postconditions, and cleanup.
 It contains no timing data. `pd2_runtime_performance.py` therefore repeats that
 installed workflow with a fresh isolated session per trial and measures the
-bounded postcondition acknowledgements with a monotonic clock. Asset timing
-uses the production `IconResolver` and `WallpaperLoader`, not a QML or model
-surrogate. The runtime collector deliberately does not also report wallpaper
-timing; the production asset runner is authoritative for that endpoint.
+bounded postconditions with a monotonic clock. Common-action timing is narrower:
+the live port records action injection to the first visible shell
+acknowledgement separately from group setup and the authoritative final WM
+postcondition. Asset timing uses the production `IconResolver` and
+`WallpaperLoader`, not a QML or model surrogate. The runtime collector
+deliberately does not also report wallpaper timing; the production asset runner
+is authoritative for that endpoint.
 
 Collect at least three installed-runtime trials after producing an exact
 installed-demonstration artifact for the same revision:
@@ -285,6 +298,11 @@ Reliable screen-reader automation and every runtime observer must still be
 exercised on the reference VM. A genuinely unavailable dependency or
 unautomatable state may be represented only by an exact reviewed skip declared
 before collection. A skip does not satisfy the corresponding WP15 exit claim.
+Orca is the screen-reader dependency for this decision; the presence of a
+speech backend such as Speech Dispatcher or eSpeak NG does not by itself make a
+screen-reader workflow available. If Orca is present, collection fails closed
+until a reliable bounded workflow adapter exists instead of misreporting a
+dependency skip.
 
 The dedicated accessibility observer classifies all 364 cells explicitly: 49
 use exact installed or Tier C observations, 181 use named QML CTest targets,
