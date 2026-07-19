@@ -177,6 +177,7 @@ class FakeOperations:
         self.identity_offsets: dict[int, int] = {}
         self.surface_geometries = dict(SURFACE_GEOMETRIES)
         self.surface_types = dict(SURFACE_TYPES)
+        self.missing_surface_types: set[int] = set()
         self.surface_owner = 2004
         self.surface_focus = False
         self.surface_list = tuple(SURFACE_GEOMETRIES)
@@ -311,6 +312,8 @@ class FakeOperations:
             window = int(command[2], 16)
             property_name = command[3]
             if property_name == "_NET_WM_WINDOW_TYPE":
+                if window in self.missing_surface_types:
+                    return CommandResult(0, b"_NET_WM_WINDOW_TYPE:  not found.\n")
                 window_type = self.surface_types.get(window, b"_NET_WM_WINDOW_TYPE_NORMAL")
                 return CommandResult(
                     0, b"_NET_WM_WINDOW_TYPE(ATOM) = " + window_type + b"\n"
@@ -1522,6 +1525,18 @@ class LivePortTests(unittest.TestCase):
         self.assertEqual((selector.name, selector.role), ("Quick settings", "pane"))
         self.assertEqual(timeout_error, "lifecycle_quick_settings_dismissal_timeout")
 
+    def test_lifecycle_fixture_restores_reviewed_quick_settings_surface(self) -> None:
+        port = LiveXorgHarnessPort(config(installed_paths()), FakeOperations())
+        with patch.object(port, "_invoke_shellctl") as shellctl, patch.object(
+            port, "_wait_accessible"
+        ) as wait_accessible:
+            port._restore_lifecycle_quick_settings()  # noqa: SLF001
+
+        shellctl.assert_called_once_with("quick-settings", "open")
+        selector, timeout_error = wait_accessible.call_args.args
+        self.assertEqual((selector.name, selector.role), ("Quick settings", "pane"))
+        self.assertEqual(timeout_error, "lifecycle_quick_settings_restore_timeout")
+
     def test_starts_real_adapter_commands_and_observes_two_output_topology(self) -> None:
         operations = FakeOperations()
         port = LiveXorgHarnessPort(config(), operations)
@@ -2089,6 +2104,25 @@ class LivePortTests(unittest.TestCase):
                 self.assertEqual(
                     port.cleanup("installed_workflow"), Observation(True, True)
                 )
+
+    def test_surface_observation_skips_exact_missing_type_for_stale_client(self) -> None:
+        operations = FakeOperations()
+        stale_window = 0x1000000
+        operations.surface_list = (*operations.surface_list, stale_window)
+        operations.missing_surface_types.add(stale_window)
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+            "verify_desktop_wallpaper_both_outputs",
+            "verify_panel_policy_both_outputs",
+        ):
+            self.assertEqual(
+                port.run_step("installed_workflow", identifier),
+                Observation(True, True),
+            )
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_panel_observation_rejects_desktop_or_shell_epoch_change(self) -> None:
         for mutation, expected in (

@@ -2765,9 +2765,18 @@ class LiveXorgHarnessPort:
         if len(self._controlled_processes) != 2:
             raise HarnessError("lifecycle_survival_processes_missing")
 
+        self._restore_lifecycle_quick_settings()
+
         if self.notification_epoch().live_record_count == 0:
             raise HarnessError("lifecycle_notification_fixture_timeout")
         return self.window_authority()
+
+    def _restore_lifecycle_quick_settings(self) -> None:
+        self._invoke_shellctl("quick-settings", "open")
+        self._wait_accessible(
+            ControlSelector("Quick settings", "pane"),
+            "lifecycle_quick_settings_restore_timeout",
+        )
 
     def window_authority(self) -> LifecycleWindowAuthorityObservation:
         if self._openbox is None:
@@ -4245,6 +4254,8 @@ class LiveXorgHarnessPort:
         observed: dict[int, WindowGeometry] = {}
         for window in windows:
             payload = self._window_property(window, b"_NET_WM_WINDOW_TYPE")
+            if payload == b"_NET_WM_WINDOW_TYPE:  not found.\n":
+                continue
             if parse_window_type_atoms(payload) != (window_type,):
                 continue
             owner = self._window_cardinals(window, b"_NET_WM_PID", 1)
