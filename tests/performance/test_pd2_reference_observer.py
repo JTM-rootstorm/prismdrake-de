@@ -334,7 +334,8 @@ class ReferenceObserverTests(unittest.TestCase):
     def test_source_attestation_rejects_stale_or_dirty_checkout(self) -> None:
         with (
             mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
-            mock.patch.object(observer, "configured_path", return_value=Path("/git")),
+            mock.patch.object(observer.Path, "is_file", return_value=True),
+            mock.patch.object(observer.os, "access", return_value=True),
             mock.patch.object(
                 observer,
                 "run_command",
@@ -344,7 +345,9 @@ class ReferenceObserverTests(unittest.TestCase):
             ),
             self.assertRaisesRegex(observer.ObserverError, "^source_revision_mismatch$"),
         ):
-            observer.attest_source_checkout(Path("/source"))
+            observer.attest_source_checkout(
+                Path("/source"), git_executable=Path("/git")
+            )
 
         source = Path("/source")
         results = (
@@ -354,12 +357,13 @@ class ReferenceObserverTests(unittest.TestCase):
         )
         with (
             mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
-            mock.patch.object(observer, "configured_path", return_value=Path("/git")),
+            mock.patch.object(observer.Path, "is_file", return_value=True),
+            mock.patch.object(observer.os, "access", return_value=True),
             mock.patch.object(observer, "run_command", side_effect=results),
             mock.patch.object(Path, "resolve", return_value=source),
             self.assertRaisesRegex(observer.ObserverError, "^source_checkout_dirty$"),
         ):
-            observer.attest_source_checkout(source)
+            observer.attest_source_checkout(source, git_executable=Path("/git"))
 
         untracked = (
             subprocess.CompletedProcess([], 0, (REVISION + "\n").encode("ascii"), b""),
@@ -370,12 +374,13 @@ class ReferenceObserverTests(unittest.TestCase):
         )
         with (
             mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
-            mock.patch.object(observer, "configured_path", return_value=Path("/git")),
+            mock.patch.object(observer.Path, "is_file", return_value=True),
+            mock.patch.object(observer.os, "access", return_value=True),
             mock.patch.object(observer, "run_command", side_effect=untracked),
             mock.patch.object(Path, "resolve", return_value=source),
             self.assertRaisesRegex(observer.ObserverError, "^source_checkout_dirty$"),
         ):
-            observer.attest_source_checkout(source)
+            observer.attest_source_checkout(source, git_executable=Path("/git"))
 
     def test_model_runner_maps_exact_supported_endpoints_and_compares_pd1(self) -> None:
         baseline = performance_document(PD1_REVISION, [2_000_000, 3_000_000, 4_000_000])

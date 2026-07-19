@@ -234,10 +234,16 @@ def configured_regular_file(name: str) -> Path:
     return path
 
 
-def attest_source_checkout(source: Path) -> None:
+def attest_source_checkout(
+    source: Path, *, git_executable: Path | None = None
+) -> None:
     """Require the configured source to be the clean checkout at the binding."""
 
-    git = configured_path("PRISMDRAKE_PD2_GIT", (Path("/usr/bin/git"),))
+    git = git_executable or Path("/usr/bin/git")
+    require(
+        git.is_absolute() and git.is_file() and os.access(git, os.X_OK),
+        "source_attestation_unavailable",
+    )
     revision_result = run_command(
         (str(git), "-C", str(source), "rev-parse", "--verify", "HEAD"), 10.0
     )

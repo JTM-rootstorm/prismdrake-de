@@ -48,7 +48,6 @@ OBSERVER_ENVIRONMENT_KEYS = (
     "PRISMDRAKE_PD2_BUILD_DIRECTORY",
     "PRISMDRAKE_PD2_CTEST",
     "PRISMDRAKE_PD2_GCC",
-    "PRISMDRAKE_PD2_GIT",
     "PRISMDRAKE_PD2_CLANG",
     "PRISMDRAKE_PD2_QMAKE",
     "PRISMDRAKE_PD2_XPROP",
@@ -164,11 +163,14 @@ def observer_commands(options: object) -> ObserverCommands:
 
 
 def attest_source_and_observers(
-    source_revision: str, commands: ObserverCommands
+    source_revision: str,
+    commands: ObserverCommands,
+    *,
+    git_executable: Path | None = None,
 ) -> None:
     """Bind every executable observer to one clean exact source checkout."""
 
-    git = Path(os.environ.get("PRISMDRAKE_PD2_GIT", "/usr/bin/git"))
+    git = git_executable or Path("/usr/bin/git")
     if not git.is_absolute() or not git.is_file() or not os.access(git, os.X_OK):
         raise CollectorError("source_attestation_unavailable")
 

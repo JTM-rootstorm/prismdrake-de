@@ -432,18 +432,36 @@ class CommandAdapterTests(unittest.TestCase):
             subprocess.CompletedProcess([], 0, b"", b""),
         )
         with (
-            mock.patch.dict(os.environ, {"PRISMDRAKE_PD2_GIT": "/bin/true"}),
-            mock.patch.object(subprocess, "run", side_effect=clean_results),
+            mock.patch.dict(
+                os.environ, {"PRISMDRAKE_PD2_GIT": "/untrusted/git"}, clear=False
+            ),
+            mock.patch.object(subprocess, "run", side_effect=clean_results) as runner,
         ):
             attest_source_and_observers(REVISION, commands)
+        self.assertTrue(
+            all(call.args[0][0] == "/usr/bin/git" for call in runner.call_args_list)
+        )
 
         external = ObserverCommands(*([Path("/bin/true")] * 5))
         with (
-            mock.patch.dict(os.environ, {"PRISMDRAKE_PD2_GIT": "/bin/true"}),
             mock.patch.object(subprocess, "run", side_effect=clean_results),
             self.assertRaisesRegex(Exception, "observer_source_binding_invalid"),
         ):
-            attest_source_and_observers(REVISION, external)
+            attest_source_and_observers(
+                REVISION, external, git_executable=Path("/bin/true")
+            )
+
+    def test_collector_does_not_forward_a_git_override(self) -> None:
+        options = SimpleNamespace(
+            source_revision=REVISION,
+            environment_id=ENVIRONMENT_ID,
+            pd1_reference_revision=PD1_REVISION,
+        )
+        with mock.patch.dict(
+            os.environ, {"PRISMDRAKE_PD2_GIT": "/untrusted/git"}, clear=True
+        ):
+            environment = build_observer_environment(options)
+        self.assertNotIn("PRISMDRAKE_PD2_GIT", environment)
 
     def test_reviewed_skip_parser_accepts_only_closed_reason_codes(self) -> None:
         self.assertEqual(
