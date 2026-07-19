@@ -39,12 +39,19 @@ struct ParsedFields final {
     std::optional<std::string> tryExec;
     std::optional<std::string> path;
     std::optional<std::string> startupWmClass;
+    std::vector<std::string> actionIds;
     bool terminal{false};
     bool hidden{false};
     bool noDisplay{false};
     bool dbusActivatable{false};
     std::optional<std::vector<std::string>> onlyShowIn;
     std::optional<std::vector<std::string>> notShowIn;
+};
+
+struct ParsedActionFields final {
+    std::map<std::string, std::string> names;
+    std::map<std::string, std::string> icons;
+    std::optional<std::string> exec;
 };
 
 [[nodiscard]] Result<DesktopEntry> failure(ErrorCode code, std::string message,
@@ -431,18 +438,17 @@ template <typename Value>
 }
 
 [[nodiscard]] bool isKnownIgnoredKey(std::string_view key) noexcept {
-    constexpr std::array keys{"Version",          "Actions",
-                              "MimeType",         "Implements",
-                              "StartupNotify",    "PrefersNonDefaultGPU",
-                              "SingleMainWindow", "URL"};
+    constexpr std::array keys{
+        "Version",          "MimeType", "Implements", "StartupNotify", "PrefersNonDefaultGPU",
+        "SingleMainWindow", "URL"};
     return std::ranges::find(keys, key) != keys.end();
 }
 
 [[nodiscard]] bool isKnownKey(std::string_view key) noexcept {
     constexpr std::array keys{
-        "Type",   "Name",           "GenericName", "NoDisplay",       "Comment", "Icon",
-        "Hidden", "OnlyShowIn",     "NotShowIn",   "DBusActivatable", "TryExec", "Exec",
-        "Path",   "StartupWMClass", "Terminal",    "Categories",      "Keywords"};
+        "Type",   "Name",           "GenericName", "NoDisplay",       "Comment",  "Icon",
+        "Hidden", "OnlyShowIn",     "NotShowIn",   "DBusActivatable", "TryExec",  "Exec",
+        "Path",   "StartupWMClass", "Terminal",    "Categories",      "Keywords", "Actions"};
     return std::ranges::find(keys, key) != keys.end() || isKnownIgnoredKey(key);
 }
 
@@ -460,7 +466,7 @@ template <typename Value>
         }
         return Result<void>::success();
     }
-    if (key == "Actions" || key == "MimeType" || key == "Implements") {
+    if (key == "MimeType" || key == "Implements") {
         auto decoded = decodeList(value);
         return decoded ? Result<void>::success()
                        : Result<void>::failure(std::move(decoded).error());
@@ -483,12 +489,29 @@ template <typename Value>
                                       "Remove the locale suffix from this key."});
     }
     if (key.base == "Keywords" || key.base == "Categories" || key.base == "OnlyShowIn" ||
-        key.base == "NotShowIn") {
+        key.base == "NotShowIn" || key.base == "Actions") {
         auto decoded = decodeList(value);
         if (!decoded) {
             return Result<void>::failure(std::move(decoded).error());
         }
-        if (key.base == "Keywords") {
+        if (key.base == "Actions") {
+            if (decoded.value().size() > maximumDesktopActions) {
+                return Result<void>::failure({ErrorCode::too_large,
+                                              "The desktop entry declares too many actions.",
+                                              "Declare at most 64 bounded desktop actions."});
+            }
+            std::unordered_set<std::string> seen;
+            for (const auto &identifier : decoded.value()) {
+                if (identifier.empty() || identifier.size() > maximumDesktopActionIdBytes ||
+                    hasUnsafeControl(identifier) || !seen.emplace(identifier).second) {
+                    return Result<void>::failure(
+                        {ErrorCode::validation_error,
+                         "The desktop entry contains an invalid action identifier.",
+                         "Use unique, nonempty, bounded action identifiers."});
+                }
+            }
+            fields.actionIds = std::move(decoded).value();
+        } else if (key.base == "Keywords") {
             if (!fields.keywords.emplace(locale, std::move(decoded).value()).second) {
                 return Result<void>::failure(
                     {ErrorCode::validation_error,
@@ -584,6 +607,48 @@ template <typename Value>
     return Result<void>::success();
 }
 
+[[nodiscard]] bool desktopActionGroup(std::string_view group) noexcept {
+    constexpr std::string_view prefix = "Desktop Action ";
+    return group.starts_with(prefix) && group.size() > prefix.size();
+}
+
+[[nodiscard]] Result<void> assignDesktopActionField(ParsedActionFields &fields, const KeyParts &key,
+                                                    std::string_view value) {
+    if (key.base != "Name" && key.base != "Icon" && key.base != "Exec") {
+        auto decoded = decodeString(value);
+        return decoded ? Result<void>::success()
+                       : Result<void>::failure(std::move(decoded).error());
+    }
+    if (key.locale && key.base == "Exec") {
+        return Result<void>::failure({ErrorCode::validation_error,
+                                      "Desktop Action Exec cannot have a locale suffix.",
+                                      "Remove the locale suffix from the Exec key."});
+    }
+    auto decoded = decodeString(value);
+    if (!decoded) {
+        return Result<void>::failure(std::move(decoded).error());
+    }
+    auto text = std::move(decoded).value();
+    if (key.base == "Exec") {
+        if (text.empty() || hasUnsafeControl(text)) {
+            return Result<void>::failure(
+                {ErrorCode::validation_error, "A Desktop Action Exec value is invalid.",
+                 "Use a nonempty command without unsafe control content."});
+        }
+        fields.exec = std::move(text);
+        return Result<void>::success();
+    }
+    auto &localized = key.base == "Name" ? fields.names : fields.icons;
+    const auto locale = key.locale.value_or(std::string{});
+    if (!localized.emplace(locale, std::move(text)).second) {
+        return Result<void>::failure(
+            {ErrorCode::validation_error,
+             "Localized Desktop Action keys collide after locale canonicalization.",
+             "Define at most one encoding-independent value for each locale."});
+    }
+    return Result<void>::success();
+}
+
 } // namespace
 
 Result<DesktopEntry> parseDesktopEntry(std::string_view contents,
@@ -613,6 +678,7 @@ Result<DesktopEntry> parseDesktopEntry(std::string_view contents,
     }
 
     ParsedFields fields;
+    std::map<std::string, ParsedActionFields> actions;
     std::unordered_set<std::string> groups;
     std::unordered_set<std::string> groupKeys;
     std::unordered_set<std::string> canonicalGroupKeys;
@@ -767,6 +833,19 @@ Result<DesktopEntry> parseDesktopEntry(std::string_view contents,
                         return Result<DesktopEntry>::failure(std::move(assigned).error());
                     }
                 }
+            } else if (desktopActionGroup(currentGroup)) {
+                constexpr std::string_view prefix = "Desktop Action ";
+                const std::string identifier{std::string_view{currentGroup}.substr(prefix.size())};
+                if (identifier.size() > maximumDesktopActionIdBytes ||
+                    hasUnsafeControl(identifier)) {
+                    return failure(ErrorCode::validation_error,
+                                   "A Desktop Action group identifier is invalid.",
+                                   "Use a nonempty bounded action identifier.");
+                }
+                auto assigned = assignDesktopActionField(actions[identifier], *key, value);
+                if (!assigned) {
+                    return Result<DesktopEntry>::failure(std::move(assigned).error());
+                }
             }
         }
 
@@ -815,6 +894,26 @@ Result<DesktopEntry> parseDesktopEntry(std::string_view contents,
     entry.dbusActivatable = fields.dbusActivatable;
     entry.onlyShowIn = std::move(fields.onlyShowIn);
     entry.notShowIn = std::move(fields.notShowIn);
+
+    entry.actions.reserve(fields.actionIds.size());
+    for (const auto &identifier : fields.actionIds) {
+        const auto found = actions.find(identifier);
+        if (found == actions.end()) {
+            continue;
+        }
+        const auto baseName = found->second.names.find("");
+        if (baseName == found->second.names.end() || baseName->second.empty() ||
+            !found->second.exec) {
+            continue;
+        }
+        if ((!found->second.icons.empty() && !found->second.icons.contains("")) ||
+            !found->second.names.contains("")) {
+            continue;
+        }
+        entry.actions.push_back(DesktopAction{
+            identifier, selectLocalized(found->second.names, fallbacks).value_or(baseName->second),
+            selectLocalized(found->second.icons, fallbacks), *found->second.exec});
+    }
 
     if (entry.onlyShowIn && entry.notShowIn) {
         for (const auto &desktop : *entry.onlyShowIn) {

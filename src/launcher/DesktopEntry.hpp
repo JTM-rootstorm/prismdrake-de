@@ -6,6 +6,16 @@
 
 namespace prismdrake::launcher {
 
+/// One bounded, localized action declared by an Application desktop entry.
+struct DesktopAction final {
+    std::string identifier;
+    std::string name;
+    std::optional<std::string> icon;
+    std::string exec;
+
+    friend bool operator==(const DesktopAction &, const DesktopAction &) = default;
+};
+
 /// Parsed, display-free fields from an Application desktop entry.
 ///
 /// Discovery, desktop-file identifier precedence, visibility evaluation, Exec
@@ -23,6 +33,7 @@ struct DesktopEntry final {
     std::optional<std::string> tryExec;
     std::optional<std::string> path;
     std::optional<std::string> startupWmClass;
+    std::vector<DesktopAction> actions;
     bool terminal{false};
     bool hidden{false};
     bool noDisplay{false};

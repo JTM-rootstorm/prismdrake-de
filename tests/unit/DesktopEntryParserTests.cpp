@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -154,6 +155,76 @@ TEST(DesktopEntryParserTest, AcceptsDbusActivatedApplicationWithoutExec) {
     ASSERT_TRUE(result);
     EXPECT_TRUE(result.value().dbusActivatable);
     EXPECT_FALSE(result.value().exec.has_value());
+}
+
+TEST(DesktopEntryParserTest, ParsesDeclaredLocalizedDesktopActionsInDeclarationOrder) {
+    constexpr std::string_view document = R"([Desktop Entry]
+Type=Application
+Name=Editor
+Exec=editor
+Actions=NewWindow;PrivateWindow;
+
+[Desktop Action PrivateWindow]
+Name=Private Window
+Name[fr]=Fenêtre privée
+Icon=private-mode
+Exec=editor --private
+
+[Desktop Action NewWindow]
+Name=New Window
+Name[fr]=Nouvelle fenêtre
+Exec=editor --new-window
+)";
+
+    const auto result = parseDesktopEntry(document, locale("fr_FR.UTF-8"));
+
+    ASSERT_TRUE(result);
+    ASSERT_EQ(result.value().actions.size(), 2U);
+    EXPECT_EQ(result.value().actions[0].identifier, "NewWindow");
+    EXPECT_EQ(result.value().actions[0].name, "Nouvelle fenêtre");
+    EXPECT_EQ(result.value().actions[0].exec, "editor --new-window");
+    EXPECT_EQ(result.value().actions[1].identifier, "PrivateWindow");
+    EXPECT_EQ(result.value().actions[1].name, "Fenêtre privée");
+    ASSERT_TRUE(result.value().actions[1].icon.has_value());
+    EXPECT_EQ(*result.value().actions[1].icon, "private-mode");
+}
+
+TEST(DesktopEntryParserTest, RejectsMalformedOrIncompleteDeclaredDesktopActions) {
+    constexpr std::array documents{
+        "[Desktop Entry]\nType=Application\nName=Editor\nExec=editor\n"
+        "Actions=New;New;\n[Desktop Action New]\nName=New\nExec=editor --new\n",
+        "[Desktop Entry]\nType=Application\nName=Editor\nExec=editor\n"
+        "Actions=New;\n[Desktop Action New]\nName=New\nExec[fr]=editor --new\n",
+    };
+
+    for (const auto document : documents) {
+        const auto result = parseDesktopEntry(document, locale("fr_FR.UTF-8"));
+        ASSERT_FALSE(result) << document;
+        EXPECT_TRUE(result.error().code == ErrorCode::validation_error ||
+                    result.error().code == ErrorCode::unsupported);
+    }
+}
+
+TEST(DesktopEntryParserTest, OmitsMissingAndIncompleteDesktopActionsWithoutRejectingApplication) {
+    constexpr std::string_view document = R"([Desktop Entry]
+Type=Application
+Name=Editor
+Exec=editor
+Actions=Missing;NoExec;LocalizedOnly;Valid;
+[Desktop Action NoExec]
+Name=No Exec
+[Desktop Action LocalizedOnly]
+Name[fr]=Localisé
+Exec=editor --localized
+[Desktop Action Valid]
+Name=Valid
+Exec=editor --valid
+)";
+
+    const auto result = parseDesktopEntry(document, locale("fr_FR.UTF-8"));
+    ASSERT_TRUE(result);
+    ASSERT_EQ(result.value().actions.size(), 1U);
+    EXPECT_EQ(result.value().actions[0].identifier, "Valid");
 }
 
 TEST(DesktopEntryParserTest, AcceptsKnownIgnoredKeysAndExtensionSyntax) {
