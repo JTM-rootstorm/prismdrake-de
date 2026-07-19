@@ -2,6 +2,7 @@
 
 #include <QThread>
 
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -177,19 +178,7 @@ Result<void> QuickSettingsModel::applySettingsSnapshot(
     }
 
     settings_snapshot_ = std::move(snapshot);
-    if (pending_profile_) {
-        if (settings_snapshot_->candidate.configuration.profile != *pending_profile_) {
-            const auto expected = profileDisplayName(*pending_profile_);
-            profile_.publish(
-                AdapterState::error, tr("The requested profile was not applied."), expected, false,
-                *pending_profile_ == config::Profile::lustre ? QStringLiteral("lustre")
-                                                             : QStringLiteral("forge"));
-            pending_profile_.reset();
-            return Result<void>::success();
-        }
-        pending_profile_.reset();
-    }
-    publishProfileState();
+    reconcilePendingProfile();
     return Result<void>::success();
 }
 
@@ -231,17 +220,7 @@ Result<void> QuickSettingsModel::applyDoNotDisturbPublication(DoNotDisturbPublic
     }
 
     do_not_disturb_publication_ = publication;
-    if (pending_do_not_disturb_) {
-        if (publication.effective != *pending_do_not_disturb_) {
-            do_not_disturb_.publish(AdapterState::error,
-                                    tr("The requested do-not-disturb state was not applied."), {},
-                                    publication.effective);
-            pending_do_not_disturb_.reset();
-            return Result<void>::success();
-        }
-        pending_do_not_disturb_.reset();
-    }
-    publishDoNotDisturbState();
+    reconcilePendingDoNotDisturb();
     return Result<void>::success();
 }
 
@@ -253,6 +232,61 @@ void QuickSettingsModel::clearNotificationOwner() noexcept {
     notification_center_pending_ = false;
     publishDoNotDisturbState();
     publishNotificationCenterState();
+}
+
+Result<void> QuickSettingsModel::completeProfileRequest(CommandRequestId requestId,
+                                                        CommandCompletion completion) {
+    if (QThread::currentThread() != thread()) {
+        return Result<void>::failure(
+            {ErrorCode::cancelled, "quick-settings profile completion crossed QObject threads",
+             "Queue the typed completion to the quick-settings owner thread."});
+    }
+    if (!pending_profile_ || pending_profile_->id != requestId) {
+        return Result<void>::failure(
+            {ErrorCode::cancelled, "quick-settings profile completion is stale",
+             "Discard the completion for the superseded adapter request."});
+    }
+    if (completion.failure != CommandFailure::none) {
+        profile_.publish(commandFailureState(completion.failure),
+                         commandFailureDescription(completion.failure));
+        pending_profile_.reset();
+        return Result<void>::success();
+    }
+    if (!completion.resultingGeneration || completion.ownerEpoch ||
+        completion.resultingGeneration->value() == foundation::Generation::unpublishedValue) {
+        return Result<void>::failure(invalidState("quick-settings profile completion is invalid"));
+    }
+    pending_profile_->resultingGeneration = completion.resultingGeneration;
+    reconcilePendingProfile();
+    return Result<void>::success();
+}
+
+Result<void> QuickSettingsModel::completeDoNotDisturbRequest(CommandRequestId requestId,
+                                                             CommandCompletion completion) {
+    if (QThread::currentThread() != thread()) {
+        return Result<void>::failure(
+            {ErrorCode::cancelled, "quick-settings DND completion crossed QObject threads",
+             "Queue the typed completion to the quick-settings owner thread."});
+    }
+    if (!pending_do_not_disturb_ || pending_do_not_disturb_->id != requestId) {
+        return Result<void>::failure(
+            {ErrorCode::cancelled, "quick-settings DND completion is stale",
+             "Discard the completion for the superseded adapter request."});
+    }
+    if (completion.failure != CommandFailure::none) {
+        do_not_disturb_.publish(commandFailureState(completion.failure),
+                                commandFailureDescription(completion.failure));
+        pending_do_not_disturb_.reset();
+        return Result<void>::success();
+    }
+    if (!completion.resultingGeneration || !completion.ownerEpoch || *completion.ownerEpoch == 0U ||
+        completion.resultingGeneration->value() == foundation::Generation::unpublishedValue) {
+        return Result<void>::failure(invalidState("quick-settings DND completion is invalid"));
+    }
+    pending_do_not_disturb_->ownerEpoch = completion.ownerEpoch;
+    pending_do_not_disturb_->resultingGeneration = completion.resultingGeneration;
+    reconcilePendingDoNotDisturb();
+    return Result<void>::success();
 }
 
 void QuickSettingsModel::setNotificationCenterAvailable(bool available) noexcept {
@@ -317,7 +351,8 @@ bool QuickSettingsModel::requestProfile(config::Profile requested) {
         publishProfileState();
         return true;
     }
-    const auto result = profile_port_->requestProfile(requested);
+    const auto requestId = allocateRequestId();
+    const auto result = profile_port_->requestProfile(requested, requestId);
     if (!result.accepted()) {
         profile_.publish(
             commandFailureState(result.failure), commandFailureDescription(result.failure),
@@ -327,7 +362,7 @@ bool QuickSettingsModel::requestProfile(config::Profile requested) {
                 : QStringLiteral("forge"));
         return false;
     }
-    pending_profile_ = requested;
+    pending_profile_ = PendingProfileRequest{requestId, requested, std::nullopt};
     profile_.publish(AdapterState::pending, tr("Applying the complete profile generation."),
                      profileDisplayName(settings_snapshot_->candidate.configuration.profile), false,
                      settings_snapshot_->candidate.configuration.profile == config::Profile::lustre
@@ -345,14 +380,16 @@ bool QuickSettingsModel::requestDoNotDisturb(bool enabled) {
         publishDoNotDisturbState();
         return true;
     }
-    const auto result = do_not_disturb_port_->requestDoNotDisturb(enabled);
+    const auto requestId = allocateRequestId();
+    const auto result = do_not_disturb_port_->requestDoNotDisturb(enabled, requestId);
     if (!result.accepted()) {
         do_not_disturb_.publish(commandFailureState(result.failure),
                                 commandFailureDescription(result.failure), {},
                                 do_not_disturb_publication_->effective);
         return false;
     }
-    pending_do_not_disturb_ = enabled;
+    pending_do_not_disturb_ =
+        PendingDoNotDisturbRequest{requestId, enabled, std::nullopt, std::nullopt};
     do_not_disturb_.publish(AdapterState::pending,
                             tr("Waiting for a complete notification-state generation."), {},
                             do_not_disturb_publication_->effective);
@@ -465,6 +502,78 @@ void QuickSettingsModel::publishLogoutState() {
         return;
     }
     logout_.publish(AdapterState::available, tr("Request a confirmed session logout."));
+}
+
+CommandRequestId QuickSettingsModel::allocateRequestId() noexcept {
+    const CommandRequestId allocated{next_request_id_};
+    if (next_request_id_ == std::numeric_limits<std::uint64_t>::max()) {
+        next_request_id_ = 1U;
+    } else {
+        ++next_request_id_;
+    }
+    return allocated;
+}
+
+void QuickSettingsModel::reconcilePendingProfile() {
+    if (!pending_profile_) {
+        publishProfileState();
+        return;
+    }
+    if (!settings_snapshot_ || !pending_profile_->resultingGeneration ||
+        settings_snapshot_->generation < *pending_profile_->resultingGeneration) {
+        publishProfileState();
+        return;
+    }
+
+    if (settings_snapshot_->generation == *pending_profile_->resultingGeneration &&
+        settings_snapshot_->candidate.configuration.profile != pending_profile_->requested) {
+        const auto expected = profileDisplayName(pending_profile_->requested);
+        const auto expectedId = pending_profile_->requested == config::Profile::lustre
+                                    ? QStringLiteral("lustre")
+                                    : QStringLiteral("forge");
+        pending_profile_.reset();
+        profile_.publish(AdapterState::error, tr("The requested profile was not applied."),
+                         expected, false, expectedId);
+        return;
+    }
+
+    pending_profile_.reset();
+    publishProfileState();
+}
+
+void QuickSettingsModel::reconcilePendingDoNotDisturb() {
+    if (!pending_do_not_disturb_) {
+        publishDoNotDisturbState();
+        return;
+    }
+    if (!do_not_disturb_publication_ || !pending_do_not_disturb_->ownerEpoch ||
+        !pending_do_not_disturb_->resultingGeneration) {
+        publishDoNotDisturbState();
+        return;
+    }
+
+    const auto expectedOwner = *pending_do_not_disturb_->ownerEpoch;
+    const auto expectedGeneration = *pending_do_not_disturb_->resultingGeneration;
+    if (do_not_disturb_publication_->ownerEpoch < expectedOwner ||
+        (do_not_disturb_publication_->ownerEpoch == expectedOwner &&
+         do_not_disturb_publication_->generation < expectedGeneration)) {
+        publishDoNotDisturbState();
+        return;
+    }
+
+    if (do_not_disturb_publication_->ownerEpoch == expectedOwner &&
+        do_not_disturb_publication_->generation == expectedGeneration &&
+        do_not_disturb_publication_->effective != pending_do_not_disturb_->requested) {
+        const bool effective = do_not_disturb_publication_->effective;
+        pending_do_not_disturb_.reset();
+        do_not_disturb_.publish(AdapterState::error,
+                                tr("The requested do-not-disturb state was not applied."), {},
+                                effective);
+        return;
+    }
+
+    pending_do_not_disturb_.reset();
+    publishDoNotDisturbState();
 }
 
 AdapterState QuickSettingsModel::commandFailureState(CommandFailure failure) noexcept {

@@ -65,10 +65,13 @@ class ProfilePort final : public ProfileControlPort {
     CommandResult result{CommandFailure::none};
     int calls{0};
     config::Profile last{config::Profile::lustre};
+    CommandRequestId lastRequest{0U};
 
-    [[nodiscard]] CommandResult requestProfile(config::Profile profile) override {
+    [[nodiscard]] CommandResult requestProfile(config::Profile profile,
+                                               CommandRequestId requestId) override {
         ++calls;
         last = profile;
+        lastRequest = requestId;
         return result;
     }
 };
@@ -78,10 +81,13 @@ class DndPort final : public DoNotDisturbControlPort {
     CommandResult result{CommandFailure::none};
     int calls{0};
     bool last{false};
+    CommandRequestId lastRequest{0U};
 
-    [[nodiscard]] CommandResult requestDoNotDisturb(bool enabled) override {
+    [[nodiscard]] CommandResult requestDoNotDisturb(bool enabled,
+                                                    CommandRequestId requestId) override {
         ++calls;
         last = enabled;
+        lastRequest = requestId;
         return result;
     }
 };
@@ -111,6 +117,13 @@ class LogoutPort final : public LogoutControlPort {
 [[nodiscard]] DoNotDisturbPublication dnd(std::uint64_t owner, std::uint64_t generation,
                                           bool effective) {
     return {owner, foundation::Generation::fromPublished(generation).value(), effective};
+}
+
+[[nodiscard]] std::shared_ptr<const settings::SettingsSnapshot>
+snapshotAt(const settings::SettingsSnapshot &content, std::uint64_t generation) {
+    return std::make_shared<const settings::SettingsSnapshot>(settings::SettingsSnapshot{
+        content.snapshotSchemaVersion, foundation::Generation::fromPublished(generation).value(),
+        content.candidate, content.serializedJson});
 }
 
 TEST(QuickSettingsModelTest, StartsWithOnlyFiveUnavailablePrismdrakeCapabilities) {
@@ -146,6 +159,9 @@ TEST(QuickSettingsModelTest, AppliesProfileOnlyAfterCompleteSettingsGeneration) 
 
     auto publication = settings.engine().requestProfileChange("forge");
     ASSERT_TRUE(publication);
+    ASSERT_TRUE(model.completeProfileRequest(
+        port.lastRequest,
+        {CommandFailure::none, publication.value().snapshot->generation, std::nullopt}));
     ASSERT_TRUE(model.applySettingsSnapshot(publication.value().snapshot));
     EXPECT_EQ(model.profile()->state(), AdapterState::available);
     EXPECT_EQ(model.profile()->valueId(), QStringLiteral("forge"));
@@ -186,6 +202,9 @@ TEST(QuickSettingsModelTest, DndUsesOwnerScopedCompleteGenerations) {
     EXPECT_EQ(model.doNotDisturb()->state(), AdapterState::pending);
     EXPECT_FALSE(model.doNotDisturb()->checked());
 
+    ASSERT_TRUE(model.completeDoNotDisturbRequest(
+        port.lastRequest,
+        {CommandFailure::none, foundation::Generation::fromPublished(5U).value(), 10U}));
     ASSERT_TRUE(model.applyDoNotDisturbPublication(dnd(10U, 5U, true)));
     EXPECT_EQ(model.doNotDisturb()->state(), AdapterState::enabled);
     EXPECT_TRUE(model.doNotDisturb()->checked());
@@ -197,6 +216,44 @@ TEST(QuickSettingsModelTest, DndUsesOwnerScopedCompleteGenerations) {
     EXPECT_FALSE(model.doNotDisturb()->checked());
     EXPECT_FALSE(model.applyDoNotDisturbPublication(dnd(10U, 99U, true)));
     EXPECT_EQ(model.doNotDisturb()->state(), AdapterState::disabled);
+}
+
+TEST(QuickSettingsModelTest, UnrelatedGenerationsDoNotFalselyRejectPendingMutations) {
+    SettingsFixture settings;
+    ProfilePort profilePort;
+    DndPort dndPort;
+    QuickSettingsModel model;
+    model.setProfileControlPort(&profilePort);
+    model.setDoNotDisturbControlPort(&dndPort);
+    const auto original = settings.engine().current();
+    ASSERT_TRUE(model.applySettingsSnapshot(original));
+    ASSERT_TRUE(model.applyDoNotDisturbPublication(dnd(20U, 7U, false)));
+
+    ASSERT_TRUE(model.requestForgeProfile());
+    ASSERT_TRUE(model.requestDoNotDisturb(true));
+
+    const auto forge = settings.engine().requestProfileChange("forge");
+    ASSERT_TRUE(forge);
+    ASSERT_TRUE(model.applySettingsSnapshot(snapshotAt(*original, 2U)));
+    ASSERT_TRUE(model.applyDoNotDisturbPublication(dnd(20U, 8U, false)));
+    EXPECT_EQ(model.profile()->state(), AdapterState::pending);
+    EXPECT_EQ(model.doNotDisturb()->state(), AdapterState::pending);
+
+    ASSERT_TRUE(model.completeProfileRequest(
+        profilePort.lastRequest,
+        {CommandFailure::none, foundation::Generation::fromPublished(3U).value(), std::nullopt}));
+    ASSERT_TRUE(model.completeDoNotDisturbRequest(
+        dndPort.lastRequest,
+        {CommandFailure::none, foundation::Generation::fromPublished(9U).value(), 20U}));
+    EXPECT_EQ(model.profile()->state(), AdapterState::pending);
+    EXPECT_EQ(model.doNotDisturb()->state(), AdapterState::pending);
+
+    ASSERT_TRUE(model.applySettingsSnapshot(snapshotAt(*forge.value().snapshot, 3U)));
+    ASSERT_TRUE(model.applyDoNotDisturbPublication(dnd(20U, 9U, true)));
+    EXPECT_EQ(model.profile()->state(), AdapterState::available);
+    EXPECT_EQ(model.profile()->valueId(), QStringLiteral("forge"));
+    EXPECT_EQ(model.doNotDisturb()->state(), AdapterState::enabled);
+    EXPECT_TRUE(model.doNotDisturb()->checked());
 }
 
 TEST(QuickSettingsModelTest, FailedAdapterDoesNotDamageOtherCapabilities) {

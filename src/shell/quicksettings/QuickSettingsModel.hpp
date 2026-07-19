@@ -36,18 +36,37 @@ struct CommandResult final {
     [[nodiscard]] bool accepted() const noexcept { return failure == CommandFailure::none; }
 };
 
-/// Fixed profile mutation boundary. Implementations may call only Settings1.RequestProfileChange.
+/// Opaque correlation identity for one dispatched asynchronous adapter command.
+struct CommandRequestId final {
+    std::uint64_t value;
+
+    friend bool operator==(const CommandRequestId &, const CommandRequestId &) = default;
+};
+
+/// Exact authoritative result delivered by an adapter after its asynchronous D-Bus reply.
+struct CommandCompletion final {
+    CommandFailure failure;
+    std::optional<foundation::Generation> resultingGeneration;
+    std::optional<std::uint64_t> ownerEpoch;
+};
+
+/// Fixed profile mutation boundary. Dispatch must be nonblocking and may call only
+/// Settings1.RequestProfileChange. Its asynchronous reply is returned through
+/// completeProfileRequest with the same private request identity.
 class ProfileControlPort {
   public:
     virtual ~ProfileControlPort() = default;
-    [[nodiscard]] virtual CommandResult requestProfile(config::Profile profile) = 0;
+    [[nodiscard]] virtual CommandResult requestProfile(config::Profile profile,
+                                                       CommandRequestId requestId) = 0;
 };
 
-/// Fixed effective-DND mutation boundary. The notification authority remains notifyd.
+/// Fixed effective-DND mutation boundary. Dispatch must be nonblocking; notifyd remains
+/// authoritative and its asynchronous reply is returned through completeDoNotDisturbRequest.
 class DoNotDisturbControlPort {
   public:
     virtual ~DoNotDisturbControlPort() = default;
-    [[nodiscard]] virtual CommandResult requestDoNotDisturb(bool enabled) = 0;
+    [[nodiscard]] virtual CommandResult requestDoNotDisturb(bool enabled,
+                                                            CommandRequestId requestId) = 0;
 };
 
 /// Narrow injected bridge to the single notification-center surface owned by the focus router.
@@ -176,6 +195,11 @@ class QuickSettingsModel final : public QObject {
     applyDoNotDisturbPublication(DoNotDisturbPublication publication);
     void clearNotificationOwner() noexcept;
 
+    [[nodiscard]] foundation::Result<void> completeProfileRequest(CommandRequestId requestId,
+                                                                  CommandCompletion completion);
+    [[nodiscard]] foundation::Result<void>
+    completeDoNotDisturbRequest(CommandRequestId requestId, CommandCompletion completion);
+
     void setNotificationCenterAvailable(bool available) noexcept;
     void observeNotificationCenterVisible(bool visible) noexcept;
     void setSessionAvailable(bool available) noexcept;
@@ -195,6 +219,22 @@ class QuickSettingsModel final : public QObject {
     void publishNotificationCenterState();
     void publishLogoutState();
     static AdapterState commandFailureState(CommandFailure failure) noexcept;
+    [[nodiscard]] CommandRequestId allocateRequestId() noexcept;
+    void reconcilePendingProfile();
+    void reconcilePendingDoNotDisturb();
+
+    struct PendingProfileRequest final {
+        CommandRequestId id;
+        config::Profile requested;
+        std::optional<foundation::Generation> resultingGeneration;
+    };
+
+    struct PendingDoNotDisturbRequest final {
+        CommandRequestId id;
+        bool requested;
+        std::optional<std::uint64_t> ownerEpoch;
+        std::optional<foundation::Generation> resultingGeneration;
+    };
 
     QuickSettingAdapter profile_;
     QuickSettingAdapter do_not_disturb_;
@@ -208,15 +248,16 @@ class QuickSettingsModel final : public QObject {
     LogoutControlPort *logout_port_{nullptr};
 
     std::shared_ptr<const prismdrake::settings::SettingsSnapshot> settings_snapshot_;
-    std::optional<config::Profile> pending_profile_;
+    std::optional<PendingProfileRequest> pending_profile_;
     std::optional<DoNotDisturbPublication> do_not_disturb_publication_;
-    std::optional<bool> pending_do_not_disturb_;
+    std::optional<PendingDoNotDisturbRequest> pending_do_not_disturb_;
     bool notification_center_available_{false};
     bool notification_center_visible_{false};
     bool notification_center_pending_{false};
     bool session_available_{false};
     SessionPresentationState session_state_{SessionPresentationState::idle};
     bool logout_pending_{false};
+    std::uint64_t next_request_id_{1U};
 };
 
 } // namespace prismdrake::shell::quicksettings
