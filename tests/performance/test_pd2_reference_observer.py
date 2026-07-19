@@ -86,9 +86,9 @@ def runtime_document(samples: list[int]) -> dict[str, object]:
         "source_revision": REVISION,
         "reference_environment_id": ENVIRONMENT_ID,
         "method": {
-            "clock": "python_monotonic_ns",
+            "clock": runtime_performance.CLOCK_METHOD,
             "sample_isolation": "fresh_installed_session_per_trial",
-            "endpoint_observation": "established_installed_workflow_postcondition",
+            "endpoint_observation": "exact_reply_shell_start_or_workflow_postcondition",
             "installed_demo_binding": "validated_exact_revision_and_executable_hashes",
             "iterations": len(samples),
         },

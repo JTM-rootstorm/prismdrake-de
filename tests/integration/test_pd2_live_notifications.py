@@ -185,6 +185,7 @@ class FakeTransport:
         self.closed = False
         self.replacement_reply: int | None = None
         self.signal_generation = 0
+        self.notify_reply_latency_ns: int | None = 750
 
     def notify(self, replaces_id: int, summary: str, urgency: int) -> int:
         self.requests.append((replaces_id, summary, urgency))
@@ -197,6 +198,13 @@ class FakeTransport:
         result = self.next_id
         self.next_id += 1
         return result
+
+    def take_notify_reply_latency_ns(self) -> int:
+        value = self.notify_reply_latency_ns
+        self.notify_reply_latency_ns = None
+        if value is None:
+            raise RuntimeError
+        return value
 
     def take_signals(self) -> tuple[NotificationSignal, ...]:
         signals = tuple(self.signals)
@@ -235,6 +243,8 @@ class PersistentNotificationProbeTests(unittest.TestCase):
 
     def test_creates_normal_and_critical_notifications_with_categorical_results(self) -> None:
         normal, normal_result = self.probe.create_normal()
+        self.assertEqual(self.probe.take_notify_reply_latency_ns(), 750)
+        self.transport.notify_reply_latency_ns = 750
         critical, critical_result = self.probe.create_critical()
 
         self.assertNotEqual(normal, critical)
@@ -494,9 +504,20 @@ class GioNotificationTransportTests(unittest.TestCase):
         transport.close()
 
     def test_notify_uses_typed_bounded_call_and_parses_uint32_reply(self) -> None:
-        transport = self.connect()
+        ticks = iter((1_000, 1_750))
+        transport = GioNotificationTransport.connect(
+            self.environment,
+            self.gio,
+            self.glib,
+            clock_ns=lambda: next(ticks),
+        )
 
         self.assertEqual(transport.notify(0, NORMAL_SUMMARY, 1), 7)
+        self.assertEqual(transport.take_notify_reply_latency_ns(), 750)
+        self.assert_category(
+            "notification_notify_latency_unavailable",
+            transport.take_notify_reply_latency_ns,
+        )
 
         self.assertEqual(len(self.connection.calls), 1)
         call = self.connection.calls[0]

@@ -190,6 +190,15 @@ Build the production and model runners, bind all four performance sources, and
 choose at least two ordered model-supported search sizes. The model runner's
 closed controlled sizes are 16, 64, and 256:
 
+The runtime collector measures session readiness from the session launch
+request, shell presentation from the kernel-recorded shell process start to the
+observed complete panel endpoint, and notification method latency around only
+the standard `Notify` call through receipt and validation of its reply. It does
+not include `GetCurrentState` or surface polling in the `Notify` sample.
+The artifact records this clock split explicitly: ordinary step and D-Bus reply
+durations use Python's monotonic nanosecond clock, while the shell-start endpoint
+uses Linux boot-time nanoseconds aligned with `/proc` process-start ticks.
+
 ```bash
 cmake --build build/gcc-debug --target \
   prismdrake-pd1-performance-evidence prismdrake-pd2-asset-performance

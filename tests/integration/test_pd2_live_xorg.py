@@ -1151,6 +1151,24 @@ class NotificationFailureReplayAdapterTests(unittest.TestCase):
 
 
 class LivePortTests(unittest.TestCase):
+    def test_performance_endpoints_use_shell_start_and_exact_notify_reply(self) -> None:
+        port = LiveXorgHarnessPort(config(), FakeOperations())
+        port._component_identity = lambda _name: ProcessIdentity(44, 250)  # type: ignore[method-assign]  # noqa: SLF001
+        with patch.object(live_xorg.os, "sysconf", return_value=100), patch.object(
+            live_xorg.time, "clock_gettime_ns", return_value=3_000_000_000
+        ):
+            self.assertEqual(port.shell_complete_presentation_ns(), 500_000_000)
+
+        class Transport:
+            def take_notify_reply_latency_ns(self) -> int:
+                return 975
+
+        sender = live_xorg.PersistentNotificationProbe(Transport())  # type: ignore[arg-type]
+        port._notification_epoch = _NotificationEpoch(  # noqa: SLF001
+            object(), sender, object()  # type: ignore[arg-type]
+        )
+        self.assertEqual(port.notification_method_latency_ns(), 975)
+
     def test_tier_c_material_rejects_argb_surface_depth(self) -> None:
         operations = FakeOperations()
         operations.window_geometry_payloads[DESKTOP_LEFT] = operations.window_geometry_payloads[

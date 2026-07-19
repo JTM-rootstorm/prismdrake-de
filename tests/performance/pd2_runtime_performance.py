@@ -21,6 +21,7 @@ INTEGRATION = ROOT / "tests" / "integration"
 MAX_EVIDENCE_BYTES = 65_536
 MINIMUM_ITERATIONS = 3
 MAXIMUM_ITERATIONS = 10
+CLOCK_METHOD = "python_monotonic_ns_and_linux_boottime_proc_start_ticks"
 ENDPOINTS = (
     "session_ready",
     "shell_complete_presentation",
@@ -36,7 +37,6 @@ ENDPOINTS = (
 )
 TIMED_STEPS = {
     "invoke_launcher_through_shellctl": "launcher_acknowledgement",
-    "create_normal_notification": "notification_method_latency",
     "open_notification_center": "notification_center_open",
     "toggle_do_not_disturb": "dnd_switch",
     "open_quick_settings": "quick_settings_open",
@@ -65,6 +65,10 @@ class LivePort(Protocol):
     def installed_executable_hashes(self) -> Mapping[str, str]: ...
 
     def run_step(self, phase: str, identifier: str) -> object: ...
+
+    def shell_complete_presentation_ns(self) -> int: ...
+
+    def notification_method_latency_ns(self) -> int: ...
 
     def cleanup(self, phase: str) -> object: ...
 
@@ -140,9 +144,9 @@ def validate_runtime_evidence(document: Any) -> None:
     require(
         method
         == {
-            "clock": "python_monotonic_ns",
+            "clock": CLOCK_METHOD,
             "sample_isolation": "fresh_installed_session_per_trial",
-            "endpoint_observation": "established_installed_workflow_postcondition",
+            "endpoint_observation": "exact_reply_shell_start_or_workflow_postcondition",
             "installed_demo_binding": "validated_exact_revision_and_executable_hashes",
             "iterations": method.get("iterations") if isinstance(method, dict) else None,
         }
@@ -245,10 +249,21 @@ def collect_runtime_evidence(
                     require(session_started is not None, "runtime_step_order_invalid")
                     samples["session_ready"].append(finished - session_started)
                 elif identifier == "verify_panel_policy_both_outputs":
-                    require(session_started is not None, "runtime_step_order_invalid")
-                    samples["shell_complete_presentation"].append(
-                        finished - session_started
+                    shell_duration = port.shell_complete_presentation_ns()
+                    require(
+                        type(shell_duration) is int
+                        and 0 <= shell_duration <= 60_000_000_000,
+                        "shell_presentation_latency_invalid",
                     )
+                    samples["shell_complete_presentation"].append(shell_duration)
+                elif identifier == "create_normal_notification":
+                    notify_duration = port.notification_method_latency_ns()
+                    require(
+                        type(notify_duration) is int
+                        and 0 <= notify_duration <= 60_000_000_000,
+                        "notification_method_latency_invalid",
+                    )
+                    samples["notification_method_latency"].append(notify_duration)
         except Exception as error:
             failure = error
         try:
@@ -275,9 +290,9 @@ def collect_runtime_evidence(
         "source_revision": source_revision,
         "reference_environment_id": reference_environment_id,
         "method": {
-            "clock": "python_monotonic_ns",
+            "clock": CLOCK_METHOD,
             "sample_isolation": "fresh_installed_session_per_trial",
-            "endpoint_observation": "established_installed_workflow_postcondition",
+            "endpoint_observation": "exact_reply_shell_start_or_workflow_postcondition",
             "installed_demo_binding": "validated_exact_revision_and_executable_hashes",
             "iterations": iterations,
         },

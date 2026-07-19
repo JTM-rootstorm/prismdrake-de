@@ -41,6 +41,12 @@ class FakePort:
         self.steps.append(identifier)
         return Observation()
 
+    def shell_complete_presentation_ns(self) -> int:
+        return 4_000
+
+    def notification_method_latency_ns(self) -> int:
+        return 5_000
+
     def cleanup(self, phase: str) -> Observation:
         self.assert_cleanup_phase = phase
         self.cleanup_calls += 1
@@ -131,6 +137,24 @@ class RuntimePerformanceTests(unittest.TestCase):
         self.assertEqual(len(ports), 3)
         self.assertTrue(all(port.cleanup_calls == 1 for port in ports))
         self.assertTrue(all(port.steps[-1] == "readd_removed_output" for port in ports))
+        shell = next(
+            item
+            for item in document["measurements"]
+            if item["name"] == "shell_complete_presentation"
+        )
+        notification = next(
+            item
+            for item in document["measurements"]
+            if item["name"] == "notification_method_latency"
+        )
+        self.assertEqual(shell["samples_ns"], [4_000, 4_000, 4_000])
+        self.assertEqual(notification["samples_ns"], [5_000, 5_000, 5_000])
+
+        document["method"]["clock"] = "python_monotonic_ns"
+        with self.assertRaisesRegex(
+            runtime.RuntimePerformanceError, "^runtime_evidence_method_invalid$"
+        ):
+            runtime.validate_runtime_evidence(document)
 
     def test_cleanup_failure_masks_a_measurement_failure(self) -> None:
         class FailingPort(FakePort):

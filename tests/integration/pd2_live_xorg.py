@@ -1415,6 +1415,34 @@ class LiveXorgHarnessPort:
             for name in EXECUTABLE_NAMES
         }
 
+    def shell_complete_presentation_ns(self) -> int:
+        """Return shell process start through the already-observed panel endpoint."""
+
+        identity = self._component_identity("prismdrake-shell")
+        try:
+            ticks_per_second = os.sysconf("SC_CLK_TCK")
+            finished_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+        except (OSError, ValueError, AttributeError) as error:
+            raise HarnessError("shell_start_clock_unavailable") from error
+        if not isinstance(ticks_per_second, int) or ticks_per_second <= 0:
+            raise HarnessError("shell_start_clock_unavailable")
+        started_ns = identity.start_time * 1_000_000_000 // ticks_per_second
+        duration_ns = finished_ns - started_ns
+        if not 0 <= duration_ns <= 60_000_000_000:
+            raise HarnessError("shell_presentation_latency_invalid")
+        return duration_ns
+
+    def notification_method_latency_ns(self) -> int:
+        """Consume the exact standard Notify call-to-reply duration."""
+
+        epoch = self._notification_epoch
+        if epoch is None or not isinstance(epoch.sender, PersistentNotificationProbe):
+            raise HarnessError("notification_latency_unavailable")
+        try:
+            return epoch.sender.take_notify_reply_latency_ns()
+        except Exception:
+            raise HarnessError("notification_latency_unavailable") from None
+
     def run_step(self, phase: str, identifier: str) -> Observation:
         if (phase, identifier) not in self._SUPPORTED_STEPS:
             raise HarnessError("live_step_not_implemented")

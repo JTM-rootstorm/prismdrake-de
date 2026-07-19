@@ -86,6 +86,8 @@ class NotificationTransport(Protocol):
 
     def notify(self, replaces_id: int, summary: str, urgency: int) -> int: ...
 
+    def take_notify_reply_latency_ns(self) -> int: ...
+
     def take_signals(self) -> Sequence[NotificationSignal]: ...
 
     def advance_signal_generation(self, deadline: float) -> int: ...
@@ -162,11 +164,15 @@ class GioNotificationTransport:
         glib: Any,
         connection: Any,
         context: Any,
+        *,
+        clock_ns: Any = time.monotonic_ns,
     ) -> None:
         self._gio = gio
         self._glib = glib
         self._connection = connection
         self._context = context
+        self._clock_ns = clock_ns
+        self._last_notify_reply_latency_ns: int | None = None
         self._signals: deque[NotificationSignal] = deque()
         self._signal_error: str | None = None
         self._signal_generation = 0
@@ -212,7 +218,12 @@ class GioNotificationTransport:
 
     @classmethod
     def connect(
-        cls, environment: Mapping[str, str], gio: Any, glib: Any
+        cls,
+        environment: Mapping[str, str],
+        gio: Any,
+        glib: Any,
+        *,
+        clock_ns: Any = time.monotonic_ns,
     ) -> "GioNotificationTransport":
         """Connect to only the private address supplied by the harness."""
 
@@ -262,7 +273,7 @@ class GioNotificationTransport:
                 pass
             _fail("notification_private_bus_identity_invalid")
         try:
-            transport = cls(gio, glib, connection, context)
+            transport = cls(gio, glib, connection, context, clock_ns=clock_ns)
         finally:
             try:
                 context.pop_thread_default()
@@ -299,6 +310,8 @@ class GioNotificationTransport:
                     0,
                 ),
             )
+            self._last_notify_reply_latency_ns = None
+            started_ns = self._clock_ns()
             reply = self._connection.call_sync(
                 STANDARD_BUS_NAME,
                 STANDARD_PATH,
@@ -315,7 +328,23 @@ class GioNotificationTransport:
             _fail("notification_notify_failed")
         if not isinstance(unpacked, tuple) or len(unpacked) != 1:
             _fail("notification_notify_reply_invalid")
-        return _uint32(unpacked[0], "notification_notify_reply_invalid")
+        notification_id = _uint32(unpacked[0], "notification_notify_reply_invalid")
+        finished_ns = self._clock_ns()
+        latency_ns = finished_ns - started_ns
+        if (
+            not isinstance(latency_ns, int)
+            or not 0 <= latency_ns <= METHOD_TIMEOUT_MS * 1_000_000
+        ):
+            _fail("notification_notify_latency_invalid")
+        self._last_notify_reply_latency_ns = latency_ns
+        return notification_id
+
+    def take_notify_reply_latency_ns(self) -> int:
+        latency_ns = self._last_notify_reply_latency_ns
+        self._last_notify_reply_latency_ns = None
+        if latency_ns is None:
+            _fail("notification_notify_latency_unavailable")
+        return latency_ns
 
     def _on_signal(
         self,
@@ -436,6 +465,20 @@ class PersistentNotificationProbe:
 
     def create_normal(self) -> tuple[NotificationToken, CategoricalResult]:
         return self._create(NORMAL_SUMMARY, 1, "notification_created")
+
+    def take_notify_reply_latency_ns(self) -> int:
+        self._ensure_open()
+        try:
+            latency_ns = self._transport.take_notify_reply_latency_ns()
+        except Exception:
+            _fail("notification_notify_latency_unavailable")
+        if (
+            isinstance(latency_ns, bool)
+            or not isinstance(latency_ns, int)
+            or not 0 <= latency_ns <= METHOD_TIMEOUT_MS * 1_000_000
+        ):
+            _fail("notification_notify_latency_invalid")
+        return latency_ns
 
     def create_critical(self) -> tuple[NotificationToken, CategoricalResult]:
         return self._create(CRITICAL_SUMMARY, 2, "notification_critical_created")
