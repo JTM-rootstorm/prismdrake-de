@@ -88,7 +88,8 @@ file rather than Git metadata or the project specification version.
 
 ## Remaining boundary
 
-- GitHub Actions must still exercise this checkpoint after publication.
+- The historical checkpoint did not receive an additional publication run;
+  GitHub Actions is no longer a current validation requirement.
 - CMake 3.24 and minimum compiler/test-framework versions remain declared or
   unresolved rather than verified lower bounds.
 - No install target exists yet, so staged `DESTDIR` inspection belongs to the

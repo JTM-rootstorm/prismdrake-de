@@ -131,6 +131,19 @@ The live and display-free procedures are documented in
 the PD2 implementation portions of `PD-A11Y-001` through `PD-A11Y-012` and
 `PD-I18N-001` through `PD-I18N-007`.
 
+## Exit-evidence status
+
+| Evidence area | Current status |
+|---|---|
+| Source and contract coverage | Implemented. Focused suites and strict negative fixtures cover the integrated behavior and evidence formats. |
+| Installed demonstration | Implemented harness only. Its 48 ordered checks require one source-bound Gentoo run before they become milestone evidence. |
+| Accessibility and localization | Display-free and exact-observer machinery is implemented. The required live AT-SPI matrix remains pending; a full screen-reader workflow is not claimed. |
+| Performance | Source-bound collectors and exact runtime endpoints are implemented. Reference measurements and budget comparison remain pending. |
+| Portage lifecycle | Exact build provenance, installed ownership, harness manifest, unmerge preservation, and reinstall contracts are implemented. The real lifecycle record remains pending. |
+
+GitHub Actions is not an exit-gate substitute or requirement. The Gentoo
+reference matrix and canonical local validation commands remain authoritative.
+
 ## Deferred and unsupported boundaries
 
 - StatusNotifierItem and XEmbed tray integration are Deferred.

@@ -61,7 +61,8 @@ current commitment.
 - [x] Maintainers have accepted the component/process, toolkit, configuration,
   and token ADRs required for PD1.
 - [x] Canonical local `make validate` passes on the completed PD0 tree.
-- [x] Repository CI is green on the reviewed pre-activation revision.
+- [x] The then-required repository automation was green on the reviewed
+  pre-activation revision.
 - [x] Maintainers have reviewed and approved the PD1 scope and non-goals.
 
 ## Activation record
@@ -119,6 +120,16 @@ Compiler, CTest, Portage, X11, D-Bus, and AT-SPI activation evidence is tracked
 in the [active PD2 milestone record](pd2.md). Activation authorizes
 Experimental implementation; it does not satisfy the PD2 exit gate or imply
 stable interfaces.
+
+## PD2 implementation checkpoint
+
+The source tree contains the integrated Experimental PD2 core shell, its
+strict configuration and state contracts, and source-bound evidence machinery
+for the installed workflow, accessibility matrix, performance observations,
+and Portage lifecycle. That machinery does not by itself prove the current
+revision passed the Gentoo reference exit matrix. The authoritative current
+status and remaining gate are recorded in the
+[active PD2 milestone tracker](pd2.md).
 
 ## Continuing owner review after PD1
 

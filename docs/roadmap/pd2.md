@@ -161,6 +161,29 @@ dependencies, the root-only ownership rejection, and the opt-in development
 demonstration. Formatting, QML lint, and 61 contract-negative paths passed
 there as well. The exact overlay also passed `pkgdev manifest` and `pkgcheck`.
 
+### Integrated source checkpoint
+
+Subsequent work composes the PD2 modules into the Experimental shell and
+session paths described by the
+[core-shell implementation status](../architecture/pd2-core-shell.md). The
+repository now also contains strict, source-bound collectors and validators for
+the two-output installed workflow, live accessibility, runtime performance,
+and the final Portage lifecycle. The installed package records its exact source
+revision in `/usr/share/prismdrake/build-provenance.json`; preflight attestation
+binds that record, the installed executables and ownership set, and the complete
+reviewed demonstration-harness manifest.
+
+The installed workflow contract contains 48 ordered checks, including exact
+accessible descriptions and states, reverse traversal, output-migration focus,
+and focus recovery after settingsd, notifyd, and shell restarts. The performance
+observer maps each declared metric to a distinct runtime endpoint and binds its
+records to the source revision. These are implemented evidence mechanisms and
+synthetic rejection tests, not results from the final reference run.
+
+No PD2 completion claim is made at this checkpoint. The full Gentoo compiler,
+test, sanitizer, live multi-output, AT-SPI, performance, Portage install,
+unmerge-preservation, and ordinary-reinstall matrix below remains required.
+
 ## Active workstreams
 
 1. **Shared foundation:** parallel-friendly build/test registration,

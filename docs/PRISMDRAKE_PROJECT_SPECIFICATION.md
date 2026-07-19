@@ -1010,7 +1010,7 @@ The exact names require packaging review, but the intended split is:
 
 ---
 
-## 25. Testing and continuous integration
+## 25. Testing and validation
 
 ### 25.1 Test layers
 
@@ -1028,19 +1028,19 @@ The project SHOULD maintain:
 - Performance benchmarks with documented reference environments.
 - Optional hardware/GPU tests that do not replace display-free validation.
 
-### 25.2 CI requirements
+### 25.2 Validation requirements
 
 | ID | Requirement |
 |---|---|
-| `PD-TEST-001` | Pull requests MUST run deterministic formatting, validation, build, and relevant tests. |
-| `PD-TEST-002` | CI MUST not require repository secrets for ordinary validation. |
+| `PD-TEST-001` | Reviewed changes MUST have deterministic formatting, validation, build, and relevant test evidence from supported environments. GitHub Actions is not required. |
+| `PD-TEST-002` | Ordinary validation MUST not require repository secrets. |
 | `PD-TEST-003` | Tests MUST not claim success when skipped silently. |
 | `PD-TEST-004` | Required environment-dependent tests MUST report explicit skip reasons. |
 | `PD-TEST-005` | Accepted schemas and public interfaces MUST have negative tests. |
 | `PD-TEST-006` | Visual baselines MUST be reviewed intentionally and not mass-updated to hide regressions. |
 | `PD-TEST-007` | Both GCC and Clang SHOULD be exercised before beta where supported. |
 | `PD-TEST-008` | Sanitizer builds SHOULD be available for memory and undefined-behavior testing. |
-| `PD-TEST-009` | Security-sensitive parsers SHOULD receive fuzzing in scheduled CI. |
+| `PD-TEST-009` | Security-sensitive parsers SHOULD receive scheduled fuzzing. |
 | `PD-TEST-010` | Release candidates MUST pass clean-install and upgrade tests. |
 
 ### 25.3 Validation commands
@@ -1153,7 +1153,7 @@ Outcomes:
 - Component, dependency, configuration, theme, compatibility, and security contracts.
 - Toolkit and build ADRs.
 - Low-fidelity original mockups.
-- Validation and CI foundation.
+- Validation foundation.
 
 Exit gate:
 

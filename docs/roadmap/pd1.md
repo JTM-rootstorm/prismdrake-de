@@ -2,17 +2,16 @@
 
 PD1 is an X11 shell skeleton and settings foundation, not a daily-use desktop.
 The maintainer activated this milestone on 2026-07-16 and its exact Gentoo
-reference lifecycle completed on 2026-07-18. PD2 has not yet been activated.
-The archived execution plan and the package-lifecycle evidence retain the
-requirement, test, fault, and fallback record for each completed work package.
+reference lifecycle completed on 2026-07-18. PD2 was subsequently activated
+on 2026-07-18. The archived execution plan and the package-lifecycle evidence
+retain the requirement, test, fault, and fallback record for each completed
+PD1 work package.
 
 Qt 6.11 is the minimum supported visible-shell toolkit version. The Gentoo
 reference environment supplies the authoritative Qt-bound build, compiler,
-formatting, QML-lint, and integration evidence. GitHub Actions remains a
-repository-contract lane while its Ubuntu system Qt is below that floor.
-Hosted product-build automation may be added later on a supported system
-runner, but it is not a PD1 exit requirement when the recorded Gentoo reference
-matrix satisfies the product gate.
+formatting, QML-lint, and integration evidence. Historical hosted checks remain
+evidence only for the revisions and environments they exercised. GitHub Actions
+is not a current validation or milestone-exit requirement.
 
 ## Active workstreams
 
@@ -101,8 +100,8 @@ PD1 may begin only when:
 - [x] Theme-token schema, Lustre, Forge, and accessibility validation passes.
 - [x] Required low-fidelity mockups and compatibility matrix exist.
 - [x] Glasswyrm documents label native names and wire behavior as draft.
-- [x] `make validate` and repository CI pass on the reviewed pre-activation
-  revision.
+- [x] `make validate` and the then-required repository automation passed on the
+  reviewed pre-activation revision.
 - [x] Maintainer review finds no unresolved contradiction among the specification,
   README, ADRs, schemas, examples, and interface drafts.
 - [x] PD1 workstreams are converted into bounded work packages with testable

@@ -65,6 +65,7 @@ schemas, examples, interface XML, theme parity, Architecture Decision Record
 structure, and repository-local links. This remains contract validation; the
 Gentoo reference environment supplies authoritative Qt 6.11-or-newer product
 build and runtime evidence through the documented CMake and CTest paths.
+GitHub Actions is not required for current change or milestone validation.
 
 ## License
 

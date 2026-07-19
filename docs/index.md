@@ -1,9 +1,10 @@
 # Prismdrake documentation
 
 Prismdrake completed PD1 on the Gentoo reference environment and entered
-**PD2: Core desktop shell** on 2026-07-18. PD2 is building a developer-usable
-core session, but these documents do not describe a production-ready desktop
-release or stable public interfaces.
+**PD2: Core desktop shell** on 2026-07-18. The tree contains an integrated
+Experimental PD2 core-shell implementation, while its final installed Gentoo
+exit record is still pending. These documents do not describe a
+production-ready desktop release or stable public interfaces.
 
 ## Governing material
 

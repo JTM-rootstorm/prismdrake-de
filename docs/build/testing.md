@@ -79,9 +79,11 @@ The authoritative formatting and QML-lint paths run in the Gentoo reference
 environment with the supported Qt 6.11-or-newer toolkit. Set
 `PRISMDRAKE_CLANG_FORMAT_EXECUTABLE` when the reviewed executable has a
 versioned name. A missing formatter causes the explicit `format-check` target
-to fail rather than claiming a skipped success. GitHub Actions remains a
-repository-contract lane while its Ubuntu system Qt is below the supported
-floor; it does not claim product compilation, formatting, or QML validation.
+to fail rather than claiming a skipped success. GitHub Actions is not a
+required validation lane. The canonical local commands and the Qt
+6.11-or-newer Gentoo reference matrix provide milestone evidence; any optional
+hosted automation must report only the checks and supported environment it
+actually exercised.
 
 Clang-Tidy is opt-in and requires either `clang-tidy` on `PATH` or an explicit
 `PRISMDRAKE_CLANG_TIDY_EXECUTABLE`. Required environment-dependent checks must

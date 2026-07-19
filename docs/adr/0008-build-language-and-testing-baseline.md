@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-16
 - **Hosted-CI policy amended:** 2026-07-18
+- **Validation policy amended:** 2026-07-19
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -21,7 +22,8 @@ accept Qt 6 Quick or any other visible-shell toolkit; that decision remains with
 ## Decision drivers
 
 - Reproducible GCC and Clang builds on supported Linux environments.
-- Display-free unit tests and first-class integration with repository CI.
+- Display-free unit tests and first-class integration with canonical repository
+  validation.
 - System-packaged dependencies with no network downloads during configure or
   build.
 - Explicit optional features and actionable dependency failures.
@@ -67,12 +69,15 @@ compiler's default language mode.
 Support GCC and Clang on Linux. The Gentoo reference build uses its reviewed
 system compilers. Before PD1 exits, the supported reference environment must
 configure, compile, and run applicable tests with both compiler families.
-Hosted CI may remain contract-only when its system toolkit is older than the
-Accepted minimum; it must not download or vendor a newer toolkit merely to
-manufacture a compatibility lane. Minimum supported compiler and CMake versions
-must be based on tested package evidence and recorded in build and dependency
-documentation; configuration must fail with an actionable message when the
-selected toolchain lacks required C++20 behavior.
+Hosted automation is optional and is not authoritative when its system toolkit
+is older than the Accepted minimum. It must not download or vendor a newer
+toolkit merely to manufacture a compatibility lane. GitHub Actions is not
+required for milestone or change validation; the reviewed Gentoo reference
+matrix and canonical local commands provide the authoritative evidence.
+Minimum supported compiler and CMake versions must be based on tested package
+evidence and recorded in build and dependency documentation; configuration
+must fail with an actionable message when the selected toolchain lacks required
+C++20 behavior.
 
 Use system-packaged GoogleTest for C++ unit tests and register tests with CTest,
 using CMake's GoogleTest integration where discovery is appropriate. Test code
@@ -83,16 +88,17 @@ framework.
 
 Formatting uses a repository-pinned `.clang-format` policy once implementation
 code is introduced. A formatting check must be available without rewriting
-files. Clang-Tidy is an explicit developer or CI feature, disabled by default
-for ordinary builds, and applies only to project-owned targets. Tool versions
-used for authoritative CI formatting or analysis must be recorded so results
-are reproducible.
+files. Clang-Tidy is an explicit developer or automation feature, disabled by
+default for ordinary builds, and applies only to project-owned targets. Tool
+versions used for authoritative formatting or analysis must be recorded so
+results are reproducible.
 
 Project-owned C++ targets enable a common warning baseline for GCC and Clang:
 `-Wall`, `-Wextra`, and `-Wpedantic`. Additional warnings are added only after
 the existing tree is reviewed for signal and portability. Warnings-as-errors is
-an explicit CI option, not an unconditional release or downstream-packaging
-policy, and never applies to third-party headers or imported targets.
+an explicit validation option, not an unconditional release or
+downstream-packaging policy, and never applies to third-party headers or
+imported targets.
 
 Provide opt-in AddressSanitizer plus UndefinedBehaviorSanitizer builds for
 supported GCC and Clang debug configurations. Sanitizer flags remain
@@ -137,14 +143,15 @@ not emit exceptions across those boundaries.
 The project gains one canonical compiled build and test path, explicit compiler
 semantics, distribution-friendly dependency discovery, and opt-in quality
 tooling. Supporting two compiler families and maintaining formatter, analyzer,
-and sanitizer paths adds CI work. System-packaged GoogleTest adds a test-only
-dependency but keeps third-party source and updates outside the Prismdrake tree.
+and sanitizer paths adds validation work. System-packaged GoogleTest adds a
+test-only dependency but keeps third-party source and updates outside the
+Prismdrake tree.
 
 The Gentoo reference environment is authoritative for Qt-bound GCC, Clang,
-formatting, QML lint, and integration evidence while hosted runners remain below
-the Accepted Qt floor. GitHub Actions continues to validate repository
-contracts. Full hosted build jobs may return when a runner supplies supported
-system packages; a green contract job is not a product-build claim.
+formatting, QML lint, and integration evidence. Hosted automation may be added
+when it supplies supported system packages, but it is optional and cannot
+replace the reference matrix. No GitHub-specific check is part of the current
+milestone exit contract.
 
 Feature options, warnings, sanitizer flags, installation destinations, and
 version generation require focused CMake helpers rather than directory-global
@@ -163,9 +170,12 @@ GoogleTest, sanitizer, formatting, analysis, LTO,
 missing-dependency, and archive results are recorded in the
 [PD1 build and toolchain evidence](../research/pd1-build-toolchain-evidence.md).
 On 2026-07-18, the maintainer selected Qt 6.11 as the visible-shell minimum and
-ended Qt 6.4 support. Because the available Ubuntu hosted runner provides Qt
+ended Qt 6.4 support. Because the available Ubuntu hosted runner provided Qt
 6.4.2, its product build and formatting jobs were retired rather than treated
-as supported-toolkit evidence; the independent repository-contract job remains.
+as supported-toolkit evidence. On 2026-07-19, the maintainer also retired a
+GitHub-specific validation requirement. Historical hosted results remain
+evidence for the revisions they actually exercised, but current changes and
+milestone exits use the canonical local and Gentoo reference procedures.
 The following remain the continuing PD1 exit contract for every applicable
 production target and for packaging rather than claims about the isolated
 spike:

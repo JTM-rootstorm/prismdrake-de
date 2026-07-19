@@ -67,6 +67,13 @@ description, action, visibility, enabled state, focusability, and focused
 state. They return fixed categorical outcomes rather than serializing the live
 tree.
 
+The installed demonstration maps all 48 ordered workflow checks to reviewed
+surface observations. Its accessibility-specific steps cover descriptions and
+states, Backtab traversal, output-migration focus, and focus recovery after
+settingsd, notifyd, and shell restarts. The mapping is source-bound and fails
+closed when a check has no exact observer; it remains harness capability rather
+than evidence until the matching installed Gentoo run completes.
+
 This matrix addresses the implemented PD2 portions of `PD-A11Y-001` through
 `PD-A11Y-012`, `PD-I18N-001` through `PD-I18N-007`, `PD-INPUT-001` through
 `PD-INPUT-004`, and `PD-TEST-005`. Passing source tests does not substitute for
