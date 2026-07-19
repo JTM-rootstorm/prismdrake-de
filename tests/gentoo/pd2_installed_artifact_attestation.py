@@ -38,6 +38,51 @@ INSTALLED_EXECUTABLE_PATHS = (
     "/usr/bin/prismdrake-shell",
     "/usr/bin/prismdrake-shellctl",
 )
+REQUIRED_INSTALLED_RESOURCE_PATHS = (
+    "/usr/share/dbus-1/interfaces/org.prismdrake.NotificationCenter1.xml",
+    "/usr/share/dbus-1/interfaces/org.prismdrake.Session1.xml",
+    "/usr/share/dbus-1/interfaces/org.prismdrake.Settings1.xml",
+    "/usr/share/dbus-1/interfaces/org.prismdrake.Shell1.xml",
+    "/usr/share/prismdrake/defaults/config.toml",
+    "/usr/share/prismdrake/schemas/prismdrake-config.schema.json",
+    "/usr/share/prismdrake/schemas/prismdrake-notification-history.schema.json",
+    "/usr/share/prismdrake/schemas/prismdrake-notification-state.schema.json",
+    "/usr/share/prismdrake/schemas/prismdrake-pin-state.schema.json",
+    "/usr/share/prismdrake/schemas/prismdrake-runtime-snapshot.schema.json",
+    "/usr/share/prismdrake/schemas/prismdrake-theme-tokens.schema.json",
+    "/usr/share/prismdrake/themes/accessibility.tokens.json",
+    "/usr/share/prismdrake/themes/base.tokens.json",
+    "/usr/share/prismdrake/themes/forge.tokens.json",
+    "/usr/share/prismdrake/themes/lustre.tokens.json",
+    "/usr/share/prismdrake/translations/prismdrake_ar_XB.qm",
+    "/usr/share/prismdrake/translations/prismdrake_en_XA.qm",
+    "/usr/share/xsessions/prismdrake.desktop",
+)
+_REQUIRED_DOCUMENT_RELATIVE_PATHS = (
+    "README.md",
+    "architecture/component-model.md",
+    "architecture/configuration.md",
+    "architecture/dependency-policy.md",
+    "architecture/notification-service.md",
+    "architecture/pd2-state-ownership.md",
+    "architecture/process-model.md",
+    "architecture/shell-control.md",
+    "architecture/surface-placement.md",
+    "build/dependencies.md",
+    "build/testing.md",
+    "packaging/gentoo-local-repository.md",
+    "interfaces/README.md",
+)
+REQUIRED_INSTALLED_FILE_GROUPS = (
+    *((path,) for path in REQUIRED_INSTALLED_RESOURCE_PATHS),
+    *((f"/usr/share/doc/prismdrake-9999/{path}",
+       f"/usr/share/doc/prismdrake-9999/{path}.bz2",
+       f"/usr/share/doc/prismdrake-9999/{path}.gz",
+       f"/usr/share/doc/prismdrake-9999/{path}.lz4",
+       f"/usr/share/doc/prismdrake-9999/{path}.xz",
+       f"/usr/share/doc/prismdrake-9999/{path}.zst")
+      for path in _REQUIRED_DOCUMENT_RELATIVE_PATHS),
+)
 PRIVATE_MARKERS = (
     "dbus_session_bus_address",
     "at_spi_bus_address",
@@ -177,6 +222,9 @@ def validate_attestation_document(document: Any) -> None:
     owned_regular_paths = {record["path"] for record in regular_records}
     _require(set(INSTALLED_EXECUTABLE_PATHS) <= owned_regular_paths,
              "executables_not_owned_regular_paths")
+    _require(all(any(path in owned_regular_paths for path in alternatives)
+                 for alternatives in REQUIRED_INSTALLED_FILE_GROUPS),
+             "required_installed_file_missing")
 
 
 def validate_attested_files(
@@ -206,8 +254,9 @@ def example_attestation_document() -> dict[str, Any]:
     ]
     ownership_records = normalize_ownership_records([
         *({"kind": "regular", "path": path} for path in INSTALLED_EXECUTABLE_PATHS),
+        *({"kind": "regular", "path": alternatives[0]}
+          for alternatives in REQUIRED_INSTALLED_FILE_GROUPS),
         {"kind": "directory", "path": "/usr/share/prismdrake"},
-        {"kind": "regular", "path": "/usr/share/prismdrake/defaults/config.toml"},
         {"kind": "symlink", "path": "/usr/share/prismdrake/current-theme"},
     ])
     artifact_hash = canonical_executable_sha256(executables)

@@ -18,6 +18,7 @@ DEV_ENV_EBUILD = (
     / "packaging/gentoo/repository/dev-util/prismdrake-dev-env/"
     "prismdrake-dev-env-0.1.ebuild"
 )
+PACKAGING_GUIDE = ROOT / "docs/packaging/gentoo-local-repository.md"
 
 
 def dependency_body(source: str, variable: str) -> str:
@@ -98,20 +99,32 @@ class ProductEbuildContractTests(unittest.TestCase):
 
     def test_live_observer_display_and_icon_fixtures_are_test_only(self) -> None:
         bdepend = dependency_body(self.source, "BDEPEND")
+        test_bdepend = use_dependency_body(self.source, "test")
         depend = dependency_body(self.source, "DEPEND")
         rdepend = dependency_body(self.source, "RDEPEND")
 
         for atom in (
+            "app-accessibility/at-spi2-core[X,introspection]",
+            "dev-cpp/gtest",
+            "dev-libs/glib",
+            "gnome-base/gsettings-desktop-schemas",
+            "media-fonts/dejavu",
+            "media-libs/fontconfig",
+            "x11-apps/xev",
+            "x11-apps/xprop",
             "x11-apps/xrandr",
             "x11-apps/xwininfo",
             "x11-apps/xwd",
             "x11-base/xorg-server[xvfb]",
             "x11-drivers/xf86-video-dummy",
+            "x11-misc/xdotool",
             "x11-misc/xtrace",
             "x11-themes/hicolor-icon-theme",
+            "x11-wm/openbox",
         ):
             with self.subTest(atom=atom):
-                self.assertIn(atom, bdepend)
+                self.assertIn(atom, test_bdepend)
+                self.assertEqual(bdepend.count(atom), 1)
                 self.assertNotIn(atom, depend)
                 self.assertNotIn(atom, rdepend)
 
@@ -140,15 +153,22 @@ class ProductEbuildContractTests(unittest.TestCase):
             "README.md",
             "docs/architecture/component-model.md",
             "docs/architecture/configuration.md",
+            "docs/architecture/dependency-policy.md",
             "docs/architecture/notification-service.md",
             "docs/architecture/pd2-state-ownership.md",
             "docs/architecture/process-model.md",
             "docs/architecture/shell-control.md",
             "docs/architecture/surface-placement.md",
+            "docs/build/dependencies.md",
+            "docs/build/testing.md",
+            "docs/packaging/gentoo-local-repository.md",
             "interfaces/README.md",
         ):
             with self.subTest(document=document):
                 self.assertIn(document, install)
+        for destination in ("architecture", "build", "packaging", "interfaces"):
+            with self.subTest(destination=destination):
+                self.assertEqual(install.count(f"docinto {destination}"), 1)
 
         postinst = phase_body(self.source, "pkg_postinst")
         for executable in (
@@ -182,6 +202,20 @@ class DevelopmentEbuildContractTests(unittest.TestCase):
 
     def test_qt_tooling_layer_includes_linguist_catalog_compiler(self) -> None:
         qt6 = use_dependency_body(self.source, "qt6")
+        atoms = {
+            line.strip().split("[", maxsplit=1)[0]
+            for line in qt6.splitlines()
+            if "dev-qt/" in line
+        }
+        self.assertEqual(
+            atoms,
+            {
+                ">=dev-qt/qtbase-6.11:6",
+                ">=dev-qt/qtdeclarative-6.11:6",
+                ">=dev-qt/qtsvg-6.11:6",
+                ">=dev-qt/qttools-6.11:6",
+            },
+        )
         self.assertIn(">=dev-qt/qttools-6.11:6[linguist]", qt6)
 
     def test_x11_protocol_tracer_is_not_promoted_to_other_tooling_layers(self) -> None:
@@ -191,6 +225,47 @@ class DevelopmentEbuildContractTests(unittest.TestCase):
         self.assertNotIn(
             "x11-misc/xtrace", use_dependency_body(self.source, "visual-tests")
         )
+
+
+class PackagingGuideContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = PACKAGING_GUIDE.read_text(encoding="utf-8")
+
+    def test_pd2_lifecycle_commands_use_current_collectors_and_driver(self) -> None:
+        for command in (
+            "pd2_portage_lifecycle_collector.py preflight",
+            "pd2_portage_lifecycle_collector.py preservation",
+            "pd2_portage_lifecycle_collector.py unmerge",
+            "pd2_portage_lifecycle_collector.py finalize",
+            "pd2_portage_lifecycle_evidence.py",
+            "--owned-paths",
+            "--driver tests/integration/pd2_demo.py",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(command, self.source)
+        for stale in (
+            "tests/gentoo/portage_lifecycle_collector.py",
+            "tests/gentoo/portage_lifecycle_evidence.py",
+            "--owned-files",
+            "tests/integration/pd1_demo.py",
+            "pd1-portage-lifecycle-draft.json",
+        ):
+            with self.subTest(stale=stale):
+                self.assertNotIn(stale, self.source)
+
+    def test_product_resolution_commands_separate_normal_and_test_modes(self) -> None:
+        self.assertIn(
+            'USE="-test" emerge --pretend --verbose --tree --newuse '
+            "x11-misc/prismdrake",
+            self.source,
+        )
+        self.assertIn(
+            'USE="test" emerge --pretend --verbose --tree --newuse '
+            "x11-misc/prismdrake",
+            self.source,
+        )
+        self.assertIn('USE="test" FEATURES="test keepwork"', self.source)
 
 
 if __name__ == "__main__":

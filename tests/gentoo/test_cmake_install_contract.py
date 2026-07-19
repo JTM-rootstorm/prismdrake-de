@@ -43,7 +43,7 @@ class CMakeInstallContractTests(unittest.TestCase):
 
     def test_runtime_data_manifest_is_complete_and_bounded(self) -> None:
         blocks = install_blocks(ROOT_CMAKE.read_text(encoding="utf-8"))
-        self.assertEqual(len(blocks), 5)
+        self.assertEqual(len(blocks), 6)
         self.assertTrue(all("COMPONENT Runtime" in block for block in blocks))
 
         schemas = {
@@ -86,6 +86,19 @@ class CMakeInstallContractTests(unittest.TestCase):
         for profile in ("accessibility", "base", "forge", "lustre"):
             with self.subTest(profile=profile):
                 self.assertIn(f"themes/{profile}.tokens.json", manifest)
+
+        translation_block = next(
+            block for block in blocks if "prismdrake_translation_qm_files" in block
+        )
+        self.assertIn(
+            'DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake/translations"',
+            translation_block,
+        )
+        root_source = ROOT_CMAKE.read_text(encoding="utf-8")
+        self.assertEqual(
+            set(re.findall(r"translations/(prismdrake_[A-Za-z_]+\.ts)", root_source)),
+            {"prismdrake_ar_XB.ts", "prismdrake_en_XA.ts"},
+        )
 
     def test_install_rules_never_create_user_configuration_or_state(self) -> None:
         sources = [ROOT_CMAKE]

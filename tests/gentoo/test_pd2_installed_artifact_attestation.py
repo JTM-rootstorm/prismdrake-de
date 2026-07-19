@@ -13,6 +13,7 @@ from pd2_installed_artifact_attestation import (
     INSTALLED_EXECUTABLE_PATHS,
     MAX_ATTESTATION_BYTES,
     Pd2AttestationError,
+    REQUIRED_INSTALLED_FILE_GROUPS,
     SCHEMA_PATH,
     example_attestation_document,
     load_attestation,
@@ -22,8 +23,21 @@ from pd2_installed_artifact_attestation import (
 from pd2_lifecycle_hashes import (
     Pd2LifecycleHashError,
     canonical_ownership_sha256,
+    canonical_regular_ownership_sha256,
     normalize_ownership_records,
+    regular_ownership_records,
 )
+
+
+def refresh_ownership(ownership: dict[str, object]) -> None:
+    records = normalize_ownership_records(ownership["paths"])
+    ownership.update({
+        "paths": records,
+        "path_count": len(records),
+        "regular_path_count": len(regular_ownership_records(records)),
+        "path_set_sha256": canonical_ownership_sha256(records),
+        "regular_path_set_sha256": canonical_regular_ownership_sha256(records),
+    })
 
 
 class Pd2InstalledAttestationTests(unittest.TestCase):
@@ -41,6 +55,34 @@ class Pd2InstalledAttestationTests(unittest.TestCase):
         ownership = document["installed"]["ownership"]
         self.assertEqual(ownership["path_count"], len(ownership["paths"]))
         self.assertGreater(ownership["path_count"], len(INSTALLED_EXECUTABLE_PATHS))
+        regular_paths = {record["path"] for record in ownership["paths"]
+                         if record["kind"] == "regular"}
+        self.assertTrue(all(any(path in regular_paths for path in alternatives)
+                            for alternatives in REQUIRED_INSTALLED_FILE_GROUPS))
+
+    def test_rejects_complete_ownership_that_omits_a_required_resource(self) -> None:
+        document = example_attestation_document()
+        ownership = document["installed"]["ownership"]
+        missing = REQUIRED_INSTALLED_FILE_GROUPS[0][0]
+        record = next(item for item in ownership["paths"] if item["path"] == missing)
+        record["path"] = "/usr/share/prismdrake/unexpected-resource"
+        refresh_ownership(ownership)
+        with self.assertRaisesRegex(Pd2AttestationError,
+                                    "^required_installed_file_missing$"):
+            validate_attestation_document(document)
+
+    def test_accepts_supported_portage_document_compression_suffixes(self) -> None:
+        for suffix_index in range(1, len(REQUIRED_INSTALLED_FILE_GROUPS[-1])):
+            with self.subTest(suffix=REQUIRED_INSTALLED_FILE_GROUPS[-1][suffix_index]):
+                document = example_attestation_document()
+                ownership = document["installed"]["ownership"]
+                for alternatives in REQUIRED_INSTALLED_FILE_GROUPS:
+                    if len(alternatives) > 1:
+                        record = next(item for item in ownership["paths"]
+                                      if item["path"] == alternatives[0])
+                        record["path"] = alternatives[suffix_index]
+                refresh_ownership(ownership)
+                validate_attestation_document(document)
 
     def test_schema_closes_objects_and_bounds_arrays(self) -> None:
         schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))

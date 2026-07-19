@@ -118,7 +118,7 @@
           "maxItems": 5,
           "items": { "$ref": "#/$defs/executable" }
         },
-        "ownership": { "$ref": "#/$defs/ownership_summary" }
+        "ownership": { "$ref": "#/$defs/full_ownership" }
       }
     }
   },
@@ -191,19 +191,6 @@
       "properties": {
         "kind": { "enum": ["directory", "regular", "symlink"] },
         "path": { "type": "string", "minLength": 5, "maxLength": 512, "pattern": "^/usr(?:/[A-Za-z0-9._+@-]+)+$" }
-      }
-    },
-    "ownership_summary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["tool", "owner_atom", "path_count", "regular_path_count", "path_set_sha256", "regular_path_set_sha256"],
-      "properties": {
-        "tool": { "const": "equery" },
-        "owner_atom": { "const": "x11-misc/prismdrake-9999" },
-        "path_count": { "type": "integer", "minimum": 5, "maximum": 4096 },
-        "regular_path_count": { "type": "integer", "minimum": 5, "maximum": 4096 },
-        "path_set_sha256": { "$ref": "#/$defs/sha256" },
-        "regular_path_set_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "full_ownership": {

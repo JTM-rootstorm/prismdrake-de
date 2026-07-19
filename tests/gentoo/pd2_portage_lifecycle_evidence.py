@@ -17,6 +17,7 @@ from typing import Any
 
 from pd2_installed_artifact_attestation import (
     INSTALLED_EXECUTABLE_PATHS,
+    REQUIRED_INSTALLED_FILE_GROUPS,
     SOURCE_URI,
     example_attestation_document,
 )
@@ -216,6 +217,10 @@ def validate_evidence_document(document: Any) -> None:
     _require(set(INSTALLED_EXECUTABLE_PATHS) <=
              {record["path"] for record in regular_records},
              "executables_not_owned_regular_paths")
+    owned_regular_paths = {record["path"] for record in regular_records}
+    _require(all(any(path in owned_regular_paths for path in alternatives)
+                 for alternatives in REQUIRED_INSTALLED_FILE_GROUPS),
+             "required_installed_file_missing")
 
     linkage = document["direct_linkage"]
     _require_binding(linkage, revision, ebuild_hash, artifact_hash)
@@ -277,10 +282,8 @@ def validate_evidence_document(document: Any) -> None:
     _require(reinstall["executables"] == initial["executables"],
              "ordinary_reinstall_executable_mismatch")
     reinstall_ownership = reinstall["ownership"]
-    for key in ("tool", "owner_atom", "path_count", "regular_path_count",
-                "path_set_sha256", "regular_path_set_sha256"):
-        _require(reinstall_ownership[key] == ownership[key],
-                 "ordinary_reinstall_ownership_mismatch")
+    _require(reinstall_ownership == ownership,
+             "ordinary_reinstall_ownership_mismatch")
 
 
 def example_evidence_document() -> dict[str, Any]:
@@ -404,8 +407,7 @@ def example_evidence_document() -> dict[str, Any]:
             "use_test": False,
             "result": "passed",
             "executables": copy.deepcopy(initial["executables"]),
-            "ownership": {key: copy.deepcopy(value) for key, value in ownership.items()
-                          if key != "paths"},
+            "ownership": copy.deepcopy(ownership),
         },
     }
 

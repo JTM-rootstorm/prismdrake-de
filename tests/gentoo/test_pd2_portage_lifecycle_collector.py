@@ -13,6 +13,7 @@ import unittest
 
 from pd2_installed_artifact_attestation import (
     INSTALLED_EXECUTABLE_PATHS,
+    REQUIRED_INSTALLED_FILE_GROUPS,
     example_attestation_document,
 )
 from pd2_portage_lifecycle_collector import (
@@ -56,6 +57,11 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
         for mutation, executable_check in (
             (lambda paths: paths.pop(0), lambda path: True),
             (lambda paths: paths[0].update({"path": "/home/user/private"}),
+             lambda path: True),
+            (lambda paths: next(
+                item for item in paths
+                if item["path"] == REQUIRED_INSTALLED_FILE_GROUPS[0][0]
+            ).update({"path": "/usr/share/prismdrake/unexpected-resource"}),
              lambda path: True),
             (lambda paths: None,
              lambda path: str(path) != INSTALLED_EXECUTABLE_PATHS[2]),

@@ -184,6 +184,7 @@ class Pd2LifecycleEvidenceTests(unittest.TestCase):
             lambda value: value["ordinary_reinstall"]["executables"].reverse(),
             lambda value: value["ordinary_reinstall"]["ownership"].update(
                 {"path_set_sha256": "0" * 64}),
+            lambda value: value["ordinary_reinstall"]["ownership"]["paths"].pop(),
             lambda value: value["ordinary_reinstall"].update({"use_test": True}),
         )
         for index, mutation in enumerate(mutations):

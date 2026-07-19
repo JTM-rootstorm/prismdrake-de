@@ -148,48 +148,71 @@ Portage-owned `/usr` path set. Capture the non-final, mode-0600 preflight
 attestation from the exact matching source driver:
 
 ```bash
-python3 tests/gentoo/portage_lifecycle_collector.py preflight \
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py preflight \
   --source /absolute/private/evidence/source.json \
-  --owned-files /absolute/private/evidence/owned-files.json \
-  --driver tests/integration/pd1_demo.py \
-  --output /absolute/private/evidence/installed-preflight.json
+  --owned-paths /absolute/private/evidence/owned-paths.json \
+  --driver tests/integration/pd2_demo.py \
+  --output /absolute/private/evidence/pd2-installed-preflight.json
 ```
 
 The preflight command measures the fixed `/usr/bin/prismdrake-*` executable
-set itself. The demonstration validates the attestation in both its parent and
-isolated child before executing those files. It is not final lifecycle
-evidence and cannot claim the demonstration, unmerge, or reinstall passed.
+set itself and rejects an ownership capture that omits a required packaged
+default, theme, schema, interface, translation catalog, X session entry, or
+reviewed document. The demonstration validates the attestation in both its
+parent and isolated child before executing those files. It is not final
+lifecycle evidence and cannot claim the demonstration, unmerge, or reinstall
+passed.
+
+After unmerge, capture both package-file absence and byte-identical preservation
+of the three user-owned state files. These commands only inspect supplied paths;
+they do not invoke Portage:
+
+```bash
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py unmerge \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --output /absolute/private/evidence/pd2-unmerge-absence.json
+
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py preservation \
+  --before-config-toml /absolute/private/evidence/before/config.toml \
+  --before-pins /absolute/private/evidence/before/pins.json \
+  --before-notification-history /absolute/private/evidence/before/notification-history.json \
+  --after-config-toml /absolute/private/evidence/after/config.toml \
+  --after-pins /absolute/private/evidence/after/pins.json \
+  --after-notification-history /absolute/private/evidence/after/notification-history.json \
+  --output /absolute/private/evidence/pd2-user-state-preservation.json
+```
 
 After every phase has actually completed, finalize a draft that already
 matches the tracked lifecycle schema:
 
 ```bash
-python3 tests/gentoo/portage_lifecycle_collector.py finalize \
-  --attestation /absolute/private/evidence/installed-preflight.json \
-  --draft /absolute/private/evidence/pd1-portage-lifecycle-draft.json \
-  --output /absolute/private/evidence/pd1-portage-lifecycle.json
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py finalize \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --draft /absolute/private/evidence/pd2-portage-lifecycle-draft.json \
+  --output /absolute/private/evidence/pd2-portage-lifecycle.json
 ```
 
 Canonical artifact, ownership, linkage, and controlled XDG-tree hashes bind
-the stages without preserving private command output. Both collector outputs
-are published atomically with mode 0600. The tracked version-one lifecycle
+the stages without preserving private command output. Every collector output
+is published atomically with mode 0600. The tracked version-one lifecycle
 schema and semantic validator define the success record for the final
 `x11-misc/prismdrake-9999` exercise:
 
 ```bash
-python3 tests/gentoo/portage_lifecycle_evidence.py \
-  /absolute/private/evidence/pd1-portage-lifecycle.json
+python3 tests/gentoo/pd2_portage_lifecycle_evidence.py \
+  /absolute/private/evidence/pd2-portage-lifecycle.json
 ```
 
 The validator is read-only. It does not run Portage and a passing synthetic
 unit fixture is not lifecycle evidence. A real record must bind one exact
 40-character source revision and ebuild hash to both pretend resolutions, the
 single tested artifact, installed file ownership and executable hashes,
-installed AT-SPI and version-three complete-demonstration evidence, normalized
-runtime linkage, all four reviewed outside-sandbox tests, unmerge with
+both version-one complete PD2 installed demonstrations, normalized linkage for
+all five executables, all four reviewed outside-sandbox tests, unmerge with
 byte-identical user configuration/state preservation, and an ordinary
-non-`USE=test` reinstall. Unknown, partial, mismatched, private, build-tree, or
-caller-asserted installed data fails closed.
+non-`USE=test` reinstall with the complete original ownership manifest.
+Unknown, partial, mismatched, private, build-tree, or caller-asserted installed
+data fails closed.
 
 ## Resolution and QA
 
@@ -258,7 +281,8 @@ floor. Qt Linguist tools are an unconditional build-only dependency used to
 compile the installed pseudo-locale catalogs; qttools is not retained in the
 runtime dependency set. Unused Qt image-format plugins and libnotify are not
 declared.
-GoogleTest, Python, Xvfb, the Xorg dummy driver, Openbox, X11 RandR,
+GoogleTest, Python, GLib/PyGObject notification clients, Xvfb, the Xorg dummy
+driver, Openbox, X11 RandR,
 window-tree inspection, bounded XWD capture, protocol tracing, and input tools,
 the hicolor icon fixture, AT-SPI/PyGObject
 inspection support, fontconfig, and the fixed test font remain conditional
@@ -278,9 +302,15 @@ versions.
 Run a reviewed resolution and targeted package test with:
 
 ```sh
-emerge --pretend --verbose --tree --newuse x11-misc/prismdrake
-USE=test emerge --ask --verbose --newuse x11-misc/prismdrake
+USE="-test" emerge --pretend --verbose --tree --newuse x11-misc/prismdrake
+USE="test" emerge --pretend --verbose --tree --newuse x11-misc/prismdrake
+USE="test" FEATURES="test keepwork" \
+  emerge --ask --verbose --oneshot --newuse x11-misc/prismdrake
 ```
+
+Hash normalized captures from both pretend graphs separately. The default
+resolution proves the ordinary runtime boundary; the `USE=test` resolution and
+install add only build/test tooling and execute the package suite.
 
 Portage's mandatory libsandbox injects `LD_PRELOAD` and `SANDBOX_*` entries into
 executed children. The ebuild therefore excludes exactly four upstream tests:
