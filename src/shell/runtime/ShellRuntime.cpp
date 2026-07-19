@@ -51,6 +51,12 @@ using foundation::Result;
 
 [[nodiscard]] QVariant objectVariant(QObject *object) { return QVariant::fromValue(object); }
 
+#if defined(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES)
+constexpr bool developmentFixturesEnabled = true;
+#else
+constexpr bool developmentFixturesEnabled = false;
+#endif
+
 } // namespace
 
 ShellRuntime::ShellRuntime(ShellRuntimeOptions options)
@@ -78,12 +84,14 @@ Result<std::unique_ptr<ShellRuntime>> ShellRuntime::create(ShellRuntimeOptions o
 }
 
 Result<void> ShellRuntime::initialize() {
+#if defined(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES)
     auto notificationOwner =
         DevelopmentNotificationOwner::create(std::make_shared<foundation::SystemMonotonicClock>());
     if (!notificationOwner) {
         return Result<void>::failure(notificationOwner.error());
     }
     notification_owner_ = std::move(notificationOwner).value();
+#endif
 
     auto launcher = launcher::controller::LauncherController::create(std::move(options_.launcher));
     if (!launcher) {
@@ -121,12 +129,14 @@ Result<void> ShellRuntime::initialize() {
             &ShellRuntime::handleSettingsSnapshotChanged);
     connect(&settings_client_, &settings::SettingsSnapshotClient::stateChanged, this,
             &ShellRuntime::handleSettingsStateChanged);
+#if defined(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES)
     connect(notification_owner_->presentation(),
             &shell::notifications::NotificationPresentationModel::actionRequested, this,
             &ShellRuntime::handleDevelopmentNotificationAction);
     connect(notification_owner_->presentation(),
             &shell::notifications::NotificationPresentationModel::dismissRequested, this,
             &ShellRuntime::handleDevelopmentNotificationDismissal);
+#endif
     connect(
         launcher_controller_.get(), &launcher::controller::LauncherController::catalogRefreshFailed,
         this, [this]() {
@@ -383,8 +393,7 @@ Result<void> ShellRuntime::updatePresentationEpoch(
 }
 
 Result<void> ShellRuntime::createViews() {
-    if (!theme_adapter_ || !theme_adapter_->current() || !launcher_controller_ ||
-        !notification_owner_) {
+    if (!theme_adapter_ || !theme_adapter_->current() || !launcher_controller_) {
         return Result<void>::failure(missingPresentationError());
     }
 
@@ -395,7 +404,8 @@ Result<void> ShellRuntime::createViews() {
     panel_view_->setInitialProperties(
         {{QStringLiteral("themeGeneration"), objectVariant(theme_adapter_->current())},
          {QStringLiteral("taskModel"), objectVariant(&task_model_)},
-         {QStringLiteral("notificationAffordanceVisible"), true}});
+         {QStringLiteral("notificationAffordanceVisible"), developmentFixturesEnabled},
+         {QStringLiteral("developmentDiagnosticsVisible"), developmentFixturesEnabled}});
     panel_view_->setSource(
         QUrl(QStringLiteral("qrc:/qt/qml/org/prismdrake/shell/panel/PanelSurface.qml")));
     if (panel_view_->status() == QQuickView::Error || panel_view_->rootObject() == nullptr) {
@@ -418,6 +428,7 @@ Result<void> ShellRuntime::createViews() {
     }
     launcher_view_->hide();
 
+#if defined(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES)
     notification_view_ = std::make_unique<QQuickView>();
     notification_view_->setTitle(tr("Prismdrake Test Notification"));
     notification_view_->setFlags(Qt::Tool | Qt::FramelessWindowHint);
@@ -435,25 +446,29 @@ Result<void> ShellRuntime::createViews() {
         return Result<void>::failure(surfaceError());
     }
     notification_view_->hide();
+#endif
 
     auto *panel = panel_view_->rootObject();
     auto *launcher = launcher_view_->rootObject();
-    auto *notification = notification_view_->rootObject();
-    const bool connected =
+    bool connected =
         connect(panel, SIGNAL(launcherRequested()), this, SLOT(openLauncher())) &&
-        connect(panel, SIGNAL(notificationRequested()), this,
-                SLOT(showDevelopmentNotification())) &&
         connect(panel, SIGNAL(focusExitForward()), this, SLOT(leavePanelKeyboardNavigation())) &&
         connect(panel, SIGNAL(focusExitBackward()), this, SLOT(leavePanelKeyboardNavigation())) &&
         connect(launcher, SIGNAL(searchRequested(QString)), this,
                 SLOT(handleLauncherSearch(QString))) &&
         connect(launcher, SIGNAL(dismissRequested()), this, SLOT(dismissLauncherToPanel())) &&
         connect(launcher, SIGNAL(focusExitForward()), this, SLOT(dismissLauncherToPanel())) &&
-        connect(launcher, SIGNAL(focusExitBackward()), this, SLOT(dismissLauncherToPanel())) &&
-        connect(notification, SIGNAL(focusExitForward()), this,
-                SLOT(returnNotificationFocusToPanel())) &&
-        connect(notification, SIGNAL(focusExitBackward()), this,
-                SLOT(returnNotificationFocusToPanel()));
+        connect(launcher, SIGNAL(focusExitBackward()), this, SLOT(dismissLauncherToPanel()));
+#if defined(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES)
+    auto *notification = notification_view_->rootObject();
+    connected = connected &&
+                connect(panel, SIGNAL(notificationRequested()), this,
+                        SLOT(showDevelopmentNotification())) &&
+                connect(notification, SIGNAL(focusExitForward()), this,
+                        SLOT(returnNotificationFocusToPanel())) &&
+                connect(notification, SIGNAL(focusExitBackward()), this,
+                        SLOT(returnNotificationFocusToPanel()));
+#endif
     if (!connected) {
         return Result<void>::failure(connectionError());
     }
@@ -472,16 +487,20 @@ Result<void> ShellRuntime::createViews() {
 
 Result<void> ShellRuntime::publishThemeProperties() {
     if (!theme_adapter_ || !theme_adapter_->current() || !panel_view_ || !launcher_view_ ||
-        !notification_view_ || !panel_view_->rootObject() || !launcher_view_->rootObject() ||
-        !notification_view_->rootObject()) {
+        !panel_view_->rootObject() || !launcher_view_->rootObject()) {
         return Result<void>::failure(missingPresentationError());
     }
     const auto value = objectVariant(theme_adapter_->current());
     if (!panel_view_->rootObject()->setProperty("themeGeneration", value) ||
-        !launcher_view_->rootObject()->setProperty("themeGeneration", value) ||
+        !launcher_view_->rootObject()->setProperty("themeGeneration", value)) {
+        return Result<void>::failure(surfaceError());
+    }
+#if defined(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES)
+    if (!notification_view_ || !notification_view_->rootObject() ||
         !notification_view_->rootObject()->setProperty("themeGeneration", value)) {
         return Result<void>::failure(surfaceError());
     }
+#endif
     return Result<void>::success();
 }
 

@@ -48,6 +48,10 @@ target_link_libraries(prismdrake-shell-runtime
         Qt6::Gui
         Qt6::Qml
         Qt6::Quick)
+if(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES)
+    target_compile_definitions(prismdrake-shell-runtime
+        PRIVATE PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES=1)
+endif()
 prismdrake_configure_cpp_target(prismdrake-shell-runtime)
 prismdrake_enable_warnings(prismdrake-shell-runtime)
 prismdrake_enable_sanitizers(prismdrake-shell-runtime)
