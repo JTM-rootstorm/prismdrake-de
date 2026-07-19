@@ -661,7 +661,8 @@ def runtime_performance_result(name: str) -> dict[str, Any]:
     )
     return observed_milliseconds(
         named_samples(document, name),
-        "Monotonic installed workflow timing with a fresh isolated session per trial",
+        "Monotonic installed endpoint timing with fresh isolated sessions and first-visible "
+        "common-action acknowledgement",
     )
 
 

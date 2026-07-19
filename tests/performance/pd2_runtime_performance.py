@@ -22,6 +22,9 @@ MAX_EVIDENCE_BYTES = 65_536
 MINIMUM_ITERATIONS = 3
 MAXIMUM_ITERATIONS = 10
 CLOCK_METHOD = "python_monotonic_ns_and_linux_boottime_proc_start_ticks"
+ENDPOINT_OBSERVATION_METHOD = (
+    "exact_reply_shell_start_first_visible_acknowledgement_or_workflow_postcondition"
+)
 ENDPOINTS = (
     "session_ready",
     "shell_complete_presentation",
@@ -69,6 +72,8 @@ class LivePort(Protocol):
     def shell_complete_presentation_ns(self) -> int: ...
 
     def notification_method_latency_ns(self) -> int: ...
+
+    def common_action_acknowledgement_ns(self, identifier: str) -> int: ...
 
     def cleanup(self, phase: str) -> object: ...
 
@@ -146,7 +151,7 @@ def validate_runtime_evidence(document: Any) -> None:
         == {
             "clock": CLOCK_METHOD,
             "sample_isolation": "fresh_installed_session_per_trial",
-            "endpoint_observation": "exact_reply_shell_start_or_workflow_postcondition",
+            "endpoint_observation": ENDPOINT_OBSERVATION_METHOD,
             "installed_demo_binding": "validated_exact_revision_and_executable_hashes",
             "iterations": method.get("iterations") if isinstance(method, dict) else None,
         }
@@ -244,7 +249,13 @@ def collect_runtime_evidence(
                 if endpoint is not None:
                     samples[endpoint].append(duration)
                 if identifier in COMMON_ACTION_STEPS:
-                    samples["common_action_acknowledgement"].append(duration)
+                    acknowledgement = port.common_action_acknowledgement_ns(identifier)
+                    require(
+                        type(acknowledgement) is int
+                        and 0 <= acknowledgement <= 60_000_000_000,
+                        "common_action_acknowledgement_invalid",
+                    )
+                    samples["common_action_acknowledgement"].append(acknowledgement)
                 if identifier == "verify_component_readiness":
                     require(session_started is not None, "runtime_step_order_invalid")
                     samples["session_ready"].append(finished - session_started)
@@ -292,7 +303,7 @@ def collect_runtime_evidence(
         "method": {
             "clock": CLOCK_METHOD,
             "sample_isolation": "fresh_installed_session_per_trial",
-            "endpoint_observation": "exact_reply_shell_start_or_workflow_postcondition",
+            "endpoint_observation": ENDPOINT_OBSERVATION_METHOD,
             "installed_demo_binding": "validated_exact_revision_and_executable_hashes",
             "iterations": iterations,
         },

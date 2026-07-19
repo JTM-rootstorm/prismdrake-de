@@ -48,6 +48,13 @@ class FakePort:
     def notification_method_latency_ns(self) -> int:
         return 5_000
 
+    def common_action_acknowledgement_ns(self, identifier: str) -> int:
+        return {
+            "activate_one_window": 6_000,
+            "minimize_one_window": 7_000,
+            "reactivate_one_window": 8_000,
+        }[identifier]
+
     def cleanup(self, phase: str) -> Observation:
         self.assert_cleanup_phase = phase
         self.cleanup_calls += 1
@@ -135,6 +142,10 @@ class RuntimePerformanceTests(unittest.TestCase):
             if item["name"] == "common_action_acknowledgement"
         )
         self.assertEqual(len(common["samples_ns"]), 9)
+        self.assertEqual(
+            common["samples_ns"],
+            [6_000, 7_000, 8_000, 6_000, 7_000, 8_000, 6_000, 7_000, 8_000],
+        )
         self.assertEqual(len(ports), 3)
         self.assertTrue(all(port.cleanup_calls == 1 for port in ports))
         self.assertTrue(all(port.steps[-1] == "readd_removed_output" for port in ports))
@@ -187,6 +198,37 @@ class RuntimePerformanceTests(unittest.TestCase):
                     fixture,
                     3,
                     port_factory=lambda _path: FailingPort(),
+                )
+
+    def test_rejects_invalid_common_action_acknowledgement_sample(self) -> None:
+        class InvalidAcknowledgementPort(FakePort):
+            def common_action_acknowledgement_ns(self, identifier: str) -> int:
+                del identifier
+                return True
+
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            mock.patch.object(runtime, "_pd2_demo") as demo,
+        ):
+            fixture = Path(temporary) / "fixture"
+            fixture.write_bytes(b"fixture")
+            demo.return_value.validate_evidence.return_value = None
+            demo.return_value._controlled_fixture_sha256.return_value = "f" * 64
+            demo.return_value.WORKFLOW_STEPS = (
+                "activate_one_window",
+                "restart_settingsd",
+            )
+            with self.assertRaisesRegex(
+                runtime.RuntimePerformanceError,
+                "^common_action_acknowledgement_invalid$",
+            ):
+                runtime.collect_runtime_evidence(
+                    REVISION,
+                    ENVIRONMENT_ID,
+                    installed_demo(),
+                    fixture,
+                    3,
+                    port_factory=lambda _path: InvalidAcknowledgementPort(),
                 )
 
     def test_writer_preserves_output_created_during_publication(self) -> None:
