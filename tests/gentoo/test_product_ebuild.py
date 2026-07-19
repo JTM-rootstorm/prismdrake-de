@@ -13,6 +13,11 @@ EBUILD = (
     ROOT
     / "packaging/gentoo/repository/x11-misc/prismdrake/prismdrake-9999.ebuild"
 )
+DEV_ENV_EBUILD = (
+    ROOT
+    / "packaging/gentoo/repository/dev-util/prismdrake-dev-env/"
+    "prismdrake-dev-env-0.1.ebuild"
+)
 
 
 def dependency_body(source: str, variable: str) -> str:
@@ -34,6 +39,17 @@ def phase_body(source: str, phase: str) -> str:
     )
     if match is None:
         raise AssertionError(f"missing ebuild phase: {phase}")
+    return match.group("body")
+
+
+def use_dependency_body(source: str, flag: str) -> str:
+    match = re.search(
+        rf"^\t{re.escape(flag)}\? \(\n(?P<body>.*?)^\t\)$",
+        source,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError(f"missing ebuild USE dependency block: {flag}")
     return match.group("body")
 
 
@@ -74,21 +90,28 @@ class ProductEbuildContractTests(unittest.TestCase):
         self.assertNotIn("dev-qt/qtimageformats", self.source)
         self.assertNotIn("x11-libs/libnotify", self.source)
 
-    def test_display_and_icon_fixtures_cannot_leak_into_runtime_dependencies(self) -> None:
+    def test_live_observer_display_and_icon_fixtures_are_test_only(self) -> None:
         bdepend = dependency_body(self.source, "BDEPEND")
         depend = dependency_body(self.source, "DEPEND")
         rdepend = dependency_body(self.source, "RDEPEND")
 
         for atom in (
             "x11-apps/xrandr",
+            "x11-apps/xwininfo",
             "x11-base/xorg-server[xvfb]",
             "x11-drivers/xf86-video-dummy",
+            "x11-misc/xtrace",
             "x11-themes/hicolor-icon-theme",
         ):
             with self.subTest(atom=atom):
                 self.assertIn(atom, bdepend)
                 self.assertNotIn(atom, depend)
                 self.assertNotIn(atom, rdepend)
+
+    def test_protocol_tracer_uses_the_gentoo_xtrace_package(self) -> None:
+        bdepend = dependency_body(self.source, "BDEPEND")
+        self.assertEqual(bdepend.count("x11-misc/xtrace"), 1)
+        self.assertNotIn("sys-libs/glibc[xtrace]", self.source)
 
     def test_forbidden_gnome_desktop_stack_is_not_a_runtime_dependency(self) -> None:
         runtime = dependency_body(self.source, "DEPEND") + dependency_body(
@@ -133,6 +156,30 @@ class ProductEbuildContractTests(unittest.TestCase):
         for interface in ("Settings1", "NotificationCenter1", "Shell1", "Session1"):
             with self.subTest(interface=interface):
                 self.assertIn(interface, postinst)
+
+
+class DevelopmentEbuildContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = DEV_ENV_EBUILD.read_text(encoding="utf-8")
+
+    def test_live_x11_observers_are_scoped_to_the_x11_tooling_layer(self) -> None:
+        x11 = use_dependency_body(self.source, "x11")
+        for atom in ("x11-apps/xwininfo", "x11-misc/xtrace"):
+            with self.subTest(atom=atom):
+                self.assertEqual(x11.count(atom), 1)
+
+        non_x11 = self.source.replace(f"\tx11? (\n{x11}\t)", "")
+        self.assertNotIn("x11-apps/xwininfo", non_x11)
+        self.assertNotIn("x11-misc/xtrace", non_x11)
+
+    def test_x11_protocol_tracer_is_not_promoted_to_other_tooling_layers(self) -> None:
+        self.assertNotIn(
+            "x11-misc/xtrace", use_dependency_body(self.source, "debug-tools")
+        )
+        self.assertNotIn(
+            "x11-misc/xtrace", use_dependency_body(self.source, "visual-tests")
+        )
 
 
 if __name__ == "__main__":

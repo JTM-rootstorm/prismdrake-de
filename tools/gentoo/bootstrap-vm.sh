@@ -233,10 +233,11 @@ dev-qt/qtbase:6 X accessibility dbus gui opengl -gtk
 dev-qt/qtdeclarative:6 accessibility opengl qmlls
 dev-qt/qttools:6 opengl qdbus qtdiag qtplugininfo"
 
-KEYWORDS_CONTENT="# Project-owned packages use package-local keyword exceptions only.
-# The development metapackage is testing-only; the live product ebuild is intentionally unkeyworded.
+KEYWORDS_CONTENT="# Project packages and the WP14 tracer use package-local keyword exceptions only.
+# The development metapackage and X11 tracer are testing-only; the live product ebuild is intentionally unkeyworded.
 dev-util/prismdrake-dev-env ~amd64
-x11-misc/prismdrake **"
+x11-misc/prismdrake **
+x11-misc/xtrace ~amd64"
 
 prismdrake_install_project_file "$REPOS_FILE" "$REPOS_CONTENT" "$BACKUP_DIR"
 prismdrake_install_project_file "$USE_FILE" "$USE_CONTENT" "$BACKUP_DIR"

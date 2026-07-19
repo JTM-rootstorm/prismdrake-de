@@ -260,7 +260,7 @@ fi
 
 printf '\nTool availability\n'
 for TOOL in gcc cmake ninja git gdb strace valgrind lsof Xvfb Xephyr openbox \
-	dbus-daemon dbus-run-session gdbus qmake6; do
+	dbus-daemon dbus-run-session gdbus qmake6 xwininfo x11trace; do
 	if command -v "$TOOL" >/dev/null 2>&1; then
 		printf 'PASS: %-18s available\n' "$TOOL"
 	else

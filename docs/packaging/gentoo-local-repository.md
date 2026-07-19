@@ -71,7 +71,7 @@ about the future Prismdrake runtime package.
 |---|---:|---|
 | `portage-qa` | on | Local repository QA and Portage inspection tools |
 | `debug-tools` | on | GDB, strace, Valgrind, perf, and lsof |
-| `x11` | on | Xvfb, Xephyr, Openbox, X11 tools, D-Bus, AT-SPI and its schema data, Mesa, DejaVu fonts, and fontconfig inspection |
+| `x11` | on | Xvfb, Xephyr, Openbox, X11 inspection and protocol tracing tools, D-Bus, AT-SPI and its schema data, Mesa, DejaVu fonts, and fontconfig inspection |
 | `qt6` | on | Qt 6.11-or-newer modules for the production shell and visible-shell evidence |
 | `clang` | off | Optional compiler-matrix coverage |
 | `implementation-deps` | off | Candidate parser, D-Bus, and test libraries after decision approval |
@@ -122,19 +122,22 @@ Qt modules without a demonstrated PD1 use.
 The project-owned metapackage is testing-only and therefore uses `~amd64`.
 The live product ebuild deliberately has no architecture keyword while it
 remains Experimental, so Portage requires `**` for that exact atom. Permit only
-these two project-owned atoms through
+these two project-owned atoms and the exact WP14 protocol-tracer atom through
 `/etc/portage/package.accept_keywords/prismdrake-dev`:
 
 ```text
-# Project-owned packages use package-local keyword exceptions only.
-# The development metapackage is testing-only; the live product ebuild is intentionally unkeyworded.
+# Project packages and the WP14 tracer use package-local keyword exceptions only.
+# The development metapackage and X11 tracer are testing-only; the live product ebuild is intentionally unkeyworded.
 dev-util/prismdrake-dev-env ~amd64
 x11-misc/prismdrake **
+x11-misc/xtrace ~amd64
 ```
 
-These are narrow local-package exceptions, not permission to enable unstable
-keywords globally, accept unkeyworded transitive dependencies, or unmask
-anything outside the project-owned repository.
+`x11-misc/xtrace` installs the X11 protocol tracer as `/usr/bin/x11trace` on
+Gentoo. Do not substitute glibc's unrelated `/usr/bin/xtrace` dynamic-loader
+diagnostic. These are narrow local-package exceptions, not permission to
+enable unstable keywords globally, accept other unkeyworded transitive
+dependencies, or unmask unrelated packages.
 
 ## Product lifecycle evidence contract
 
@@ -253,7 +256,7 @@ only the libraries and broker required by the five installed Experimental
 executables. Qt SVG is a direct shell dependency at the project-wide Qt 6.11
 floor; unused Qt image-format plugins and libnotify are not declared.
 GoogleTest, Python, Xvfb, the Xorg dummy driver, Openbox, X11 RandR,
-inspection and input tools, the hicolor icon fixture, AT-SPI/PyGObject
+window-tree inspection, protocol tracing, and input tools, the hicolor icon fixture, AT-SPI/PyGObject
 inspection support, fontconfig, and the fixed test font remain conditional
 `USE=test` build dependencies. This complete gate prevents a clean reference-VM
 package test from silently registering the live startup, multi-output, icon, or

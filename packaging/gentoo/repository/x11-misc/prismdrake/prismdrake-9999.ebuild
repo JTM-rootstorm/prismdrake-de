@@ -32,9 +32,11 @@ BDEPEND="
 		x11-apps/xev
 		x11-apps/xprop
 		x11-apps/xrandr
+		x11-apps/xwininfo
 		x11-base/xorg-server[xvfb]
 		x11-drivers/xf86-video-dummy
 		x11-misc/xdotool
+		x11-misc/xtrace
 		x11-themes/hicolor-icon-theme
 		x11-wm/openbox
 	)

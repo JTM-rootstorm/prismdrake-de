@@ -66,6 +66,7 @@ RDEPEND="
 		x11-libs/libxkbcommon
 		x11-libs/xcb-util
 		x11-libs/xcb-util-wm
+		x11-misc/xtrace
 		x11-terms/xterm
 		x11-wm/openbox
 	)

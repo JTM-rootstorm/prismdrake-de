@@ -275,11 +275,13 @@ class ScriptPolicyTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
 
-    def test_bootstrap_accepts_only_the_project_owned_package_keywords(self) -> None:
+    def test_bootstrap_accepts_only_scoped_project_and_tracer_keywords(self) -> None:
         source = BOOTSTRAP.read_text(encoding="utf-8")
         self.assertIn("dev-util/prismdrake-dev-env ~amd64", source)
         self.assertIn("x11-misc/prismdrake **", source)
+        self.assertIn("x11-misc/xtrace ~amd64", source)
         self.assertNotIn("*/* **", source)
+        self.assertNotIn("ACCEPT_KEYWORDS=", source)
 
     def test_verifier_contains_no_apply_commands(self) -> None:
         source = VERIFY.read_text(encoding="utf-8")
@@ -294,6 +296,11 @@ class ScriptPolicyTests(unittest.TestCase):
         self.assertIn('prismdrake_validate_mount_state', source)
         self.assertIn('prismdrake_validate_resources', source)
         self.assertIn('prismdrake_validate_repo_name', source)
+
+    def test_verifier_requires_the_wp14_live_x11_observers(self) -> None:
+        source = VERIFY.read_text(encoding="utf-8")
+        self.assertIn("qmake6 xwininfo x11trace; do", source)
+        self.assertNotIn("/usr/bin/xtrace", source)
 
     def test_sync_without_apply_stops_before_guest_inspection(self) -> None:
         result = subprocess.run(

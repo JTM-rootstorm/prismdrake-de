@@ -174,11 +174,14 @@ Omit the option when source-only evidence is required. The apply path:
    directories, using collision-resistant names;
 5. writes `prismdrake-local.conf`, `package.use/prismdrake-dev`, and the narrow
    `package.accept_keywords/prismdrake-dev` exceptions for the project-owned
-   testing metapackage and unkeyworded live ebuild atomically with mode `0644`,
-   including when existing content already matches;
+   testing metapackage, unkeyworded live ebuild, and test-only
+   `x11-misc/xtrace` atomically with mode `0644`, including when existing
+   content already matches;
 6. confirms with both `portageq` and `eselect` that Portage resolves the live
    shared overlay rather than a stale copy;
-7. runs `pkgdev manifest` and `pkgcheck scan` before local package resolution;
+7. runs `pkgdev manifest` and `pkgcheck scan`, then requires the WP14
+   `xwininfo` and Gentoo `/usr/bin/x11trace` observer commands before local
+   package resolution;
 8. pretends the default, `-qt6`, `clang`, `implementation-deps`, and
    `visual-tests` development metapackage combinations;
 9. stops if Portage reports a mask, keyword, license, or USE conflict; and

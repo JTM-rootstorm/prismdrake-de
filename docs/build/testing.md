@@ -84,3 +84,19 @@ floor; it does not claim product compilation, formatting, or QML validation.
 Clang-Tidy is opt-in and requires either `clang-tidy` on `PATH` or an explicit
 `PRISMDRAKE_CLANG_TIDY_EXECUTABLE`. Required environment-dependent checks must
 report an exact failure or skip reason; no required test may pass silently.
+
+## PD2 live X11 observers on Gentoo
+
+The WP14 live integration gate uses `xwininfo` for bounded window-tree and
+geometry observations and the real X11 protocol tracer from
+`x11-misc/xtrace`. Gentoo renames that tracer executable to
+`/usr/bin/x11trace` because `/usr/bin/xtrace` is an unrelated glibc dynamic
+loader diagnostic. Live harness configuration must therefore name
+`/usr/bin/x11trace` explicitly and must fail closed when it is absent; it must
+not fall back to glibc's tool.
+
+These observers are test-only. They are selected by `USE=test` for the product
+ebuild and by `USE=x11` for `dev-util/prismdrake-dev-env`; neither belongs in
+`DEPEND` or `RDEPEND`. The Gentoo tracer is currently `~amd64` in the reference
+environment. Accept only `x11-misc/xtrace ~amd64` in the VM's package-local
+`package.accept_keywords/prismdrake-dev` file. Do not enable `~amd64` globally.
