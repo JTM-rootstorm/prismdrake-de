@@ -128,6 +128,7 @@
       "required": [
         "schema_version",
         "evidence_kind",
+        "trial_id",
         "release_budget",
         "source_revision",
         "reference_environment_id",
@@ -139,6 +140,7 @@
       "properties": {
         "schema_version": { "const": 1 },
         "evidence_kind": { "const": "idle_scheduler_wakeups" },
+        "trial_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
         "release_budget": { "const": false },
         "source_revision": { "$ref": "#/$defs/revision" },
         "reference_environment_id": { "$ref": "#/$defs/identity" },
@@ -180,8 +182,8 @@
         },
         "results": {
           "type": "array",
-          "minItems": 3,
-          "maxItems": 3,
+          "minItems": 4,
+          "maxItems": 4,
           "items": { "$ref": "#/$defs/idle_result" }
         },
         "limitations": { "$ref": "#/$defs/limitations" },
@@ -200,7 +202,7 @@
         "received_wakeup_count"
       ],
       "properties": {
-        "component": { "enum": ["session", "settingsd", "shell"] },
+        "component": { "enum": ["session", "settingsd", "notifyd", "shell"] },
         "thread_count_start": { "type": "integer", "minimum": 1, "maximum": 256 },
         "thread_count_end": { "type": "integer", "minimum": 1, "maximum": 256 },
         "sched_wakeup_count": { "type": "integer", "minimum": 0 },

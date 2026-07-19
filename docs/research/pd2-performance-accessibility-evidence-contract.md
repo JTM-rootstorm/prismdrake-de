@@ -161,7 +161,7 @@ python3 tests/performance/pd2_runtime_performance.py \
   --source-revision "$(git rev-parse HEAD)" \
   --environment-id gentoo-amd64-qemu-system \
   --installed-demo-evidence "$PWD/pd2-installed-demo.json" \
-  --controlled-window-fixture "$PWD/pd2-controlled-window.desktop" \
+  --controlled-window-fixture "$PWD/build/gcc-debug/tests/integration/prismdrake-controlled-window-fixture" \
   --iterations 3 \
   --output "$PWD/pd2-runtime-performance.json"
 ```
@@ -180,6 +180,11 @@ python3 tests/performance/pd2_idle_series.py \
   --input "$PWD/pd2-idle-3.json" \
   --output "$PWD/pd2-idle-series.json"
 ```
+
+Each input must be a distinct regular file from a separately collected trial,
+with a collector-generated unique trial identifier. The series binds the
+ordered trial identities by digest and rejects a repeated path, inode, or trial
+identifier. Idle totals cover session, settingsd, notifyd, and shell.
 
 Build the production and model runners, bind all four performance sources, and
 choose at least two ordered model-supported search sizes. The model runner's

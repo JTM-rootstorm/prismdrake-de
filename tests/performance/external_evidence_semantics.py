@@ -14,7 +14,7 @@ EXPECTED_CADENCE_SCENARIOS = [
     ("disabled_transparency", "lustre", False, True, True),
     ("missing_blur", "lustre", False, False, False),
 ]
-EXPECTED_IDLE_COMPONENTS = ["session", "settingsd", "shell"]
+EXPECTED_IDLE_COMPONENTS = ["session", "settingsd", "notifyd", "shell"]
 SAFE_FONT_BASENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 STARTUP_DEADLINE_NS = 10_000_000_000

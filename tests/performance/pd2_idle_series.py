@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -97,9 +98,17 @@ def validate_series(document: Any, revision: str, environment_id: str) -> None:
             "source_evidence_kind": "idle_scheduler_wakeups",
             "sample_interval_seconds": 60,
             "sample_aggregation": "sum_received_wakeups_across_measured_roles",
-            "measured_roles": ["session", "settingsd", "shell"],
+            "measured_roles": ["session", "settingsd", "notifyd", "shell"],
+            "source_trial_ids_sha256": method.get("source_trial_ids_sha256")
+            if isinstance(method, dict)
+            else None,
             "trial_count": len(samples) if isinstance(samples, list) else None,
         },
+        "idle_series_method_invalid",
+    )
+    require(
+        re.fullmatch(r"[0-9a-f]{64}", method["source_trial_ids_sha256"])
+        is not None,
         "idle_series_method_invalid",
     )
     require(
@@ -155,6 +164,11 @@ def validate_idle_trial(document: Any, revision: str, environment_id: str) -> No
         document.get("reference_environment_id") == environment_id,
         "idle_trial_environment_mismatch",
     )
+    require(
+        isinstance(document.get("trial_id"), str)
+        and re.fullmatch(r"[0-9a-f]{32}", document["trial_id"]) is not None,
+        "idle_trial_identity_invalid",
+    )
 
 
 def assemble_series(
@@ -170,11 +184,15 @@ def assemble_series(
         "trial_count_invalid",
     )
     samples: list[int] = []
+    trial_ids: list[str] = []
     for document in documents:
         validate_idle_trial(document, revision, environment_id)
+        trial_ids.append(document["trial_id"])
         samples.append(
             sum(item["received_wakeup_count"] for item in document["results"])
         )
+    require(len(set(trial_ids)) == len(trial_ids), "idle_trial_duplicate")
+    trial_digest = hashlib.sha256("\n".join(trial_ids).encode("ascii")).hexdigest()
     result = {
         "schema_version": 1,
         "evidence_kind": "pd2_idle_wakeup_series",
@@ -184,7 +202,8 @@ def assemble_series(
             "source_evidence_kind": "idle_scheduler_wakeups",
             "sample_interval_seconds": 60,
             "sample_aggregation": "sum_received_wakeups_across_measured_roles",
-            "measured_roles": ["session", "settingsd", "shell"],
+            "measured_roles": ["session", "settingsd", "notifyd", "shell"],
+            "source_trial_ids_sha256": trial_digest,
             "trial_count": len(samples),
         },
         "samples_wakeups_per_minute": samples,
@@ -248,6 +267,15 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def run(options: argparse.Namespace) -> None:
+    identities: set[tuple[int, int]] = set()
+    for path in options.input:
+        try:
+            record = path.stat()
+        except OSError as error:
+            raise IdleSeriesError("input_read_failed") from error
+        identity = (record.st_dev, record.st_ino)
+        require(identity not in identities, "input_path_duplicate")
+        identities.add(identity)
     documents = [load_json(path) for path in options.input]
     document = assemble_series(
         documents, options.source_revision, options.environment_id

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import select
+import secrets
 import signal
 import subprocess
 import sys
@@ -32,8 +33,8 @@ from collector_common import (
 
 
 PERF_LINE = re.compile(r"^([0-9]+);[^;]*;(sched:sched_wakeup(?:_new)?);.*$")
-ROLES = ("session", "settingsd", "shell")
-IDENTITY_ROLES = ("session", "settingsd", "notifyd", "shell")
+ROLES = ("session", "settingsd", "notifyd", "shell")
+IDENTITY_ROLES = ROLES
 MAXIMUM_THREADS_PER_COMPONENT = 256
 PR_SET_CHILD_SUBREAPER = 36
 COLLECTOR_SHUTDOWN_SECONDS = 2
@@ -323,6 +324,7 @@ def collect(options: object) -> dict[str, object]:
     return {
         "schema_version": 1,
         "evidence_kind": "idle_scheduler_wakeups",
+        "trial_id": secrets.token_hex(16),
         "release_budget": False,
         "source_revision": options.revision,
         "reference_environment_id": options.environment_id,

@@ -246,8 +246,9 @@ Measure wakeups only after the session startup trial has reached its valid
 endpoint and then remained untouched for a fixed five-second settling period.
 Keep the display, Openbox configuration, profile, output size, notification
 model, launcher state, and absence of user input fixed. Enumerate the exact
-`prismdrake-session`, `prismdrake-settingsd`, and `prismdrake-shell` thread IDs
-from `/proc/<pid>/task` at the start and end of a 60-second window.
+`prismdrake-session`, `prismdrake-settingsd`, `prismdrake-notifyd`, and
+`prismdrake-shell` thread IDs from `/proc/<pid>/task` at the start and end of a
+60-second window.
 
 In the guest, use system-wide `perf stat -a` with Linux
 `sched:sched_wakeup` and `sched:sched_wakeup_new` tracepoints filtered on those
@@ -262,7 +263,7 @@ percentage, context switches, or wakeup estimates and label them as wakeups.
 
 `collect_idle_wakeups.py` performs the five-second settling interval itself,
 verifies all four supplied process identities resolve to the exact expected
-executables, captures the three budgeted roles concurrently, and rejects a
+executables, captures all four budgeted roles concurrently, and rejects a
 changed measured thread set. It repeats the
 exact executable checks after settling and after collection, and terminates and
 reaps every already-started `perf` process group on every exit path. Each perf

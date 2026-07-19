@@ -59,7 +59,7 @@ def startup_fixture() -> dict[str, Any]:
 
 def idle_fixture() -> dict[str, Any]:
     results = []
-    for component in ("session", "settingsd", "shell"):
+    for component in ("session", "settingsd", "notifyd", "shell"):
         results.append(
             {
                 "component": component,
@@ -73,6 +73,7 @@ def idle_fixture() -> dict[str, Any]:
     return {
         "schema_version": 1,
         "evidence_kind": "idle_scheduler_wakeups",
+        "trial_id": "1" * 32,
         "release_budget": False,
         "source_revision": REVISION,
         "reference_environment_id": "contract-test",

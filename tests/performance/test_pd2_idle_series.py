@@ -20,6 +20,7 @@ def trial(value: int) -> dict[str, object]:
     document = idle_fixture()
     document["source_revision"] = REVISION
     document["reference_environment_id"] = ENVIRONMENT_ID
+    document["trial_id"] = f"{value:032x}"
     for record in document["results"]:
         record["sched_wakeup_count"] = value
         record["sched_wakeup_new_count"] = 1
@@ -33,8 +34,35 @@ class IdleSeriesTests(unittest.TestCase):
             [trial(1), trial(2), trial(3)], REVISION, ENVIRONMENT_ID
         )
         idle_series.validate_series(document, REVISION, ENVIRONMENT_ID)
-        self.assertEqual(document["samples_wakeups_per_minute"], [6, 9, 12])
+        self.assertEqual(document["samples_wakeups_per_minute"], [8, 12, 16])
         self.assertNotIn("results", document)
+
+    def test_rejects_duplicate_trial_identity_and_input_file(self) -> None:
+        duplicate = trial(1)
+        with self.assertRaisesRegex(
+            idle_series.IdleSeriesError, "^idle_trial_duplicate$"
+        ):
+            idle_series.assemble_series(
+                [duplicate, duplicate, trial(3)], REVISION, ENVIRONMENT_ID
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "trial.json"
+            path.write_text("{}", encoding="ascii")
+            options = type(
+                "Options",
+                (),
+                {
+                    "input": [path, path, path],
+                    "source_revision": REVISION,
+                    "environment_id": ENVIRONMENT_ID,
+                    "output": Path(temporary) / "output.json",
+                },
+            )()
+            with self.assertRaisesRegex(
+                idle_series.IdleSeriesError, "^input_path_duplicate$"
+            ):
+                idle_series.run(options)
 
     def test_rejects_wrong_revision_and_invalid_semantics(self) -> None:
         wrong_revision = trial(1)
