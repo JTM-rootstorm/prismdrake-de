@@ -160,8 +160,10 @@ PRISMDRAKE_REVISION=$(/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" \
   rev-parse --verify HEAD)
 test -z "$(/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" \
   status --porcelain=v1 --untracked-files=all)"
-/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" bundle create \
-  "$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle" HEAD
+(umask 077 && /usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" bundle create \
+  "$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle" HEAD)
+test "$(/usr/bin/stat -c %a \
+  "$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle")" = 600
 
 export EGIT_OVERRIDE_REPO_JTM_ROOTSTORM_PRISMDRAKE_DE=\
 "file://$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle"

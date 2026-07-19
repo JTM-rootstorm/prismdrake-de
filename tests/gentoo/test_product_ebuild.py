@@ -306,6 +306,17 @@ class PackagingGuideContractTests(unittest.TestCase):
         )
         self.assertIn('USE="test" FEATURES="test keepwork"', self.source)
 
+    def test_unpublished_source_bundle_is_private_at_creation(self) -> None:
+        self.assertIn(
+            '(umask 077 && /usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" '
+            "bundle create",
+            self.source,
+        )
+        self.assertIn(
+            '"$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle")" = 600',
+            self.source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
