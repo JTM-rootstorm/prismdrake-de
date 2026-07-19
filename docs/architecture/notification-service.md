@@ -4,8 +4,8 @@ This Accepted PD2 design refines the `prismdrake-notifyd` boundary from
 [ADR 0002](../adr/0002-component-and-process-model.md) and
 [ADR 0009](../adr/0009-pd2-state-and-control-contracts.md). The service and its
 Prismdrake-native interface are Accepted PD2 implementation targets at
-Experimental stability; they are not yet implemented by this design record and
-are not a stable wire or storage ABI.
+Experimental stability. The PD2 implementation follows this contract, but its
+wire and storage interfaces are not stable ABI commitments.
 
 ## Process and authority
 

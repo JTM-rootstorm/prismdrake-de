@@ -82,6 +82,43 @@ documented skip. Formatting, 61 contract-negative paths, and `pkgcheck` also
 passed. The local immutable branch `codex/pd2-wave1-base` identifies this
 reviewed worker base; it is not pushed.
 
+### Wave 1 implementation status
+
+The parallel Wave 1 foundations are implemented and passed their combined
+integration gate before the Wave 2 worker base was frozen:
+
+- RandR and Qt observations reconcile into stable named-output generations,
+  and one registry owns desktop, panel, and transient placement for every
+  valid output.
+- `prismdrake-notifyd` implements the freedesktop Notifications 1.3 service,
+  bounded session or opt-in persistent history, sender and action lifecycle,
+  do-not-disturb policy, and the Experimental notification-center interface.
+  Settings refresh is asynchronous and retries with bounded backoff so a
+  missing or slow settings owner cannot block notification dispatch.
+- Application identity follows the Accepted deterministic association order;
+  desktop-file identifiers, icon-theme discovery, and pin persistence have
+  explicit input, work, storage, and no-follow filesystem bounds.
+- Experimental shell and session control use fixed typed commands, same-user
+  authorization, owner epochs, and a bounded logout transaction. Runtime bus
+  ownership and process composition remain coordinator-owned Wave 3 work.
+- Wallpaper state uses immutable generations, bounded local regular-file
+  reads, worker-side Qt image decoding, solid fallback, stale-load
+  cancellation, and deterministic center, fit, fill, stretch, and tile
+  geometry. Desktop window presentation remains Wave 2 work.
+
+No Wave 1 implementation introduces a native `GW_*` path, compositor blur,
+desktop icons, an implicit command shell, a mandatory GNOME desktop-stack
+dependency, or an external system-service authority.
+
+The combined source registered 651 tests. A clean GCC 15.3 warnings-as-errors
+host build passed 640 tests with zero failures and 11 explicit environment or
+opt-in skips. Its staged install contained the expected 21 files with no
+missing, unexpected, duplicate, or prefix-violating entry. The Gentoo
+reference VM repeated all 380 GCC build steps and passed 648 tests with zero
+failures and three explicit skips. Clang 22.1.8 repeated the same 380 build
+steps, 648 passes, and three skips. Formatting, 61 contract-negative paths,
+and Portage QA passed.
+
 ## Active workstreams
 
 1. **Shared foundation:** parallel-friendly build/test registration,
