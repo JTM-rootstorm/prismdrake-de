@@ -22,7 +22,7 @@ storage, C++, QML, and evidence formats remain Experimental.
 
 | Area | Current source behavior | Requirements |
 |---|---|---|
-| Outputs and surfaces | One registry reconciles bounded RandR and Qt screen observations, creates one desktop per active output, applies the configured panel-output policy, and transfers or dismisses global transient surfaces after topology changes. | `PD-OUTPUT-001` through `PD-OUTPUT-004`, `PD-PANEL-001`, `PD-DESKTOP-001` |
+| Outputs and surfaces | One registry reconciles bounded RandR and Qt screen observations, creates one desktop per active output, applies the configured panel-output policy, and transfers or dismisses global transient surfaces after topology changes. Dedicated bounded workers own checked desktop and dock EWMH property transactions; Qt view staging and generation-checked publication remain GUI-thread work. | `PD-OUTPUT-001` through `PD-OUTPUT-004`, `PD-PANEL-001`, `PD-DESKTOP-001`, `PD-PERF-001`, `PD-PERF-004` |
 | Panel and tasks | Shared panel QML presents ordered pins and running tasks, deterministic `always`, `never`, and `when_full` grouping, explicit active/minimized/urgent/modal state, group navigation, launch, activate, minimize, close, and pin actions. A dedicated task worker owns reply-bearing X11 refreshes, events, and checked EWMH requests to the active WM. | `PD-PANEL-001` through `PD-PANEL-005`, `PD-PANEL-008`, `PD-WIN-001` through `PD-WIN-007`, `PD-PERF-001`, `PD-PERF-004` |
 | Launcher | The local XDG application catalog is monitored without polling. Dedicated workers own bounded recursive discovery, watch replacement, catalog refresh, search, launch, and icon lookup; owner-thread publication remains generation-checked. The launcher supports desktop actions, typed D-Bus activation, direct execution without an implicit shell where allowed, icons with fallback, pins, and Prismdrake destinations. | `PD-LAUNCH-001` through `PD-LAUNCH-005`, `PD-LAUNCH-007`, `PD-LAUNCH-008`, `PD-INT-007`, `PD-SEC-002`, `PD-PERF-001`, `PD-PERF-004`, `PD-PERF-006` |
 | Desktop and wallpaper | A non-focusable standard X11 desktop surface is hosted per active output. One bounded decoded wallpaper snapshot is laid out in the configured mode on every output; invalid or missing images use the configured solid color. | `PD-DESKTOP-001` through `PD-DESKTOP-003`, `PD-DESKTOP-005`, `PD-DESKTOP-006` |
@@ -99,6 +99,27 @@ behavior. PD2 uses the same wallpaper source, mode, and background fallback on
 every active output. The loader bounds the source file, image dimensions,
 decoded allocation, and stale completion before publishing one immutable
 generation.
+
+Panel and desktop hosts stage their `QQuickView` objects on the GUI thread, but
+each host's dedicated bounded X11-property worker owns a separate X11
+connection, atom discovery, checked dock or desktop property transaction, and
+cleanup. Only a queued successful completion makes staged views visible and
+advances the host generation. The runtime then uses the matching publication
+callback as the atomic commit point for the complete settings, theme,
+output-composition, or desktop-controller generation. A wallpaper-only update
+may retain the same topology generation; its newer settings and wallpaper
+state is still applied as one complete desktop update.
+
+A failed property transaction never publishes a partial candidate. An existing
+complete surface generation remains visible while the runtime enters its
+bounded fail-closed shutdown path; an initial failure exposes no candidate
+surface. Panel focusability changes use the same transaction boundary: the
+replacement dock is published before the prior dock is cleaned up, and focus
+is routed into a child control only after the exact replacement is accepted.
+Stale replacement completions are discarded without advancing presentation
+state. These mechanics do not give Prismdrake authority over WM focus,
+stacking, work areas, or window lifecycle, and they make no change to
+Glasswyrm ownership or native interfaces.
 
 Per-output wallpaper selection and desktop icons are Deferred. Desktop file
 operations are Unsupported in PD2. This boundary implements

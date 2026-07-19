@@ -76,6 +76,37 @@ instance-local.
 These rules address `PD-PANEL-001`, `PD-PANEL-004`, `PD-PANEL-005`, and
 `PD-OUTPUT-001` through `PD-OUTPUT-004`.
 
+## Surface publication boundary
+
+Qt owns creation, sizing, screen assignment, visibility, and destruction of
+every panel and desktop `QQuickView`, so that work remains on the GUI thread.
+Checked `_NET_WM_WINDOW_TYPE`, dock strut, desktop-role, and matching cleanup
+transactions run through each host's dedicated bounded worker with its own X11
+connection. A worker returns only a token-bound queued completion; it does not
+own output policy, view state, settings, composition, or focus routing.
+
+A candidate generation is staged without disturbing the last complete visible
+generation. The host publishes the candidate's X11 properties first, then a
+successful queued completion makes replacement views visible and removes the
+superseded properties. The publication callback is the runtime atomic commit
+point: the matching panel completion may advance one complete settings, theme,
+and composition generation, while the matching desktop completion advances
+its controller update. A same-topology wallpaper change is valid and does not
+need to manufacture a topology generation merely to reach that desktop commit
+point.
+
+Failure or cancellation never exposes a partially published generation. The
+last complete surfaces remain intact when they exist, and the runtime follows
+its bounded fail-closed shutdown path; an initial publication failure leaves no
+candidate visible. A focusability replacement publishes the new dock before
+cleaning the old dock. Its child-focus continuation runs only after that exact
+replacement remains current; a topology change, clear, or newer focus request
+invalidates the continuation and cleans up the unused replacement.
+
+This is an internal standards-baseline scheduling boundary. It does not change
+Glasswyrm ownership or introduce a native surface, focus, or work-area
+interface.
+
 ## Transient surface policy
 
 ### Launcher

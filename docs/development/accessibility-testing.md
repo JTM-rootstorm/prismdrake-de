@@ -67,6 +67,16 @@ description, action, visibility, enabled state, focusability, and focused
 state. They return fixed categorical outcomes rather than serializing the live
 tree.
 
+When panel keyboard access requires a focusable replacement window, the shell
+first completes the checked dock-property publication and accepts that exact
+replacement. Only its queued focus-ready continuation may then focus the
+requested child control. An already-focusable panel reuses its exact current
+QML view so action-menu recovery state is not lost. Coalescing retains only the
+newest continuation; a topology replacement rebinds it to the accepted new
+panel, while settings-owner clear, release, or output removal cancels it. No
+continuation directs focus into a hidden or superseded view. The active window
+manager remains authoritative for accepting the window-activation request.
+
 The installed demonstration maps all 48 ordered workflow checks to reviewed
 surface observations. Its accessibility-specific steps cover descriptions and
 states, Backtab traversal, output-migration focus, and focus recovery after

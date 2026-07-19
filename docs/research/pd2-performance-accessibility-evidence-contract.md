@@ -162,7 +162,11 @@ The steady-state stack uses event-driven waits rather than fixed-cadence
 polling. The session supervisor waits for exact-child signals, session-bus
 activity or deadlines, and explicit shutdown activity. Settingsd similarly
 waits for its worker, a session-bus event or deadline, or an explicit signal
-wake. Their remaining timed waits are bounded readiness, recovery, and
+wake. Shell surface staging remains GUI-thread work, while each host's bounded
+worker owns checked dock or desktop X11 property transactions and reports
+queued token-bound completions. Settings, composition, desktop-controller, and
+child-focus publication therefore do not wait synchronously for X11 replies on
+the GUI thread. Their remaining timed waits are bounded readiness, recovery, and
 termination policy rather than idle polling. Until a matching validated
 multi-sample PD1 idle baseline exists, the final record must identify that
 comparison as unavailable instead of labeling the observed total a regression

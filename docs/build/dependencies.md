@@ -131,10 +131,13 @@ carry a verified or observed version.
   shell data; qttools is not a runtime dependency. A missing catalog fails soft
   to source strings, and the loader accepts only bounded language tags beneath
   its trusted packaged directory.
-  The panel window host and event-driven task controller use Qt GUI/Core and the
-  internal standards-only X11 adapter. The task worker owns blocking X11
-  replies, event drain, and checked actions; the Qt owner thread publishes only
-  current queued results. Quick Test is test-only. The live
+  The panel and desktop window hosts and event-driven task controller use Qt
+  GUI/Core and the internal standards-only X11 adapter. Each host owns a bounded
+  surface-property worker with a separate X11 connection, atom discovery, and
+  checked dock or desktop property transactions; Qt retains view staging and
+  commits only current queued completions. The task worker separately owns
+  blocking task replies, event drain, and checked actions. These workers add no
+  library dependency. Quick Test is test-only. The live
   snapshot client directly uses the selected sd-bus provider and session D-Bus,
   while its canonical inverse parser includes the
   system nlohmann JSON header. Qt 6.11 is the maintainer-selected declared
