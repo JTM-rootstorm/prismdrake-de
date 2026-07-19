@@ -1,5 +1,6 @@
 add_subdirectory(theme)
 add_subdirectory(notifications)
+add_subdirectory(notificationcenter)
 add_subdirectory(settings)
 add_subdirectory(outputs)
 add_subdirectory(control)
