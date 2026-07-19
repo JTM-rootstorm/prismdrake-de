@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdlib>
@@ -133,6 +134,27 @@ TEST_F(DesktopWindowHostIntegrationTest, OpenboxLeavesFocusAndStackingWithOrdina
     EXPECT_TRUE(ordinary.isActive());
     EXPECT_FALSE(desktopHost->window("LEFT-1")->isActive());
     EXPECT_FALSE(desktopHost->window("RIGHT-1")->isActive());
+
+    auto inspector = x11::X11Connection::connect(display_);
+    ASSERT_TRUE(inspector);
+    auto atoms = x11::AtomCache::create(inspector.value());
+    ASSERT_TRUE(atoms);
+    auto stacking = x11::PropertyReader::read(
+        inspector.value(), atoms.value(), inspector.value().screen().rootWindow,
+        x11::AtomName::net_client_list_stacking,
+        {x11::AtomName::window, x11::PropertyFormat::bits_32, 64U, 64U * sizeof(std::uint32_t)});
+    ASSERT_TRUE(stacking) << stacking.error().message;
+    auto stack = stacking.value().uint32Items();
+    ASSERT_TRUE(stack);
+    const auto ordinaryPosition =
+        std::find(stack.value().begin(), stack.value().end(), ordinary.winId());
+    ASSERT_NE(ordinaryPosition, stack.value().end());
+    for (const auto *desktop : {desktopHost->window("LEFT-1"), desktopHost->window("RIGHT-1")}) {
+        const auto desktopPosition =
+            std::find(stack.value().begin(), stack.value().end(), desktop->winId());
+        ASSERT_NE(desktopPosition, stack.value().end());
+        EXPECT_LT(desktopPosition, ordinaryPosition);
+    }
 }
 
 } // namespace
