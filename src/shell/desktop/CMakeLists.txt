@@ -24,6 +24,7 @@ target_include_directories(prismdrake-shell-desktop
 target_link_libraries(prismdrake-shell-desktop
     PUBLIC
         Prismdrake::output-surfaces
+        Prismdrake::shell-x11-property-worker
         Prismdrake::wallpaper-core
         Prismdrake::x11
         Qt6::Core
@@ -49,6 +50,19 @@ if(BUILD_TESTING)
     include(GoogleTest)
     gtest_discover_tests(prismdrake-desktop-surface-controller-tests
         DISCOVERY_MODE PRE_TEST)
+
+    add_executable(prismdrake-desktop-window-host-async-tests
+        tests/DesktopWindowHostAsyncTests.cpp)
+    target_link_libraries(prismdrake-desktop-window-host-async-tests
+        PRIVATE GTest::gtest Prismdrake::shell-desktop)
+    prismdrake_configure_cpp_target(prismdrake-desktop-window-host-async-tests)
+    prismdrake_enable_warnings(prismdrake-desktop-window-host-async-tests)
+    prismdrake_enable_sanitizers(prismdrake-desktop-window-host-async-tests)
+    add_test(NAME DesktopWindowHostAsyncTest
+        COMMAND prismdrake-desktop-window-host-async-tests)
+    set_tests_properties(DesktopWindowHostAsyncTest PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 15)
 
     add_executable(prismdrake-desktop-window-host-integration-tests
         tests/DesktopWindowHostIntegrationTests.cpp)

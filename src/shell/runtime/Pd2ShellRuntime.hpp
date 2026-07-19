@@ -52,6 +52,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     [[nodiscard]] control::ShellRequestFailure releasePanelKeyboardAccess() override;
 
   private:
+    struct PendingSettingsPublication;
     explicit Pd2ShellRuntime(ShellRuntimeOptions options);
     [[nodiscard]] foundation::Result<void> initialize();
     void handleSettings();
@@ -60,6 +61,10 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     applySettings(std::shared_ptr<const prismdrake::settings::SettingsSnapshot> snapshot);
     [[nodiscard]] foundation::Result<void>
     applySurfaces(const outputs::SurfaceRegistrySnapshot &snapshot);
+    void handlePanelPublication(const outputs::SurfaceRegistrySnapshot &snapshot,
+                                const foundation::Result<void> &result);
+    [[nodiscard]] foundation::Result<void>
+    finishSettingsPublication(const outputs::SurfaceRegistrySnapshot &snapshot);
     [[nodiscard]] foundation::Result<std::unique_ptr<QQuickView>>
     makePanel(std::string_view outputName, QScreen &screen);
     [[nodiscard]] foundation::Result<void> ensureSingletonViews();
@@ -131,6 +136,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     std::shared_ptr<const prismdrake::settings::SettingsSnapshot> settings_snapshot_;
     const theme::ShellThemeSnapshotAdapter *panel_theme_candidate_{nullptr};
     std::optional<outputs::SurfaceRegistrySnapshot> pending_surface_snapshot_;
+    std::unique_ptr<PendingSettingsPublication> pending_settings_publication_;
     std::uint64_t settings_owner_epoch_{0U};
     std::uint64_t association_generation_{0U};
     std::optional<controlclients::LogoutTransactionId> logout_transaction_;

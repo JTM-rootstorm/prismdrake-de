@@ -1,19 +1,20 @@
 #pragma once
 
-#include "AtomCache.hpp"
 #include "DesktopSurfaceController.hpp"
 #include "Result.hpp"
-#include "X11Connection.hpp"
+#include "X11PropertyWorker.hpp"
 
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
 class QQuickView;
 class QScreen;
 class QWindow;
+class QObject;
 
 namespace prismdrake::shell::desktop {
 
@@ -24,9 +25,13 @@ namespace prismdrake::shell::desktop {
 class DesktopWindowHost final {
   public:
     using ScreenResolver = std::function<QScreen *(std::string_view)>;
+    using PublicationCallback =
+        std::function<void(const DesktopSurfaceUpdate &, const foundation::Result<void> &)>;
 
     [[nodiscard]] static foundation::Result<std::unique_ptr<DesktopWindowHost>>
-    create(std::string_view display, ScreenResolver screenResolver);
+    create(std::string_view display, ScreenResolver screenResolver,
+           PublicationCallback publicationCallback = {},
+           window::X11PropertyWorker::Transaction testTransaction = {});
 
     ~DesktopWindowHost();
     DesktopWindowHost(const DesktopWindowHost &) = delete;
@@ -44,19 +49,27 @@ class DesktopWindowHost final {
 
   private:
     struct WindowEntry;
+    struct PendingApply;
 
-    DesktopWindowHost(x11::X11Connection connection, x11::AtomCache atoms,
-                      ScreenResolver screenResolver) noexcept;
+    DesktopWindowHost(ScreenResolver screenResolver,
+                      PublicationCallback publicationCallback) noexcept;
 
     [[nodiscard]] foundation::Result<std::unique_ptr<WindowEntry>>
     createWindow(QScreen &screen, const DesktopSurfaceState &surface,
                  const std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> &wallpaper);
-    void removeProperties(WindowEntry &entry) noexcept;
+    [[nodiscard]] foundation::Result<void> beginApply(const DesktopSurfaceUpdate &update);
+    void completeApply(std::uint64_t token, foundation::Result<void> result);
+    void submitCleanup(x11::WindowId window) noexcept;
+    [[nodiscard]] foundation::Result<std::uint64_t> allocateToken();
 
-    x11::X11Connection connection_;
-    x11::AtomCache atoms_;
     ScreenResolver screen_resolver_;
+    PublicationCallback publication_callback_;
+    std::unique_ptr<QObject> completion_context_;
+    std::unique_ptr<window::X11PropertyWorker> property_worker_;
     std::map<std::string, std::unique_ptr<WindowEntry>, std::less<>> windows_;
+    std::unique_ptr<PendingApply> pending_apply_;
+    std::optional<DesktopSurfaceUpdate> queued_update_;
+    std::uint64_t next_token_{1U};
     std::shared_ptr<const DesktopSurfaceSnapshot> current_;
 };
 

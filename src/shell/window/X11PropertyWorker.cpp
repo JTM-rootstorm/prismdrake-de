@@ -1,0 +1,217 @@
+#include "X11PropertyWorker.hpp"
+
+#include "AtomCache.hpp"
+#include "DesktopProperties.hpp"
+#include "DockProperties.hpp"
+#include "X11Connection.hpp"
+
+#include <QMetaObject>
+
+#include <exception>
+#include <utility>
+
+#include <sys/socket.h>
+
+namespace prismdrake::shell::window {
+namespace {
+
+using foundation::ErrorCode;
+using foundation::Result;
+
+inline constexpr std::size_t maximumQueuedPropertyTransactions = 64U;
+inline constexpr std::size_t maximumPropertyOperationsPerTransaction = 128U;
+
+[[nodiscard]] Result<void> invalidJob() {
+    return Result<void>::failure(
+        {ErrorCode::invalid_argument, "The X11 property transaction is invalid.",
+         "Submit one non-zero token and a bounded non-empty operation set."});
+}
+
+[[nodiscard]] Result<void> stoppedWorker() {
+    return Result<void>::failure(
+        {ErrorCode::cancelled, "The X11 property worker is unavailable.",
+         "Discard the pending surfaces and rebuild them after X11 recovery."});
+}
+
+[[nodiscard]] Result<void> applyOperation(x11::X11Connection &connection,
+                                          const x11::AtomCache &atoms,
+                                          const X11PropertyOperation &operation) {
+    switch (operation.kind) {
+    case X11PropertyOperationKind::publishDock:
+        if (!operation.dockReservation) {
+            return invalidJob();
+        }
+        return x11::DockProperties::publishBottomPanelReservation(
+            connection, atoms, operation.window, *operation.dockReservation);
+    case X11PropertyOperationKind::removeDock:
+        return x11::DockProperties::remove(connection, atoms, operation.window);
+    case X11PropertyOperationKind::publishDesktop:
+        return x11::DesktopProperties::publish(connection, atoms, operation.window);
+    case X11PropertyOperationKind::removeDesktop:
+        return x11::DesktopProperties::remove(connection, atoms, operation.window);
+    }
+    return invalidJob();
+}
+
+[[nodiscard]] X11PropertyOperation rollbackFor(const X11PropertyOperation &operation) {
+    return {operation.kind == X11PropertyOperationKind::publishDock
+                ? X11PropertyOperationKind::removeDock
+                : X11PropertyOperationKind::removeDesktop,
+            operation.window, std::nullopt};
+}
+
+} // namespace
+
+Result<std::unique_ptr<X11PropertyWorker>> X11PropertyWorker::create(QObject &owner,
+                                                                     std::string display,
+                                                                     Completion completion,
+                                                                     Transaction testTransaction) {
+    if (display.empty() || !completion) {
+        return Result<std::unique_ptr<X11PropertyWorker>>::failure(invalidJob().error());
+    }
+    try {
+        return Result<std::unique_ptr<X11PropertyWorker>>::success(
+            std::unique_ptr<X11PropertyWorker>(new X11PropertyWorker(
+                owner, std::move(display), std::move(completion), std::move(testTransaction))));
+    } catch (const std::exception &) {
+        return Result<std::unique_ptr<X11PropertyWorker>>::failure(
+            {ErrorCode::too_large, "The X11 property worker could not be allocated.",
+             "Stop surface startup without publishing partial windows."});
+    }
+}
+
+X11PropertyWorker::X11PropertyWorker(QObject &owner, std::string display, Completion completion,
+                                     Transaction testTransaction)
+    : owner_(owner), display_(std::move(display)), completion_(std::move(completion)),
+      test_transaction_(std::move(testTransaction)),
+      thread_([this](std::stop_token stopToken) { run(stopToken); }) {}
+
+X11PropertyWorker::~X11PropertyWorker() {
+    {
+        std::scoped_lock lock{mutex_};
+        stopping_ = true;
+        jobs_.clear();
+    }
+    thread_.request_stop();
+    wake_.notify_all();
+    {
+        std::scoped_lock lock{connection_mutex_};
+        if (live_connection_ != nullptr) {
+            const int descriptor = live_connection_->eventFileDescriptor();
+            if (descriptor >= 0) {
+                (void)shutdown(descriptor, SHUT_RDWR);
+            }
+        }
+    }
+    if (thread_.joinable()) {
+        thread_.join();
+    }
+}
+
+Result<void> X11PropertyWorker::submit(std::uint64_t token,
+                                       std::vector<X11PropertyOperation> operations) {
+    if (token == 0U || operations.empty() ||
+        operations.size() > maximumPropertyOperationsPerTransaction) {
+        return invalidJob();
+    }
+    for (const auto &operation : operations) {
+        const bool reservationRequired = operation.kind == X11PropertyOperationKind::publishDock;
+        if (operation.dockReservation.has_value() != reservationRequired) {
+            return invalidJob();
+        }
+    }
+    {
+        std::scoped_lock lock{mutex_};
+        if (stopping_) {
+            return stoppedWorker();
+        }
+        if (jobs_.size() >= maximumQueuedPropertyTransactions) {
+            return Result<void>::failure(
+                {ErrorCode::too_large, "The bounded X11 property queue is full.",
+                 "Coalesce surface generations before submitting more work."});
+        }
+        jobs_.push_back({token, std::move(operations)});
+    }
+    wake_.notify_one();
+    return Result<void>::success();
+}
+
+void X11PropertyWorker::run(std::stop_token stopToken) {
+    std::optional<x11::X11Connection> connection;
+    std::optional<foundation::Error> setupError;
+    std::optional<x11::AtomCache> atoms;
+    if (!test_transaction_) {
+        auto connected = x11::X11Connection::connect(display_);
+        if (!connected) {
+            setupError = connected.error();
+        } else {
+            connection = std::move(connected).value();
+        }
+    }
+    if (connection) {
+        {
+            std::scoped_lock lock{connection_mutex_};
+            live_connection_ = &*connection;
+        }
+        auto createdAtoms = x11::AtomCache::create(*connection);
+        if (!createdAtoms) {
+            setupError = createdAtoms.error();
+        } else {
+            atoms = std::move(createdAtoms).value();
+        }
+    }
+
+    while (!stopToken.stop_requested()) {
+        std::optional<Job> job;
+        {
+            std::unique_lock lock{mutex_};
+            wake_.wait(lock, stopToken, [this] { return stopping_ || !jobs_.empty(); });
+            if (stopping_ || stopToken.stop_requested()) {
+                break;
+            }
+            job = std::move(jobs_.front());
+            jobs_.pop_front();
+        }
+        if (test_transaction_) {
+            deliver(job->token, test_transaction_(stopToken, job->operations));
+            continue;
+        }
+        if (setupError) {
+            deliver(job->token, Result<void>::failure(*setupError));
+            continue;
+        }
+        std::vector<X11PropertyOperation> published;
+        Result<void> result = Result<void>::success();
+        for (const auto &operation : job->operations) {
+            result = applyOperation(*connection, *atoms, operation);
+            if (!result) {
+                break;
+            }
+            if (operation.kind == X11PropertyOperationKind::publishDock ||
+                operation.kind == X11PropertyOperationKind::publishDesktop) {
+                published.push_back(operation);
+            }
+        }
+        if (!result) {
+            for (auto operation = published.rbegin(); operation != published.rend(); ++operation) {
+                const auto rollback = applyOperation(*connection, *atoms, rollbackFor(*operation));
+                (void)rollback;
+            }
+        }
+        deliver(job->token, std::move(result));
+    }
+    {
+        std::scoped_lock lock{connection_mutex_};
+        live_connection_ = nullptr;
+    }
+}
+
+void X11PropertyWorker::deliver(std::uint64_t token, Result<void> result) {
+    auto payload = std::make_shared<Result<void>>(std::move(result));
+    const auto completion = completion_;
+    QMetaObject::invokeMethod(
+        &owner_, [completion, token, payload] { completion(token, std::move(*payload)); },
+        Qt::QueuedConnection);
+}
+
+} // namespace prismdrake::shell::window

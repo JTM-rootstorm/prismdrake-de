@@ -27,6 +27,15 @@ namespace {
 
 using namespace std::chrono_literals;
 
+template <typename Predicate> [[nodiscard]] bool waitUntil(Predicate predicate) {
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (!predicate() && std::chrono::steady_clock::now() < deadline) {
+        QCoreApplication::processEvents();
+        std::this_thread::sleep_for(5ms);
+    }
+    return predicate();
+}
+
 class DesktopWindowHostIntegrationTest : public ::testing::Test {
   protected:
     void SetUp() override {
@@ -36,11 +45,13 @@ class DesktopWindowHostIntegrationTest : public ::testing::Test {
     }
 
     [[nodiscard]] std::unique_ptr<DesktopWindowHost>
-    host(DesktopWindowHost::ScreenResolver resolver = {}) const {
+    host(DesktopWindowHost::ScreenResolver resolver = {},
+         DesktopWindowHost::PublicationCallback callback = {}) const {
         if (!resolver) {
             resolver = [](std::string_view) { return QGuiApplication::primaryScreen(); };
         }
-        auto created = DesktopWindowHost::create(display_, std::move(resolver));
+        auto created =
+            DesktopWindowHost::create(display_, std::move(resolver), std::move(callback));
         EXPECT_TRUE(created) << created.error().message;
         return created ? std::move(created).value() : nullptr;
     }
@@ -55,10 +66,18 @@ TEST_F(DesktopWindowHostIntegrationTest, MapsTwoTypedInputTransparentDesktopsAnd
                                OutputScaleObservation{"RIGHT-1", 1.0}};
     auto update = controller.prepare(registry.observe(1U), twoScales, test::imageWallpaper(1U));
     ASSERT_TRUE(update);
-    auto desktopHost = host();
+    std::size_t publications = 0U;
+    bool publicationSucceeded = false;
+    auto desktopHost = host({}, [&](const auto &, const auto &result) {
+        ++publications;
+        publicationSucceeded = static_cast<bool>(result);
+    });
     ASSERT_NE(desktopHost, nullptr);
 
     ASSERT_TRUE(desktopHost->apply(update.value()));
+    EXPECT_EQ(publications, 0U);
+    ASSERT_TRUE(waitUntil([&] { return publications == 1U; }));
+    ASSERT_TRUE(publicationSucceeded);
     controller.commit(std::move(update).value());
     ASSERT_EQ(desktopHost->windowCount(), 2U);
     auto *left = desktopHost->window("LEFT-1");
@@ -103,6 +122,9 @@ TEST_F(DesktopWindowHostIntegrationTest, MapsTwoTypedInputTransparentDesktopsAnd
     auto removed = controller.prepare(registry.observe(2U, false), oneScale);
     ASSERT_TRUE(removed);
     ASSERT_TRUE(desktopHost->apply(removed.value()));
+    EXPECT_EQ(publications, 1U);
+    ASSERT_TRUE(waitUntil([&] { return publications == 2U; }));
+    ASSERT_TRUE(publicationSucceeded);
     controller.commit(std::move(removed).value());
     EXPECT_EQ(desktopHost->windowCount(), 1U);
     ASSERT_NE(desktopHost->window("LEFT-1"), nullptr);
@@ -117,18 +139,27 @@ TEST_F(DesktopWindowHostIntegrationTest, RetainsCompleteSetWhenLaterScreenStagin
                             OutputScaleObservation{"RIGHT-1", 1.0}};
     bool rejectRightScreen = false;
     std::size_t resolvedScreens = 0U;
-    auto desktopHost = host([&](std::string_view outputName) -> QScreen * {
-        ++resolvedScreens;
-        if (rejectRightScreen && outputName == "RIGHT-1") {
-            return nullptr;
-        }
-        return QGuiApplication::primaryScreen();
-    });
+    std::size_t publications = 0U;
+    bool publicationSucceeded = false;
+    auto desktopHost = host(
+        [&](std::string_view outputName) -> QScreen * {
+            ++resolvedScreens;
+            if (rejectRightScreen && outputName == "RIGHT-1") {
+                return nullptr;
+            }
+            return QGuiApplication::primaryScreen();
+        },
+        [&](const auto &, const auto &result) {
+            ++publications;
+            publicationSucceeded = static_cast<bool>(result);
+        });
     ASSERT_NE(desktopHost, nullptr);
 
     auto initial = controller.prepare(registry.observe(1U), scales, test::solidWallpaper(1U));
     ASSERT_TRUE(initial);
     ASSERT_TRUE(desktopHost->apply(initial.value()));
+    ASSERT_TRUE(waitUntil([&] { return publications == 1U; }));
+    ASSERT_TRUE(publicationSucceeded);
     controller.commit(std::move(initial).value());
     const auto retainedHostSnapshot = desktopHost->current();
     const auto retainedControllerSnapshot = controller.current();
@@ -147,6 +178,7 @@ TEST_F(DesktopWindowHostIntegrationTest, RetainsCompleteSetWhenLaterScreenStagin
     rejectRightScreen = true;
     resolvedScreens = 0U;
     EXPECT_FALSE(desktopHost->apply(changed.value()));
+    EXPECT_EQ(publications, 1U);
     EXPECT_EQ(resolvedScreens, 2U);
     EXPECT_EQ(desktopHost->current(), retainedHostSnapshot);
     EXPECT_EQ(controller.current(), retainedControllerSnapshot);
@@ -158,6 +190,9 @@ TEST_F(DesktopWindowHostIntegrationTest, RetainsCompleteSetWhenLaterScreenStagin
 
     rejectRightScreen = false;
     ASSERT_TRUE(desktopHost->apply(changed.value()));
+    EXPECT_EQ(publications, 1U);
+    ASSERT_TRUE(waitUntil([&] { return publications == 2U; }));
+    ASSERT_TRUE(publicationSucceeded);
     controller.commit(std::move(changed).value());
     EXPECT_NE(desktopHost->window("LEFT-1")->winId(), leftId);
     EXPECT_EQ(desktopHost->window("RIGHT-1")->winId(), rightId);
@@ -179,20 +214,19 @@ TEST_F(DesktopWindowHostIntegrationTest, OpenboxLeavesFocusAndStackingWithOrdina
                             OutputScaleObservation{"RIGHT-1", 1.0}};
     auto update = controller.prepare(registry.observe(1U), scales, test::solidWallpaper(1U));
     ASSERT_TRUE(update);
-    auto desktopHost = host();
+    bool published = false;
+    auto desktopHost =
+        host({}, [&](const auto &, const auto &result) { published = static_cast<bool>(result); });
     ASSERT_NE(desktopHost, nullptr);
     ASSERT_TRUE(desktopHost->apply(update.value()));
+    ASSERT_TRUE(waitUntil([&] { return published; }));
 
     QWindow ordinary;
     ordinary.setTitle(QStringLiteral("Prismdrake desktop stacking fixture"));
     ordinary.setGeometry(200, 200, 320, 240);
     ordinary.show();
     ordinary.requestActivate();
-    const auto deadline = std::chrono::steady_clock::now() + 2s;
-    while (!ordinary.isActive() && std::chrono::steady_clock::now() < deadline) {
-        QCoreApplication::processEvents();
-        std::this_thread::sleep_for(10ms);
-    }
+    ASSERT_TRUE(waitUntil([&] { return ordinary.isActive(); }));
     EXPECT_TRUE(ordinary.isActive());
     EXPECT_FALSE(desktopHost->window("LEFT-1")->isActive());
     EXPECT_FALSE(desktopHost->window("RIGHT-1")->isActive());

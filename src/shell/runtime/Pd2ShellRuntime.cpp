@@ -49,6 +49,12 @@ using foundation::Result;
 
 } // namespace
 
+struct Pd2ShellRuntime::PendingSettingsPublication final {
+    std::unique_ptr<theme::ShellThemeSnapshotAdapter> theme;
+    std::shared_ptr<const prismdrake::settings::SettingsSnapshot> settings;
+    prismdrake::desktop::WallpaperRequest wallpaperRequest;
+};
+
 Pd2ShellRuntime::Pd2ShellRuntime(ShellRuntimeOptions options)
     : options_(std::move(options)), task_model_(this), grouped_tasks_(this), settings_client_(this),
       quick_settings_(this),
@@ -251,17 +257,31 @@ Result<void> Pd2ShellRuntime::initialize() {
                 requestTask(lifetime, generation, x11::TaskRequestAction::close);
             });
 
-    auto panelHost =
-        window::PanelSurfaceHost::create(options_.display, &Pd2ShellRuntime::screen,
-                                         [this](std::string_view output, QScreen &screenValue) {
-                                             return makePanel(output, screenValue);
-                                         });
+    auto panelHost = window::PanelSurfaceHost::create(
+        options_.display, &Pd2ShellRuntime::screen,
+        [this](std::string_view output, QScreen &screenValue) {
+            return makePanel(output, screenValue);
+        },
+        [this](const outputs::SurfaceRegistrySnapshot &snapshot, const Result<void> &result) {
+            handlePanelPublication(snapshot, result);
+        });
     if (!panelHost) {
         return Result<void>::failure(panelHost.error());
     }
     panels_ = std::move(panelHost).value();
-    auto desktopHost =
-        desktop::DesktopWindowHost::create(options_.display, &Pd2ShellRuntime::screen);
+    auto desktopHost = desktop::DesktopWindowHost::create(
+        options_.display, &Pd2ShellRuntime::screen,
+        [this](const desktop::DesktopSurfaceUpdate &update, const Result<void> &result) {
+            if (!result) {
+                shutdown("desktop X11 publication", result.error());
+                return;
+            }
+            desktop_controller_.commit(update);
+            auto ready = maybePublishReady();
+            if (!ready) {
+                shutdown("desktop readiness", ready.error());
+            }
+        });
     if (!desktopHost) {
         return Result<void>::failure(desktopHost.error());
     }
@@ -376,10 +396,14 @@ void Pd2ShellRuntime::handleSettings() {
 }
 
 void Pd2ShellRuntime::loseSettings() {
-    if (!settings_available_) {
+    if (!settings_available_ && !settings_publication_pending_) {
         return;
     }
     settings_available_ = false;
+    settings_publication_pending_ = false;
+    panel_theme_candidate_ = nullptr;
+    pending_settings_publication_.reset();
+    pending_surface_snapshot_.reset();
     desktop_controller_.settingsOwnerLost();
     wallpaper_loader_.beginSettingsOwnerEpoch();
     auto authority = composition_.observeSettingsOwner(std::nullopt);
@@ -417,54 +441,66 @@ Result<void> Pd2ShellRuntime::applySettings(
     if (!wallpaperRequest) {
         return Result<void>::failure(wallpaperRequest.error());
     }
-    if (!settings_available_) {
+    if (!settings_available_ && !settings_publication_pending_) {
         if (settings_owner_epoch_ == std::numeric_limits<std::uint64_t>::max()) {
             return Result<void>::failure(surfaceError());
         }
         ++settings_owner_epoch_;
     }
 
-    // Output configuration synchronously calls applySurfaces. During this bounded publication
-    // turn panel windows are staged with the candidate theme, while composition and QML models
-    // retain the prior generation until every fallible host operation has succeeded.
+    pending_settings_publication_ =
+        std::make_unique<PendingSettingsPublication>(PendingSettingsPublication{
+            std::move(candidateTheme), snapshot, std::move(wallpaperRequest).value()});
     settings_publication_pending_ = true;
-    panel_theme_candidate_ = candidateTheme.get();
+    panel_theme_candidate_ = pending_settings_publication_->theme.get();
     pending_surface_snapshot_.reset();
     auto configured =
         outputs_->configure(snapshot->candidate.configuration.panel.sizePx,
                             panelPolicy(snapshot->candidate.configuration.panel), generation);
-    settings_publication_pending_ = false;
-    panel_theme_candidate_ = nullptr;
     if (!configured) {
+        settings_publication_pending_ = false;
+        panel_theme_candidate_ = nullptr;
+        pending_settings_publication_.reset();
         pending_surface_snapshot_.reset();
         return configured;
     }
+    return Result<void>::success();
+}
 
+Result<void> Pd2ShellRuntime::finishSettingsPublication(
+    const outputs::SurfaceRegistrySnapshot &surfaceSnapshot) {
+    if (!pending_settings_publication_ ||
+        surfaceSnapshot.settingsGeneration() !=
+            pending_settings_publication_->settings->generation.value()) {
+        return Result<void>::failure(surfaceError());
+    }
+    auto pending = std::move(pending_settings_publication_);
+    settings_publication_pending_ = false;
+    panel_theme_candidate_ = nullptr;
+    pending_surface_snapshot_.reset();
+    const auto generation = pending->settings->generation.value();
     auto authority = composition_.observeSettingsOwner(composition::AuthoritySnapshot{
         composition::OwnerEpoch::create(settings_owner_epoch_).value(),
         composition::OwnerGeneration::create(generation).value()});
     if (!authority) {
         return authority;
     }
-    auto quick = quick_settings_.applySettingsSnapshot(snapshot);
+    auto quick = quick_settings_.applySettingsSnapshot(pending->settings);
     if (!quick) {
         return quick;
     }
-    theme_ = std::move(candidateTheme);
-    settings_snapshot_ = snapshot;
+    theme_ = std::move(pending->theme);
+    settings_snapshot_ = pending->settings;
     settings_available_ = true;
     auto views = ensureSingletonViews();
     if (!views) {
         return views;
     }
-    if (pending_surface_snapshot_) {
-        auto composition = composition_.observeOutputs(*pending_surface_snapshot_);
-        if (!composition) {
-            return composition;
-        }
-        surface_snapshot_ = *pending_surface_snapshot_;
-        pending_surface_snapshot_.reset();
+    auto outputComposition = composition_.observeOutputs(surfaceSnapshot);
+    if (!outputComposition) {
+        return outputComposition;
     }
+    surface_snapshot_ = surfaceSnapshot;
     const auto themeValue = objectVariant(theme_->current());
     if (surface_snapshot_) {
         for (const auto &placement : surface_snapshot_->panels()) {
@@ -478,7 +514,7 @@ Result<void> Pd2ShellRuntime::applySettings(
         return grouped;
     }
     return wallpaper_loader_.load(
-        std::move(wallpaperRequest).value(), this, [this](auto wallpaper) {
+        std::move(pending->wallpaperRequest), this, [this](auto wallpaper) {
             // A later settings publication may complete before this asynchronous decode. Never
             // project an older wallpaper into the newer desktop/settings generation.
             if (!settings_snapshot_ ||
@@ -506,24 +542,54 @@ Result<void> Pd2ShellRuntime::applySurfaces(const outputs::SurfaceRegistrySnapsh
         surface_snapshot_ = snapshot;
         return Result<void>::success();
     }
+    return panels_->apply(snapshot);
+}
+
+void Pd2ShellRuntime::handlePanelPublication(const outputs::SurfaceRegistrySnapshot &snapshot,
+                                             const Result<void> &result) {
+    if (!result) {
+        settings_publication_pending_ = false;
+        panel_theme_candidate_ = nullptr;
+        pending_settings_publication_.reset();
+        pending_surface_snapshot_.reset();
+        shutdown("panel X11 publication", result.error());
+        return;
+    }
+    if (settings_publication_pending_) {
+        if (!pending_surface_snapshot_ ||
+            pending_surface_snapshot_->surfaceGeneration() != snapshot.surfaceGeneration() ||
+            pending_surface_snapshot_->settingsGeneration() != snapshot.settingsGeneration()) {
+            settings_publication_pending_ = false;
+            panel_theme_candidate_ = nullptr;
+            pending_settings_publication_.reset();
+            pending_surface_snapshot_.reset();
+            shutdown("panel publication generation", surfaceError());
+            return;
+        }
+        auto finished = finishSettingsPublication(snapshot);
+        if (!finished) {
+            shutdown("settings publication", finished.error());
+        }
+        return;
+    }
+    if (!settings_available_ || !theme_) {
+        return;
+    }
     auto composition = composition_.observeOutputs(snapshot);
     if (!composition) {
-        return composition;
-    }
-    auto panels = panels_->apply(snapshot);
-    if (!panels) {
-        return panels;
+        shutdown("output composition", composition.error());
+        return;
     }
     surface_snapshot_ = snapshot;
     auto grouped = reconcileGroupedTasks();
     if (!grouped) {
-        return grouped;
+        shutdown("grouped task publication", grouped.error());
+        return;
     }
     auto wallpaper = applyWallpaper();
     if (!wallpaper && wallpaper_) {
-        return wallpaper;
+        shutdown("desktop wallpaper", wallpaper.error());
     }
-    return Result<void>::success();
 }
 
 Result<void> Pd2ShellRuntime::applyWallpaper() {
@@ -547,7 +613,6 @@ Result<void> Pd2ShellRuntime::applyWallpaper() {
     if (!applied) {
         return applied;
     }
-    desktop_controller_.commit(std::move(update).value());
     return maybePublishReady();
 }
 
