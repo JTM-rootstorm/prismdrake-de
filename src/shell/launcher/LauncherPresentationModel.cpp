@@ -268,6 +268,17 @@ QVariantList LauncherResultPresentation::actions() const {
     return values;
 }
 
+int LauncherResultPresentation::actionCount() const noexcept {
+    return static_cast<int>(actions_.size());
+}
+
+QObject *LauncherResultPresentation::actionAt(int index) const noexcept {
+    if (index < 0 || static_cast<std::size_t>(index) >= actions_.size()) {
+        return nullptr;
+    }
+    return actions_[static_cast<std::size_t>(index)].get();
+}
+
 void LauncherResultPresentation::setPinned(bool pinned) {
     if (pinned_ == pinned) {
         return;

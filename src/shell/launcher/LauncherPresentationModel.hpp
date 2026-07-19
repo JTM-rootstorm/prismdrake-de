@@ -96,6 +96,7 @@ class LauncherResultPresentation final : public QObject {
     Q_PROPERTY(bool canPin READ canPin CONSTANT)
     Q_PROPERTY(bool pinned READ pinned NOTIFY pinnedChanged)
     Q_PROPERTY(QVariantList actions READ actions CONSTANT)
+    Q_PROPERTY(int actionCount READ actionCount CONSTANT)
 
   public:
     [[nodiscard]] const QString &name() const noexcept { return name_; }
@@ -109,6 +110,8 @@ class LauncherResultPresentation final : public QObject {
     [[nodiscard]] bool canPin() const noexcept { return desktop_file_id_.has_value(); }
     [[nodiscard]] bool pinned() const noexcept { return pinned_; }
     [[nodiscard]] QVariantList actions() const;
+    [[nodiscard]] int actionCount() const noexcept;
+    Q_INVOKABLE QObject *actionAt(int index) const noexcept;
 
     /// Requests controller handling only; this never expands Exec or starts a process.
     Q_INVOKABLE bool requestLaunch();

@@ -9,6 +9,7 @@ Button {
     required property var presentation
     required property var tokens
     property bool selected: false
+    property var actionMenuItems: []
 
     readonly property string presentationName: presentation !== null ? presentation.name : ""
     readonly property string presentationGenericName: presentation !== null
@@ -28,7 +29,7 @@ Button {
     signal dismissRequested
 
     function actionMenuItemAt(index) {
-        return actionInstantiator.objectAt(index)
+        return index >= 0 && index < actionMenuItems.length ? actionMenuItems[index] : null
     }
 
     function pinMenuItem() {
@@ -123,13 +124,13 @@ Button {
 
         Instantiator {
             id: actionInstantiator
-            model: root.presentation !== null ? root.presentation.actions : []
+            model: root.presentation !== null ? root.presentation.actionCount : 0
             delegate: MenuItem {
                 id: actionItem
                 required property int index
-                required property var modelData
+                readonly property var actionPresentation: root.presentation.actionAt(index)
                 objectName: "launcherActionMenuItem" + index
-                text: modelData.name
+                text: actionPresentation !== null ? actionPresentation.name : ""
                 implicitWidth: Math.max(root.tokens.minimumTargetSize,
                                         contentItem.implicitWidth + leftPadding + rightPadding)
                 implicitHeight: Math.max(root.tokens.minimumTargetSize,
@@ -143,7 +144,10 @@ Button {
                 Accessible.focusable: enabled
                 Accessible.focused: activeFocus
                 Accessible.onPressAction: actionItem.clicked()
-                onTriggered: modelData.request()
+                onTriggered: {
+                    if (actionPresentation !== null)
+                        actionPresentation.request()
+                }
                 contentItem: Text {
                     color: root.tokens.textPrimaryColor
                     textFormat: Text.PlainText
@@ -161,12 +165,24 @@ Button {
                                                          : root.tokens.borderColor
                 }
             }
-            onObjectAdded: (index, object) => actionsMenu.insertItem(index, object)
-            onObjectRemoved: (index, object) => actionsMenu.removeItem(object)
+            onObjectAdded: (index, object) => {
+                const items = root.actionMenuItems.slice()
+                items.splice(index, 0, object)
+                root.actionMenuItems = items
+                actionsMenu.insertItem(index, object)
+            }
+            onObjectRemoved: (index, object) => {
+                const items = root.actionMenuItems.slice()
+                const itemIndex = items.indexOf(object)
+                if (itemIndex >= 0)
+                    items.splice(itemIndex, 1)
+                root.actionMenuItems = items
+                actionsMenu.removeItem(object)
+            }
         }
 
         MenuSeparator {
-            visible: root.presentation !== null && root.presentation.actions.length > 0
+            visible: root.presentation !== null && root.presentation.actionCount > 0
         }
 
         MenuItem {

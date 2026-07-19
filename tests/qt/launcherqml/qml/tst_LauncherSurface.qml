@@ -70,10 +70,23 @@ TestCase {
     }
 
     function test_applicationActionsAreKeyboardReachable() {
-        const result = surface.resultAt(0)
+        launcherFixture.captureSearch("dragon editor")
+        verify(launcherFixture.publishCapturedSearch())
+        tryCompare(surface, "resultCount", 2)
+        let result = null
+        let resultIndex = -1
+        for (let index = 0; index < surface.resultCount; ++index) {
+            const candidate = surface.resultAt(index)
+            if (candidate !== null && candidate.presentationName === "Dragon Editor") {
+                result = candidate
+                resultIndex = index
+                break
+            }
+        }
         verify(result !== null)
+        compare(result.presentation.actionCount, 1)
         compare(result.Accessible.selectable, true)
-        surface.focusResult(0, false)
+        surface.focusResult(resultIndex, false)
         compare(result.Accessible.selected, true)
         result.forceActiveFocus(Qt.OtherFocusReason)
         keyClick(Qt.Key_F10, Qt.ShiftModifier)
