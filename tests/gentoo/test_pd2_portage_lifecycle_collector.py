@@ -23,6 +23,7 @@ from pd2_installed_artifact_attestation import (
 from pd2_harness_manifest import HARNESS_RELATIVE_PATHS
 from pd2_portage_lifecycle_collector import (
     BUILD_PROVENANCE_PATH,
+    OPTIONAL_PACKAGE_SKIP_TEST,
     Pd2CollectorError,
     atomic_write_json,
     capture_preflight_attestation,
@@ -305,9 +306,9 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             test_command = source / "test-command.py"
             test_command.write_bytes(b"test")
             ordinary = "ContractTest.Ordinary"
-            all_names = (ordinary, *EXCLUDED_TESTS)
+            all_names = (ordinary, OPTIONAL_PACKAGE_SKIP_TEST, *EXCLUDED_TESTS)
             calls: list[list[str]] = []
-            skipped_junit = False
+            skipped_junit: str | None = None
 
             def runner(command: list[str], cwd: Path | None) -> str:
                 del cwd
@@ -317,14 +318,15 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 if command[:3] == ["/usr/bin/git", "status", "--porcelain=v1"]:
                     return ""
                 if "--show-only=json-v1" in command:
-                    selected = (ordinary,) if "--exclude-regex" in command else all_names
+                    selected = ((ordinary, OPTIONAL_PACKAGE_SKIP_TEST)
+                                if "--exclude-regex" in command else all_names)
                     return json.dumps({"tests": [
                         {"name": name, "command": [str(test_command)]}
                         for name in selected
                     ]})
                 if "--output-junit" in command:
                     if "--exclude-regex" in command:
-                        selected = (ordinary,)
+                        selected = (ordinary, OPTIONAL_PACKAGE_SKIP_TEST)
                     else:
                         expression = command[command.index("--tests-regex") + 1]
                         selected = tuple(name for name in all_names
@@ -333,7 +335,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                     junit.write_text(
                         "<testsuite>" + "".join(
                             (f'<testcase name="{name}" status="run"><skipped />'
-                             f'</testcase>' if skipped_junit else
+                             f'</testcase>' if skipped_junit == name else
                              f'<testcase name="{name}" status="run" />')
                             for name in selected
                         ) + "</testsuite>",
@@ -350,7 +352,8 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 attestation, build, source, fixture,
                 hash_file=hash_file, command_runner=runner,
             )
-            self.assertEqual(package["executed_test_count"], 1)
+            self.assertEqual(package["executed_test_count"], 2)
+            self.assertEqual(package["skipped_tests"], [])
             self.assertEqual(tuple(package["excluded_tests"]), EXCLUDED_TESTS)
             self.assertIn("--exclude-regex", calls[-1])
 
@@ -364,11 +367,57 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                                 package["test_manifest_sha256"] for item in exclusions))
             executions = [call for call in calls if "--tests-regex" in call]
             self.assertEqual(len(executions), 12)
-            skipped_junit = True
+            skipped_junit = OPTIONAL_PACKAGE_SKIP_TEST
+            package = capture_package_test(
+                attestation, build, source, fixture,
+                hash_file=hash_file, command_runner=runner,
+            )
+            self.assertEqual(package["passed_test_count"], 1)
+            self.assertEqual(package["skipped_tests"], [{
+                "test_id": OPTIONAL_PACKAGE_SKIP_TEST,
+                "reason": "requires_non_root_owner_transition",
+            }])
+
+            skipped_junit = ordinary
             with self.assertRaisesRegex(Pd2CollectorError, "^ctest_not_all_passed$"):
                 capture_package_test(
                     attestation, build, source, fixture,
                     hash_file=hash_file, command_runner=runner,
+                )
+
+            def disabled_runner(command: list[str], cwd: Path | None) -> str:
+                result = runner(command, cwd)
+                if "--show-only=json-v1" in command and "--exclude-regex" in command:
+                    document = json.loads(result)
+                    document["tests"][0]["properties"] = [
+                        {"name": "DISABLED", "value": True},
+                    ]
+                    return json.dumps(document)
+                return result
+
+            with self.assertRaisesRegex(Pd2CollectorError,
+                                        "^package_test_disabled$"):
+                capture_package_test(
+                    attestation, build, source, fixture,
+                    hash_file=hash_file, command_runner=disabled_runner,
+                )
+
+            escaped = root / "escaped-test.py"
+            escaped.write_bytes(b"escaped")
+            inventory = [{"name": ordinary, "command": [str(source / "../escaped-test.py")]}]
+            with self.assertRaisesRegex(Pd2CollectorError,
+                                        "^ctest_project_command_unbound$"):
+                collector._test_manifest_sha256(
+                    inventory, build, source, fixture, hash_file,
+                )
+
+            symlinked = source / "symlinked-test.py"
+            symlinked.symlink_to(test_command)
+            inventory[0]["command"] = [str(symlinked)]
+            with self.assertRaisesRegex(Pd2CollectorError,
+                                        "^ctest_project_command_unbound$"):
+                collector._test_manifest_sha256(
+                    inventory, build, source, fixture, hash_file,
                 )
 
     def test_command_output_is_bounded_while_child_runs(self) -> None:

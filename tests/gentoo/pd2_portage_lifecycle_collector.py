@@ -74,6 +74,8 @@ EBUILD_RELATIVE_PATH = Path(
 )
 BUILD_PROVENANCE_PATH = Path("/usr/share/prismdrake/build-provenance.json")
 EXCLUSION_REGEX = "^(?:" + "|".join(re.escape(name) for name in EXCLUDED_TESTS) + ")$"
+OPTIONAL_PACKAGE_SKIP_TEST = "AtomicFileTest.RejectsDestinationOwnedByAnotherUser"
+OPTIONAL_PACKAGE_SKIP_REASON = "requires_non_root_owner_transition"
 
 
 class Pd2CollectorError(RuntimeError):
@@ -529,6 +531,11 @@ def _ctest_inventory(
                  isinstance(item.get("command"), list) and item["command"] and
                  all(isinstance(token, str) for token in item["command"]),
                  "ctest_inventory_invalid")
+        properties = item.get("properties", [])
+        _require(isinstance(properties, list) and all(
+            isinstance(prop, dict) and isinstance(prop.get("name"), str)
+            for prop in properties
+        ), "ctest_inventory_invalid")
     _require(len({item["name"] for item in tests}) == len(tests),
              "ctest_inventory_invalid")
     return tests
@@ -541,6 +548,34 @@ def _test_manifest_sha256(
     expected_fixture = build_directory / "tests/integration/prismdrake-controlled-window-fixture"
     _require(controlled_fixture == expected_fixture and controlled_fixture.is_absolute(),
              "controlled_fixture_build_mismatch")
+
+    def project_file(candidate: Path) -> Path | None:
+        if not candidate.is_absolute():
+            return None
+        for root in (build_directory, source_checkout):
+            try:
+                relative = candidate.relative_to(root)
+            except ValueError:
+                continue
+            if ".." in relative.parts:
+                return None
+            current = root
+            try:
+                for part in relative.parts:
+                    current /= part
+                    if current.is_symlink():
+                        return None
+                resolved_root = root.resolve(strict=True)
+                resolved = candidate.resolve(strict=True)
+                resolved.relative_to(resolved_root)
+            except (OSError, RuntimeError, ValueError):
+                return None
+            if resolved.is_file():
+                return resolved
+        return None
+
+    resolved_fixture = project_file(controlled_fixture)
+    _require(resolved_fixture is not None, "controlled_fixture_build_mismatch")
     project_files: dict[str, str] = {}
     normalized_tests = []
     for item in inventory:
@@ -548,14 +583,13 @@ def _test_manifest_sha256(
         found_project_file = False
         for token in command:
             candidate = Path(token)
-            if (candidate.is_absolute() and candidate.is_file() and
-                    (_is_within(candidate, build_directory) or
-                     _is_within(candidate, source_checkout))):
-                project_files[str(candidate)] = _require_sha256(hash_file(candidate))
+            resolved = project_file(candidate)
+            if resolved is not None:
+                project_files[str(resolved)] = _require_sha256(hash_file(resolved))
                 found_project_file = True
         _require(found_project_file, "ctest_project_command_unbound")
         normalized_tests.append({"name": item["name"], "command": command})
-    project_files[str(controlled_fixture)] = _require_sha256(hash_file(controlled_fixture))
+    project_files[str(resolved_fixture)] = _require_sha256(hash_file(resolved_fixture))
     payload = {
         "tests": normalized_tests,
         "project_files": [
@@ -568,7 +602,10 @@ def _test_manifest_sha256(
     ).encode("utf-8")).hexdigest()
 
 
-def _parse_passing_junit(path: Path, expected_names: tuple[str, ...]) -> None:
+def _parse_passing_junit(
+        path: Path, expected_names: tuple[str, ...],
+        allowed_skips: tuple[str, ...] = (),
+) -> tuple[str, ...]:
     try:
         payload = path.read_bytes()
     except OSError as error:
@@ -581,16 +618,24 @@ def _parse_passing_junit(path: Path, expected_names: tuple[str, ...]) -> None:
     cases = list(root.iter("testcase"))
     names = tuple(case.get("name") for case in cases)
     _require(names == expected_names, "ctest_execution_set_mismatch")
-    _require(all(case.find("failure") is None and case.find("error") is None and
-                 case.find("skipped") is None and case.get("status", "run") == "run"
-                 for case in cases), "ctest_not_all_passed")
+    skipped: list[str] = []
+    for case in cases:
+        name = case.get("name")
+        _require(case.find("failure") is None and case.find("error") is None and
+                 case.get("status", "run") == "run", "ctest_not_all_passed")
+        if case.find("skipped") is not None:
+            _require(name in allowed_skips and name not in skipped,
+                     "ctest_not_all_passed")
+            skipped.append(name)
+    return tuple(skipped)
 
 
 def _execute_ctest(
         ctest: Path, build_directory: Path, selection: list[str],
         expected_names: tuple[str, ...],
         command_runner: Callable[[list[str], Path | None], str],
-) -> None:
+        allowed_skips: tuple[str, ...] = (),
+) -> tuple[str, ...]:
     with tempfile.TemporaryDirectory(prefix="prismdrake-pd2-ctest-") as temporary:
         junit = Path(temporary) / "results.xml"
         command_runner([
@@ -598,7 +643,7 @@ def _execute_ctest(
             "--parallel", "1", "--no-tests=error", *selection,
             "--output-junit", str(junit),
         ], None)
-        _parse_passing_junit(junit, expected_names)
+        return _parse_passing_junit(junit, expected_names, allowed_skips)
 
 
 def capture_package_test(
@@ -621,22 +666,34 @@ def capture_package_test(
     included_inventory = _ctest_inventory(ctest, build_directory, command_runner, True)
     all_names = tuple(item["name"] for item in all_inventory)
     included_names = tuple(item["name"] for item in included_inventory)
+    disabled_names = tuple(
+        item["name"] for item in included_inventory
+        if any(prop["name"] == "DISABLED" and prop.get("value") is True
+               for prop in item.get("properties", []))
+    )
+    _require(not disabled_names, "package_test_disabled")
     excluded = tuple(name for name in all_names if name not in set(included_names))
     _require(excluded == EXCLUDED_TESTS, "package_test_exclusions_mismatch")
     _require(len(included_names) > 0, "package_test_empty")
     manifest_hash = _test_manifest_sha256(
         all_inventory, build_directory, source_checkout, controlled_fixture, hash_file,
     )
-    _execute_ctest(
+    skipped = _execute_ctest(
         ctest, build_directory, ["--exclude-regex", EXCLUSION_REGEX], included_names,
-        command_runner,
+        command_runner, (OPTIONAL_PACKAGE_SKIP_TEST,),
     )
     return {
         **binding,
         "features_test": True,
         "result": "passed",
+        "selected_test_count": len(included_names),
         "executed_test_count": len(included_names),
-        "skipped_test_count": 0,
+        "passed_test_count": len(included_names) - len(skipped),
+        "skipped_test_count": len(skipped),
+        "skipped_tests": [
+            {"test_id": name, "reason": OPTIONAL_PACKAGE_SKIP_REASON}
+            for name in skipped
+        ],
         "disabled_test_count": 0,
         "not_run_test_count": 0,
         "test_manifest_sha256": manifest_hash,

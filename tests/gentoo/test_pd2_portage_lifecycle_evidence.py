@@ -91,6 +91,9 @@ class Pd2LifecycleEvidenceTests(unittest.TestCase):
                 "dependency_graph_sha256": value["resolutions"][0]["dependency_graph_sha256"]}),
             lambda value: value["package_test"]["excluded_tests"].reverse(),
             lambda value: value["package_test"].update({"executed_test_count": 0}),
+            lambda value: value["package_test"]["skipped_tests"][0].update(
+                {"test_id": "ContractTest.Ordinary"}),
+            lambda value: value["package_test"].update({"skipped_test_count": 0}),
         )
         for index, mutation in enumerate(mutations):
             with self.subTest(index=index):

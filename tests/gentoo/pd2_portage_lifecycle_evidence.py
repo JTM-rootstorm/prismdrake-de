@@ -43,6 +43,8 @@ EXCLUDED_TESTS = (
     "X11DockOpenboxIntegrationTest",
     "TaskControllerOpenboxStabilizationIntegrationTest",
 )
+OPTIONAL_PACKAGE_SKIP_TEST = "AtomicFileTest.RejectsDestinationOwnedByAnotherUser"
+OPTIONAL_PACKAGE_SKIP_REASON = "requires_non_root_owner_transition"
 EXCLUSION_REASONS = (
     "exact_child_environment",
     "exact_child_environment",
@@ -194,10 +196,19 @@ def validate_evidence_document(document: Any) -> None:
     _require_binding(package_test, revision, ebuild_hash, artifact_hash)
     _require(tuple(package_test["excluded_tests"]) == EXCLUDED_TESTS,
              "package_test_exclusions_mismatch")
-    _require(package_test["skipped_test_count"] == 0 and
+    skipped_tests = package_test["skipped_tests"]
+    _require(package_test["selected_test_count"] ==
+             package_test["executed_test_count"] and
+             package_test["passed_test_count"] + len(skipped_tests) ==
+             package_test["executed_test_count"] and
+             package_test["skipped_test_count"] == len(skipped_tests) and
              package_test["disabled_test_count"] == 0 and
              package_test["not_run_test_count"] == 0,
              "package_test_incomplete")
+    _require(skipped_tests in ([], [{
+        "test_id": OPTIONAL_PACKAGE_SKIP_TEST,
+        "reason": OPTIONAL_PACKAGE_SKIP_REASON,
+    }]), "package_test_skip_not_allowed")
 
     initial = document["initial_install"]
     _require_binding(initial, revision, ebuild_hash, artifact_hash)
@@ -397,8 +408,14 @@ def example_evidence_document() -> dict[str, Any]:
             **binding,
             "features_test": True,
             "result": "passed",
+            "selected_test_count": 600,
             "executed_test_count": 600,
-            "skipped_test_count": 0,
+            "passed_test_count": 599,
+            "skipped_test_count": 1,
+            "skipped_tests": [{
+                "test_id": OPTIONAL_PACKAGE_SKIP_TEST,
+                "reason": OPTIONAL_PACKAGE_SKIP_REASON,
+            }],
             "disabled_test_count": 0,
             "not_run_test_count": 0,
             "test_manifest_sha256": "c" * 64,
