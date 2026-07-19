@@ -33,6 +33,7 @@ BDEPEND="
 		x11-apps/xprop
 		x11-apps/xrandr
 		x11-apps/xwininfo
+		x11-apps/xwd
 		x11-base/xorg-server[xvfb]
 		x11-drivers/xf86-video-dummy
 		x11-misc/xdotool

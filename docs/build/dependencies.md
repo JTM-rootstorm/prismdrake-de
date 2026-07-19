@@ -56,12 +56,13 @@ carry a verified or observed version.
   `perf` scheduler tracepoints. These are measurement tools, not Prismdrake
   runtime dependencies, and a missing tracepoint blocks only that evidence.
 - The PD2 WP14 live-observer lane adds test-only `x11-apps/xwininfo` for
-  authoritative window-tree and geometry inspection and `x11-misc/xtrace` for
-  bounded X11 protocol traces. Gentoo installs the protocol tracer as
+  authoritative window-tree and geometry inspection, `x11-apps/xwd` for
+  bounded private surface fingerprints, and `x11-misc/xtrace` for bounded X11
+  protocol traces. Gentoo installs the protocol tracer as
   `/usr/bin/x11trace`; `/usr/bin/xtrace` belongs to glibc and traces dynamic
   loader activity, so it is not a substitute. Both atoms remain under the
   product ebuild's `test` dependency and the development metapackage's `x11`
-  tooling layer. Neither is linked by or required to run Prismdrake.
+  tooling layer. None is linked by or required to run Prismdrake.
 - `prismdrake-settingsd` is an Experimental implemented service. Its boundary
   records direct system toml++ 3.4.0 configuration parsing, header-only
   nlohmann JSON 3.12.0-r1 theme/runtime serialization, and the sd-bus provider.
