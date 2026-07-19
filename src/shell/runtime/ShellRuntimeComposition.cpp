@@ -17,10 +17,10 @@ using foundation::Result;
     case control::ShellRequestFailure::none:
         break;
     case control::ShellRequestFailure::invalid_output:
-        return {ErrorCode::invalid_argument, "The requested shell output is invalid.",
+        return {ErrorCode::validation_error, "The requested shell output is invalid.",
                 "Use an output from the current complete topology generation."};
     case control::ShellRequestFailure::output_unavailable:
-        return {ErrorCode::cancelled, "The requested shell output is unavailable.",
+        return {ErrorCode::not_found, "The requested shell output is unavailable.",
                 "Retry against the current complete output topology."};
     case control::ShellRequestFailure::busy:
         return {ErrorCode::cancelled, "A higher-priority shell surface owns focus.",
@@ -57,6 +57,28 @@ quickSettingsFailure(control::ShellRequestFailure failure) noexcept {
     return quicksettings::CommandFailure::failed;
 }
 
+[[nodiscard]] control::ShellRequestFailure
+transitionFailure(const foundation::Error &error) noexcept {
+    switch (error.code) {
+    case ErrorCode::not_found:
+        return control::ShellRequestFailure::output_unavailable;
+    case ErrorCode::invalid_argument:
+    case ErrorCode::syntax_error:
+    case ErrorCode::validation_error:
+        return control::ShellRequestFailure::invalid_output;
+    case ErrorCode::cancelled:
+        return control::ShellRequestFailure::busy;
+    case ErrorCode::io_error:
+    case ErrorCode::invalid_environment:
+    case ErrorCode::permission_denied:
+    case ErrorCode::too_large:
+    case ErrorCode::durability_uncertain:
+    case ErrorCode::unsupported:
+        return control::ShellRequestFailure::internal;
+    }
+    return control::ShellRequestFailure::internal;
+}
+
 } // namespace
 
 Result<void>
@@ -91,13 +113,12 @@ ShellRuntimeComposition::observeOutputs(const outputs::SurfaceRegistrySnapshot &
     if (!next) {
         return Result<void>::failure(next.error());
     }
-    auto transition = composition_.observeOutputs(next.value());
-    if (!transition) {
-        return Result<void>::failure(transition.error());
-    }
-    auto applied = apply(transition.value());
-    if (!applied) {
-        return applied;
+
+    auto candidate = composition_;
+    auto transition = candidate.observeOutputs(next.value());
+    auto committed = commit(std::move(candidate), std::move(transition));
+    if (!committed) {
+        return committed;
     }
     outputs_ = std::move(next).value();
     return Result<void>::success();
@@ -105,17 +126,35 @@ ShellRuntimeComposition::observeOutputs(const outputs::SurfaceRegistrySnapshot &
 
 Result<void> ShellRuntimeComposition::observeSettingsOwner(
     std::optional<composition::AuthoritySnapshot> snapshot) {
-    return apply(composition_.observeSettingsOwner(std::move(snapshot)));
+    const bool available = snapshot.has_value();
+    auto candidate = composition_;
+    auto transition = candidate.observeSettingsOwner(std::move(snapshot));
+    auto committed = commit(std::move(candidate), std::move(transition));
+    if (committed) {
+        settings_authority_available_ = available;
+    }
+    return committed;
 }
 
 Result<void> ShellRuntimeComposition::observeNotificationOwner(
     std::optional<composition::AuthoritySnapshot> snapshot) {
-    return apply(composition_.observeNotificationOwner(std::move(snapshot)));
+    const bool available = snapshot.has_value();
+    auto candidate = composition_;
+    auto transition = candidate.observeNotificationOwner(std::move(snapshot));
+    auto committed = commit(std::move(candidate), std::move(transition));
+    if (committed) {
+        notification_authority_available_ = available;
+    }
+    return committed;
 }
 
 Result<std::optional<composition::OutputName>>
 ShellRuntimeComposition::requestedOutput(std::string_view outputName) const {
     if (outputName.empty()) {
+        if (!outputs_ || !outputs_->primaryOutput()) {
+            return Result<std::optional<composition::OutputName>>::failure(
+                presentationError(control::ShellRequestFailure::output_unavailable));
+        }
         return Result<std::optional<composition::OutputName>>::success(std::nullopt);
     }
     auto name = composition::OutputName::create(std::string(outputName));
@@ -126,44 +165,49 @@ ShellRuntimeComposition::requestedOutput(std::string_view outputName) const {
         return Result<std::optional<composition::OutputName>>::failure(
             presentationError(control::ShellRequestFailure::output_unavailable));
     }
-    bool present = false;
     for (const auto &output : outputs_->outputs()) {
         if (output.name == name.value()) {
-            present = true;
-            break;
+            return Result<std::optional<composition::OutputName>>::success(std::move(name).value());
         }
     }
-    if (!present) {
-        return Result<std::optional<composition::OutputName>>::failure(
-            presentationError(control::ShellRequestFailure::output_unavailable));
-    }
-    return Result<std::optional<composition::OutputName>>::success(std::move(name).value());
+    return Result<std::optional<composition::OutputName>>::failure(
+        presentationError(control::ShellRequestFailure::output_unavailable));
 }
 
 control::ShellRequestFailure ShellRuntimeComposition::request(control::ShellAction action,
                                                               std::string_view outputName) {
     auto output = requestedOutput(outputName);
     if (!output) {
-        return outputName.empty() ? control::ShellRequestFailure::output_unavailable
-                                  : control::ShellRequestFailure::output_unavailable;
+        return transitionFailure(output.error());
     }
+    if (!settings_authority_available_) {
+        return control::ShellRequestFailure::busy;
+    }
+
     const auto origin = composition::FocusOrigin::windowManager();
+    auto candidate = composition_;
     switch (action) {
-    case control::ShellAction::toggle_launcher:
-        return mapRequestResult(apply(composition_.toggle(composition::SurfaceFamily::launcher,
-                                                          std::move(output).value(), origin)));
-    case control::ShellAction::open_quick_settings:
-        return mapRequestResult(apply(composition_.present(
-            composition::SurfaceFamily::quickSettings, std::move(output).value(), origin)));
-    case control::ShellAction::open_notification_center:
-        return mapRequestResult(apply(composition_.present(
-            composition::SurfaceFamily::notificationCenter, std::move(output).value(), origin)));
+    case control::ShellAction::toggle_launcher: {
+        auto transition = candidate.toggle(composition::SurfaceFamily::launcher,
+                                           std::move(output).value(), origin);
+        return commitRequest(std::move(candidate), std::move(transition));
+    }
+    case control::ShellAction::open_quick_settings: {
+        auto transition = candidate.present(composition::SurfaceFamily::quickSettings,
+                                            std::move(output).value(), origin);
+        return commitRequest(std::move(candidate), std::move(transition));
+    }
+    case control::ShellAction::open_notification_center: {
+        if (!notification_authority_available_) {
+            return control::ShellRequestFailure::busy;
+        }
+        auto transition = candidate.present(composition::SurfaceFamily::notificationCenter,
+                                            std::move(output).value(), origin);
+        return commitRequest(std::move(candidate), std::move(transition));
+    }
     case control::ShellAction::focus_panel: {
         auto resolved = std::move(output).value();
         if (!resolved) {
-            if (!outputs_ || !outputs_->primaryOutput()) {
-                return control::ShellRequestFailure::output_unavailable;
-            }
             resolved = outputs_->primaryOutput();
         }
         return presentation_port_->focusPanel(*resolved);
@@ -173,8 +217,8 @@ control::ShellRequestFailure ShellRuntimeComposition::request(control::ShellActi
 }
 
 quicksettings::CommandResult ShellRuntimeComposition::requestOpen() {
-    const auto failure = request(control::ShellAction::open_notification_center, {});
-    return {quickSettingsFailure(failure)};
+    return {quickSettingsFailure(
+        request(control::ShellAction::open_notification_center, std::string_view{}))};
 }
 
 Result<void> ShellRuntimeComposition::present(composition::SurfaceFamily family,
@@ -184,61 +228,58 @@ Result<void> ShellRuntimeComposition::present(composition::SurfaceFamily family,
     if (!output) {
         return Result<void>::failure(output.error());
     }
-    return apply(composition_.present(family, std::move(output).value(), std::move(origin)));
+    auto candidate = composition_;
+    auto transition = candidate.present(family, std::move(output).value(), std::move(origin));
+    return commit(std::move(candidate), std::move(transition));
 }
 
 Result<void> ShellRuntimeComposition::dismiss(composition::SurfaceFamily family) {
-    return apply(composition_.dismiss(family));
+    auto candidate = composition_;
+    auto transition = candidate.dismiss(family);
+    return commit(std::move(candidate), std::move(transition));
 }
 
-Result<void> ShellRuntimeComposition::escape() { return apply(composition_.escape()); }
+Result<void> ShellRuntimeComposition::escape() {
+    auto candidate = composition_;
+    auto transition = candidate.escape();
+    return commit(std::move(candidate),
+                  Result<composition::CompositionTransition>::success(std::move(transition)));
+}
 
-Result<void> ShellRuntimeComposition::apply(Result<composition::CompositionTransition> transition) {
+control::ShellRequestFailure
+ShellRuntimeComposition::applyPresentation(const composition::CompositionTransition &transition) {
+    if (transition.disposition() == composition::TransitionDisposition::blockedByHigherPriority) {
+        return control::ShellRequestFailure::busy;
+    }
+    return presentation_port_->apply(transition.intents());
+}
+
+Result<void>
+ShellRuntimeComposition::commit(composition::ShellComposition candidate,
+                                Result<composition::CompositionTransition> transition) {
     if (!transition) {
         return Result<void>::failure(transition.error());
     }
-    return apply(transition.value());
-}
-
-Result<void> ShellRuntimeComposition::apply(const composition::CompositionTransition &transition) {
-    if (transition.disposition() == composition::TransitionDisposition::blockedByHigherPriority) {
-        return Result<void>::failure(presentationError(control::ShellRequestFailure::busy));
-    }
-    const auto failure = presentation_port_->apply(transition.intents());
+    const auto failure = applyPresentation(transition.value());
     if (failure != control::ShellRequestFailure::none) {
-        last_presentation_failure_ = failure;
         return Result<void>::failure(presentationError(failure));
     }
+    composition_ = std::move(candidate);
     return Result<void>::success();
 }
 
-control::ShellRequestFailure ShellRuntimeComposition::mapRequestResult(const Result<void> &result) {
-    if (result) {
-        last_presentation_failure_.reset();
-        return control::ShellRequestFailure::none;
+control::ShellRequestFailure
+ShellRuntimeComposition::commitRequest(composition::ShellComposition candidate,
+                                       Result<composition::CompositionTransition> transition) {
+    if (!transition) {
+        return transitionFailure(transition.error());
     }
-    if (last_presentation_failure_) {
-        const auto failure = *last_presentation_failure_;
-        last_presentation_failure_.reset();
+    const auto failure = applyPresentation(transition.value());
+    if (failure != control::ShellRequestFailure::none) {
         return failure;
     }
-    switch (result.error().code) {
-    case ErrorCode::invalid_argument:
-    case ErrorCode::validation_error:
-        return control::ShellRequestFailure::invalid_output;
-    case ErrorCode::cancelled:
-        return control::ShellRequestFailure::busy;
-    case ErrorCode::syntax_error:
-    case ErrorCode::io_error:
-    case ErrorCode::invalid_environment:
-    case ErrorCode::not_found:
-    case ErrorCode::too_large:
-    case ErrorCode::permission_denied:
-    case ErrorCode::durability_uncertain:
-    case ErrorCode::unsupported:
-        return control::ShellRequestFailure::internal;
-    }
-    return control::ShellRequestFailure::internal;
+    composition_ = std::move(candidate);
+    return control::ShellRequestFailure::none;
 }
 
 } // namespace prismdrake::shell::runtime

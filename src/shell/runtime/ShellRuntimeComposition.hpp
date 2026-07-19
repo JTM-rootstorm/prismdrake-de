@@ -61,15 +61,19 @@ class ShellRuntimeComposition final : public control::ShellPresentationPort,
     [[nodiscard]] foundation::Result<std::optional<composition::OutputName>>
     requestedOutput(std::string_view outputName) const;
     [[nodiscard]] foundation::Result<void>
-    apply(foundation::Result<composition::CompositionTransition> transition);
-    [[nodiscard]] foundation::Result<void>
-    apply(const composition::CompositionTransition &transition);
-    [[nodiscard]] control::ShellRequestFailure mapRequestResult(const foundation::Result<void> &);
+    commit(composition::ShellComposition candidate,
+           foundation::Result<composition::CompositionTransition> transition);
+    [[nodiscard]] control::ShellRequestFailure
+    commitRequest(composition::ShellComposition candidate,
+                  foundation::Result<composition::CompositionTransition> transition);
+    [[nodiscard]] control::ShellRequestFailure
+    applyPresentation(const composition::CompositionTransition &transition);
 
     ShellRuntimePresentationPort *presentation_port_;
     composition::ShellComposition composition_;
     std::optional<composition::OutputPlacementSnapshot> outputs_;
-    std::optional<control::ShellRequestFailure> last_presentation_failure_;
+    bool settings_authority_available_{false};
+    bool notification_authority_available_{false};
 };
 
 } // namespace prismdrake::shell::runtime

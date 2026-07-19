@@ -119,6 +119,8 @@ TEST(ShellRuntimeCompositionTest, RoutesShell1AndQuickSettingsThroughOneOutputGe
     EXPECT_EQ(port.focusedPanel, "RIGHT-1");
     EXPECT_EQ(runtime.request(control::ShellAction::focus_panel, "MISSING-1"),
               ShellRequestFailure::output_unavailable);
+    EXPECT_EQ(runtime.request(control::ShellAction::focus_panel, "bad\noutput"),
+              ShellRequestFailure::invalid_output);
 }
 
 TEST(ShellRuntimeCompositionTest, OwnerLossAndOutputRemovalProduceAtomicDismissals) {
@@ -146,7 +148,7 @@ TEST(ShellRuntimeCompositionTest, OwnerLossAndOutputRemovalProduceAtomicDismissa
     ASSERT_TRUE(runtime.observeSettingsOwner(std::nullopt));
     EXPECT_TRUE(runtime.state().activeSurfaces().empty());
     EXPECT_EQ(runtime.request(control::ShellAction::toggle_launcher, {}),
-              ShellRequestFailure::internal);
+              ShellRequestFailure::busy);
 }
 
 TEST(ShellRuntimeCompositionTest, RejectsStaleCompleteGenerationsAndPresentationFailures) {
@@ -162,6 +164,42 @@ TEST(ShellRuntimeCompositionTest, RejectsStaleCompleteGenerationsAndPresentation
     port.failure = ShellRequestFailure::timed_out;
     EXPECT_EQ(runtime.request(control::ShellAction::toggle_launcher, {}),
               ShellRequestFailure::timed_out);
+    EXPECT_TRUE(runtime.state().activeSurfaces().empty());
+
+    port.failure = ShellRequestFailure::none;
+    EXPECT_EQ(runtime.request(control::ShellAction::toggle_launcher, {}),
+              ShellRequestFailure::none);
+    ASSERT_EQ(runtime.state().activeSurfaces().size(), 1U);
+
+    port.failure = ShellRequestFailure::internal;
+    EXPECT_FALSE(runtime.observeSettingsOwner(std::nullopt));
+    EXPECT_EQ(runtime.state().activeSurfaces().size(), 1U);
+
+    port.failure = ShellRequestFailure::none;
+    EXPECT_EQ(runtime.request(control::ShellAction::toggle_launcher, {}),
+              ShellRequestFailure::none);
+    EXPECT_TRUE(runtime.state().activeSurfaces().empty());
+}
+
+TEST(ShellRuntimeCompositionTest, FailedTopologyApplicationRetainsPreviousCompleteTopology) {
+    PresentationPort port;
+    ShellRuntimeComposition runtime{port};
+    TopologyHarness topology;
+
+    ASSERT_TRUE(runtime.observeOutputs(topology.observe(1U)));
+    ASSERT_TRUE(runtime.observeSettingsOwner(authority(10U, 1U)));
+    ASSERT_EQ(runtime.request(control::ShellAction::toggle_launcher, "RIGHT-1"),
+              ShellRequestFailure::none);
+
+    port.failure = ShellRequestFailure::timed_out;
+    EXPECT_FALSE(runtime.observeOutputs(topology.observe(2U, false)));
+    ASSERT_EQ(runtime.state().activeSurfaces().size(), 1U);
+    EXPECT_EQ(runtime.state().activeSurfaces().front().output.value(), "RIGHT-1");
+
+    port.failure = ShellRequestFailure::none;
+    EXPECT_EQ(runtime.request(control::ShellAction::focus_panel, "RIGHT-1"),
+              ShellRequestFailure::none);
+    EXPECT_EQ(port.focusedPanel, "RIGHT-1");
 }
 
 } // namespace
