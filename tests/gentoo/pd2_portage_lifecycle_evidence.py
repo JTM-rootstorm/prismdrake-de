@@ -26,8 +26,10 @@ from pd2_lifecycle_hashes import (
     canonical_executable_sha256,
     canonical_linkage_sha256,
     canonical_ownership_sha256,
+    canonical_removable_ownership_sha256,
     canonical_regular_ownership_sha256,
     normalize_ownership_records,
+    removable_ownership_records,
     regular_ownership_records,
 )
 
@@ -203,6 +205,8 @@ def validate_evidence_document(document: Any) -> None:
         regular_records = regular_ownership_records(ownership_records)
         ownership_hash = canonical_ownership_sha256(ownership_records)
         regular_hash = canonical_regular_ownership_sha256(ownership_records)
+        removable_records = removable_ownership_records(ownership_records)
+        removable_hash = canonical_removable_ownership_sha256(ownership_records)
     except Pd2LifecycleHashError as error:
         raise Pd2EvidenceError(str(error)) from error
     ownership = initial["ownership"]
@@ -266,10 +270,10 @@ def validate_evidence_document(document: Any) -> None:
 
     unmerge = document["unmerge"]
     _require_binding(unmerge, revision, ebuild_hash, artifact_hash)
-    _require(unmerge["absent_path_count"] == len(regular_records),
+    _require(unmerge["absent_path_count"] == len(removable_records),
              "unmerge_absent_path_count_mismatch")
-    _require(unmerge["regular_path_set_sha256"] == regular_hash,
-             "unmerge_regular_path_hash_mismatch")
+    _require(unmerge["removable_path_set_sha256"] == removable_hash,
+             "unmerge_removable_path_hash_mismatch")
     user_data = unmerge["user_data"]
     _require(tuple(item["kind"] for item in user_data) == USER_DATA_KINDS,
              "user_data_scope_mismatch")
@@ -394,9 +398,10 @@ def example_evidence_document() -> dict[str, Any]:
             **binding,
             "atom": "x11-misc/prismdrake",
             "result": "passed",
-            "owned_regular_paths_absent": True,
-            "absent_path_count": ownership["regular_path_count"],
-            "regular_path_set_sha256": ownership["regular_path_set_sha256"],
+            "owned_removable_paths_absent": True,
+            "absent_path_count": len(removable_ownership_records(ownership["paths"])),
+            "removable_path_set_sha256": canonical_removable_ownership_sha256(
+                ownership["paths"]),
             "user_data": [
                 {"kind": kind, "before_sha256": digest * 64, "after_sha256": digest * 64}
                 for kind, digest in zip(USER_DATA_KINDS, ("3", "4", "5"))

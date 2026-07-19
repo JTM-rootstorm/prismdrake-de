@@ -138,7 +138,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 before, after, hash_file=lambda path: hashes[str(path)],
             )
 
-    def test_unmerge_checks_every_owned_regular_path(self) -> None:
+    def test_unmerge_checks_every_owned_file_and_symlink(self) -> None:
         owned = example_attestation_document()["installed"]["ownership"]["paths"]
         visited: list[str] = []
 
@@ -147,14 +147,14 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             return False
 
         capture = capture_unmerge_absence(owned, path_exists=absent)
-        expected = [item["path"] for item in owned if item["kind"] == "regular"]
+        expected = [item["path"] for item in owned if item["kind"] != "directory"]
         self.assertEqual(visited, expected)
         self.assertEqual(capture["absent_path_count"], len(expected))
-        self.assertTrue(capture["owned_regular_paths_absent"])
-        with self.assertRaisesRegex(Pd2CollectorError, "^owned_regular_path_remains$"):
+        self.assertTrue(capture["owned_removable_paths_absent"])
+        with self.assertRaisesRegex(Pd2CollectorError, "^owned_removable_path_remains$"):
             capture_unmerge_absence(
                 owned,
-                path_exists=lambda path: str(path) == INSTALLED_EXECUTABLE_PATHS[4],
+                path_exists=lambda path: str(path).endswith("/current-theme"),
             )
 
     def test_finalizer_requires_exact_preflight_and_both_demo_harness_bindings(self) -> None:

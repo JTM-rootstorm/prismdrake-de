@@ -83,16 +83,16 @@
     "unmerge": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source_revision", "ebuild_sha256", "artifact_sha256", "atom", "result", "owned_regular_paths_absent", "absent_path_count", "regular_path_set_sha256", "user_data"],
+      "required": ["source_revision", "ebuild_sha256", "artifact_sha256", "atom", "result", "owned_removable_paths_absent", "absent_path_count", "removable_path_set_sha256", "user_data"],
       "properties": {
         "source_revision": { "$ref": "#/$defs/revision" },
         "ebuild_sha256": { "$ref": "#/$defs/sha256" },
         "artifact_sha256": { "$ref": "#/$defs/sha256" },
         "atom": { "const": "x11-misc/prismdrake" },
         "result": { "const": "passed" },
-        "owned_regular_paths_absent": { "const": true },
+        "owned_removable_paths_absent": { "const": true },
         "absent_path_count": { "type": "integer", "minimum": 5, "maximum": 4096 },
-        "regular_path_set_sha256": { "$ref": "#/$defs/sha256" },
+        "removable_path_set_sha256": { "$ref": "#/$defs/sha256" },
         "user_data": {
           "type": "array",
           "minItems": 3,

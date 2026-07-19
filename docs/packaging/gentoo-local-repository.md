@@ -196,8 +196,9 @@ reviewed tests are excluded. The outside-sandbox collector executes the two
 exact-environment tests once and both Openbox tests five times. Linkage is
 measured by `scanelf` only after the five executable hashes match preflight.
 
-After unmerge, capture both package-file absence and byte-identical preservation
-of the three user-owned state files. These commands only inspect supplied paths;
+After unmerge, capture absence of every package-owned regular file and symlink,
+plus byte-identical preservation of the three user-owned state files. Shared
+package directories may remain. These commands only inspect supplied paths;
 they do not invoke Portage:
 
 ```bash

@@ -160,9 +160,9 @@ class Pd2LifecycleEvidenceTests(unittest.TestCase):
 
     def test_rejects_unmerge_or_user_data_preservation_drift(self) -> None:
         mutations = (
-            lambda value: value["unmerge"].update({"owned_regular_paths_absent": False}),
+            lambda value: value["unmerge"].update({"owned_removable_paths_absent": False}),
             lambda value: value["unmerge"].update({"absent_path_count": 5}),
-            lambda value: value["unmerge"].update({"regular_path_set_sha256": "0" * 64}),
+            lambda value: value["unmerge"].update({"removable_path_set_sha256": "0" * 64}),
             lambda value: value["unmerge"]["user_data"].pop(),
             lambda value: value["unmerge"]["user_data"].reverse(),
             lambda value: value["unmerge"]["user_data"][0].update({"after_sha256": "0" * 64}),

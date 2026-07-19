@@ -37,8 +37,10 @@ from pd2_lifecycle_hashes import (
     canonical_executable_sha256,
     canonical_linkage_sha256,
     canonical_ownership_sha256,
+    canonical_removable_ownership_sha256,
     canonical_regular_ownership_sha256,
     normalize_ownership_records,
+    removable_ownership_records,
     regular_ownership_records,
 )
 from pd2_portage_lifecycle_evidence import (
@@ -614,19 +616,19 @@ def capture_unmerge_absence(
         owned_paths: list[dict[str, str]],
         path_exists: Callable[[Path], bool] = os.path.lexists,
 ) -> dict[str, Any]:
-    """Prove that every formerly owned regular path is absent after unmerge."""
+    """Prove that every formerly owned file and symlink is absent after unmerge."""
 
     try:
-        regular_records = regular_ownership_records(owned_paths)
-        regular_hash = canonical_regular_ownership_sha256(owned_paths)
+        removable_records = removable_ownership_records(owned_paths)
+        removable_hash = canonical_removable_ownership_sha256(owned_paths)
     except Pd2LifecycleHashError as error:
         raise Pd2CollectorError(str(error)) from error
-    _require(not any(path_exists(Path(record["path"])) for record in regular_records),
-             "owned_regular_path_remains")
+    _require(not any(path_exists(Path(record["path"])) for record in removable_records),
+             "owned_removable_path_remains")
     return {
-        "owned_regular_paths_absent": True,
-        "absent_path_count": len(regular_records),
-        "regular_path_set_sha256": regular_hash,
+        "owned_removable_paths_absent": True,
+        "absent_path_count": len(removable_records),
+        "removable_path_set_sha256": removable_hash,
     }
 
 

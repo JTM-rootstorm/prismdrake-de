@@ -83,6 +83,22 @@ def canonical_regular_ownership_sha256(records: Any) -> str:
     return canonical_json_sha256(regular)
 
 
+def removable_ownership_records(records: Any) -> list[dict[str, str]]:
+    """Select package-owned files and symlinks that unmerge must remove."""
+
+    return [record for record in normalize_ownership_records(records)
+            if record["kind"] != "directory"]
+
+
+def canonical_removable_ownership_sha256(records: Any) -> str:
+    """Hash the complete package-owned nondirectory path subset."""
+
+    removable = removable_ownership_records(records)
+    if not removable:
+        raise Pd2LifecycleHashError("ownership_removable_paths_missing")
+    return canonical_json_sha256(removable)
+
+
 def canonical_executable_sha256(records: Any) -> str:
     """Hash five ordered executable path and content identities."""
 
