@@ -68,8 +68,10 @@ which session-bus caller supplied it. A successful replacement retains the live
 ID and history `record_id`, atomically replaces the content, advances
 `content_generation`, and transfers sender/action routing to the replacing
 caller's unique name. It emits no close signal for the replaced content. An
-unknown or expired nonzero ID creates a new notification with a newly allocated
-live ID, as required by the standard contract.
+unknown or expired nonzero ID creates a new notification using that requested
+nonzero value as its live ID and returns the same value, as required by the
+standard contract. Subsequent server allocation skips every current live ID,
+including IDs introduced through such requests.
 
 History uses a separate unsigned 64-bit `record_id`. The two ID spaces are not
 interchangeable. Each record also has a `content_generation`; a successful

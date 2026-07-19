@@ -431,6 +431,23 @@ TEST_F(NotificationServiceFixture, ReplacementTransfersActionAndCloseSignalsToNe
     EXPECT_FALSE(state->at("records").front().at("actions").front().at("enabled"));
 }
 
+TEST_F(NotificationServiceFixture, UnknownReplacementReturnsAndUsesTheRequestedLiveId) {
+    constexpr std::uint32_t requested = 900U;
+    const auto created = notify(bus_.get(), requested, "Requested identifier");
+    ASSERT_GE(created.result, 0);
+    EXPECT_EQ(created.id, requested);
+
+    auto state = currentState(bus_.get());
+    ASSERT_TRUE(state);
+    ASSERT_EQ(state->at("records").size(), 1U);
+    EXPECT_EQ(state->at("records").front().at("notification_id"), requested);
+
+    const auto allocated = notify(bus_.get(), 0U, "Allocated identifier");
+    ASSERT_GE(allocated.result, 0);
+    EXPECT_NE(allocated.id, requested);
+    EXPECT_NE(allocated.id, 0U);
+}
+
 TEST_F(NotificationServiceFixture, SenderLossDisablesActionsAndTimeoutClosesMonotonically) {
     Bus sender;
     ASSERT_GE(sd_bus_open_user(sender.put()), 0);

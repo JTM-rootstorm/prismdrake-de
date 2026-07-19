@@ -140,7 +140,7 @@ TEST(NotificationAuthorityTest, ReplacementRetainsIdsAdvancesContentAndTransfers
     EXPECT_EQ(action.value().destination, ":1.20");
 }
 
-TEST(NotificationAuthorityTest, UnknownReplacementAllocatesFreshIds) {
+TEST(NotificationAuthorityTest, UnknownReplacementCreatesNewRecordWithRequestedLiveId) {
     auto clock = std::make_shared<TestMonotonicClock>();
     auto owner = authority(clock);
     auto input = notification();
@@ -148,9 +148,40 @@ TEST(NotificationAuthorityTest, UnknownReplacementAllocatesFreshIds) {
     const auto created = owner.notify(std::move(input));
     ASSERT_TRUE(created);
     EXPECT_FALSE(created.value().replaced);
-    EXPECT_NE(created.value().notificationId, 900U);
-    EXPECT_NE(created.value().notificationId, 0U);
+    EXPECT_EQ(created.value().notificationId, 900U);
     EXPECT_NE(created.value().recordId, 0U);
+    ASSERT_EQ(owner.records().size(), 1U);
+    EXPECT_EQ(owner.records().front().notificationId, 900U);
+}
+
+TEST(NotificationAuthorityTest, AllocationSkipsIdsClaimedByUnknownReplacementRequests) {
+    auto clock = std::make_shared<TestMonotonicClock>();
+    auto owner = authority(clock);
+    auto claimed = notification("Claimed");
+    claimed.replacesId = 1U;
+    const auto first = owner.notify(std::move(claimed));
+    ASSERT_TRUE(first);
+    EXPECT_EQ(first.value().notificationId, 1U);
+
+    const auto allocated = owner.notify(notification("Allocated"));
+    ASSERT_TRUE(allocated);
+    EXPECT_EQ(allocated.value().notificationId, 2U);
+    ASSERT_EQ(owner.records().size(), 2U);
+    EXPECT_NE(owner.records()[0].notificationId, owner.records()[1].notificationId);
+}
+
+TEST(NotificationAuthorityTest, UnknownReplacementAcceptsMaximumLiveIdWithoutExhaustion) {
+    auto clock = std::make_shared<TestMonotonicClock>();
+    auto owner = authority(clock);
+    auto maximum = notification("Maximum");
+    maximum.replacesId = std::numeric_limits<std::uint32_t>::max();
+    const auto claimed = owner.notify(std::move(maximum));
+    ASSERT_TRUE(claimed);
+    EXPECT_EQ(claimed.value().notificationId, std::numeric_limits<std::uint32_t>::max());
+
+    const auto allocated = owner.notify(notification("Allocated"));
+    ASSERT_TRUE(allocated);
+    EXPECT_EQ(allocated.value().notificationId, 1U);
 }
 
 TEST(NotificationAuthorityTest, DoNotDisturbSuppressesEligiblePresentationButCriticalBypasses) {

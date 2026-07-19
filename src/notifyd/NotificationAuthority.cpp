@@ -105,17 +105,21 @@ NotificationAuthority::create(std::shared_ptr<const MonotonicClock> clock,
 }
 
 Result<std::uint32_t> NotificationAuthority::allocateNotificationId() {
-    if (next_notification_id_ == 0U) {
-        return Result<std::uint32_t>::failure(authorityError(
-            ErrorCode::too_large, "The live notification identifier space is exhausted."));
+    auto candidate = next_notification_id_ == 0U ? 1U : next_notification_id_;
+    for (std::size_t attempt = 0U; attempt <= records_.size(); ++attempt) {
+        const bool collision = std::ranges::any_of(records_, [candidate](const auto &record) {
+            return record.notificationId && *record.notificationId == candidate;
+        });
+        const auto following =
+            candidate == std::numeric_limits<std::uint32_t>::max() ? 1U : candidate + 1U;
+        if (!collision) {
+            next_notification_id_ = following;
+            return Result<std::uint32_t>::success(candidate);
+        }
+        candidate = following;
     }
-    const auto allocated = next_notification_id_;
-    if (next_notification_id_ == std::numeric_limits<std::uint32_t>::max()) {
-        next_notification_id_ = 0U;
-    } else {
-        ++next_notification_id_;
-    }
-    return Result<std::uint32_t>::success(allocated);
+    return Result<std::uint32_t>::failure(authorityError(
+        ErrorCode::too_large, "The live notification identifier space is exhausted."));
 }
 
 Result<std::uint64_t> NotificationAuthority::allocateRecordId() {
@@ -231,7 +235,7 @@ Result<NotifyOutcome> NotificationAuthority::notify(ServiceNotificationInput inp
         }
     }
 
-    if (next_notification_id_ == 0U || next_record_id_ == 0U) {
+    if (next_record_id_ == 0U) {
         return Result<NotifyOutcome>::failure(authorityError(
             ErrorCode::too_large, "The notification identifier space is exhausted."));
     }
@@ -240,10 +244,8 @@ Result<NotifyOutcome> NotificationAuthority::notify(ServiceNotificationInput inp
         return Result<NotifyOutcome>::failure(
             authorityError(ErrorCode::too_large, "The live notification capacity is exhausted."));
     }
-    auto notificationId = allocateNotificationId();
-    if (!notificationId) {
-        return Result<NotifyOutcome>::failure(notificationId.error());
-    }
+    auto notificationId = input.replacesId == 0U ? allocateNotificationId()
+                                                 : Result<std::uint32_t>::success(input.replacesId);
     auto recordId = allocateRecordId();
     if (!recordId) {
         return Result<NotifyOutcome>::failure(recordId.error());
