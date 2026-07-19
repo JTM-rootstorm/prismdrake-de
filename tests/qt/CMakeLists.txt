@@ -57,6 +57,19 @@ prismdrake_enable_sanitizers(prismdrake-shell-task-presentation-tests)
 gtest_discover_tests(prismdrake-shell-task-presentation-tests
     DISCOVERY_MODE PRE_TEST)
 
+add_executable(prismdrake-grouped-task-model-tests
+    GroupedTaskModelTests.cpp)
+target_link_libraries(prismdrake-grouped-task-model-tests
+    PRIVATE
+        GTest::gtest_main
+        Prismdrake::grouped-task-model)
+
+prismdrake_configure_cpp_target(prismdrake-grouped-task-model-tests)
+prismdrake_enable_warnings(prismdrake-grouped-task-model-tests)
+prismdrake_enable_sanitizers(prismdrake-grouped-task-model-tests)
+gtest_discover_tests(prismdrake-grouped-task-model-tests
+    DISCOVERY_MODE PRE_TEST)
+
 add_test(NAME NotificationCardQmlTest
     COMMAND $<TARGET_FILE:Qt6::qmltestrunner>
         -input "${CMAKE_CURRENT_SOURCE_DIR}/qml")
