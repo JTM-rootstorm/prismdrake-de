@@ -169,8 +169,10 @@ input(const std::shared_ptr<const x11::TaskModelSnapshot> &tasks,
       const std::shared_ptr<const launcher::ApplicationAssociationSnapshot> &associations,
       const std::shared_ptr<const launcher::ApplicationCatalogSnapshot> &catalog,
       const std::shared_ptr<const PinStateSnapshot> &pins, config::GroupingMode grouping,
-      double width = 1000.0, std::uint64_t widthGeneration = 1U) {
-    return {tasks, associations, catalog, pins, grouping, width, 44.0, 4.0, 1U, widthGeneration};
+      double width = 1000.0, std::uint64_t widthGeneration = 1U,
+      std::uint64_t settingsGeneration = 1U) {
+    return {tasks, associations, catalog, pins, grouping, width, 44.0, 4.0, settingsGeneration,
+            widthGeneration};
 }
 
 TEST(GroupedTaskModelTest, AlwaysCombinesPinsRunningApplicationsAndUnknownLifetimes) {
@@ -391,6 +393,36 @@ TEST(GroupedTaskPresentationModelTest, RecoversExactMemberAcrossWhenFullRegroupi
     EXPECT_EQ(arguments[0].toInt(), 0);
     EXPECT_EQ(arguments[1].toInt(), 1);
     EXPECT_TRUE(arguments[2].toBool());
+}
+
+TEST(GroupedTaskPresentationModelTest, AcceptsReplacementSettingsOwnerGeneration) {
+    const std::vector fixtures{TaskFixture{10U, 100U, "Editor", "editor.desktop"}};
+    x11::TaskModel owner;
+    const auto taskState = taskSnapshot(owner, fixtures);
+    const auto associationState = associations(fixtures);
+    const auto catalogState = catalog({{"editor.desktop", "Editor"}});
+    const auto pinState = pins({});
+    const auto previous = buildGroupedTasks(
+        input(taskState, associationState, catalogState, pinState, config::GroupingMode::always,
+              1000.0, 1U, 3U));
+    const auto replacement = buildGroupedTasks(
+        input(taskState, associationState, catalogState, pinState, config::GroupingMode::always,
+              1000.0, 2U, 1U));
+    ASSERT_TRUE(previous);
+    ASSERT_TRUE(replacement);
+
+    GroupedTaskPresentationModel model;
+    ASSERT_TRUE(model.applySnapshot(previous.value()));
+    EXPECT_FALSE(model.applySnapshot(replacement.value()));
+    auto *retained = model.groupAt(0);
+    ASSERT_NE(retained, nullptr);
+
+    model.clearSettingsOwner();
+    EXPECT_FALSE(model.currentSnapshot());
+    EXPECT_FALSE(retained->requestPrimaryAction());
+    ASSERT_TRUE(model.applySnapshot(replacement.value()));
+    EXPECT_EQ(model.groupAt(0), retained);
+    EXPECT_EQ(model.currentSnapshot(), replacement.value());
 }
 
 TEST(PanelClockTest, FormatsLocaleTwelveAndTwentyFourHourModesDeterministically) {

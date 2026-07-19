@@ -380,5 +380,20 @@ TEST(WallpaperLoaderTest, RejectsRepeatedAndZeroGenerationsWithRedactedErrors) {
     EXPECT_FALSE(invalidUnicode);
 }
 
+TEST(WallpaperLoaderTest, AcceptsReplacementSettingsOwnerGeneration) {
+    WallpaperLoader loader;
+    const auto previous = loadAndWait(loader, request({}, {}, 3U));
+    ASSERT_TRUE(previous);
+    EXPECT_EQ(previous->generation, 3U);
+    EXPECT_FALSE(loader.load(request({}, {}, 1U), qApp, [](auto) {}));
+
+    loader.beginSettingsOwnerEpoch();
+    EXPECT_EQ(loader.current(), previous);
+    const auto replacement = loadAndWait(loader, request({}, {}, 1U));
+    ASSERT_TRUE(replacement);
+    EXPECT_EQ(replacement->generation, 1U);
+    EXPECT_EQ(loader.current(), replacement);
+}
+
 } // namespace
 } // namespace prismdrake::desktop

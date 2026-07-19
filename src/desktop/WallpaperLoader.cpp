@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <fcntl.h>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <sys/stat.h>
@@ -224,6 +225,7 @@ class QtWallpaperDecoder final : public WallpaperDecoder {
 
 struct WallpaperLoader::State final {
     struct Pending final {
+        std::uint64_t ownerEpoch;
         WallpaperRequest request;
         QPointer<QObject> context;
         Completion completion;
@@ -234,6 +236,7 @@ struct WallpaperLoader::State final {
     std::unique_ptr<Pending> pending;
     std::shared_ptr<const WallpaperSnapshot> current;
     std::shared_ptr<const WallpaperSnapshot> previous;
+    std::uint64_t ownerEpoch{1U};
     std::uint64_t latestGeneration{0U};
     bool workerScheduled{false};
     bool stopped{false};
@@ -285,8 +288,9 @@ Result<void> WallpaperLoader::load(WallpaperRequest request, QObject *context,
                  "Submit a generation newer than the current wallpaper settings."});
         }
         state->latestGeneration = request.generation;
-        state->pending = std::make_unique<State::Pending>(
-            State::Pending{std::move(request), QPointer<QObject>{context}, std::move(completion)});
+        state->pending = std::make_unique<State::Pending>(State::Pending{
+            state->ownerEpoch, std::move(request), QPointer<QObject>{context},
+            std::move(completion)});
         if (!state->workerScheduled) {
             state->workerScheduled = true;
             startWorker = true;
@@ -308,9 +312,11 @@ Result<void> WallpaperLoader::load(WallpaperRequest request, QObject *context,
                 work = std::move(state->pending);
             }
             const std::uint64_t generation = work->request.generation;
-            const auto cancelled = [state, generation] {
+            const std::uint64_t ownerEpoch = work->ownerEpoch;
+            const auto cancelled = [state, ownerEpoch, generation] {
                 const std::scoped_lock lock{state->mutex};
-                return state->stopped || state->latestGeneration != generation;
+                return state->stopped || state->ownerEpoch != ownerEpoch ||
+                       state->latestGeneration != generation;
             };
             WallpaperDecodeResult decoded = state->decoder->decode(work->request, cancelled);
             if (cancelled()) {
@@ -332,7 +338,8 @@ Result<void> WallpaperLoader::load(WallpaperRequest request, QObject *context,
                                   decoded.status, sourceSize, std::move(decoded.image)});
             {
                 const std::scoped_lock lock{state->mutex};
-                if (state->stopped || state->latestGeneration != generation) {
+                if (state->stopped || state->ownerEpoch != ownerEpoch ||
+                    state->latestGeneration != generation) {
                     continue;
                 }
                 state->previous = std::move(state->current);
@@ -343,14 +350,16 @@ Result<void> WallpaperLoader::load(WallpaperRequest request, QObject *context,
             }
             QMetaObject::invokeMethod(
                 work->context,
-                [state, guard = work->context, completion = std::move(work->completion),
+                [state, ownerEpoch, guard = work->context,
+                 completion = std::move(work->completion),
                  snapshot = std::move(snapshot)]() mutable {
                     if (!guard) {
                         return;
                     }
                     {
                         const std::scoped_lock lock{state->mutex};
-                        if (state->stopped || state->latestGeneration != snapshot->generation ||
+                        if (state->stopped || state->ownerEpoch != ownerEpoch ||
+                            state->latestGeneration != snapshot->generation ||
                             state->current != snapshot) {
                             return;
                         }
@@ -361,6 +370,24 @@ Result<void> WallpaperLoader::load(WallpaperRequest request, QObject *context,
         }
     });
     return Result<void>::success();
+}
+
+void WallpaperLoader::beginSettingsOwnerEpoch() noexcept {
+    if (!state_) {
+        return;
+    }
+    const std::scoped_lock lock{state_->mutex};
+    if (state_->stopped) {
+        return;
+    }
+    if (state_->ownerEpoch == std::numeric_limits<std::uint64_t>::max()) {
+        state_->stopped = true;
+        state_->pending.reset();
+        return;
+    }
+    ++state_->ownerEpoch;
+    state_->latestGeneration = 0U;
+    state_->pending.reset();
 }
 
 std::shared_ptr<const WallpaperSnapshot> WallpaperLoader::current() const {

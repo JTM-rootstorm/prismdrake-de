@@ -139,6 +139,9 @@ class GroupedTaskPresentationModel final : public QAbstractListModel {
 
     [[nodiscard]] foundation::Result<void>
     applySnapshot(std::shared_ptr<const GroupedTaskSnapshot> snapshot);
+    /// Ends the current settings-owner epoch without discarding task rows. Forwarding remains
+    /// disabled until a complete snapshot from the replacement owner is applied.
+    void clearSettingsOwner() noexcept;
     [[nodiscard]] GroupedTaskPresentation *groupAt(int row) const noexcept;
     [[nodiscard]] std::shared_ptr<const GroupedTaskSnapshot> currentSnapshot() const noexcept {
         return snapshot_;

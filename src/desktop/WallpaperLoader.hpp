@@ -45,6 +45,10 @@ class WallpaperLoader final {
     [[nodiscard]] foundation::Result<void> load(WallpaperRequest request, QObject *context,
                                                 Completion completion);
 
+    /// Starts a replacement settings-owner epoch. In-flight work from the prior owner is
+    /// cancelled while its last complete wallpaper remains available as a safe fallback.
+    void beginSettingsOwnerEpoch() noexcept;
+
     /// Returns the last published immutable snapshot, if any.
     [[nodiscard]] std::shared_ptr<const WallpaperSnapshot> current() const;
 

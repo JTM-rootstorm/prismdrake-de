@@ -343,6 +343,8 @@ GroupedTaskPresentationModel::applySnapshot(std::shared_ptr<const GroupedTaskSna
     return foundation::Result<void>::success();
 }
 
+void GroupedTaskPresentationModel::clearSettingsOwner() noexcept { snapshot_.reset(); }
+
 GroupedTaskPresentation *GroupedTaskPresentationModel::groupAt(int row) const noexcept {
     if (row < 0 || static_cast<std::size_t>(row) >= groups_.size()) {
         return nullptr;
