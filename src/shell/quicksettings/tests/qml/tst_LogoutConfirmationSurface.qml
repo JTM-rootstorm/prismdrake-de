@@ -113,6 +113,28 @@ TestCase {
         compare(confirmSpy.count, 2)
     }
 
+    function test_directionalNavigationCyclesInBothDirections() {
+        surface.focusFirstControl()
+        const cancel = findChild(surface, "logoutCancel")
+        const confirm = findChild(surface, "logoutConfirm")
+        tryCompare(cancel, "activeFocus", true)
+
+        keyClick(Qt.Key_Right)
+        tryCompare(confirm, "activeFocus", true)
+        keyClick(Qt.Key_Right)
+        tryCompare(cancel, "activeFocus", true)
+        keyClick(Qt.Key_Left)
+        tryCompare(confirm, "activeFocus", true)
+        keyClick(Qt.Key_Left)
+        tryCompare(cancel, "activeFocus", true)
+
+        surface.layoutDirection = Qt.RightToLeft
+        keyClick(Qt.Key_Left)
+        tryCompare(confirm, "activeFocus", true)
+        keyClick(Qt.Key_Right)
+        tryCompare(cancel, "activeFocus", true)
+    }
+
     function test_localeDrivenRtlAndPseudoLocalizedScaledStatus() {
         const cancel = findChild(surface, "logoutCancel")
         const confirm = findChild(surface, "logoutConfirm")
