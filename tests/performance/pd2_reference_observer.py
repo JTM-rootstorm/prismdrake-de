@@ -2,9 +2,9 @@
 """Observe the defensible WP15 endpoints available on the Gentoo reference VM.
 
 The executable implements every collector role through one closed JSON
-protocol.  It measures only endpoints with an existing exact runner, executes
-the established i18n tests, validates installed-demo cleanup evidence, and
-returns reviewed skips for probes that still need live-session orchestration.
+protocol. It composes exact model, production-asset, installed-session, and
+idle-wakeup collectors, executes the established i18n tests, and validates
+installed-demo cleanup evidence.
 """
 
 from __future__ import annotations
@@ -29,13 +29,34 @@ SAFE_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 REVISION = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 SAFE_TEXT = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .,:;_+()'=-]{0,255}")
 
-PERFORMANCE_PROBES = {
-    ("profile_switch", None): ("profile_switch_publication", None),
+MODEL_PERFORMANCE_PROBES = {
     ("catalog_refresh", None): ("desktop_entry_discovery", 256),
     ("search_response", "16"): ("application_search_response", 16),
     ("search_response", "64"): ("application_search_response", 64),
     ("search_response", "256"): ("application_search_response", 256),
 }
+
+RUNTIME_PERFORMANCE_PROBES = {
+    ("session_ready", None): "session_ready",
+    ("shell_complete_presentation", None): "shell_complete_presentation",
+    ("launcher_acknowledgement", None): "launcher_acknowledgement",
+    ("notification_method_latency", None): "notification_method_latency",
+    ("notification_center_open", None): "notification_center_open",
+    ("quick_settings_open", None): "quick_settings_open",
+    ("profile_switch", None): "profile_switch",
+    ("dnd_switch", None): "dnd_switch",
+    ("output_reconciliation", "add"): "output_add",
+    ("output_reconciliation", "remove"): "output_remove",
+    ("common_action_acknowledgement", None): "common_action_acknowledgement",
+}
+
+ASSET_PERFORMANCE_PROBES = {
+    ("icon_decode_cache", "decode"): "icon_decode",
+    ("icon_decode_cache", "cache_hit"): "icon_cache_hit",
+    ("wallpaper_decode_publication", None): "wallpaper_decode_publication",
+}
+
+IDLE_PERFORMANCE_PROBE = ("idle_wakeups", None)
 
 I18N_TESTS = {
     "qt_translation_routing": r"^TranslationCatalogTest\.",
@@ -327,6 +348,49 @@ def measurement(document: dict[str, Any], name: str, fixture_count: int | None) 
     return matches[0]
 
 
+def named_samples(document: dict[str, Any], name: str) -> list[int]:
+    matches = [item for item in document["measurements"] if item["name"] == name]
+    require(len(matches) == 1, "performance_measurement_missing")
+    return matches[0]["samples_ns"]
+
+
+def parse_command_json(completed: subprocess.CompletedProcess[bytes],
+                       failure: str) -> Any:
+    require(
+        completed.returncode == 0
+        and not completed.stderr
+        and 0 < len(completed.stdout) <= MAX_INPUT_BYTES,
+        failure,
+    )
+    try:
+        return json.loads(
+            completed.stdout.decode("utf-8"),
+            object_pairs_hook=duplicate_safe_object,
+            parse_constant=reject_constant,
+            parse_float=finite_float,
+        )
+    except (UnicodeError, ValueError, json.JSONDecodeError) as error:
+        raise ObserverError(failure) from error
+
+
+def unavailable_comparison() -> dict[str, str]:
+    return {
+        "status": "not_available",
+        "explanation": "No matching validated multi sample PD1 baseline was supplied",
+    }
+
+
+def observed_milliseconds(samples_ns: Sequence[int], method: str,
+                          comparison: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "status": "observed",
+        "unit": "milliseconds",
+        "samples": [sample / 1_000_000.0 for sample in samples_ns],
+        "method": method,
+        "pd1_comparison": comparison or unavailable_comparison(),
+    }
+
+
 def reviewed_skip(reason_code: str, reason: str) -> dict[str, Any]:
     return {
         "status": "skipped",
@@ -336,13 +400,7 @@ def reviewed_skip(reason_code: str, reason: str) -> dict[str, Any]:
     }
 
 
-def performance_result(group: str, endpoint: str | None) -> dict[str, Any]:
-    probe = PERFORMANCE_PROBES.get((group, endpoint))
-    if probe is None:
-        return reviewed_skip(
-            "live_adapter_unimplemented",
-            "Endpoint still requires an installed live session observer",
-        )
+def model_performance_result(probe: tuple[str, int | None]) -> dict[str, Any]:
     current_revision = binding()["source_revision"]
     baseline_revision = required_environment(
         "PRISMDRAKE_PD2_PD1_REFERENCE_REVISION", REVISION
@@ -358,19 +416,7 @@ def performance_result(group: str, endpoint: str | None) -> dict[str, Any]:
         ),
         60.0,
     )
-    require(completed.returncode == 0 and not completed.stderr,
-            "performance_runner_failed")
-    require(0 < len(completed.stdout) <= MAX_INPUT_BYTES,
-            "performance_runner_output_invalid")
-    try:
-        current = json.loads(
-            completed.stdout.decode("utf-8"),
-            object_pairs_hook=duplicate_safe_object,
-            parse_constant=reject_constant,
-            parse_float=finite_float,
-        )
-    except (UnicodeError, ValueError, json.JSONDecodeError) as error:
-        raise ObserverError("performance_runner_output_invalid") from error
+    current = parse_command_json(completed, "performance_runner_failed")
     validate_performance_document(current, current_revision)
     name, fixture_count = probe
     current_item = measurement(current, name, fixture_count)
@@ -389,13 +435,116 @@ def performance_result(group: str, endpoint: str | None) -> dict[str, Any]:
             "pd1_value": baseline_median,
             "explanation": "Current model median exceeds the selected PD1 reference median",
         }
+    return observed_milliseconds(
+        current_item["statistics"]["samples_ns"],
+        "Steady clock model runner with a controlled reference fixture",
+        comparison,
+    )
+
+
+def runtime_performance_result(name: str) -> dict[str, Any]:
+    performance_path = str(Path(__file__).resolve().parent)
+    if performance_path not in sys.path:
+        sys.path.insert(0, performance_path)
+    from pd2_runtime_performance import (  # pylint: disable=import-outside-toplevel
+        validate_runtime_evidence,
+    )
+
+    document = load_json(
+        configured_regular_file("PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE")
+    )
+    try:
+        validate_runtime_evidence(document)
+    except RuntimeError as error:
+        raise ObserverError("runtime_performance_evidence_invalid") from error
+    require(document["source_revision"] == binding()["source_revision"],
+            "runtime_performance_revision_mismatch")
+    require(
+        document["reference_environment_id"] == binding()["reference_environment_id"],
+        "runtime_performance_environment_mismatch",
+    )
+    return observed_milliseconds(
+        named_samples(document, name),
+        "Monotonic installed workflow timing with a fresh isolated session per trial",
+    )
+
+
+def asset_performance_result(name: str) -> dict[str, Any]:
+    current_binding = binding()
+    runner = configured_path("PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER")
+    document = parse_command_json(
+        run_command(
+            (
+                str(runner),
+                "--revision", current_binding["source_revision"],
+                "--environment-id", current_binding["reference_environment_id"],
+                "--iterations", "7",
+            ),
+            60.0,
+        ),
+        "asset_performance_runner_failed",
+    )
+    performance_path = str(Path(__file__).resolve().parent)
+    if performance_path not in sys.path:
+        sys.path.insert(0, performance_path)
+    from validate_pd2_asset_performance import (  # pylint: disable=import-outside-toplevel
+        AssetEvidenceError,
+        validate_document,
+    )
+
+    try:
+        validate_document(
+            document,
+            current_binding["source_revision"],
+            current_binding["reference_environment_id"],
+        )
+    except AssetEvidenceError as error:
+        raise ObserverError("asset_performance_evidence_invalid") from error
+    return observed_milliseconds(
+        named_samples(document, name),
+        "Steady clock production asset pipeline with controlled local PNG fixtures",
+    )
+
+
+def idle_performance_result() -> dict[str, Any]:
+    performance_path = str(Path(__file__).resolve().parent)
+    if performance_path not in sys.path:
+        sys.path.insert(0, performance_path)
+    from pd2_idle_series import (  # pylint: disable=import-outside-toplevel
+        IdleSeriesError,
+        validate_series,
+    )
+
+    document = load_json(configured_regular_file("PRISMDRAKE_PD2_IDLE_SERIES"))
+    current_binding = binding()
+    try:
+        validate_series(
+            document,
+            current_binding["source_revision"],
+            current_binding["reference_environment_id"],
+        )
+    except IdleSeriesError as error:
+        raise ObserverError("idle_performance_evidence_invalid") from error
     return {
         "status": "observed",
-        "unit": "milliseconds",
-        "samples": samples,
-        "method": "Steady clock model runner with a controlled reference fixture",
-        "pd1_comparison": comparison,
+        "unit": "wakeups_per_minute",
+        "samples": document["samples_wakeups_per_minute"],
+        "method": "Strict sixty second scheduler trace totals for exact measured roles",
+        "pd1_comparison": unavailable_comparison(),
     }
+
+
+def performance_result(group: str, endpoint: str | None) -> dict[str, Any]:
+    key = (group, endpoint)
+    if key in RUNTIME_PERFORMANCE_PROBES:
+        return runtime_performance_result(RUNTIME_PERFORMANCE_PROBES[key])
+    if key in ASSET_PERFORMANCE_PROBES:
+        return asset_performance_result(ASSET_PERFORMANCE_PROBES[key])
+    if key in MODEL_PERFORMANCE_PROBES:
+        return model_performance_result(MODEL_PERFORMANCE_PROBES[key])
+    if key == IDLE_PERFORMANCE_PROBE:
+        return idle_performance_result()
+    raise ObserverError("performance_probe_invalid")
 
 
 def accessibility_result(surface: str | None, check: str | None,

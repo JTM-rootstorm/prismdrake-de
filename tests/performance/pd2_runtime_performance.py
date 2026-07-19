@@ -25,7 +25,6 @@ ENDPOINTS = (
     "session_ready",
     "shell_complete_presentation",
     "launcher_acknowledgement",
-    "wallpaper_decode_publication",
     "notification_method_latency",
     "notification_center_open",
     "quick_settings_open",
@@ -245,11 +244,6 @@ def collect_runtime_evidence(
                 if identifier == "verify_component_readiness":
                     require(session_started is not None, "runtime_step_order_invalid")
                     samples["session_ready"].append(finished - session_started)
-                elif identifier == "verify_desktop_wallpaper_both_outputs":
-                    require(session_started is not None, "runtime_step_order_invalid")
-                    samples["wallpaper_decode_publication"].append(
-                        finished - session_started
-                    )
                 elif identifier == "verify_panel_policy_both_outputs":
                     require(session_started is not None, "runtime_step_order_invalid")
                     samples["shell_complete_presentation"].append(

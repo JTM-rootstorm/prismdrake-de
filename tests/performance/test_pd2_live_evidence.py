@@ -341,6 +341,9 @@ class CommandAdapterTests(unittest.TestCase):
             {
                 "DISPLAY": ":140",
                 "DBUS_SESSION_BUS_ADDRESS": "private-runtime-value",
+                "PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE": "/evidence/runtime.json",
+                "PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER": "/runner/assets",
+                "PRISMDRAKE_PD2_IDLE_SERIES": "/evidence/idle.json",
                 "UNRELATED_SECRET": "must-not-propagate",
             },
             clear=True,
@@ -353,6 +356,17 @@ class CommandAdapterTests(unittest.TestCase):
         self.assertEqual(environment["PRISMDRAKE_PD2_METHOD_ID"], LIVE_METHOD_ID)
         self.assertEqual(
             environment["PRISMDRAKE_PD2_PD1_REFERENCE_REVISION"], PD1_REVISION
+        )
+        self.assertEqual(
+            environment["PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE"],
+            "/evidence/runtime.json",
+        )
+        self.assertEqual(
+            environment["PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER"],
+            "/runner/assets",
+        )
+        self.assertEqual(
+            environment["PRISMDRAKE_PD2_IDLE_SERIES"], "/evidence/idle.json"
         )
         self.assertNotIn("UNRELATED_SECRET", environment)
 

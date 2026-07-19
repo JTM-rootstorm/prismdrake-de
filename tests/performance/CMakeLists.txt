@@ -140,6 +140,15 @@ set_tests_properties(Pd2RuntimePerformanceCollectorTest PROPERTIES
     LABELS "performance;contract"
     TIMEOUT 20)
 
+add_test(
+    NAME Pd2IdleWakeupSeriesContractTest
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_idle_series.py")
+set_tests_properties(Pd2IdleWakeupSeriesContractTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    LABELS "performance;contract"
+    TIMEOUT 10)
+
 find_program(prismdrake_performance_fc_match_executable fc-match REQUIRED)
 execute_process(
     COMMAND "${prismdrake_performance_fc_match_executable}"
