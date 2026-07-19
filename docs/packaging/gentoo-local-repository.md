@@ -141,6 +141,11 @@ dependencies, or unmask unrelated packages.
 
 ## Product lifecycle evidence contract
 
+Run every project-relative command in this section with
+`/absolute/clean/prismdrake-de` as the current working directory. The
+`runuser` package-test command intentionally inherits that directory after the
+disposable checkout and retained build are assigned to the ordinary test user.
+
 The installed demonstration uses a staged evidence flow so it never depends on
 a result that it is itself expected to produce. After the `USE=test` install,
 create an exact `git bundle` from the clean source checkout. Capture the
