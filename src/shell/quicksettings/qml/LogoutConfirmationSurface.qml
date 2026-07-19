@@ -10,8 +10,11 @@ FocusScope {
     required property var themeGeneration
     required property string statusText
     required property bool transactionPending
+    property int layoutDirection: Qt.locale().textDirection
 
     readonly property var tokens: themeGeneration.notification
+    readonly property real maximumStatusHeight: Math.max(tokens.minimumTargetSize,
+                                                          tokens.bodyFontPixels * 5)
 
     signal confirmRequested
     signal cancelRequested
@@ -21,6 +24,19 @@ FocusScope {
             cancelButton.forceActiveFocus(Qt.OtherFocusReason)
         else if (confirmButton.enabled)
             confirmButton.forceActiveFocus(Qt.OtherFocusReason)
+    }
+
+    function focusOtherControl(current, reason, event) {
+        event.accepted = true
+        const candidate = current === cancelButton ? confirmButton : cancelButton
+        if (candidate.enabled)
+            candidate.forceActiveFocus(reason)
+    }
+
+    function activateControl(control, event) {
+        event.accepted = true
+        if (control.enabled)
+            control.clicked()
     }
 
     Keys.priority: Keys.BeforeItem
@@ -36,6 +52,8 @@ FocusScope {
 
     implicitWidth: 420
     implicitHeight: contents.implicitHeight + 32
+    LayoutMirroring.enabled: layoutDirection === Qt.RightToLeft
+    LayoutMirroring.childrenInherit: true
 
     Rectangle {
         anchors.fill: parent
@@ -61,15 +79,22 @@ FocusScope {
         }
 
         Label {
+            objectName: "logoutStatus"
             Layout.fillWidth: true
             text: root.statusText
             color: root.tokens.textMutedColor
             font.family: root.tokens.bodyFontFamily
             font.pixelSize: root.tokens.bodyFontPixels
             wrapMode: Text.Wrap
+            maximumLineCount: 4
+            elide: Text.ElideRight
+            Layout.maximumHeight: root.maximumStatusHeight
         }
 
         RowLayout {
+            layoutDirection: root.layoutDirection
+            LayoutMirroring.enabled: false
+            LayoutMirroring.childrenInherit: false
             Layout.fillWidth: true
             spacing: 8
 
@@ -84,6 +109,7 @@ FocusScope {
                 text: qsTr("Cancel")
                 enabled: !root.transactionPending
                 activeFocusOnTab: true
+                Keys.priority: Keys.BeforeItem
 
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("Cancel logout")
@@ -93,9 +119,20 @@ FocusScope {
                 Accessible.onPressAction: clicked()
 
                 Keys.onTabPressed: event => {
-                    event.accepted = true
-                    confirmButton.forceActiveFocus(Qt.TabFocusReason)
+                    root.focusOtherControl(cancelButton, Qt.TabFocusReason, event)
                 }
+                Keys.onBacktabPressed: event => {
+                    root.focusOtherControl(cancelButton, Qt.BacktabFocusReason, event)
+                }
+                Keys.onLeftPressed: event => {
+                    root.focusOtherControl(cancelButton, Qt.BacktabFocusReason, event)
+                }
+                Keys.onRightPressed: event => {
+                    root.focusOtherControl(cancelButton, Qt.TabFocusReason, event)
+                }
+                Keys.onSpacePressed: event => root.activateControl(cancelButton, event)
+                Keys.onReturnPressed: event => root.activateControl(cancelButton, event)
+                Keys.onEnterPressed: event => root.activateControl(cancelButton, event)
 
                 onClicked: root.cancelRequested()
             }
@@ -109,18 +146,31 @@ FocusScope {
                 text: qsTr("Log out")
                 enabled: !root.transactionPending
                 activeFocusOnTab: true
+                Keys.priority: Keys.BeforeItem
 
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("Confirm logout")
                 Accessible.description: qsTr("Close applications and end the Prismdrake session")
                 Accessible.focusable: enabled
                 Accessible.focused: activeFocus
+                Accessible.defaultButton: true
                 Accessible.onPressAction: clicked()
 
-                Keys.onBacktabPressed: event => {
-                    event.accepted = true
-                    cancelButton.forceActiveFocus(Qt.BacktabFocusReason)
+                Keys.onTabPressed: event => {
+                    root.focusOtherControl(confirmButton, Qt.TabFocusReason, event)
                 }
+                Keys.onBacktabPressed: event => {
+                    root.focusOtherControl(confirmButton, Qt.BacktabFocusReason, event)
+                }
+                Keys.onLeftPressed: event => {
+                    root.focusOtherControl(confirmButton, Qt.BacktabFocusReason, event)
+                }
+                Keys.onRightPressed: event => {
+                    root.focusOtherControl(confirmButton, Qt.TabFocusReason, event)
+                }
+                Keys.onSpacePressed: event => root.activateControl(confirmButton, event)
+                Keys.onReturnPressed: event => root.activateControl(confirmButton, event)
+                Keys.onEnterPressed: event => root.activateControl(confirmButton, event)
 
                 onClicked: root.confirmRequested()
             }

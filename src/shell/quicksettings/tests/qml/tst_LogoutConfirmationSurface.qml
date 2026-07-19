@@ -44,6 +44,10 @@ TestCase {
 
     function init() {
         surface.transactionPending = false
+        surface.layoutDirection = Qt.LeftToRight
+        surface.statusText = "Close the session and all applications?"
+        notificationTokens.minimumTargetSize = 48
+        notificationTokens.bodyFontPixels = 14
         confirmSpy.clear()
         cancelSpy.clear()
     }
@@ -65,6 +69,7 @@ TestCase {
         verify(confirm.width >= notificationTokens.minimumTargetSize)
         verify(cancel.Accessible.description.length > 0)
         verify(confirm.Accessible.description.length > 0)
+        compare(confirm.Accessible.defaultButton, true)
 
         confirm.clicked()
         compare(confirmSpy.count, 1)
@@ -78,30 +83,74 @@ TestCase {
         const confirm = findChild(surface, "logoutConfirm")
         compare(cancel.enabled, false)
         compare(confirm.enabled, false)
+        compare(cancel.Accessible.focusable, false)
+        compare(confirm.Accessible.focusable, false)
         keyClick(Qt.Key_Escape)
         compare(cancelSpy.count, 0)
         compare(confirmSpy.count, 0)
     }
 
-    function test_rtlFocusOrderAndLongStatusWrapping() {
-        surface.LayoutMirroring.enabled = true
-        surface.LayoutMirroring.childrenInherit = true
-        surface.statusText = "A deliberately long translated logout explanation that must wrap "
-                + "inside the bounded confirmation surface without hiding either action."
-        wait(0)
-
+    function test_completeTabBacktabCycleAndKeyboardActivation() {
         surface.focusFirstControl()
         const cancel = findChild(surface, "logoutCancel")
         const confirm = findChild(surface, "logoutConfirm")
+        tryCompare(cancel, "activeFocus", true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(confirm, "activeFocus", true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(cancel, "activeFocus", true)
+        keyClick(Qt.Key_Backtab)
+        tryCompare(confirm, "activeFocus", true)
+        keyClick(Qt.Key_Backtab)
+        tryCompare(cancel, "activeFocus", true)
+
+        keyClick(Qt.Key_Space)
+        compare(cancelSpy.count, 1)
+        confirm.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Return)
+        compare(confirmSpy.count, 1)
+        keyClick(Qt.Key_Enter)
+        compare(confirmSpy.count, 2)
+    }
+
+    function test_localeDrivenRtlAndPseudoLocalizedScaledStatus() {
+        const cancel = findChild(surface, "logoutCancel")
+        const confirm = findChild(surface, "logoutConfirm")
+        const status = findChild(surface, "logoutStatus")
+        verify(cancel !== null)
+        verify(confirm !== null)
+        verify(status !== null)
+        verify(cancel.mapToItem(surface, 0, 0).x
+               < confirm.mapToItem(surface, 0, 0).x)
+
+        surface.layoutDirection = Qt.RightToLeft
+        let pseudo = "[!! "
+        for (let index = 0; index < 80; ++index)
+            pseudo += "Dragon session explanation "
+        pseudo += "!!]"
+        surface.statusText = pseudo
+        notificationTokens.minimumTargetSize = 56
+        notificationTokens.bodyFontPixels = 22
+        wait(0)
+
+        surface.focusFirstControl()
         compare(cancel.activeFocus, true)
         keyClick(Qt.Key_Tab)
         compare(confirm.activeFocus, true)
+        keyClick(Qt.Key_Backtab)
+        compare(cancel.activeFocus, true)
         verify(surface.implicitHeight > notificationTokens.minimumTargetSize * 2)
+        verify(surface.y + surface.implicitHeight <= testCase.height)
         verify(surface.LayoutMirroring.enabled)
-        verify(cancel.x !== confirm.x)
-
-        surface.LayoutMirroring.enabled = false
-        surface.LayoutMirroring.childrenInherit = false
-        surface.statusText = "Close the session and all applications?"
+        tryVerify(() => cancel.mapToItem(surface, 0, 0).x
+                         > confirm.mapToItem(surface, 0, 0).x)
+        compare(status.text, pseudo)
+        compare(status.wrapMode, Text.Wrap)
+        compare(status.maximumLineCount, 4)
+        compare(status.truncated, true)
+        compare(status.font.pixelSize, 22)
+        compare(surface.Accessible.description, pseudo)
+        verify(cancel.width >= 56)
+        verify(confirm.width >= 56)
     }
 }
