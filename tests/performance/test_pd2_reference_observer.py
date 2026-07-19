@@ -29,6 +29,17 @@ BINDING_ENVIRONMENT = {
 }
 
 
+def write_build_attestation(
+    build: Path, source: Path | None = None, revision: str = REVISION
+) -> None:
+    source = source or build
+    (build / "CMakeCache.txt").write_text(
+        f"PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL={revision}\n"
+        f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
+        encoding="utf-8",
+    )
+
+
 def performance_document(revision: str, samples: list[int]) -> dict[str, object]:
     measurements = []
     shape = [
@@ -135,7 +146,8 @@ def idle_document(samples: list[int]) -> dict[str, object]:
             "source_evidence_kind": "idle_scheduler_wakeups",
             "sample_interval_seconds": 60,
             "sample_aggregation": "sum_received_wakeups_across_measured_roles",
-            "measured_roles": ["session", "settingsd", "shell"],
+            "measured_roles": ["session", "settingsd", "notifyd", "shell"],
+            "source_trial_ids_sha256": "1" * 64,
             "trial_count": len(samples),
         },
         "samples_wakeups_per_minute": samples,
@@ -210,8 +222,10 @@ class ReferenceObserverTests(unittest.TestCase):
                 },
                 clear=True,
             ),
+            mock.patch.object(observer, "attest_source_checkout"),
             mock.patch.object(observer, "run_command", return_value=completed),
         ):
+            write_build_attestation(Path(temporary))
             result = observer.ctest_result("locale_aware_clock")
         self.assertEqual(result["status"], "passed")
 
@@ -231,8 +245,10 @@ class ReferenceObserverTests(unittest.TestCase):
                 "run_command",
                 return_value=subprocess.CompletedProcess([], 0, b"No tests were found\n", b""),
             ),
+            mock.patch.object(observer, "attest_source_checkout"),
             self.assertRaisesRegex(observer.ObserverError, "^ctest_selection_empty$"),
         ):
+            write_build_attestation(Path(temporary))
             observer.ctest_result("locale_aware_clock")
 
     def test_visual_i18n_checks_require_the_exact_intended_test_selection(self) -> None:
@@ -262,7 +278,9 @@ class ReferenceObserverTests(unittest.TestCase):
                     "run_command",
                     return_value=subprocess.CompletedProcess([], 0, output, b""),
                 ),
+                mock.patch.object(observer, "attest_source_checkout"),
             ):
+                write_build_attestation(Path(temporary))
                 self.assertEqual(observer.ctest_result(check)["status"], "passed")
 
                 missing = output.splitlines(keepends=True)[:-1]
@@ -296,6 +314,73 @@ class ReferenceObserverTests(unittest.TestCase):
                 ):
                     observer.ctest_result(check)
 
+    def test_i18n_checks_reject_a_stale_build_revision(self) -> None:
+        completed = subprocess.CompletedProcess(
+            [], 0, b"1/1 Test #1: Fixture .... Passed\n", b""
+        )
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            mock.patch.dict(
+                os.environ,
+                {
+                    **BINDING_ENVIRONMENT,
+                    "PRISMDRAKE_PD2_BUILD_DIRECTORY": temporary,
+                    "PRISMDRAKE_PD2_CTEST": "/bin/true",
+                },
+                clear=True,
+            ),
+            mock.patch.object(observer, "run_command", return_value=completed),
+            self.assertRaisesRegex(observer.ObserverError, "^build_revision_mismatch$"),
+        ):
+            write_build_attestation(Path(temporary), revision="b" * 40)
+            observer.ctest_result("locale_aware_clock")
+
+    def test_source_attestation_rejects_stale_or_dirty_checkout(self) -> None:
+        with (
+            mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
+            mock.patch.object(observer, "configured_path", return_value=Path("/git")),
+            mock.patch.object(
+                observer,
+                "run_command",
+                return_value=subprocess.CompletedProcess(
+                    [], 0, ("b" * 40 + "\n").encode("ascii"), b""
+                ),
+            ),
+            self.assertRaisesRegex(observer.ObserverError, "^source_revision_mismatch$"),
+        ):
+            observer.attest_source_checkout(Path("/source"))
+
+        source = Path("/source")
+        results = (
+            subprocess.CompletedProcess([], 0, (REVISION + "\n").encode("ascii"), b""),
+            subprocess.CompletedProcess([], 0, b"/source\n", b""),
+            subprocess.CompletedProcess([], 1, b"", b""),
+        )
+        with (
+            mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
+            mock.patch.object(observer, "configured_path", return_value=Path("/git")),
+            mock.patch.object(observer, "run_command", side_effect=results),
+            mock.patch.object(Path, "resolve", return_value=source),
+            self.assertRaisesRegex(observer.ObserverError, "^source_checkout_dirty$"),
+        ):
+            observer.attest_source_checkout(source)
+
+        untracked = (
+            subprocess.CompletedProcess([], 0, (REVISION + "\n").encode("ascii"), b""),
+            subprocess.CompletedProcess([], 0, b"/source\n", b""),
+            subprocess.CompletedProcess([], 0, b"", b""),
+            subprocess.CompletedProcess([], 0, b"", b""),
+            subprocess.CompletedProcess([], 0, b"?? private-file\n", b""),
+        )
+        with (
+            mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
+            mock.patch.object(observer, "configured_path", return_value=Path("/git")),
+            mock.patch.object(observer, "run_command", side_effect=untracked),
+            mock.patch.object(Path, "resolve", return_value=source),
+            self.assertRaisesRegex(observer.ObserverError, "^source_checkout_dirty$"),
+        ):
+            observer.attest_source_checkout(source)
+
     def test_model_runner_maps_exact_supported_endpoints_and_compares_pd1(self) -> None:
         baseline = performance_document(PD1_REVISION, [2_000_000, 3_000_000, 4_000_000])
         current = performance_document(REVISION, [1_000_000, 2_000_000, 3_000_000])
@@ -311,6 +396,7 @@ class ReferenceObserverTests(unittest.TestCase):
                 observer, "configured_path", return_value=Path("/runner")
             ),
             mock.patch.object(observer, "validate_performance_document"),
+            mock.patch.object(observer, "configured_build_context"),
             mock.patch.object(
                 observer,
                 "run_command",
@@ -344,6 +430,7 @@ class ReferenceObserverTests(unittest.TestCase):
         with (
             mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
             mock.patch.object(observer, "configured_path", return_value=Path("/runner")),
+            mock.patch.object(observer, "configured_build_context"),
             mock.patch.object(
                 observer,
                 "run_command",
@@ -411,7 +498,25 @@ class ReferenceObserverTests(unittest.TestCase):
             observer.performance_result("search_response", "10")
 
     def test_fragment_audit_runs_against_current_sources(self) -> None:
-        self.assertEqual(observer.fragile_fragment_result()["status"], "passed")
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            mock.patch.dict(
+                os.environ,
+                {
+                    **BINDING_ENVIRONMENT,
+                    "PRISMDRAKE_PD2_BUILD_DIRECTORY": temporary,
+                },
+                clear=True,
+            ),
+            mock.patch.object(observer, "attest_source_checkout"),
+        ):
+            root = Path(temporary) / "source"
+            (root / "src").mkdir(parents=True)
+            (root / "src" / "safe.cpp").write_text(
+                'const auto message = qsTr("Complete message");\n', encoding="utf-8"
+            )
+            write_build_attestation(Path(temporary), source=root)
+            self.assertEqual(observer.fragile_fragment_result()["status"], "passed")
 
 
 if __name__ == "__main__":

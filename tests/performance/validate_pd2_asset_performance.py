@@ -127,9 +127,9 @@ def run_and_validate(runner: Path, revision: str, environment_id: str) -> None:
 
 def main() -> int:
     try:
-        require(len(sys.argv) == 2, "arguments_invalid")
+        require(len(sys.argv) == 3, "arguments_invalid")
         run_and_validate(
-            Path(sys.argv[1]), "0" * 40, "contract-test"
+            Path(sys.argv[1]), sys.argv[2], "contract-test"
         )
         print("validate_pd2_asset_performance: valid asset evidence")
         return 0

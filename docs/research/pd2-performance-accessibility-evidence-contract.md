@@ -194,6 +194,7 @@ closed controlled sizes are 16, 64, and 256:
 cmake --build build/gcc-debug --target \
   prismdrake-pd1-performance-evidence prismdrake-pd2-asset-performance
 env \
+  PRISMDRAKE_PD2_BUILD_DIRECTORY="$PWD/build/gcc-debug" \
   PRISMDRAKE_PD2_PERFORMANCE_RUNNER="$PWD/build/gcc-debug/tests/performance/prismdrake-pd1-performance-evidence" \
   PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER="$PWD/build/gcc-debug/tests/performance/prismdrake-pd2-asset-performance" \
   PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE="$PWD/pd2-runtime-performance.json" \
@@ -218,6 +219,12 @@ The dedicated accessibility observer uses the VM's GI `Atspi` binding. The RTL
 and expanded-string routes pass only when CTest reports the complete exact
 five-test and six-test selections respectively; a partial or broadened regex
 selection fails closed.
+The CTest, translated-fragment, model, and asset routes read the build's
+configured source revision and source directory from `CMakeCache.txt`, then
+require that directory to be a clean Git checkout at the requested revision.
+A stale build or tracked source modification is rejected. Cache metadata alone
+is not cryptographic source proof; final evidence must be collected from the
+reviewed clean exact checkout.
 
 Model endpoints compare only with the matching validated PD1 model series.
 Installed-runtime, production-asset, and idle-wakeup endpoints report

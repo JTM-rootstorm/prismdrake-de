@@ -24,7 +24,7 @@ def main() -> int:
         timeout=4,
         check=False,
     )
-    expected = f"prismdrake-pd1-performance-evidence: {expected_id}\n"
+    expected = f"{executable.name}: {expected_id}\n"
     if completed.returncode != 2 or completed.stdout or completed.stderr != expected:
         print("assert_cli_failure: unexpected_cli_contract", file=sys.stderr)
         return 1

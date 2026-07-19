@@ -19,6 +19,44 @@ project(
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(CTest)
+if(BUILD_TESTING)
+    set(PRISMDRAKE_SOURCE_REVISION "" CACHE STRING
+        "Exact source revision for test builds made outside a Git checkout")
+    if(PRISMDRAKE_SOURCE_REVISION STREQUAL "")
+        find_package(Git QUIET)
+        if(NOT Git_FOUND)
+            message(FATAL_ERROR
+                "Evidence-producing test builds require a Git checkout or "
+                "-DPRISMDRAKE_SOURCE_REVISION=<40-or-64-hex>")
+        endif()
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" rev-parse --verify HEAD
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            RESULT_VARIABLE prismdrake_source_revision_result
+            OUTPUT_VARIABLE prismdrake_resolved_source_revision
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+        if(NOT prismdrake_source_revision_result EQUAL 0)
+            message(FATAL_ERROR
+                "Could not resolve the test source revision; pass "
+                "-DPRISMDRAKE_SOURCE_REVISION=<40-or-64-hex>")
+        endif()
+    else()
+        set(prismdrake_resolved_source_revision "${PRISMDRAKE_SOURCE_REVISION}")
+    endif()
+    string(LENGTH "${prismdrake_resolved_source_revision}"
+        prismdrake_source_revision_length)
+    if((NOT prismdrake_source_revision_length EQUAL 40 AND
+        NOT prismdrake_source_revision_length EQUAL 64) OR
+       NOT prismdrake_resolved_source_revision MATCHES "^[0-9a-f]+$" OR
+       prismdrake_resolved_source_revision MATCHES "^0+$")
+        message(FATAL_ERROR
+            "The Prismdrake test source revision must be exact, lowercase, and nonzero")
+    endif()
+    set(PRISMDRAKE_CONFIGURED_SOURCE_REVISION
+        "${prismdrake_resolved_source_revision}" CACHE INTERNAL
+        "Exact source revision embedded in evidence-producing targets" FORCE)
+endif()
 include(GNUInstallDirs)
 include(PrismdrakeOptions)
 include(PrismdrakeCompiler)

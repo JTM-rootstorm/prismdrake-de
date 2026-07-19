@@ -37,6 +37,7 @@ constexpr std::size_t minimumIterations = 3U;
 constexpr std::size_t maximumIterations = 100U;
 constexpr std::size_t defaultIterations = 7U;
 constexpr int operationTimeoutMilliseconds = 5'000;
+constexpr std::string_view builtSourceRevision{PRISMDRAKE_PERFORMANCE_SOURCE_REVISION};
 
 struct Options final {
     std::string sourceRevision;
@@ -132,6 +133,9 @@ class TemporaryDirectory final {
     }
     if (options.sourceRevision.empty() || options.environmentId.empty()) {
         fail("required_option_missing");
+    }
+    if (options.sourceRevision != builtSourceRevision) {
+        fail("source_revision_mismatch");
     }
     return options;
 }

@@ -46,15 +46,16 @@ def valid_summary(summary: dict[str, Any], count: int) -> bool:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 4:
         return fail("invalid_test_invocation")
     executable = Path(sys.argv[1])
     schema_path = Path(sys.argv[2])
+    revision = sys.argv[3]
     completed = subprocess.run(
         [
             str(executable),
             "--revision",
-            "0000000000000000000000000000000000000000",
+            revision,
             "--environment-id",
             "contract-test",
             "--iterations",

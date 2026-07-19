@@ -13,7 +13,8 @@ target_compile_definitions(prismdrake-pd1-performance-evidence
         PRISMDRAKE_PERFORMANCE_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
         PRISMDRAKE_PERFORMANCE_CMAKE_GENERATOR="${CMAKE_GENERATOR}"
         PRISMDRAKE_PERFORMANCE_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"
-        PRISMDRAKE_PERFORMANCE_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}")
+        PRISMDRAKE_PERFORMANCE_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+        PRISMDRAKE_PERFORMANCE_SOURCE_REVISION="${PRISMDRAKE_CONFIGURED_SOURCE_REVISION}")
 
 prismdrake_configure_cpp_target(prismdrake-pd1-performance-evidence)
 prismdrake_enable_warnings(prismdrake-pd1-performance-evidence)
@@ -28,6 +29,8 @@ target_link_libraries(prismdrake-pd2-asset-performance
         Qt6::Core
         Qt6::Gui
         nlohmann_json::nlohmann_json)
+target_compile_definitions(prismdrake-pd2-asset-performance PRIVATE
+    PRISMDRAKE_PERFORMANCE_SOURCE_REVISION="${PRISMDRAKE_CONFIGURED_SOURCE_REVISION}")
 prismdrake_configure_cpp_target(prismdrake-pd2-asset-performance)
 prismdrake_enable_warnings(prismdrake-pd2-asset-performance)
 prismdrake_enable_sanitizers(prismdrake-pd2-asset-performance)
@@ -36,7 +39,8 @@ add_test(
     NAME Pd2AssetPerformanceRunnerTest
     COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/validate_pd2_asset_performance.py"
-        "$<TARGET_FILE:prismdrake-pd2-asset-performance>")
+        "$<TARGET_FILE:prismdrake-pd2-asset-performance>"
+        "${PRISMDRAKE_CONFIGURED_SOURCE_REVISION}")
 set_tests_properties(Pd2AssetPerformanceRunnerTest PROPERTIES
     ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
     LABELS "performance;contract"
@@ -54,7 +58,7 @@ set_tests_properties(Pd2AssetPerformanceContractTest PROPERTIES
 add_test(
     NAME Pd1PerformanceEvidenceHarnessTest
     COMMAND prismdrake-pd1-performance-evidence
-        --revision 0000000000000000000000000000000000000000
+        --revision "${PRISMDRAKE_CONFIGURED_SOURCE_REVISION}"
         --environment-id contract-test
         --iterations 3)
 set_tests_properties(Pd1PerformanceEvidenceHarnessTest PROPERTIES
@@ -66,7 +70,8 @@ add_test(
     COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/validate_evidence.py"
         "$<TARGET_FILE:prismdrake-pd1-performance-evidence>"
-        "${CMAKE_CURRENT_SOURCE_DIR}/performance-evidence.schema.json")
+        "${CMAKE_CURRENT_SOURCE_DIR}/performance-evidence.schema.json"
+        "${PRISMDRAKE_CONFIGURED_SOURCE_REVISION}")
 set_tests_properties(Pd1PerformanceEvidenceSchemaTest PROPERTIES
     LABELS performance
     TIMEOUT 30)
@@ -77,7 +82,7 @@ add_test(
         "${CMAKE_CURRENT_SOURCE_DIR}/assert_cli_failure.py"
         "$<TARGET_FILE:prismdrake-pd1-performance-evidence>"
         invalid_environment_id
-        --revision 0000000000000000000000000000000000000000
+        --revision "${PRISMDRAKE_CONFIGURED_SOURCE_REVISION}"
         --environment-id Host-Name
         --iterations 3)
 add_test(
@@ -86,12 +91,32 @@ add_test(
         "${CMAKE_CURRENT_SOURCE_DIR}/assert_cli_failure.py"
         "$<TARGET_FILE:prismdrake-pd1-performance-evidence>"
         invalid_iteration_count
-        --revision 0000000000000000000000000000000000000000
+        --revision "${PRISMDRAKE_CONFIGURED_SOURCE_REVISION}"
         --environment-id contract-test
         --iterations 2)
+add_test(
+    NAME Pd1PerformanceEvidenceRejectsStaleRevision
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assert_cli_failure.py"
+        "$<TARGET_FILE:prismdrake-pd1-performance-evidence>"
+        source_revision_mismatch
+        --revision aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        --environment-id contract-test
+        --iterations 3)
+add_test(
+    NAME Pd2AssetPerformanceRejectsStaleRevision
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assert_cli_failure.py"
+        "$<TARGET_FILE:prismdrake-pd2-asset-performance>"
+        source_revision_mismatch
+        --revision aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        --environment-id contract-test
+        --iterations 3)
 set_tests_properties(
     Pd1PerformanceEvidenceRejectsInvalidEnvironmentId
     Pd1PerformanceEvidenceRejectsIterationBelowBound
+    Pd1PerformanceEvidenceRejectsStaleRevision
+    Pd2AssetPerformanceRejectsStaleRevision
     PROPERTIES
         LABELS performance
         TIMEOUT 5)

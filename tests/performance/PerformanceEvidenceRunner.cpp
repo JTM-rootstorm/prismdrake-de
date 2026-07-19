@@ -43,6 +43,7 @@ using Nanoseconds = std::chrono::nanoseconds;
 constexpr std::size_t minimumIterations = 3U;
 constexpr std::size_t maximumIterations = 200U;
 constexpr std::size_t defaultIterations = 25U;
+constexpr std::string_view builtSourceRevision{PRISMDRAKE_PERFORMANCE_SOURCE_REVISION};
 constexpr std::size_t discoveryWorkBudget = 64U;
 constexpr std::size_t maximumDiscoveryPulls = 4096U;
 constexpr std::array<std::size_t, 3U> controlledFixtureSizes{16U, 64U, 256U};
@@ -144,6 +145,9 @@ class TemporaryDirectory final {
     }
     if (options.sourceRevision.empty() || options.environmentId.empty()) {
         fail("required_option_missing");
+    }
+    if (options.sourceRevision != builtSourceRevision) {
+        fail("source_revision_mismatch");
     }
     return options;
 }

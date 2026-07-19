@@ -225,6 +225,105 @@ def configured_regular_file(name: str) -> Path:
     return path
 
 
+def attest_source_checkout(source: Path) -> None:
+    """Require the configured source to be the clean checkout at the binding."""
+
+    git = configured_path("PRISMDRAKE_PD2_GIT", (Path("/usr/bin/git"),))
+    revision_result = run_command(
+        (str(git), "-C", str(source), "rev-parse", "--verify", "HEAD"), 10.0
+    )
+    require(
+        revision_result.returncode == 0
+        and not revision_result.stderr
+        and revision_result.stdout,
+        "source_attestation_failed",
+    )
+    try:
+        revision = revision_result.stdout.decode("ascii").strip()
+    except UnicodeError as error:
+        raise ObserverError("source_attestation_failed") from error
+    require(revision == binding()["source_revision"], "source_revision_mismatch")
+    root_result = run_command(
+        (str(git), "-C", str(source), "rev-parse", "--show-toplevel"), 10.0
+    )
+    require(
+        root_result.returncode == 0
+        and not root_result.stderr
+        and root_result.stdout,
+        "source_attestation_failed",
+    )
+    try:
+        root = Path(root_result.stdout.decode("utf-8").strip())
+    except UnicodeError as error:
+        raise ObserverError("source_attestation_failed") from error
+    require(root.resolve() == source.resolve(), "source_directory_mismatch")
+    for arguments in (("diff", "--quiet"), ("diff", "--cached", "--quiet")):
+        clean = run_command((str(git), "-C", str(source), *arguments), 10.0)
+        require(
+            clean.returncode == 0 and not clean.stdout and not clean.stderr,
+            "source_checkout_dirty",
+        )
+    status = run_command(
+        (
+            str(git),
+            "-C",
+            str(source),
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        ),
+        10.0,
+    )
+    require(
+        status.returncode == 0 and not status.stdout and not status.stderr,
+        "source_checkout_dirty",
+    )
+
+
+def configured_build_context() -> tuple[Path, Path]:
+    """Return the build and exact configured source tree bound to this run."""
+
+    build = Path(os.environ.get("PRISMDRAKE_PD2_BUILD_DIRECTORY", ""))
+    require(
+        build.is_absolute() and build.is_dir() and not build.is_symlink(),
+        "build_directory_invalid",
+    )
+    cache = build / "CMakeCache.txt"
+    require(cache.is_file() and not cache.is_symlink(), "build_attestation_missing")
+    try:
+        raw = cache.read_bytes()
+    except OSError as error:
+        raise ObserverError("build_attestation_read_failed") from error
+    require(0 < len(raw) <= 2_097_152, "build_attestation_invalid")
+    try:
+        lines = raw.decode("utf-8").splitlines()
+    except UnicodeError as error:
+        raise ObserverError("build_attestation_invalid") from error
+    values: dict[str, str] = {}
+    wanted = {
+        "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL",
+        "CMAKE_HOME_DIRECTORY:INTERNAL",
+    }
+    for line in lines:
+        key, separator, value = line.partition("=")
+        if separator and key in wanted:
+            require(key not in values, "build_attestation_invalid")
+            values[key] = value
+    require(set(values) == wanted, "build_attestation_invalid")
+    require(
+        values["PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL"]
+        == binding()["source_revision"],
+        "build_revision_mismatch",
+    )
+    source = Path(values["CMAKE_HOME_DIRECTORY:INTERNAL"])
+    require(
+        source.is_absolute() and source.is_dir() and not source.is_symlink(),
+        "source_directory_invalid",
+    )
+    attest_source_checkout(source)
+    return build, source
+
+
 def run_command(arguments: Sequence[str], timeout: float = 120.0) -> subprocess.CompletedProcess[bytes]:
     try:
         completed = subprocess.run(
@@ -423,6 +522,7 @@ def reviewed_skip(reason_code: str, reason: str) -> dict[str, Any]:
 
 
 def model_performance_result(probe: tuple[str, int | None]) -> dict[str, Any]:
+    configured_build_context()
     current_revision = binding()["source_revision"]
     baseline_revision = required_environment(
         "PRISMDRAKE_PD2_PD1_REFERENCE_REVISION", REVISION
@@ -492,6 +592,7 @@ def runtime_performance_result(name: str) -> dict[str, Any]:
 
 
 def asset_performance_result(name: str) -> dict[str, Any]:
+    configured_build_context()
     current_binding = binding()
     runner = configured_path("PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER")
     document = parse_command_json(
@@ -619,8 +720,7 @@ def ctest_result(check: str) -> dict[str, Any]:
         require(check == "fragile_fragment_audit", "internationalization_probe_invalid")
         return fragile_fragment_result()
     ctest = configured_path("PRISMDRAKE_PD2_CTEST", (Path("/usr/bin/ctest"),))
-    build = Path(os.environ.get("PRISMDRAKE_PD2_BUILD_DIRECTORY", ""))
-    require(build.is_absolute() and build.is_dir(), "build_directory_invalid")
+    build, _source = configured_build_context()
     completed = run_command(
         (
             str(ctest), "--test-dir", str(build), "--output-on-failure",
@@ -658,9 +758,10 @@ def fragile_fragment_result() -> dict[str, str]:
         re.compile(r"\btr\s*\([^;\n]{0,512}\)\s*\+"),
         re.compile(r"\+\s*\btr\s*\("),
     )
+    _build, source = configured_build_context()
     try:
         files = sorted(
-            path for path in (ROOT / "src").rglob("*")
+            path for path in (source / "src").rglob("*")
             if path.suffix in {".cpp", ".hpp", ".qml"} and path.is_file()
         )
         require(files, "fragment_audit_sources_missing")
