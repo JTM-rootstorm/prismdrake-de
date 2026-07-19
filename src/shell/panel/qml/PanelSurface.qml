@@ -13,7 +13,8 @@ FocusScope {
     property string outputName: ""
     property string clockText: ""
     property bool notificationAffordanceVisible: false
-    property bool productionAffordancesVisible: groupedTaskModel !== null
+    property bool productionAffordancesVisible: false
+    property bool developmentDiagnosticsVisible: false
     property int pendingFocusIndex: -1
     property double pendingFocusSerial: 0
     property bool pendingActionMenuRecovery: false
@@ -50,8 +51,10 @@ FocusScope {
             notificationCenter.forceActiveFocus(Qt.OtherFocusReason)
         else if (notificationAffordanceVisible)
             notification.forceActiveFocus(Qt.OtherFocusReason)
-        else
+        else if (developmentDiagnosticsVisible)
             diagnostics.forceActiveFocus(Qt.OtherFocusReason)
+        else
+            launcher.forceActiveFocus(Qt.OtherFocusReason)
     }
 
     function focusTask(index, backward) {
@@ -64,8 +67,12 @@ FocusScope {
             launcher.forceActiveFocus(Qt.BacktabFocusReason)
         else if (productionAffordancesVisible)
             notificationCenter.forceActiveFocus(Qt.TabFocusReason)
-        else
+        else if (developmentDiagnosticsVisible)
             diagnostics.forceActiveFocus(Qt.TabFocusReason)
+        else if (notificationAffordanceVisible)
+            notification.forceActiveFocus(Qt.TabFocusReason)
+        else
+            focusExitForward()
     }
 
     function captureFocusRecovery() {
@@ -165,7 +172,12 @@ FocusScope {
                 return
             }
         }
-        diagnostics.forceActiveFocus(Qt.OtherFocusReason)
+        if (root.productionAffordancesVisible)
+            notificationCenter.forceActiveFocus(Qt.OtherFocusReason)
+        else if (root.developmentDiagnosticsVisible)
+            diagnostics.forceActiveFocus(Qt.OtherFocusReason)
+        else
+            launcher.forceActiveFocus(Qt.OtherFocusReason)
     }
 
     function recoverGroupedFocus(groupIndex, memberIndex, reopenGroupPopup) {
@@ -175,8 +187,12 @@ FocusScope {
         else if (root.taskCount > 0)
             root.taskAt(Math.min(groupIndex, root.taskCount - 1))
                 .forceActiveFocus(Qt.OtherFocusReason)
-        else
+        else if (root.developmentDiagnosticsVisible)
             diagnostics.forceActiveFocus(Qt.OtherFocusReason)
+        else if (root.productionAffordancesVisible)
+            notificationCenter.forceActiveFocus(Qt.OtherFocusReason)
+        else
+            launcher.forceActiveFocus(Qt.OtherFocusReason)
     }
 
     implicitWidth: 960
@@ -403,7 +419,12 @@ FocusScope {
             Keys.priority: Keys.BeforeItem
             Keys.onTabPressed: event => {
                 event.accepted = true
-                diagnostics.forceActiveFocus(Qt.TabFocusReason)
+                if (root.developmentDiagnosticsVisible)
+                    diagnostics.forceActiveFocus(Qt.TabFocusReason)
+                else if (root.notificationAffordanceVisible)
+                    notification.forceActiveFocus(Qt.TabFocusReason)
+                else
+                    root.focusExitForward()
             }
             Keys.onBacktabPressed: event => {
                 event.accepted = true
@@ -435,6 +456,8 @@ FocusScope {
         Button {
             id: diagnostics
             objectName: "panelDiagnosticsButton"
+            visible: root.developmentDiagnosticsVisible
+            enabled: visible
             activeFocusOnTab: false
             text: root.generationLabel
             implicitWidth: Math.max(root.themeGeneration.panel.minimumTargetSize,
@@ -448,7 +471,7 @@ FocusScope {
             Accessible.description: root.opaqueFallbackActive
                                     ? qsTr("Theme diagnostics. Opaque fallback active")
                                     : qsTr("Theme diagnostics")
-            Accessible.focusable: true
+            Accessible.focusable: visible
             Accessible.focused: activeFocus
 
             Keys.priority: Keys.BeforeItem
@@ -519,7 +542,12 @@ FocusScope {
             }
             Keys.onBacktabPressed: event => {
                 event.accepted = true
-                diagnostics.forceActiveFocus(Qt.BacktabFocusReason)
+                if (root.developmentDiagnosticsVisible)
+                    diagnostics.forceActiveFocus(Qt.BacktabFocusReason)
+                else if (root.productionAffordancesVisible)
+                    quickSettings.forceActiveFocus(Qt.BacktabFocusReason)
+                else
+                    root.focusTask(root.taskCount - 1, true)
             }
             onClicked: {
                 root.closeTaskActionMenus()

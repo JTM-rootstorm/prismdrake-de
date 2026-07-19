@@ -22,6 +22,7 @@ TestCase {
         height: implicitHeight
         themeGeneration: panelFixture.themeGeneration
         taskModel: panelFixture.taskModel
+        developmentDiagnosticsVisible: true
         LayoutMirroring.enabled: testCase.rightToLeft
         LayoutMirroring.childrenInherit: true
     }

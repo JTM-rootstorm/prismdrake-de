@@ -13,6 +13,8 @@ TestCase {
     height: 180
     visible: true
     property bool groupedTasks: false
+    property bool explicitProductionAffordances: false
+    property bool developmentDiagnostics: true
 
     Panel.PanelSurface {
         id: panel
@@ -26,6 +28,9 @@ TestCase {
         outputName: "DP-1"
         clockText: testCase.groupedTasks ? "1:05 PM" : ""
         notificationAffordanceVisible: true
+        productionAffordancesVisible: testCase.groupedTasks
+                                      || testCase.explicitProductionAffordances
+        developmentDiagnosticsVisible: testCase.developmentDiagnostics
     }
 
     SignalSpy { id: forwardExit; target: panel; signalName: "focusExitForward" }
@@ -75,12 +80,30 @@ TestCase {
 
     function init() {
         groupedTasks = false
+        explicitProductionAffordances = false
+        developmentDiagnostics = true
         verify(panelFixture.resetLustre())
         verify(panelFixture.publishRepresentativeTasks())
         forwardExit.clear()
         backwardExit.clear()
         launcherRequest.clear()
         tryCompare(panel, "taskCount", 3)
+    }
+
+    function test_installedAffordancesRequireExplicitRuntimeFlags() {
+        const notificationCenter = findChild(panel, "panelNotificationCenterButton")
+        const quickSettings = findChild(panel, "panelQuickSettingsButton")
+        compare(panel.groupedTaskModel, null)
+
+        developmentDiagnostics = false
+        compare(diagnostics().visible, false)
+        compare(notificationCenter.visible, false)
+        compare(quickSettings.visible, false)
+
+        explicitProductionAffordances = true
+        compare(notificationCenter.visible, true)
+        compare(quickSettings.visible, true)
+        compare(diagnostics().visible, false)
     }
 
     function test_groupedTasksExposeProductionActionsAndOutputScopedAffordances() {
