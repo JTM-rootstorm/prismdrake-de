@@ -1,14 +1,17 @@
 #include "PinState.hpp"
 
 #include "AtomicFile.hpp"
-#include "BoundedFile.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
+#include <fcntl.h>
 #include <limits>
+#include <new>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -25,6 +28,20 @@ constexpr std::size_t maximumPinJsonNesting = 4U;
 constexpr std::size_t maximumPinJsonNodes = 1024U;
 constexpr std::size_t maximumPinJsonContainerItems = maximumPinCount + 2U;
 
+class FileDescriptor final {
+  public:
+    explicit FileDescriptor(int value) noexcept : value_(value) {}
+    ~FileDescriptor() { ::close(value_); }
+
+    FileDescriptor(const FileDescriptor &) = delete;
+    FileDescriptor &operator=(const FileDescriptor &) = delete;
+
+    [[nodiscard]] int get() const noexcept { return value_; }
+
+  private:
+    int value_;
+};
+
 [[nodiscard]] std::size_t utf8CodePointCount(std::string_view value) noexcept {
     return static_cast<std::size_t>(std::count_if(
         value.begin(), value.end(), [](unsigned char byte) { return (byte & 0xc0U) != 0x80U; }));
@@ -39,7 +56,7 @@ class PinStateBoundsSax final : public nlohmann::json_sax<Json> {
     bool number_float(number_float_t, const string_t &) override { return scalar(); }
     bool string(string_t &value) override {
         return value.size() <= launcher::maximumDesktopFileIdBytes &&
-               utf8CodePointCount(value) <= 4096U && scalar();
+               utf8CodePointCount(value) <= launcher::maximumDesktopFileIdCodePoints && scalar();
     }
     bool binary(binary_t &) override { return false; }
 
@@ -165,6 +182,92 @@ template <typename Value>
     return Result<void>::success();
 }
 
+[[nodiscard]] Result<std::string> readPrivateRegularFile(const std::filesystem::path &path) {
+    const int rawDescriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW);
+    if (rawDescriptor < 0) {
+        const int openError = errno;
+        if (openError == ENOENT || openError == ENOTDIR) {
+            return failure<std::string>(ErrorCode::not_found,
+                                        "The private pin-state file does not exist.",
+                                        "Start with an empty pin set.");
+        }
+        if (openError == ELOOP) {
+            return failure<std::string>(
+                ErrorCode::validation_error, "The private pin-state file boundary is invalid.",
+                "Retain the file and restore an owner-only regular state file.");
+        }
+        return failure<std::string>(openError == EACCES || openError == EPERM
+                                        ? ErrorCode::permission_denied
+                                        : ErrorCode::io_error,
+                                    "The private pin-state file could not be opened.",
+                                    "Review the state-directory boundary.");
+    }
+    FileDescriptor descriptor{rawDescriptor};
+    struct stat metadata = {};
+    if (::fstat(descriptor.get(), &metadata) != 0) {
+        return failure<std::string>(ErrorCode::io_error,
+                                    "The private pin-state file could not be inspected.",
+                                    "Review the state-directory boundary.");
+    }
+    if (!S_ISREG(metadata.st_mode) || metadata.st_uid != ::geteuid() ||
+        (metadata.st_mode & 0777U) != 0600U) {
+        return failure<std::string>(
+            ErrorCode::validation_error, "The private pin-state file boundary is invalid.",
+            "Retain the file and restore an owner-only regular state file.");
+    }
+    if (metadata.st_size < 0 ||
+        static_cast<std::uintmax_t>(metadata.st_size) > maximumPinStateBytes) {
+        return failure<std::string>(ErrorCode::too_large,
+                                    "The private pin-state file exceeds its byte limit.",
+                                    "Retain the file for diagnosis and start with empty pins.");
+    }
+
+    std::string contents;
+    try {
+        contents.reserve(static_cast<std::size_t>(metadata.st_size));
+    } catch (const std::bad_alloc &) {
+        return failure<std::string>(ErrorCode::io_error,
+                                    "The private pin-state file could not be buffered.",
+                                    "Free memory and retry.");
+    } catch (const std::length_error &) {
+        return failure<std::string>(ErrorCode::too_large,
+                                    "The private pin-state file exceeds its byte limit.",
+                                    "Retain the file for diagnosis and start with empty pins.");
+    }
+
+    std::array<char, 16U * 1024U> buffer{};
+    while (contents.size() <= maximumPinStateBytes) {
+        const auto remaining = maximumPinStateBytes + 1U - contents.size();
+        const auto requested = std::min(buffer.size(), remaining);
+        const ssize_t count = ::read(descriptor.get(), buffer.data(), requested);
+        if (count == 0) {
+            return Result<std::string>::success(std::move(contents));
+        }
+        if (count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return failure<std::string>(ErrorCode::io_error,
+                                        "The private pin-state file could not be read.",
+                                        "Review the state-directory boundary and retry.");
+        }
+        try {
+            contents.append(buffer.data(), static_cast<std::size_t>(count));
+        } catch (const std::bad_alloc &) {
+            return failure<std::string>(ErrorCode::io_error,
+                                        "The private pin-state file could not be buffered.",
+                                        "Free memory and retry.");
+        } catch (const std::length_error &) {
+            return failure<std::string>(ErrorCode::too_large,
+                                        "The private pin-state file exceeds its byte limit.",
+                                        "Retain the file for diagnosis and start with empty pins.");
+        }
+    }
+    return failure<std::string>(ErrorCode::too_large,
+                                "The private pin-state file exceeds its byte limit.",
+                                "Retain the file for diagnosis and start with empty pins.");
+}
+
 [[nodiscard]] std::string serialize(const std::vector<launcher::DesktopFileId> &pins) {
     Json document = {{"schema_version", 1U}, {"pins", Json::array()}};
     for (const auto &pin : pins) {
@@ -184,35 +287,28 @@ Result<PinStateStore> PinStateStore::open(std::filesystem::path stateFile) {
 
     std::vector<launcher::DesktopFileId> pins;
     PinStateLoadStatus status = PinStateLoadStatus::missing;
-    const auto boundary = validatePrivateRegularFile(stateFile);
-    if (boundary) {
-        auto contents = foundation::readBoundedFile(stateFile, maximumPinStateBytes);
-        if (contents) {
-            PinStateBoundsSax bounds;
-            if (Json::sax_parse(contents.value(), &bounds, Json::input_format_t::json, true,
-                                false)) {
-                Json document = Json::parse(contents.value(), nullptr, false, true);
-                auto decoded = validatePins(document);
-                if (decoded) {
-                    pins = std::move(decoded).value();
-                    status = PinStateLoadStatus::loaded;
-                } else {
-                    status = PinStateLoadStatus::invalidRetained;
-                }
+    auto contents = readPrivateRegularFile(stateFile);
+    if (contents) {
+        PinStateBoundsSax bounds;
+        if (Json::sax_parse(contents.value(), &bounds, Json::input_format_t::json, true, false)) {
+            Json document = Json::parse(contents.value(), nullptr, false, true);
+            auto decoded = validatePins(document);
+            if (decoded) {
+                pins = std::move(decoded).value();
+                status = PinStateLoadStatus::loaded;
             } else {
                 status = PinStateLoadStatus::invalidRetained;
             }
-        } else if (contents.error().code == ErrorCode::too_large) {
-            status = PinStateLoadStatus::invalidRetained;
         } else {
-            return Result<PinStateStore>::failure(contents.error());
+            status = PinStateLoadStatus::invalidRetained;
         }
-    } else if (boundary.error().code == ErrorCode::not_found) {
+    } else if (contents.error().code == ErrorCode::not_found) {
         status = PinStateLoadStatus::missing;
-    } else if (boundary.error().code == ErrorCode::validation_error) {
+    } else if (contents.error().code == ErrorCode::validation_error ||
+               contents.error().code == ErrorCode::too_large) {
         status = PinStateLoadStatus::invalidRetained;
     } else {
-        return Result<PinStateStore>::failure(boundary.error());
+        return Result<PinStateStore>::failure(contents.error());
     }
 
     std::shared_ptr<const PinStateSnapshot> snapshot =

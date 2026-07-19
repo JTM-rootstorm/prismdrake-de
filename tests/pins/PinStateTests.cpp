@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -151,6 +152,32 @@ TEST(PinStateTest, RejectsUnknownKeysVersionsPathsAndDuplicateDiskPins) {
         EXPECT_TRUE(store.value().current()->pins.empty());
         EXPECT_EQ(state.read(), document);
     }
+}
+
+TEST(PinStateTest, UnicodeReplacementRoundTripsAndMalformedUtf8IsRetained) {
+    TemporaryState state;
+    auto opened = PinStateStore::open(state.file());
+    ASSERT_TRUE(opened);
+    auto store = std::move(opened).value();
+    std::optional<foundation::Result<std::shared_ptr<const PinStateSnapshot>>> replaced;
+    EXPECT_NO_THROW(replaced.emplace(store.replace({pin("工具.desktop")})));
+    ASSERT_TRUE(replaced.has_value());
+    ASSERT_TRUE(*replaced);
+    auto restarted = PinStateStore::open(state.file());
+    ASSERT_TRUE(restarted);
+    ASSERT_EQ(restarted.value().current()->pins.size(), 1U);
+    EXPECT_EQ(restarted.value().current()->pins.front().value(), "工具.desktop");
+
+    std::string malformed = R"({"schema_version":1,"pins":["private-)";
+    malformed.append("\xc0\xaf", 2U);
+    malformed.append(R"(.desktop"]})");
+    state.write(malformed);
+    std::optional<foundation::Result<PinStateStore>> malformedStore;
+    EXPECT_NO_THROW(malformedStore.emplace(PinStateStore::open(state.file())));
+    ASSERT_TRUE(malformedStore.has_value());
+    ASSERT_TRUE(*malformedStore);
+    EXPECT_EQ(malformedStore->value().current()->loadStatus, PinStateLoadStatus::invalidRetained);
+    EXPECT_EQ(state.read(), malformed);
 }
 
 TEST(PinStateTest, RejectsDeepAndHighNodeJsonBeforeDomPublication) {
