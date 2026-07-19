@@ -41,6 +41,10 @@ Result<SessionRecoveryPolicy> SessionRecoveryPolicy::create(SessionRecoveryConfi
     if (!settingsd) {
         return Result<SessionRecoveryPolicy>::failure(std::move(settingsd).error());
     }
+    auto notifyd = validateBudget(config.notifyd);
+    if (!notifyd) {
+        return Result<SessionRecoveryPolicy>::failure(std::move(notifyd).error());
+    }
     auto shell = validateBudget(config.shell);
     if (!shell) {
         return Result<SessionRecoveryPolicy>::failure(std::move(shell).error());
@@ -56,6 +60,10 @@ SessionRecoveryPolicy::observeExit(ComponentRole component, ChildExitReason reas
         return Result<RecoveryDecision>::failure(
             {ErrorCode::invalid_argument, "The child exit time precedes its launch time.",
              "Use one monotonic clock for child launch and exit observations."});
+    }
+    if (reason == ChildExitReason::clean && component == ComponentRole::notifyd) {
+        return Result<RecoveryDecision>::success(
+            RecoveryDecision{RecoveryAction::degrade_component, {}, 0U});
     }
     if (reason == ChildExitReason::clean) {
         return Result<RecoveryDecision>::success(
@@ -84,6 +92,11 @@ SessionRecoveryPolicy::observeExit(ComponentRole component, ChildExitReason reas
             RecoveryAction::restart_component, backoffFor(componentBudget, ordinal), ordinal});
     }
 
+    if (component == ComponentRole::notifyd) {
+        return Result<RecoveryDecision>::success(
+            RecoveryDecision{RecoveryAction::degrade_component, {}, 0U});
+    }
+
     if (!safe_mode_offered_) {
         safe_mode_offered_ = true;
         return Result<RecoveryDecision>::success(
@@ -100,17 +113,34 @@ Result<void> SessionRecoveryPolicy::activateSafeMode() {
     }
     safe_mode_active_ = true;
     settingsd_history_.exits.clear();
+    notifyd_history_.exits.clear();
     shell_history_.exits.clear();
     return Result<void>::success();
 }
 
 const RestartBudget &SessionRecoveryPolicy::budget(ComponentRole component) const noexcept {
-    return component == ComponentRole::settingsd ? config_.settingsd : config_.shell;
+    switch (component) {
+    case ComponentRole::settingsd:
+        return config_.settingsd;
+    case ComponentRole::notifyd:
+        return config_.notifyd;
+    case ComponentRole::shell:
+        return config_.shell;
+    }
+    return config_.shell;
 }
 
 SessionRecoveryPolicy::ComponentHistory &
 SessionRecoveryPolicy::history(ComponentRole component) noexcept {
-    return component == ComponentRole::settingsd ? settingsd_history_ : shell_history_;
+    switch (component) {
+    case ComponentRole::settingsd:
+        return settingsd_history_;
+    case ComponentRole::notifyd:
+        return notifyd_history_;
+    case ComponentRole::shell:
+        return shell_history_;
+    }
+    return shell_history_;
 }
 
 } // namespace prismdrake::session

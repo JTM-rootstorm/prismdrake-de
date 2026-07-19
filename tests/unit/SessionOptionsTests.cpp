@@ -12,7 +12,7 @@
 namespace prismdrake::session {
 namespace {
 
-const SessionPathDefaults executableDefaults{"/bin/true", "/bin/false"};
+const SessionPathDefaults executableDefaults{"/bin/true", "/bin/true", "/bin/false"};
 
 TEST(SessionOptionsTest, HelpAndVersionDoNotRequireRuntimeExecutables) {
     const std::array helpArguments{std::string_view{"--help"}};
@@ -21,6 +21,7 @@ TEST(SessionOptionsTest, HelpAndVersionDoNotRequireRuntimeExecutables) {
     EXPECT_EQ(help.value().action, SessionAction::show_help);
     EXPECT_FALSE(help.value().runtime);
     EXPECT_NE(sessionHelpText().find("--settingsd PATH"), std::string::npos);
+    EXPECT_NE(sessionHelpText().find("--notifyd PATH"), std::string::npos);
     EXPECT_NE(sessionHelpText().find("--shell PATH"), std::string::npos);
 
     const std::array versionArguments{std::string_view{"--version"}};
@@ -38,6 +39,8 @@ TEST(SessionOptionsTest, UsesValidatedCompiledDefaultsWithoutPathLookup) {
     ASSERT_TRUE(options);
     ASSERT_TRUE(options.value().runtime);
     EXPECT_EQ(options.value().runtime->settingsdExecutable,
+              std::filesystem::path{"/bin/true"}.lexically_normal());
+    EXPECT_EQ(options.value().runtime->notifydExecutable,
               std::filesystem::path{"/bin/true"}.lexically_normal());
     EXPECT_EQ(options.value().runtime->shellExecutable,
               std::filesystem::path{"/bin/false"}.lexically_normal());
@@ -76,13 +79,15 @@ TEST(SessionOptionsTest, RequiresBothRuntimeExecutablesWhenDefaultsAreUnavailabl
 }
 
 TEST(SessionOptionsTest, AcceptsEachRuntimeExecutableExactlyOnceInEitherOrder) {
-    const std::array arguments{std::string_view{"--shell"}, std::string_view{"/bin/false"},
-                               std::string_view{"--settingsd"}, std::string_view{"/bin/true"}};
+    const std::array arguments{std::string_view{"--shell"},     std::string_view{"/bin/false"},
+                               std::string_view{"--settingsd"}, std::string_view{"/bin/true"},
+                               std::string_view{"--notifyd"},   std::string_view{"/bin/true"}};
     const auto options = parseSessionOptions(arguments);
 
     ASSERT_TRUE(options);
     ASSERT_TRUE(options.value().runtime);
     EXPECT_EQ(options.value().runtime->settingsdExecutable, "/bin/true");
+    EXPECT_EQ(options.value().runtime->notifydExecutable, "/bin/true");
     EXPECT_EQ(options.value().runtime->shellExecutable, "/bin/false");
 }
 
@@ -95,6 +100,10 @@ TEST(SessionOptionsTest, RejectsDuplicateMissingUnknownAndPositionalArguments) {
     const std::array duplicateShell{std::string_view{"--shell"}, std::string_view{"/bin/false"},
                                     std::string_view{"--shell"}, std::string_view{"/bin/false"}};
     EXPECT_FALSE(parseSessionOptions(duplicateShell, executableDefaults));
+
+    const std::array duplicateNotifyd{std::string_view{"--notifyd"}, std::string_view{"/bin/true"},
+                                      std::string_view{"--notifyd"}, std::string_view{"/bin/true"}};
+    EXPECT_FALSE(parseSessionOptions(duplicateNotifyd, executableDefaults));
 
     const std::array missingAtEnd{std::string_view{"--settingsd"}};
     EXPECT_FALSE(parseSessionOptions(missingAtEnd, executableDefaults));
@@ -160,7 +169,7 @@ TEST(SessionOptionsTest, RejectsInvalidUnavailableAndNonExecutablePathsWithoutEc
 
 TEST(SessionOptionsTest, RejectsInvalidCompiledDefaultsWithoutEchoingThem) {
     const SessionPathDefaults invalidDefaults{"/private/sentinel-settingsd-does-not-exist",
-                                              "/bin/false"};
+                                              "/bin/true", "/bin/false"};
     const auto result = parseSessionOptions({}, invalidDefaults);
 
     ASSERT_FALSE(result);

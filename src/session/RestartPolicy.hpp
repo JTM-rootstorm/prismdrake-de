@@ -12,6 +12,7 @@ namespace prismdrake::session {
 
 enum class ComponentRole : std::uint8_t {
     settingsd,
+    notifyd,
     shell,
 };
 
@@ -25,6 +26,7 @@ enum class ChildExitReason : std::uint8_t {
 enum class RecoveryAction : std::uint8_t {
     stop_clean,
     restart_component,
+    degrade_component,
     enter_safe_mode,
     stop_failed,
 };
@@ -39,6 +41,7 @@ struct RestartBudget final {
 
 struct SessionRecoveryConfig final {
     RestartBudget settingsd;
+    RestartBudget notifyd;
     RestartBudget shell;
 };
 
@@ -48,6 +51,7 @@ struct SessionRecoveryConfig final {
     using namespace std::chrono_literals;
     return {
         RestartBudget{1U, 30s, 30s, 500ms, 500ms},
+        RestartBudget{2U, 30s, 30s, 250ms, 1s},
         RestartBudget{3U, 30s, 30s, 250ms, 1s},
     };
 }
@@ -92,6 +96,7 @@ class SessionRecoveryPolicy final {
 
     SessionRecoveryConfig config_;
     ComponentHistory settingsd_history_;
+    ComponentHistory notifyd_history_;
     ComponentHistory shell_history_;
     bool safe_mode_active_ = false;
     bool safe_mode_offered_ = false;

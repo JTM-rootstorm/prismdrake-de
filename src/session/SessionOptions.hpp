@@ -26,12 +26,14 @@ enum class SessionAction : std::uint8_t {
 /// unavailable; executables are never resolved through PATH.
 struct SessionPathDefaults final {
     std::filesystem::path settingsdExecutable;
+    std::filesystem::path notifydExecutable;
     std::filesystem::path shellExecutable;
 };
 
 /// Validated absolute component paths required to start a development session.
 struct SessionRuntimeOptions final {
     std::filesystem::path settingsdExecutable;
+    std::filesystem::path notifydExecutable;
     std::filesystem::path shellExecutable;
 };
 

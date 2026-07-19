@@ -26,7 +26,7 @@ using foundation::ExitStatus;
 
     const prismdrake::session::SessionPathDefaults packagedPaths{
         PRISMDRAKE_SESSION_DEFAULT_SETTINGSD_EXECUTABLE,
-        PRISMDRAKE_SESSION_DEFAULT_SHELL_EXECUTABLE};
+        PRISMDRAKE_SESSION_DEFAULT_NOTIFYD_EXECUTABLE, PRISMDRAKE_SESSION_DEFAULT_SHELL_EXECUTABLE};
     auto options = prismdrake::session::parseSessionOptions(arguments, packagedPaths);
     if (!options) {
         std::cerr << "prismdrake-session: " << options.error().message << '\n';

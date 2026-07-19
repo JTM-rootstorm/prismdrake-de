@@ -76,6 +76,34 @@ TEST(RestartPolicyTest, TreatsSafeModeAsOneFinalLaunchAndNeverRestartsCleanExit)
     EXPECT_FALSE(policy.value().activateSafeMode());
 }
 
+TEST(RestartPolicyTest, NotificationFailureUsesItsOwnBudgetThenDegrades) {
+    auto policy = SessionRecoveryPolicy::create();
+    ASSERT_TRUE(policy);
+    const MonotonicClock::TimePoint start{};
+
+    const auto first = policy.value().observeExit(ComponentRole::notifyd, ChildExitReason::failure,
+                                                  start, start + 1s);
+    const auto second = policy.value().observeExit(ComponentRole::notifyd, ChildExitReason::signal,
+                                                   start + 2s, start + 3s);
+    const auto exhausted = policy.value().observeExit(
+        ComponentRole::notifyd, ChildExitReason::readiness_timeout, start + 4s, start + 5s);
+
+    ASSERT_TRUE(first);
+    EXPECT_EQ(first.value(), (RecoveryDecision{RecoveryAction::restart_component, 250ms, 1U}));
+    ASSERT_TRUE(second);
+    EXPECT_EQ(second.value(), (RecoveryDecision{RecoveryAction::restart_component, 500ms, 2U}));
+    ASSERT_TRUE(exhausted);
+    EXPECT_EQ(exhausted.value().action, RecoveryAction::degrade_component);
+    EXPECT_FALSE(policy.value().safeModeActive());
+
+    auto cleanPolicy = SessionRecoveryPolicy::create();
+    ASSERT_TRUE(cleanPolicy);
+    const auto clean = cleanPolicy.value().observeExit(ComponentRole::notifyd,
+                                                       ChildExitReason::clean, start, start + 1s);
+    ASSERT_TRUE(clean);
+    EXPECT_EQ(clean.value().action, RecoveryAction::degrade_component);
+}
+
 TEST(RestartPolicyTest, UsesAnInclusiveWindowAndResetsAfterAHealthyInterval) {
     auto policy = SessionRecoveryPolicy::create();
     ASSERT_TRUE(policy);
@@ -118,7 +146,7 @@ TEST(RestartPolicyTest, RejectsInvalidPolicyAndNonMonotonicObservations) {
 TEST(RestartPolicyTest, SaturatesBackoffAtTheConfiguredMaximum) {
     using namespace std::chrono_literals;
     const RestartBudget budget{5U, 30s, 30s, 400ms, 500ms};
-    auto policy = SessionRecoveryPolicy::create(SessionRecoveryConfig{budget, budget});
+    auto policy = SessionRecoveryPolicy::create(SessionRecoveryConfig{budget, budget, budget});
     ASSERT_TRUE(policy);
     const MonotonicClock::TimePoint start{};
 

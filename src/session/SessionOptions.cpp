@@ -106,8 +106,10 @@ Result<SessionOptions> parseSessionOptions(std::span<const std::string_view> arg
                                            const SessionPathDefaults &pathDefaults) {
     SessionAction action = SessionAction::run;
     std::optional<std::filesystem::path> settingsd;
+    std::optional<std::filesystem::path> notifyd;
     std::optional<std::filesystem::path> shell;
     bool settingsdSeen = false;
+    bool notifydSeen = false;
     bool shellSeen = false;
 
     for (std::size_t index = 0U; index < arguments.size(); ++index) {
@@ -130,8 +132,9 @@ Result<SessionOptions> parseSessionOptions(std::span<const std::string_view> arg
         }
 
         const bool isSettingsd = argument == "--settingsd";
+        const bool isNotifyd = argument == "--notifyd";
         const bool isShell = argument == "--shell";
-        if (!isSettingsd && !isShell) {
+        if (!isSettingsd && !isNotifyd && !isShell) {
             return invalidUsage<SessionOptions>(
                 "An unsupported command-line argument was provided.",
                 "Use --help to list the accepted options.");
@@ -142,11 +145,11 @@ Result<SessionOptions> parseSessionOptions(std::span<const std::string_view> arg
                 "Use --help or --version by itself.");
         }
 
-        bool &seen = isSettingsd ? settingsdSeen : shellSeen;
+        bool &seen = isSettingsd ? settingsdSeen : (isNotifyd ? notifydSeen : shellSeen);
         if (seen) {
             return invalidUsage<SessionOptions>(
                 "A component executable option was provided more than once.",
-                "Specify each of --settingsd and --shell at most once.");
+                "Specify each component executable option at most once.");
         }
         seen = true;
         if (index + 1U >= arguments.size() || arguments[index + 1U].starts_with('-')) {
@@ -160,16 +163,30 @@ Result<SessionOptions> parseSessionOptions(std::span<const std::string_view> arg
         if (!validated) {
             return Result<SessionOptions>::failure(validated.error());
         }
-        (isSettingsd ? settingsd : shell).emplace(std::move(validated).value());
+        (isSettingsd ? settingsd : (isNotifyd ? notifyd : shell))
+            .emplace(std::move(validated).value());
     }
 
     if (action != SessionAction::run) {
-        if (settingsdSeen || shellSeen) {
+        if (settingsdSeen || notifydSeen || shellSeen) {
             return invalidUsage<SessionOptions>(
                 "A display action cannot be combined with a runtime option.",
                 "Use --help or --version by itself.");
         }
         return Result<SessionOptions>::success(SessionOptions{action, std::nullopt});
+    }
+    if (!notifyd) {
+        if (pathDefaults.notifydExecutable.empty()) {
+            return invalidUsage<SessionOptions>(
+                "The notification service executable was not specified.",
+                "Specify --notifyd with an absolute executable path.");
+        }
+        auto validated =
+            validateExecutablePath(pathDefaults.notifydExecutable, PathSource::compiled_default);
+        if (!validated) {
+            return Result<SessionOptions>::failure(validated.error());
+        }
+        notifyd.emplace(std::move(validated).value());
     }
 
     if (!settingsd) {
@@ -201,16 +218,19 @@ Result<SessionOptions> parseSessionOptions(std::span<const std::string_view> arg
 
     return Result<SessionOptions>::success(
         SessionOptions{SessionAction::run, SessionRuntimeOptions{std::move(settingsd).value(),
+                                                                 std::move(notifyd).value(),
                                                                  std::move(shell).value()}});
 }
 
 std::string sessionHelpText() {
-    return "Usage: prismdrake-session [--settingsd PATH] [--shell PATH] [--help] [--version]\n"
+    return "Usage: prismdrake-session [--settingsd PATH] [--notifyd PATH] [--shell PATH] "
+           "[--help] [--version]\n"
            "\n"
            "Start and supervise the Prismdrake development session.\n"
            "\n"
            "Options:\n"
            "  --settingsd PATH  Use the absolute settings service executable path.\n"
+           "  --notifyd PATH    Use the absolute notification service executable path.\n"
            "  --shell PATH      Use the absolute shell executable path.\n"
            "  -h, --help        Show this help and exit.\n"
            "  -V, --version     Show the version and exit.\n";
