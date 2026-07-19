@@ -69,7 +69,7 @@ struct ErrorReply final {
     auto *bytes = reinterpret_cast<unsigned char *>(&value);
     std::size_t received = 0;
     while (received < sizeof(value)) {
-        const auto result = ::getrandom(bytes + received, sizeof(value) - received, 0);
+        const auto result = ::getrandom(bytes + received, sizeof(value) - received, GRND_NONBLOCK);
         if (result > 0) {
             received += static_cast<std::size_t>(result);
             continue;
