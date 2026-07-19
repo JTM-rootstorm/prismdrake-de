@@ -1,9 +1,18 @@
 #include "GroupedTaskModel.hpp"
+#include "GroupedTaskPresentationModel.hpp"
+#include "PanelClock.hpp"
 
 #include "EwmhTaskList.hpp"
 #include "WindowMetadata.hpp"
 
 #include <gtest/gtest.h>
+
+#include <QDate>
+#include <QDateTime>
+#include <QLocale>
+#include <QPointer>
+#include <QSignalSpy>
+#include <QTime>
 
 #include <algorithm>
 #include <limits>
@@ -160,8 +169,8 @@ input(const std::shared_ptr<const x11::TaskModelSnapshot> &tasks,
       const std::shared_ptr<const launcher::ApplicationAssociationSnapshot> &associations,
       const std::shared_ptr<const launcher::ApplicationCatalogSnapshot> &catalog,
       const std::shared_ptr<const PinStateSnapshot> &pins, config::GroupingMode grouping,
-      double width = 1000.0) {
-    return {tasks, associations, catalog, pins, grouping, width, 44.0, 4.0, 1U, 1U};
+      double width = 1000.0, std::uint64_t widthGeneration = 1U) {
+    return {tasks, associations, catalog, pins, grouping, width, 44.0, 4.0, 1U, widthGeneration};
 }
 
 TEST(GroupedTaskModelTest, AlwaysCombinesPinsRunningApplicationsAndUnknownLifetimes) {
@@ -278,6 +287,127 @@ TEST(GroupedTaskModelTest, RejectsMixedOrMalformedCompleteInputs) {
     value.availableTaskStripWidth = 100.0;
     value.grouping = static_cast<config::GroupingMode>(255);
     EXPECT_FALSE(buildGroupedTasks(value));
+}
+
+TEST(GroupedTaskPresentationModelTest, EmitsOnlyTypedIntentsAndKeepsIdentitiesPrivate) {
+    const std::vector fixtures{TaskFixture{10U, 100U, "Editor A", "editor.desktop"},
+                               TaskFixture{11U, 110U, "Editor B", "editor.desktop"},
+                               TaskFixture{20U, 200U, "Terminal", "terminal.desktop"}};
+    x11::TaskModel owner;
+    const auto built = buildGroupedTasks(
+        input(taskSnapshot(owner, fixtures, 10U), associations(fixtures),
+              catalog({{"editor.desktop", "Editor"},
+                       {"terminal.desktop", "Terminal"},
+                       {"missing.desktop", "Missing"}}),
+              pins({"editor.desktop", "missing.desktop"}), config::GroupingMode::always));
+    ASSERT_TRUE(built);
+
+    GroupedTaskPresentationModel model;
+    ASSERT_TRUE(model.applySnapshot(built.value()));
+    ASSERT_EQ(model.rowCount(), 3);
+    auto *editor = model.groupAt(0);
+    auto *missing = model.groupAt(1);
+    ASSERT_NE(editor, nullptr);
+    ASSERT_NE(missing, nullptr);
+    EXPECT_EQ(editor->displayName(), QStringLiteral("Editor"));
+    EXPECT_EQ(editor->windowCount(), 2);
+    EXPECT_TRUE(editor->primaryOpensGroup());
+    EXPECT_TRUE(editor->pinned());
+    EXPECT_TRUE(missing->launchAvailable());
+    EXPECT_FALSE(missing->running());
+
+    const auto *groupMeta = editor->metaObject();
+    EXPECT_EQ(groupMeta->indexOfProperty("desktopFileId"), -1);
+    EXPECT_EQ(groupMeta->indexOfProperty("generation"), -1);
+    const auto members = editor->members();
+    ASSERT_EQ(members.size(), 2);
+    auto *firstMember =
+        qobject_cast<GroupedTaskMemberPresentation *>(members.front().value<QObject *>());
+    ASSERT_NE(firstMember, nullptr);
+    EXPECT_EQ(firstMember->metaObject()->indexOfProperty("lifetime"), -1);
+
+    QObject *popupTarget = nullptr;
+    QObject::connect(&model, &GroupedTaskPresentationModel::groupPopupRequested, &model,
+                     [&popupTarget](QObject *group) { popupTarget = group; });
+    EXPECT_TRUE(editor->requestPrimaryAction());
+    EXPECT_EQ(popupTarget, editor);
+
+    std::uint64_t activatedLifetime = 0U;
+    std::uint64_t activatedGeneration = 0U;
+    QObject::connect(&model, &GroupedTaskPresentationModel::activationRequested, &model,
+                     [&activatedLifetime, &activatedGeneration](
+                         x11::TaskLifetimeId lifetime, x11::TaskModelGeneration generation) {
+                         activatedLifetime = lifetime.value();
+                         activatedGeneration = generation.value();
+                     });
+    EXPECT_TRUE(firstMember->requestActivation());
+    EXPECT_NE(activatedLifetime, 0U);
+    EXPECT_EQ(activatedGeneration, built.value()->taskGeneration.value());
+
+    std::string launched;
+    QObject::connect(&model, &GroupedTaskPresentationModel::launchRequested, &model,
+                     [&launched](launcher::DesktopFileId id) { launched = id.value(); });
+    EXPECT_TRUE(missing->requestPrimaryAction());
+    EXPECT_EQ(launched, "missing.desktop");
+
+    std::string pinChanged;
+    bool pinValue = true;
+    QObject::connect(&model, &GroupedTaskPresentationModel::pinChangeRequested, &model,
+                     [&pinChanged, &pinValue](launcher::DesktopFileId id, bool pinnedValue) {
+                         pinChanged = id.value();
+                         pinValue = pinnedValue;
+                     });
+    EXPECT_TRUE(missing->requestPinToggle());
+    EXPECT_EQ(pinChanged, "missing.desktop");
+    EXPECT_FALSE(pinValue);
+}
+
+TEST(GroupedTaskPresentationModelTest, RecoversExactMemberAcrossWhenFullRegrouping) {
+    const std::vector fixtures{TaskFixture{10U, 100U, "Editor A", "editor.desktop"},
+                               TaskFixture{11U, 110U, "Editor B", "editor.desktop"}};
+    x11::TaskModel owner;
+    const auto taskState = taskSnapshot(owner, fixtures);
+    const auto associationState = associations(fixtures);
+    const auto catalogState = catalog({{"editor.desktop", "Editor"}});
+    const auto pinState = pins({});
+    const auto wide = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                              config::GroupingMode::when_full, 92.0, 1U));
+    const auto narrow = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                                config::GroupingMode::when_full, 91.0, 2U));
+    ASSERT_TRUE(wide);
+    ASSERT_TRUE(narrow);
+
+    GroupedTaskPresentationModel model;
+    ASSERT_TRUE(model.applySnapshot(wide.value()));
+    ASSERT_EQ(model.rowCount(), 2);
+    QPointer<GroupedTaskPresentation> oldFocused = model.groupAt(1);
+    ASSERT_TRUE(model.rememberFocus(oldFocused, true));
+    QSignalSpy recovery{&model, &GroupedTaskPresentationModel::focusRecoveryRequested};
+
+    ASSERT_TRUE(model.applySnapshot(narrow.value()));
+    EXPECT_TRUE(oldFocused.isNull());
+    ASSERT_EQ(recovery.count(), 1);
+    const auto arguments = recovery.takeFirst();
+    EXPECT_EQ(arguments[0].toInt(), 0);
+    EXPECT_EQ(arguments[1].toInt(), 1);
+    EXPECT_TRUE(arguments[2].toBool());
+}
+
+TEST(PanelClockTest, FormatsLocaleTwelveAndTwentyFourHourModesDeterministically) {
+    const QDateTime time{QDate{2026, 7, 18}, QTime{13, 5, 9, 250}};
+    const QLocale locale{QLocale::English, QLocale::UnitedStates};
+    const auto local = formatPanelClock(time, locale, config::ClockFormat::locale);
+    const auto twelve = formatPanelClock(time, locale, config::ClockFormat::hour_12);
+    const auto twentyFour = formatPanelClock(time, locale, config::ClockFormat::hour_24);
+    ASSERT_TRUE(local);
+    ASSERT_TRUE(twelve);
+    ASSERT_TRUE(twentyFour);
+    EXPECT_FALSE(local.value().isEmpty());
+    EXPECT_EQ(twelve.value(), QStringLiteral("1:05 PM"));
+    EXPECT_EQ(twentyFour.value(), QStringLiteral("13:05"));
+    EXPECT_EQ(nextPanelClockUpdate(time).value(), std::chrono::milliseconds{50'750});
+    EXPECT_FALSE(formatPanelClock(time, locale, static_cast<config::ClockFormat>(255)));
+    EXPECT_FALSE(nextPanelClockUpdate(QDateTime{}));
 }
 
 } // namespace

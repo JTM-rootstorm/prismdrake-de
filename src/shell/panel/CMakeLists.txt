@@ -28,3 +28,23 @@ target_link_libraries(prismdrake-grouped-task-model
 prismdrake_configure_cpp_target(prismdrake-grouped-task-model)
 prismdrake_enable_warnings(prismdrake-grouped-task-model)
 prismdrake_enable_sanitizers(prismdrake-grouped-task-model)
+
+add_library(prismdrake-grouped-task-presentation STATIC
+    GroupedTaskPresentationModel.cpp
+    GroupedTaskPresentationModel.hpp
+    PanelClock.cpp
+    PanelClock.hpp)
+add_library(Prismdrake::grouped-task-presentation ALIAS
+    prismdrake-grouped-task-presentation)
+set_target_properties(prismdrake-grouped-task-presentation PROPERTIES AUTOMOC ON)
+
+target_include_directories(prismdrake-grouped-task-presentation
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
+target_link_libraries(prismdrake-grouped-task-presentation
+    PUBLIC
+        Prismdrake::grouped-task-model
+        Qt6::Core)
+
+prismdrake_configure_cpp_target(prismdrake-grouped-task-presentation)
+prismdrake_enable_warnings(prismdrake-grouped-task-presentation)
+prismdrake_enable_sanitizers(prismdrake-grouped-task-presentation)

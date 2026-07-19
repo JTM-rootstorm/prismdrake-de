@@ -62,7 +62,8 @@ add_executable(prismdrake-grouped-task-model-tests
 target_link_libraries(prismdrake-grouped-task-model-tests
     PRIVATE
         GTest::gtest_main
-        Prismdrake::grouped-task-model)
+        Prismdrake::grouped-task-presentation
+        Qt6::Test)
 
 prismdrake_configure_cpp_target(prismdrake-grouped-task-model-tests)
 prismdrake_enable_warnings(prismdrake-grouped-task-model-tests)
