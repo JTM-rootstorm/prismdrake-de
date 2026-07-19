@@ -530,6 +530,12 @@ TestCase {
         verify(task.width > strip.width)
         tryVerify(() => strip.contentWidth > strip.width)
         compare(strip.clip, true)
+        panel.focusTask(0, false)
+        tryCompare(task, "activeFocus", true)
+        tryCompare(strip, "contentX", 0)
+        const position = task.mapToItem(strip.contentItem, 0, 0)
+        verify(position.x < strip.contentX + strip.width)
+        verify(position.x + task.width > strip.contentX)
     }
 
     function test_longPinnedTaskRemainsBoundedAndScrollable() {
@@ -542,6 +548,15 @@ TestCase {
         verify(pinned.width > strip.width)
         tryVerify(() => strip.contentWidth > strip.width)
         compare(strip.clip, true)
+        panel.layoutDirection = Qt.RightToLeft
+        panel.focusTask(0, false)
+        tryCompare(pinned, "activeFocus", true)
+        tryVerify(() => strip.contentX > 0, 5000,
+                  "RTL pinned task was not revealed: contentX=" + strip.contentX
+                  + ", contentWidth=" + strip.contentWidth + ", width=" + strip.width)
+        const position = pinned.mapToItem(strip.contentItem, 0, 0)
+        verify(position.x < strip.contentX + strip.width)
+        verify(position.x + pinned.width > strip.contentX)
     }
 
     function test_longGroupedTaskAndMembersRemainBoundedAndScrollable() {
@@ -550,18 +565,55 @@ TestCase {
         tryCompare(panel, "taskCount", 2)
         const strip = findChild(panel, "panelTaskStrip")
         const editor = panel.taskAt(0)
+        const terminal = panel.taskAt(1)
         verify(editor.Accessible.name.length > 900)
         verify(editor.width > strip.width)
         tryVerify(() => strip.contentWidth > strip.width)
         compare(strip.clip, true)
 
-        editor.forceActiveFocus(Qt.OtherFocusReason)
+        panel.focusTask(0, false)
+        tryCompare(editor, "activeFocus", true)
+        tryCompare(strip, "contentX", 0)
+        keyClick(Qt.Key_Right)
+        tryCompare(terminal, "activeFocus", true)
+        tryVerify(() => strip.contentX > 0, 5000,
+                  "LTR terminal was not revealed: contentX=" + strip.contentX
+                  + ", terminalX=" + terminal.mapToItem(strip.contentItem, 0, 0).x
+                  + ", contentWidth=" + strip.contentWidth + ", width=" + strip.width)
+        let position = terminal.mapToItem(strip.contentItem, 0, 0)
+        verify(position.x >= strip.contentX)
+        verify(position.x + terminal.width <= strip.contentX + strip.width)
+
+        panel.layoutDirection = Qt.RightToLeft
+        panel.focusTask(0, false)
+        tryCompare(editor, "activeFocus", true)
+        tryVerify(() => strip.contentX > 0)
+        keyClick(Qt.Key_Left)
+        tryCompare(terminal, "activeFocus", true)
+        tryCompare(strip, "contentX", 0)
+        position = terminal.mapToItem(strip.contentItem, 0, 0)
+        verify(position.x >= strip.contentX)
+        verify(position.x + terminal.width <= strip.contentX + strip.width)
+
+        panel.focusTask(0, false)
         keyClick(Qt.Key_Return)
         const popup = findChild(editor, "panelTaskGroupPopup")
+        const viewport = findChild(popup, "panelTaskGroupViewport")
         tryCompare(popup, "opened", true)
+        popup.maximumWidth = 400
+        tryCompare(popup, "width", 400)
         verify(popup.width <= testCase.width)
+        compare(viewport.clip, true)
+        verify(viewport.contentWidth > viewport.availableWidth)
         verify(popup.memberAt(0).Accessible.name.length > 900)
         verify(popup.memberAt(0).Accessible.description.length > 900)
+        tryCompare(popup.memberAt(0), "activeFocus", true)
+        popup.revealMember(popup.memberAt(0))
+        tryVerify(() => viewport.contentItem.contentX > 0)
+        const firstMemberContentX = viewport.contentItem.contentX
+        keyClick(Qt.Key_Down)
+        tryCompare(popup.memberAt(1), "activeFocus", true)
+        tryVerify(() => viewport.contentItem.contentX !== firstMemberContentX)
         keyClick(Qt.Key_Escape)
         tryCompare(popup, "opened", false)
     }

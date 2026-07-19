@@ -67,10 +67,30 @@ FocusScope {
             focusNotification()
     }
 
+    function revealTask(item) {
+        if (item === null || taskStrip.contentItem === null || taskStrip.width <= 0)
+            return
+        const position = item.mapToItem(taskStrip.contentItem, 0, 0)
+        const itemLeft = position.x
+        const itemRight = itemLeft + item.width
+        const maximumContentX = Math.max(0, taskStrip.contentWidth - taskStrip.width)
+
+        if (item.width >= taskStrip.width) {
+            const leadingEdge = root.layoutDirection === Qt.RightToLeft
+                    ? itemRight - taskStrip.width : itemLeft
+            taskStrip.contentX = Math.max(0, Math.min(maximumContentX, leadingEdge))
+        } else if (itemLeft < taskStrip.contentX) {
+            taskStrip.contentX = Math.max(0, itemLeft)
+        } else if (itemRight > taskStrip.contentX + taskStrip.width) {
+            taskStrip.contentX = Math.min(maximumContentX, itemRight - taskStrip.width)
+        }
+    }
+
     function focusTask(index, backward) {
         const candidate = root.taskAt(index)
         if (candidate !== null) {
             candidate.forceActiveFocus(backward ? Qt.BacktabFocusReason : Qt.TabFocusReason)
+            root.revealTask(candidate)
             return
         }
         if (backward)
@@ -166,6 +186,7 @@ FocusScope {
                 // surface only to restore action focus and the current typed target.
                 if (recoverySerial !== 0
                         && candidate.focusRecoverySerial === recoverySerial) {
+                    root.revealTask(candidate)
                     if (recoverActionMenu && candidate.openActionMenu())
                         return
                     candidate.forceActiveFocus(Qt.OtherFocusReason)
@@ -179,6 +200,7 @@ FocusScope {
                                                   taskRepeater.count - 1))
             if (fallback !== null) {
                 fallback.forceActiveFocus(Qt.OtherFocusReason)
+                root.revealTask(fallback)
                 return
             }
         }
@@ -198,6 +220,7 @@ FocusScope {
             pendingFocusIndex = -1
             if (candidate !== null) {
                 candidate.forceActiveFocus(Qt.OtherFocusReason)
+                root.revealTask(candidate)
                 return true
             }
             return false
@@ -208,17 +231,20 @@ FocusScope {
 
     function recoverGroupedFocus(groupIndex, memberIndex, reopenGroupPopup) {
         const candidate = root.taskAt(groupIndex)
-        if (candidate !== null)
+        if (candidate !== null) {
+            root.revealTask(candidate)
             candidate.recoverFocus(memberIndex, reopenGroupPopup)
-        else if (root.taskCount > 0)
-            root.taskAt(Math.min(groupIndex, root.taskCount - 1))
-                .forceActiveFocus(Qt.OtherFocusReason)
-        else if (root.developmentDiagnosticsVisible)
+        } else if (root.taskCount > 0) {
+            const fallback = root.taskAt(Math.min(groupIndex, root.taskCount - 1))
+            fallback.forceActiveFocus(Qt.OtherFocusReason)
+            root.revealTask(fallback)
+        } else if (root.developmentDiagnosticsVisible) {
             diagnostics.forceActiveFocus(Qt.OtherFocusReason)
-        else if (root.productionAffordancesVisible)
+        } else if (root.productionAffordancesVisible) {
             notificationCenter.forceActiveFocus(Qt.OtherFocusReason)
-        else
+        } else {
             launcher.forceActiveFocus(Qt.OtherFocusReason)
+        }
     }
 
     implicitWidth: 960
