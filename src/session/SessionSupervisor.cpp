@@ -1,9 +1,12 @@
 #include "SessionSupervisor.hpp"
 
+#include "NotificationReadiness.hpp"
+#include "SessionControlService.hpp"
 #include "SessionReadinessProtocol.hpp"
 #include "SettingsReadiness.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <csignal>
 #include <iostream>
@@ -34,8 +37,15 @@ volatile std::sig_atomic_t sessionShutdownRequested = 0;
 extern "C" void requestSessionShutdown(int) { sessionShutdownRequested = 1; }
 
 [[nodiscard]] constexpr DiagnosticComponent diagnosticComponent(ComponentRole component) noexcept {
-    return component == ComponentRole::settingsd ? DiagnosticComponent::settingsd
-                                                 : DiagnosticComponent::shell;
+    switch (component) {
+    case ComponentRole::settingsd:
+        return DiagnosticComponent::settingsd;
+    case ComponentRole::notifyd:
+        return DiagnosticComponent::notifyd;
+    case ComponentRole::shell:
+        return DiagnosticComponent::shell;
+    }
+    return DiagnosticComponent::session;
 }
 
 [[nodiscard]] constexpr ChildExitReason exitReason(const ChildExitStatus &status) noexcept {
@@ -64,6 +74,11 @@ extern "C" void requestSessionShutdown(int) { sessionShutdownRequested = 1; }
 [[nodiscard]] Error shellReadinessContractFailure() {
     return {ErrorCode::validation_error, "The shell published an invalid readiness contract.",
             "Stop the development session and verify matching Prismdrake components."};
+}
+
+[[nodiscard]] Error sessionControlFailure(ErrorCode code = ErrorCode::io_error) {
+    return {code, "The Experimental session-control service could not be owned.",
+            "Stop the conflicting owner or reconnect to the user session bus."};
 }
 
 void closeDescriptor(int &descriptor) noexcept {
@@ -140,6 +155,9 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
             if (safeMode) {
                 launch.argv.emplace_back("--safe-mode");
             }
+        } else if (component == ComponentRole::notifyd) {
+            launch.executable = options_.notifydExecutable;
+            launch.argv = {"prismdrake-notifyd", "--foreground"};
         } else {
             closeDescriptor(shell_readiness_descriptor_);
             auto readiness = createShellReadinessDescriptor();
@@ -223,6 +241,16 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
         return Result<void>::success();
     }
 
+    Result<void> waitForNotificationReadiness(std::chrono::milliseconds timeout) override {
+        const auto &child = process(ComponentRole::notifyd);
+        if (!child || !child->waitable()) {
+            return Result<void>::failure({ErrorCode::invalid_argument,
+                                          "The notification readiness wait is invalid.",
+                                          "Wait only for the current exact notification child."});
+        }
+        return probeNotificationReadiness(child->pid(), timeout);
+    }
+
     Result<void> waitForShellReadiness(std::chrono::milliseconds timeout) override {
         if (timeout <= std::chrono::milliseconds::zero() ||
             timeout > sessionShellReadinessTimeout || shell_readiness_descriptor_ < 0 ||
@@ -274,6 +302,56 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
                                       "Restart the exact shell child through bounded recovery."});
     }
 
+    Result<void> ownSessionControl(ExactChildShutdownPort &shutdownPort) override {
+        if (session_bus_ || session_control_) {
+            return Result<void>::failure(sessionControlFailure(ErrorCode::invalid_argument));
+        }
+        if (sd_bus_open_user(session_bus_.put()) < 0 ||
+            sd_bus_set_exit_on_disconnect(session_bus_.get(), 0) < 0) {
+            session_bus_.reset();
+            return Result<void>::failure(sessionControlFailure());
+        }
+        auto service = std::make_unique<SessionControlService>(shutdownPort);
+        auto attached = service->attach(session_bus_.get());
+        if (!attached) {
+            session_bus_.reset();
+            return attached;
+        }
+        const int owned = sd_bus_request_name(session_bus_.get(), "org.prismdrake.Session1", 0);
+        if (owned < 0) {
+            session_bus_.reset();
+            return Result<void>::failure(sessionControlFailure(
+                owned == -EEXIST ? ErrorCode::invalid_environment : ErrorCode::io_error));
+        }
+        session_control_ = std::move(service);
+        return Result<void>::success();
+    }
+
+    Result<void> dispatchSessionControl() override {
+        if (!session_bus_ || !session_control_) {
+            return Result<void>::failure(sessionControlFailure(ErrorCode::invalid_argument));
+        }
+        int processed = 0;
+        do {
+            processed = sd_bus_process(session_bus_.get(), nullptr);
+        } while (processed > 0);
+        return processed < 0 ? Result<void>::failure(sessionControlFailure())
+                             : Result<void>::success();
+    }
+
+    void observeLogoutShutdown(std::uint64_t transactionId,
+                               ExactChildShutdownEvent event) noexcept override {
+        if (session_control_) {
+            static_cast<void>(session_control_->observeShutdownEvent(transactionId, event));
+        }
+    }
+
+    void beginSessionControlStop() noexcept override {
+        if (session_control_) {
+            session_control_->beginServiceStop();
+        }
+    }
+
     Result<void> markReady() override { return runtime_->markReady(); }
     Result<void> markSafeMode() override { return runtime_->markSafeMode(); }
 
@@ -290,19 +368,38 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
 
   private:
     [[nodiscard]] std::optional<ChildProcess> &process(ComponentRole component) noexcept {
-        return component == ComponentRole::settingsd ? settingsd_ : shell_;
+        switch (component) {
+        case ComponentRole::settingsd:
+            return settingsd_;
+        case ComponentRole::notifyd:
+            return notifyd_;
+        case ComponentRole::shell:
+            return shell_;
+        }
+        return shell_;
     }
     [[nodiscard]] const std::optional<ChildProcess> &
     process(ComponentRole component) const noexcept {
-        return component == ComponentRole::settingsd ? settingsd_ : shell_;
+        switch (component) {
+        case ComponentRole::settingsd:
+            return settingsd_;
+        case ComponentRole::notifyd:
+            return notifyd_;
+        case ComponentRole::shell:
+            return shell_;
+        }
+        return shell_;
     }
 
     SessionRuntimeOptions options_;
     PreparedSessionEnvironment environment_;
     SessionRuntime *runtime_;
     std::optional<ChildProcess> settingsd_;
+    std::optional<ChildProcess> notifyd_;
     std::optional<ChildProcess> shell_;
     int shell_readiness_descriptor_{-1};
+    ipc::sdbus::Bus session_bus_;
+    std::unique_ptr<SessionControlService> session_control_;
 };
 
 } // namespace
@@ -355,6 +452,17 @@ Result<SessionTermination> SessionSupervisor::run() {
     }
 
     if (!recovery_policy_.safeModeActive()) {
+        auto notification = startUntilStable(ComponentRole::notifyd);
+        if (!notification) {
+            static_cast<void>(shutdownAll());
+            return Result<SessionTermination>::failure(notification.error());
+        }
+        if (notification.value() == Progress::shutdown_requested) {
+            auto stopped = shutdownAll();
+            return stopped
+                       ? Result<SessionTermination>::success(SessionTermination::shutdown_requested)
+                       : Result<SessionTermination>::failure(stopped.error());
+        }
         auto shell = startUntilStable(ComponentRole::shell);
         if (!shell) {
             static_cast<void>(shutdownAll());
@@ -385,6 +493,12 @@ Result<SessionTermination> SessionSupervisor::run() {
         }
     }
 
+    auto control = platform_->ownSessionControl(*this);
+    if (!control) {
+        static_cast<void>(shutdownAll());
+        return Result<SessionTermination>::failure(control.error());
+    }
+
     auto ready = platform_->markReady();
     if (!ready) {
         static_cast<void>(shutdownAll());
@@ -392,7 +506,22 @@ Result<SessionTermination> SessionSupervisor::run() {
     }
 
     for (;;) {
+        auto controlDispatch = platform_->dispatchSessionControl();
+        if (!controlDispatch) {
+            platform_->beginSessionControlStop();
+            static_cast<void>(shutdownAll());
+            return Result<SessionTermination>::failure(controlDispatch.error());
+        }
+        if (pending_logout_transaction_) {
+            const auto transactionId = *pending_logout_transaction_;
+            auto stopped = shutdownForLogout(transactionId);
+            pending_logout_transaction_.reset();
+            return stopped ? Result<SessionTermination>::success(SessionTermination::clean)
+                           : Result<SessionTermination>::failure(stopped.error());
+        }
+
         if (platform_->shutdownRequested()) {
+            platform_->beginSessionControlStop();
             platform_->publishDiagnostic(foundation::makeDiagnosticEvent(
                 DiagnosticComponent::session, DiagnosticSeverity::info,
                 DiagnosticEventId::operation_cancelled, std::nullopt, std::nullopt,
@@ -403,7 +532,8 @@ Result<SessionTermination> SessionSupervisor::run() {
                        : Result<SessionTermination>::failure(stopped.error());
         }
 
-        for (const auto component : {ComponentRole::shell, ComponentRole::settingsd}) {
+        for (const auto component :
+             {ComponentRole::shell, ComponentRole::notifyd, ComponentRole::settingsd}) {
             if (!platform_->running(component)) {
                 continue;
             }
@@ -431,6 +561,9 @@ Result<SessionTermination> SessionSupervisor::run() {
                 return stopped ? Result<SessionTermination>::success(
                                      SessionTermination::shutdown_requested)
                                : Result<SessionTermination>::failure(stopped.error());
+            }
+            if (progress.value() == Progress::degraded) {
+                continue;
             }
             if (progress.value() == Progress::enter_safe_mode) {
                 auto safeMode = enterSafeMode();
@@ -473,12 +606,14 @@ Result<SessionSupervisor::Progress> SessionSupervisor::startUntilStable(Componen
             continue;
         }
 
-        const auto readinessTimeout = component == ComponentRole::settingsd
-                                          ? sessionSettingsReadinessTimeout
-                                          : sessionShellReadinessTimeout;
-        const auto readinessAttemptTimeout = component == ComponentRole::settingsd
-                                                 ? sessionSettingsReadinessAttemptTimeout
-                                                 : sessionShellReadinessAttemptTimeout;
+        const auto readinessTimeout =
+            component == ComponentRole::settingsd ? sessionSettingsReadinessTimeout
+            : component == ComponentRole::notifyd ? sessionNotificationReadinessTimeout
+                                                  : sessionShellReadinessTimeout;
+        const auto readinessAttemptTimeout =
+            component == ComponentRole::settingsd ? sessionSettingsReadinessAttemptTimeout
+            : component == ComponentRole::notifyd ? sessionNotificationReadinessAttemptTimeout
+                                                  : sessionShellReadinessAttemptTimeout;
         const auto readinessDeadline = platform_->now() + readinessTimeout;
         for (;;) {
             if (platform_->shutdownRequested()) {
@@ -519,9 +654,11 @@ Result<SessionSupervisor::Progress> SessionSupervisor::startUntilStable(Componen
                 break;
             }
 
-            auto ready = component == ComponentRole::settingsd
-                             ? platform_->waitForSettingsReadiness(attemptTimeout)
-                             : platform_->waitForShellReadiness(attemptTimeout);
+            Result<void> ready = component == ComponentRole::settingsd
+                                     ? platform_->waitForSettingsReadiness(attemptTimeout)
+                                 : component == ComponentRole::notifyd
+                                     ? platform_->waitForNotificationReadiness(attemptTimeout)
+                                     : platform_->waitForShellReadiness(attemptTimeout);
             if (ready) {
                 return Result<Progress>::success(Progress::running);
             }
@@ -531,6 +668,10 @@ Result<SessionSupervisor::Progress> SessionSupervisor::startUntilStable(Componen
                     return Result<Progress>::failure(stopped.error());
                 }
                 if (permanentReadinessError(ready.error().code)) {
+                    if (component == ComponentRole::notifyd) {
+                        publishComponentFailure(component, DiagnosticRecovery::use_fallback);
+                        return Result<Progress>::success(Progress::degraded);
+                    }
                     return Result<Progress>::failure(component == ComponentRole::settingsd
                                                          ? settingsReadinessContractFailure()
                                                          : shellReadinessContractFailure());
@@ -544,7 +685,7 @@ Result<SessionSupervisor::Progress> SessionSupervisor::startUntilStable(Componen
                 break;
             }
 
-            if (component == ComponentRole::settingsd) {
+            if (component != ComponentRole::shell) {
                 const auto retryDelay = waitSliceUntil(readinessDeadline, platform_->now());
                 if (retryDelay > std::chrono::milliseconds::zero() &&
                     !waitInterruptibly(retryDelay)) {
@@ -576,6 +717,12 @@ SessionSupervisor::recover(ComponentRole component, ChildExitReason reason,
         return Result<Progress>::success(waitInterruptibly(decision.value().backoff)
                                              ? Progress::running
                                              : Progress::shutdown_requested);
+    case RecoveryAction::degrade_component:
+        platform_->publishDiagnostic(foundation::makeDiagnosticEvent(
+            DiagnosticComponent::notifyd, DiagnosticSeverity::warning,
+            DiagnosticEventId::dependency_unavailable, std::nullopt, std::nullopt,
+            DiagnosticRecovery::use_fallback));
+        return Result<Progress>::success(Progress::degraded);
     case RecoveryAction::enter_safe_mode:
         publishComponentFailure(component, DiagnosticRecovery::use_fallback);
         return Result<Progress>::success(Progress::enter_safe_mode);
@@ -605,7 +752,7 @@ Result<SessionSupervisor::Progress> SessionSupervisor::handleExit(ComponentRole 
 }
 
 Result<SessionSupervisor::Progress> SessionSupervisor::enterSafeMode() {
-    auto stopped = shutdownAll();
+    auto stopped = stopAllChildren();
     if (!stopped) {
         return Result<Progress>::failure(stopped.error());
     }
@@ -633,6 +780,16 @@ Result<SessionSupervisor::Progress> SessionSupervisor::enterSafeMode() {
         return settings;
     }
     if (settings.value() != Progress::running) {
+        return Result<Progress>::failure(terminalComponentFailure());
+    }
+    auto notification = startUntilStable(ComponentRole::notifyd);
+    if (!notification) {
+        return Result<Progress>::failure(notification.error());
+    }
+    if (notification.value() == Progress::shutdown_requested) {
+        return notification;
+    }
+    if (notification.value() != Progress::degraded && notification.value() != Progress::running) {
         return Result<Progress>::failure(terminalComponentFailure());
     }
     auto shell = startUntilStable(ComponentRole::shell);
@@ -711,8 +868,14 @@ Result<void> SessionSupervisor::stopComponent(ComponentRole component) {
 }
 
 Result<void> SessionSupervisor::shutdownAll() {
+    platform_->beginSessionControlStop();
+    return stopAllChildren();
+}
+
+Result<void> SessionSupervisor::stopAllChildren() {
     std::optional<Error> firstError;
-    for (const auto component : {ComponentRole::shell, ComponentRole::settingsd}) {
+    for (const auto component :
+         {ComponentRole::shell, ComponentRole::notifyd, ComponentRole::settingsd}) {
         auto stopped = stopComponent(component);
         if (!stopped && !firstError) {
             firstError = stopped.error();
@@ -722,6 +885,36 @@ Result<void> SessionSupervisor::shutdownAll() {
         return Result<void>::failure(*firstError);
     }
     return Result<void>::success();
+}
+
+Result<void> SessionSupervisor::shutdownForLogout(std::uint64_t transactionId) {
+    platform_->beginSessionControlStop();
+    std::optional<Error> firstError;
+    constexpr std::array sequence{
+        std::pair{ComponentRole::shell, ExactChildShutdownEvent::shell_stopped},
+        std::pair{ComponentRole::notifyd, ExactChildShutdownEvent::notifyd_stopped},
+        std::pair{ComponentRole::settingsd, ExactChildShutdownEvent::settingsd_stopped},
+    };
+    for (const auto &[component, event] : sequence) {
+        auto stopped = stopComponent(component);
+        if (!stopped) {
+            if (!firstError) {
+                firstError = stopped.error();
+            }
+            platform_->observeLogoutShutdown(transactionId, ExactChildShutdownEvent::failed);
+            continue;
+        }
+        platform_->observeLogoutShutdown(transactionId, event);
+    }
+    return firstError ? Result<void>::failure(*firstError) : Result<void>::success();
+}
+
+bool SessionSupervisor::beginExactChildShutdown(std::uint64_t transactionId) {
+    if (transactionId == 0U || pending_logout_transaction_) {
+        return false;
+    }
+    pending_logout_transaction_ = transactionId;
+    return true;
 }
 
 bool SessionSupervisor::waitInterruptibly(std::chrono::milliseconds duration) {
@@ -752,7 +945,15 @@ void SessionSupervisor::publishForcedTermination(ComponentRole component) {
 
 std::optional<MonotonicClock::TimePoint> &
 SessionSupervisor::launchTime(ComponentRole component) noexcept {
-    return component == ComponentRole::settingsd ? settingsd_launched_at_ : shell_launched_at_;
+    switch (component) {
+    case ComponentRole::settingsd:
+        return settingsd_launched_at_;
+    case ComponentRole::notifyd:
+        return notifyd_launched_at_;
+    case ComponentRole::shell:
+        return shell_launched_at_;
+    }
+    return shell_launched_at_;
 }
 
 std::unique_ptr<SessionSupervisorPlatform>

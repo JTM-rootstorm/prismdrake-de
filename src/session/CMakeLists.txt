@@ -5,6 +5,8 @@ add_library(prismdrake-session-core STATIC
     ChildProcess.hpp
     LogoutTransaction.cpp
     LogoutTransaction.hpp
+    NotificationReadiness.cpp
+    NotificationReadiness.hpp
     RestartPolicy.cpp
     RestartPolicy.hpp
     SessionEnvironment.cpp
@@ -42,9 +44,13 @@ set(PRISMDRAKE_SESSION_DEFAULT_SETTINGSD_EXECUTABLE
 set(PRISMDRAKE_SESSION_DEFAULT_SHELL_EXECUTABLE
     "${CMAKE_INSTALL_FULL_BINDIR}/prismdrake-shell"
     CACHE FILEPATH "Absolute packaged prismdrake-shell executable path")
+set(PRISMDRAKE_SESSION_DEFAULT_NOTIFYD_EXECUTABLE
+    "${CMAKE_INSTALL_FULL_BINDIR}/prismdrake-notifyd"
+    CACHE FILEPATH "Absolute packaged prismdrake-notifyd executable path")
 target_compile_definitions(prismdrake-session
     PRIVATE
         "PRISMDRAKE_SESSION_DEFAULT_SETTINGSD_EXECUTABLE=\"${PRISMDRAKE_SESSION_DEFAULT_SETTINGSD_EXECUTABLE}\""
+        "PRISMDRAKE_SESSION_DEFAULT_NOTIFYD_EXECUTABLE=\"${PRISMDRAKE_SESSION_DEFAULT_NOTIFYD_EXECUTABLE}\""
         "PRISMDRAKE_SESSION_DEFAULT_SHELL_EXECUTABLE=\"${PRISMDRAKE_SESSION_DEFAULT_SHELL_EXECUTABLE}\"")
 
 prismdrake_configure_cpp_target(prismdrake-session)

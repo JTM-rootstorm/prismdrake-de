@@ -2,6 +2,7 @@
 
 #include "ChildProcess.hpp"
 #include "Diagnostics.hpp"
+#include "LogoutTransaction.hpp"
 #include "RestartPolicy.hpp"
 #include "SessionEnvironment.hpp"
 #include "SessionOptions.hpp"
@@ -18,6 +19,8 @@ namespace prismdrake::session {
 inline constexpr auto sessionMonitorInterval = std::chrono::milliseconds{25};
 inline constexpr auto sessionSettingsReadinessTimeout = std::chrono::seconds{5};
 inline constexpr auto sessionSettingsReadinessAttemptTimeout = std::chrono::milliseconds{100};
+inline constexpr auto sessionNotificationReadinessTimeout = std::chrono::seconds{3};
+inline constexpr auto sessionNotificationReadinessAttemptTimeout = std::chrono::milliseconds{100};
 inline constexpr auto sessionShellReadinessTimeout = std::chrono::seconds{5};
 inline constexpr auto sessionShellReadinessAttemptTimeout = std::chrono::milliseconds{100};
 inline constexpr auto sessionTerminateGrace = std::chrono::seconds{2};
@@ -30,8 +33,8 @@ enum class SessionTermination : std::uint8_t {
 
 /// Narrow process, clock, readiness, and diagnostic boundary used by the init-neutral supervisor.
 ///
-/// Implementations own only the two Prismdrake children launched through this interface. They must
-/// never signal a window manager, unrelated application, or process group.
+/// Implementations own only the three Prismdrake children launched through this interface. They
+/// must never signal a window manager, unrelated application, or process group.
 class SessionSupervisorPlatform {
   public:
     virtual ~SessionSupervisorPlatform() = default;
@@ -47,7 +50,15 @@ class SessionSupervisorPlatform {
     [[nodiscard]] virtual foundation::Result<void>
     waitForSettingsReadiness(std::chrono::milliseconds timeout) = 0;
     [[nodiscard]] virtual foundation::Result<void>
+    waitForNotificationReadiness(std::chrono::milliseconds timeout) = 0;
+    [[nodiscard]] virtual foundation::Result<void>
     waitForShellReadiness(std::chrono::milliseconds timeout) = 0;
+    [[nodiscard]] virtual foundation::Result<void>
+    ownSessionControl(ExactChildShutdownPort &shutdownPort) = 0;
+    [[nodiscard]] virtual foundation::Result<void> dispatchSessionControl() = 0;
+    virtual void observeLogoutShutdown(std::uint64_t transactionId,
+                                       ExactChildShutdownEvent event) noexcept = 0;
+    virtual void beginSessionControlStop() noexcept = 0;
     [[nodiscard]] virtual foundation::Result<void> markReady() = 0;
     [[nodiscard]] virtual foundation::Result<void> markSafeMode() = 0;
 
@@ -58,13 +69,15 @@ class SessionSupervisorPlatform {
 };
 
 /// Single-threaded development-session controller with bounded recovery and reverse shutdown.
-class SessionSupervisor final {
+class SessionSupervisor final : public ExactChildShutdownPort {
   public:
     [[nodiscard]] static foundation::Result<SessionSupervisor>
     create(SessionSupervisorPlatform &platform,
-           SessionRecoveryConfig recoveryConfig = pd1SessionRecoveryConfig());
+           SessionRecoveryConfig recoveryConfig = pd2SessionRecoveryConfig());
 
     [[nodiscard]] foundation::Result<SessionTermination> run();
+
+    [[nodiscard]] bool beginExactChildShutdown(std::uint64_t transactionId) override;
 
   private:
     SessionSupervisor(SessionSupervisorPlatform &platform, SessionRecoveryPolicy recoveryPolicy)
@@ -72,6 +85,7 @@ class SessionSupervisor final {
 
     enum class Progress : std::uint8_t {
         running,
+        degraded,
         clean_stop,
         enter_safe_mode,
         shutdown_requested,
@@ -85,7 +99,9 @@ class SessionSupervisor final {
                                                           const ChildExitStatus &status);
     [[nodiscard]] foundation::Result<Progress> enterSafeMode();
     [[nodiscard]] foundation::Result<void> stopComponent(ComponentRole component);
+    [[nodiscard]] foundation::Result<void> stopAllChildren();
     [[nodiscard]] foundation::Result<void> shutdownAll();
+    [[nodiscard]] foundation::Result<void> shutdownForLogout(std::uint64_t transactionId);
     [[nodiscard]] bool waitInterruptibly(std::chrono::milliseconds duration);
     void publishComponentFailure(ComponentRole component, foundation::DiagnosticRecovery recovery);
     void publishForcedTermination(ComponentRole component);
@@ -96,7 +112,9 @@ class SessionSupervisor final {
     SessionSupervisorPlatform *platform_;
     SessionRecoveryPolicy recovery_policy_;
     std::optional<foundation::MonotonicClock::TimePoint> settingsd_launched_at_;
+    std::optional<foundation::MonotonicClock::TimePoint> notifyd_launched_at_;
     std::optional<foundation::MonotonicClock::TimePoint> shell_launched_at_;
+    std::optional<std::uint64_t> pending_logout_transaction_;
 };
 
 /// Creates the real exact-PID backend used by prismdrake-session.

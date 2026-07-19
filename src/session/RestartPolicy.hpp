@@ -45,9 +45,10 @@ struct SessionRecoveryConfig final {
     RestartBudget shell;
 };
 
-/// Review-visible PD1 prototype policy: settingsd gets one normal restart and
-/// the shell gets three, both in an inclusive rolling 30-second window.
-[[nodiscard]] constexpr SessionRecoveryConfig pd1SessionRecoveryConfig() noexcept {
+/// Review-visible PD2 policy: settingsd gets one normal restart, notifyd gets
+/// two before degradation, and the shell gets three. All budgets use an
+/// inclusive rolling 30-second window.
+[[nodiscard]] constexpr SessionRecoveryConfig pd2SessionRecoveryConfig() noexcept {
     using namespace std::chrono_literals;
     return {
         RestartBudget{1U, 30s, 30s, 500ms, 500ms},
@@ -64,7 +65,7 @@ struct RecoveryDecision final {
     friend bool operator==(const RecoveryDecision &, const RecoveryDecision &) = default;
 };
 
-/// Deterministic bounded recovery state for the two required PD1 children.
+/// Deterministic bounded recovery state for the three supervised PD2 children.
 ///
 /// Safe mode is a single final launch, not a second retry budget. Any unexpected
 /// child failure while safe mode is active is terminal. Clean exits are never
@@ -72,7 +73,7 @@ struct RecoveryDecision final {
 class SessionRecoveryPolicy final {
   public:
     [[nodiscard]] static foundation::Result<SessionRecoveryPolicy>
-    create(SessionRecoveryConfig config = pd1SessionRecoveryConfig());
+    create(SessionRecoveryConfig config = pd2SessionRecoveryConfig());
 
     [[nodiscard]] foundation::Result<RecoveryDecision>
     observeExit(ComponentRole component, ChildExitReason reason,

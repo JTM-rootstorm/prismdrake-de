@@ -70,6 +70,10 @@ SessionRecoveryPolicy::observeExit(ComponentRole component, ChildExitReason reas
             RecoveryDecision{RecoveryAction::stop_clean, {}, 0U});
     }
     if (safe_mode_active_) {
+        if (component == ComponentRole::notifyd) {
+            return Result<RecoveryDecision>::success(
+                RecoveryDecision{RecoveryAction::degrade_component, {}, 0U});
+        }
         return Result<RecoveryDecision>::success(
             RecoveryDecision{RecoveryAction::stop_failed, {}, 0U});
     }
