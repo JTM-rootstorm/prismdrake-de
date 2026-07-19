@@ -70,6 +70,7 @@ struct PanelSurfaceHost::PendingFocus final {
     outputs::SurfaceRegistrySnapshot snapshot;
     x11::WindowId oldWindow;
     bool acceptsFocus;
+    FocusReadyCallback focusReady;
     std::unique_ptr<WindowEntry> replacement;
 };
 
@@ -150,6 +151,11 @@ Result<void> PanelSurfaceHost::apply(const outputs::SurfaceRegistrySnapshot &sna
     clear_requested_ = false;
     if (pending_apply_ || pending_focus_) {
         queued_snapshot_ = snapshot;
+        if (pending_focus_ && !focus_request_queued_) {
+            queued_focus_output_ = pending_focus_->outputName;
+            queued_focus_callback_ = pending_focus_->focusReady;
+            focus_request_queued_ = true;
+        }
         return Result<void>::success();
     }
     return beginApply(snapshot);
@@ -226,9 +232,14 @@ void PanelSurfaceHost::completeApply(std::uint64_t token, Result<void> result) {
                 submitCleanup(entry->publishedWindow, X11PropertyOperationKind::removeDock);
             }
         }
-        if (!result && !clear_requested_ && publication_callback_) {
+        if (!result) {
             queued_snapshot_.reset();
-            publication_callback_(pending->snapshot, result);
+            queued_focus_output_.reset();
+            queued_focus_callback_ = {};
+            focus_request_queued_ = false;
+            if (!clear_requested_ && publication_callback_) {
+                publication_callback_(pending->snapshot, result);
+            }
         }
     } else {
         for (auto iterator = windows_.begin(); iterator != windows_.end();) {
@@ -252,7 +263,9 @@ void PanelSurfaceHost::completeApply(std::uint64_t token, Result<void> result) {
             publication_callback_(pending->snapshot, result);
         }
     }
-    continueQueuedWork();
+    if (result) {
+        continueQueuedWork();
+    }
 }
 
 void PanelSurfaceHost::submitCleanup(x11::WindowId window, X11PropertyOperationKind kind) noexcept {
@@ -275,6 +288,7 @@ void PanelSurfaceHost::clear() noexcept {
     clear_requested_ = true;
     queued_snapshot_.reset();
     queued_focus_output_.reset();
+    queued_focus_callback_ = {};
     focus_request_queued_ = false;
     pending_focus_.reset();
     for (auto &[name, entry] : windows_) {
@@ -287,7 +301,8 @@ void PanelSurfaceHost::clear() noexcept {
     current_snapshot_.reset();
 }
 
-Result<void> PanelSurfaceHost::beginFocus(std::string outputName, bool acceptsFocus) {
+Result<void> PanelSurfaceHost::beginFocus(std::string outputName, bool acceptsFocus,
+                                          FocusReadyCallback focusReady) {
     if (pending_apply_ || pending_focus_ || !current_snapshot_) {
         return invalidHost<void>();
     }
@@ -312,7 +327,7 @@ Result<void> PanelSurfaceHost::beginFocus(std::string outputName, bool acceptsFo
         {X11PropertyOperationKind::publishDock, newWindow, replacement.value()->reservation}};
     pending_focus_ = std::make_unique<PendingFocus>(
         PendingFocus{token.value(), std::move(outputName), *current_snapshot_, oldWindow,
-                     acceptsFocus, std::move(replacement).value()});
+                     acceptsFocus, std::move(focusReady), std::move(replacement).value()});
     auto submitted = property_worker_->submit(token.value(), std::move(operations));
     if (!submitted) {
         pending_focus_.reset();
@@ -328,6 +343,7 @@ void PanelSurfaceHost::completeFocus(std::uint64_t token, Result<void> result) {
     if (!result) {
         queued_snapshot_.reset();
         queued_focus_output_.reset();
+        queued_focus_callback_ = {};
         focus_request_queued_ = false;
         if (!clear_requested_ && publication_callback_) {
             publication_callback_(pending->snapshot, result);
@@ -355,6 +371,9 @@ void PanelSurfaceHost::completeFocus(std::uint64_t token, Result<void> result) {
         if (pending->acceptsFocus) {
             current->second->view->requestActivate();
         }
+        if (pending->focusReady) {
+            pending->focusReady(*current->second->view);
+        }
     }
     continueQueuedWork();
 }
@@ -378,8 +397,13 @@ void PanelSurfaceHost::continueQueuedWork() {
     focus_request_queued_ = false;
     auto output = std::move(queued_focus_output_);
     queued_focus_output_.reset();
+    auto focusReady = std::move(queued_focus_callback_);
+    queued_focus_callback_ = {};
     if (output) {
-        auto started = beginFocus(std::move(*output), true);
+        if (!windows_.contains(*output)) {
+            return;
+        }
+        auto started = beginFocus(std::move(*output), true, std::move(focusReady));
         if (!started && publication_callback_ && current_snapshot_) {
             publication_callback_(*current_snapshot_, started);
         }
@@ -396,21 +420,31 @@ void PanelSurfaceHost::continueQueuedWork() {
     }
 }
 
-Result<void> PanelSurfaceHost::requestKeyboardAccess(std::string_view outputName) {
-    if (!windows_.contains(outputName)) {
+Result<void> PanelSurfaceHost::requestKeyboardAccess(std::string_view outputName,
+                                                     FocusReadyCallback focusReady) {
+    const auto current = windows_.find(outputName);
+    if (current == windows_.end()) {
         return invalidHost<void>();
     }
     if (pending_apply_ || pending_focus_) {
         queued_focus_output_ = std::string{outputName};
+        queued_focus_callback_ = std::move(focusReady);
         focus_request_queued_ = true;
         return Result<void>::success();
     }
-    return beginFocus(std::string{outputName}, true);
+    if (!(current->second->view->flags() & Qt::WindowDoesNotAcceptFocus)) {
+        if (focusReady) {
+            focusReady(*current->second->view);
+        }
+        return Result<void>::success();
+    }
+    return beginFocus(std::string{outputName}, true, std::move(focusReady));
 }
 
 Result<void> PanelSurfaceHost::releaseKeyboardAccess() {
     if (pending_apply_ || pending_focus_) {
         queued_focus_output_.reset();
+        queued_focus_callback_ = {};
         focus_request_queued_ = true;
         return Result<void>::success();
     }

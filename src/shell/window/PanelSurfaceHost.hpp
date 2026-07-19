@@ -24,6 +24,7 @@ class PanelSurfaceHost final {
     using ScreenResolver = std::function<QScreen *(std::string_view)>;
     using PublicationCallback = std::function<void(const outputs::SurfaceRegistrySnapshot &,
                                                    const foundation::Result<void> &)>;
+    using FocusReadyCallback = std::function<void(QQuickView &)>;
     using ViewFactory = std::function<foundation::Result<std::unique_ptr<QQuickView>>(
         std::string_view outputName, QScreen &screen)>;
 
@@ -40,7 +41,8 @@ class PanelSurfaceHost final {
     /// Removes every panel and its reservation while retaining the healthy X11 host for a
     /// later settings-owner epoch. The next complete snapshot may be applied at any generation.
     void clear() noexcept;
-    [[nodiscard]] foundation::Result<void> requestKeyboardAccess(std::string_view outputName);
+    [[nodiscard]] foundation::Result<void>
+    requestKeyboardAccess(std::string_view outputName, FocusReadyCallback focusReady = {});
     [[nodiscard]] foundation::Result<void> releaseKeyboardAccess();
     [[nodiscard]] QQuickView *view(std::string_view outputName) const noexcept;
     [[nodiscard]] std::uint64_t currentGeneration() const noexcept { return topology_generation_; }
@@ -55,7 +57,8 @@ class PanelSurfaceHost final {
     [[nodiscard]] foundation::Result<std::unique_ptr<WindowEntry>>
     createWindow(const outputs::SurfacePlacement &placement, QScreen &screen,
                  bool acceptsFocus = false);
-    [[nodiscard]] foundation::Result<void> beginFocus(std::string outputName, bool acceptsFocus);
+    [[nodiscard]] foundation::Result<void> beginFocus(std::string outputName, bool acceptsFocus,
+                                                      FocusReadyCallback focusReady = {});
     void completeFocus(std::uint64_t token, foundation::Result<void> result);
     void continueQueuedWork();
     [[nodiscard]] foundation::Result<void>
@@ -76,6 +79,7 @@ class PanelSurfaceHost final {
     std::optional<outputs::SurfaceRegistrySnapshot> queued_snapshot_;
     std::optional<outputs::SurfaceRegistrySnapshot> current_snapshot_;
     std::optional<std::string> queued_focus_output_;
+    FocusReadyCallback queued_focus_callback_;
     std::uint64_t next_token_{1U};
     std::uint64_t topology_generation_{0U};
     bool clear_requested_{false};

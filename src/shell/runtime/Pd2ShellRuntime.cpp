@@ -963,12 +963,14 @@ Pd2ShellRuntime::apply(std::span<const composition::CompositionIntent> intents) 
 }
 
 control::ShellRequestFailure Pd2ShellRuntime::focusPanel(const composition::OutputName &output) {
-    auto access = panels_->requestKeyboardAccess(output.value());
+    auto access = panels_->requestKeyboardAccess(output.value(), [this](QQuickView &view) {
+        if (!view.rootObject() ||
+            !QMetaObject::invokeMethod(view.rootObject(), "focusLauncher", Qt::QueuedConnection)) {
+            report("panel focus", surfaceError());
+        }
+    });
     if (!access) {
         return control::ShellRequestFailure::output_unavailable;
-    }
-    if (auto *view = panels_->view(output.value()); view && view->rootObject()) {
-        QMetaObject::invokeMethod(view->rootObject(), "focusLauncher", Qt::QueuedConnection);
     }
     return control::ShellRequestFailure::none;
 }
@@ -1209,23 +1211,25 @@ Pd2ShellRuntime::restoreControlFocus(const composition::FocusOrigin &origin) {
     if (*origin.role() == composition::FocusControlRole::panelLauncher) {
         return focusPanel(*origin.output());
     }
-    auto *panel = panels_->view(origin.output()->value());
-    if (!panel || !panel->rootObject()) {
-        return control::ShellRequestFailure::output_unavailable;
-    }
-    const char *method = "focusLauncher";
+    const char *method = nullptr;
     if (*origin.role() == composition::FocusControlRole::panelTaskGroup) {
         method = "restoreActionMenuFocus";
     } else if (*origin.role() == composition::FocusControlRole::panelQuickSettings) {
-        auto access = panels_->requestKeyboardAccess(origin.output()->value());
-        if (!access) {
-            return control::ShellRequestFailure::output_unavailable;
-        }
         method = "focusQuickSettings";
+    } else if (*origin.role() == composition::FocusControlRole::panelNotificationCenter) {
+        method = "focusNotification";
+    } else {
+        return control::ShellRequestFailure::internal;
     }
-    return QMetaObject::invokeMethod(panel->rootObject(), method, Qt::QueuedConnection)
-               ? control::ShellRequestFailure::none
-               : control::ShellRequestFailure::internal;
+    auto access =
+        panels_->requestKeyboardAccess(origin.output()->value(), [this, method](QQuickView &view) {
+            if (!view.rootObject() ||
+                !QMetaObject::invokeMethod(view.rootObject(), method, Qt::QueuedConnection)) {
+                report("panel focus restore", surfaceError());
+            }
+        });
+    return access ? control::ShellRequestFailure::none
+                  : control::ShellRequestFailure::output_unavailable;
 }
 
 void Pd2ShellRuntime::quickSettingsDismissRequested() {

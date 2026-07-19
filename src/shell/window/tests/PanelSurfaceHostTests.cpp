@@ -306,16 +306,26 @@ TEST(PanelSurfaceHostTest, NoReplacementTopologyQueuedBehindFocusRetainsOldPubli
     auto *original = host->view("TEST-1");
     ASSERT_NE(original, nullptr);
 
-    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1"));
+    std::size_t readyCallbacks = 0U;
+    QQuickView *readyView = nullptr;
+    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1", [&](QQuickView &view) {
+        ++readyCallbacks;
+        readyView = &view;
+    }));
     ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
     ASSERT_TRUE(host->apply(registry.one(2U)));
     EXPECT_EQ(gate->transaction(1U),
               (std::vector<X11PropertyOperationKind>{X11PropertyOperationKind::publishDock}));
     gate->release(Result<void>::success());
     ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 2U; }));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(3U); }));
+    EXPECT_EQ(readyCallbacks, 0U);
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return readyCallbacks == 1U; }));
 
     EXPECT_EQ(host->currentGeneration(), 2U);
-    EXPECT_EQ(host->view("TEST-1"), original);
+    EXPECT_NE(host->view("TEST-1"), original);
+    EXPECT_EQ(host->view("TEST-1"), readyView);
     EXPECT_TRUE(log.failed.empty());
 }
 
@@ -330,7 +340,8 @@ TEST(PanelSurfaceHostTest, ClearCancelsInFlightFocusCompletion) {
     ASSERT_TRUE(waitUntil([&] { return gate->started(1U); }));
     gate->release(Result<void>::success());
     ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 1U; }));
-    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1"));
+    bool ready = false;
+    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1", [&](QQuickView &) { ready = true; }));
     ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
 
     host->clear();
@@ -340,6 +351,7 @@ TEST(PanelSurfaceHostTest, ClearCancelsInFlightFocusCompletion) {
     EXPECT_EQ(host->currentGeneration(), 0U);
     EXPECT_EQ(log.successful, (std::vector<std::uint64_t>{1U}));
     EXPECT_TRUE(log.failed.empty());
+    EXPECT_FALSE(ready);
 }
 
 TEST(PanelSurfaceHostTest, RapidFocusReleaseCoalescesToUnfocusedMappedPanel) {
@@ -353,7 +365,8 @@ TEST(PanelSurfaceHostTest, RapidFocusReleaseCoalescesToUnfocusedMappedPanel) {
     ASSERT_TRUE(waitUntil([&] { return gate->started(1U); }));
     gate->release(Result<void>::success());
     ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 1U; }));
-    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1"));
+    bool ready = false;
+    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1", [&](QQuickView &) { ready = true; }));
     ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
     ASSERT_TRUE(host->releaseKeyboardAccess());
 
@@ -365,6 +378,115 @@ TEST(PanelSurfaceHostTest, RapidFocusReleaseCoalescesToUnfocusedMappedPanel) {
     EXPECT_TRUE(panel->flags() & Qt::WindowDoesNotAcceptFocus);
     EXPECT_FALSE(gate->started(3U));
     EXPECT_TRUE(log.failed.empty());
+    EXPECT_FALSE(ready);
+}
+
+TEST(PanelSurfaceHostTest, FocusReadyRunsOnlyAfterFocusableReplacementIsCurrent) {
+    RegistryFixture registry;
+    auto gate = std::make_shared<TransactionGate>();
+    PublicationLog log;
+    auto host = makeHost(gate, log);
+    ASSERT_NE(host, nullptr);
+    ASSERT_TRUE(host->apply(registry.one(1U)));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(1U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 1U; }));
+    auto *oldView = host->view("TEST-1");
+    ASSERT_NE(oldView, nullptr);
+
+    bool callbackInvoked = false;
+    bool currentMatched = false;
+    bool focusable = false;
+    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1", [&](QQuickView &view) {
+        callbackInvoked = true;
+        currentMatched = host->view("TEST-1") == &view;
+        focusable = !(view.flags() & Qt::WindowDoesNotAcceptFocus);
+    }));
+    EXPECT_FALSE(callbackInvoked);
+    ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
+    EXPECT_FALSE(callbackInvoked);
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return callbackInvoked; }));
+
+    EXPECT_TRUE(currentMatched);
+    EXPECT_TRUE(focusable);
+    EXPECT_NE(host->view("TEST-1"), oldView);
+}
+
+TEST(PanelSurfaceHostTest, RemovedOutputCancelsQueuedFocusWithoutPublicationFailure) {
+    RegistryFixture registry;
+    auto gate = std::make_shared<TransactionGate>();
+    PublicationLog log;
+    auto host = makeHost(gate, log);
+    ASSERT_NE(host, nullptr);
+    ASSERT_TRUE(host->apply(registry.one(1U)));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(1U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 1U; }));
+
+    bool ready = false;
+    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1", [&](QQuickView &) { ready = true; }));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
+    ASSERT_TRUE(host->apply(registry.empty(2U)));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 2U; }));
+
+    EXPECT_EQ(host->currentGeneration(), 2U);
+    EXPECT_EQ(host->view("TEST-1"), nullptr);
+    EXPECT_FALSE(ready);
+    EXPECT_TRUE(log.failed.empty());
+}
+
+TEST(PanelSurfaceHostTest, AlreadyFocusableRequestKeepsViewAndRunsReadyWithoutWorker) {
+    RegistryFixture registry;
+    auto gate = std::make_shared<TransactionGate>();
+    PublicationLog log;
+    auto host = makeHost(gate, log);
+    ASSERT_NE(host, nullptr);
+    ASSERT_TRUE(host->apply(registry.one(1U)));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(1U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 1U; }));
+    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1"));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] {
+        auto *view = host->view("TEST-1");
+        return view && !(view->flags() & Qt::WindowDoesNotAcceptFocus);
+    }));
+    auto *focusedView = host->view("TEST-1");
+
+    QQuickView *readyView = nullptr;
+    ASSERT_TRUE(
+        host->requestKeyboardAccess("TEST-1", [&](QQuickView &view) { readyView = &view; }));
+    EXPECT_EQ(readyView, focusedView);
+    EXPECT_EQ(host->view("TEST-1"), focusedView);
+    EXPECT_FALSE(gate->started(3U));
+}
+
+TEST(PanelSurfaceHostTest, NewerFocusRequestSuppressesStaleReadyCallback) {
+    RegistryFixture registry;
+    auto gate = std::make_shared<TransactionGate>();
+    PublicationLog log;
+    auto host = makeHost(gate, log);
+    ASSERT_NE(host, nullptr);
+    ASSERT_TRUE(host->apply(registry.one(1U)));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(1U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 1U; }));
+
+    bool staleReady = false;
+    bool latestReady = false;
+    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1", [&](QQuickView &) { staleReady = true; }));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
+    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1", [&](QQuickView &) { latestReady = true; }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return gate->started(3U); }));
+    EXPECT_FALSE(staleReady);
+    EXPECT_FALSE(latestReady);
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return latestReady; }));
+    EXPECT_FALSE(staleReady);
 }
 
 } // namespace
