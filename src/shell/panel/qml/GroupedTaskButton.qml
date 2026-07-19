@@ -58,9 +58,17 @@ Control {
 
     function recoverFocus(memberIndex, reopenGroup) {
         if (reopenGroup && presentation !== null && presentation.primaryOpensGroup)
-            return groupPopup.openForMember(Math.max(0, memberIndex))
+            return openGroupPopup(Math.max(0, memberIndex))
         forceActiveFocus(Qt.OtherFocusReason)
         return true
+    }
+
+    function openGroupPopup(memberIndex) {
+        actionMenuOpening()
+        if (groupPopup.openForMember(memberIndex))
+            return true
+        actionMenuClosed()
+        return false
     }
 
     function requestPrimary() {
@@ -69,7 +77,7 @@ Control {
         clicked()
         const accepted = presentation.requestPrimaryAction()
         if (accepted && presentation.primaryOpensGroup)
-            groupPopup.openForMember(0)
+            openGroupPopup(0)
         return accepted
     }
 
@@ -344,7 +352,9 @@ Control {
         id: groupPopup
         presentation: root.presentation
         tokens: root.tokens
+        maximumWidth: root.Window.window !== null ? root.Window.window.width : root.width
         rightToLeft: root.rightToLeft
+        onClosed: root.actionMenuClosed()
         onClosedToOrigin: focusRestoreTimer.restart()
     }
 }

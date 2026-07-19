@@ -38,6 +38,8 @@ TestCase {
     SignalSpy { id: launcherRequest; target: panel; signalName: "launcherRequested" }
     SignalSpy { id: notificationCenterRequest; target: panel; signalName: "notificationCenterRequested" }
     SignalSpy { id: quickSettingsRequest; target: panel; signalName: "quickSettingsRequested" }
+    SignalSpy { id: actionMenuOpened; target: panel; signalName: "actionMenuOpened" }
+    SignalSpy { id: actionMenuClosed; target: panel; signalName: "actionMenuClosed" }
 
     function launcher() {
         return findChild(panel, "panelLauncherButton")
@@ -79,7 +81,9 @@ TestCase {
     }
 
     function init() {
+        testCase.width = 1420
         groupedTasks = false
+        panel.width = 1400
         explicitProductionAffordances = false
         developmentDiagnostics = true
         panel.layoutDirection = Qt.LeftToRight
@@ -88,6 +92,8 @@ TestCase {
         forwardExit.clear()
         backwardExit.clear()
         launcherRequest.clear()
+        actionMenuOpened.clear()
+        actionMenuClosed.clear()
         tryCompare(panel, "taskCount", 3)
     }
 
@@ -195,6 +201,8 @@ TestCase {
     }
 
     function test_groupPopupKeyboardActionsAndAccessibilityAreDeterministic() {
+        testCase.width = 420
+        panel.width = 400
         groupedTasks = true
         verify(panelFixture.publishRepresentativeGroups())
         tryCompare(panel, "taskCount", 2)
@@ -204,11 +212,18 @@ TestCase {
         keyClick(Qt.Key_Return)
         const popup = findChild(editor, "panelTaskGroupPopup")
         tryCompare(popup, "opened", true)
+        tryCompare(actionMenuOpened, "count", 1)
+        compare(actionMenuOpened.signalArguments[0][0], "DP-1")
         const firstMember = popup.memberAt(0)
         const secondMember = popup.memberAt(1)
+        const viewport = findChild(popup, "panelTaskGroupViewport")
         verify(firstMember !== null)
         verify(secondMember !== null)
+        verify(viewport !== null)
+        verify(popup.width <= testCase.width)
+        verify(viewport.contentWidth > viewport.availableWidth)
         tryCompare(firstMember, "activeFocus", true)
+        tryCompare(viewport.contentItem, "contentX", 0)
         compare(firstMember.Accessible.role, Accessible.ListItem)
         verify(firstMember.Accessible.description.indexOf("Press Enter") >= 0)
 
@@ -226,8 +241,10 @@ TestCase {
         tryCompare(close, "activeFocus", true)
         keyClick(Qt.Key_Down)
         tryCompare(findChild(secondMember, "panelTaskGroupClose"), "activeFocus", true)
+        tryVerify(() => viewport.contentItem.contentX > 0)
         keyClick(Qt.Key_Escape)
         tryCompare(popup, "opened", false)
+        tryCompare(actionMenuClosed, "count", 1)
         tryCompare(editor, "activeFocus", true)
 
         keyClick(Qt.Key_Return)
@@ -237,6 +254,35 @@ TestCase {
         tryCompare(panelFixture, "activationCount", 1)
         tryCompare(popup, "opened", false)
         compare(panelFixture.lastActivationTitle, "Editor document")
+    }
+
+    function test_groupPopupOverflowRevealMirrorsForRightToLeft() {
+        testCase.width = 420
+        panel.width = 400
+        panel.layoutDirection = Qt.RightToLeft
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const editor = panel.taskAt(0)
+        editor.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Return)
+        const popup = findChild(editor, "panelTaskGroupPopup")
+        const viewport = findChild(popup, "panelTaskGroupViewport")
+        const firstMember = popup.memberAt(0)
+        const secondMember = popup.memberAt(1)
+        tryCompare(popup, "opened", true)
+        tryCompare(firstMember, "activeFocus", true)
+        tryVerify(() => viewport.contentItem.contentX > 0)
+
+        keyClick(Qt.Key_Down)
+        tryCompare(secondMember, "activeFocus", true)
+        tryCompare(viewport.contentItem, "contentX", 0)
+        keyClick(Qt.Key_Up)
+        tryCompare(firstMember, "activeFocus", true)
+        tryVerify(() => viewport.contentItem.contentX > 0)
+        keyClick(Qt.Key_Escape)
+        tryCompare(popup, "opened", false)
     }
 
     function test_taskArrowTraversalMirrorsForRightToLeft() {

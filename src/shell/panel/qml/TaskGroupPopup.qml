@@ -9,6 +9,7 @@ Popup {
 
     required property var presentation
     required property var tokens
+    required property real maximumWidth
     property bool rightToLeft: false
     property int pendingMemberFocus: 0
     property bool restoreFocusWhenClosed: true
@@ -17,6 +18,24 @@ Popup {
 
     function memberAt(index) {
         return memberRepeater.itemAt(index)
+    }
+
+    function revealMember(item) {
+        if (item === null || memberViewport.contentItem === null)
+            return
+        const viewport = memberViewport.contentItem as Flickable
+        if (viewport === null)
+            return
+        const position = item.mapToItem(memberRowStrip, 0, 0)
+        const itemLeft = position.x
+        const itemRight = itemLeft + item.width
+        if (itemLeft < viewport.contentX) {
+            viewport.contentX = Math.max(0, itemLeft)
+        } else if (itemRight > viewport.contentX + viewport.width) {
+            viewport.contentX = Math.min(
+                        Math.max(0, memberRowStrip.implicitWidth - viewport.width),
+                        itemRight - viewport.width)
+        }
     }
 
     function openForMember(index) {
@@ -42,7 +61,10 @@ Popup {
     modal: false
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    padding: tokens.menuItemPadding
+    padding: 0
+    width: Math.min(memberRowStrip.implicitWidth,
+                    Math.max(tokens.minimumTargetSize, maximumWidth))
+    height: Math.max(tokens.minimumTargetSize, memberRowStrip.implicitHeight)
 
     onClosed: {
         if (restoreFocusWhenClosed)
@@ -56,8 +78,10 @@ Popup {
         repeat: false
         onTriggered: {
             const candidate = root.memberAt(root.pendingMemberFocus)
-            if (candidate !== null)
+            if (candidate !== null) {
                 candidate.forceActiveFocus(Qt.OtherFocusReason)
+                Qt.callLater(root.revealMember, candidate)
+            }
         }
     }
 
@@ -68,29 +92,40 @@ Popup {
         border.color: root.tokens.activeBorderColor
     }
 
-    contentItem: Column {
-        spacing: root.tokens.menuItemPadding
-        LayoutMirroring.enabled: root.rightToLeft
-        LayoutMirroring.childrenInherit: true
+    contentItem: ScrollView {
+        id: memberViewport
+        objectName: "panelTaskGroupViewport"
+        clip: true
+        contentWidth: memberRowStrip.implicitWidth
+        contentHeight: availableHeight
+        ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
         Accessible.role: Accessible.PopupMenu
         Accessible.name: qsTr("Windows for %1").arg(root.presentation !== null
                                                        ? root.presentation.displayName : "")
         Accessible.description: qsTr("Choose a window, then activate, minimize, or close it")
 
-        Repeater {
-            id: memberRepeater
-            model: root.presentation !== null ? root.presentation.members : []
+        Row {
+            id: memberRowStrip
+            height: memberViewport.availableHeight
+            spacing: root.tokens.menuItemPadding
+            LayoutMirroring.enabled: root.rightToLeft
+            LayoutMirroring.childrenInherit: true
 
-            delegate: FocusScope {
-                id: memberRow
-                objectName: "panelTaskGroupMember"
-                required property int index
-                required property var modelData
+            Repeater {
+                id: memberRepeater
+                model: root.presentation !== null ? root.presentation.members : []
 
-                readonly property var member: modelData
-                width: Math.max(320, memberActions.implicitWidth)
-                height: Math.max(root.tokens.minimumTargetSize, memberActions.implicitHeight)
+                delegate: FocusScope {
+                    id: memberRow
+                    objectName: "panelTaskGroupMember"
+                    required property int index
+                    required property var modelData
+
+                    readonly property var member: modelData
+                    width: Math.max(320, memberActions.implicitWidth)
+                    height: Math.max(root.tokens.minimumTargetSize, memberActions.implicitHeight)
 
                 function actionAt(actionIndex) {
                     switch (actionIndex) {
@@ -121,9 +156,12 @@ Popup {
                         return
                     if (actionIndex >= 0
                             && candidate.focusAction(actionIndex, direction > 0 ? 1 : -1,
-                                                     reason))
+                                                     reason)) {
+                        root.revealMember(candidate)
                         return
+                    }
                     candidate.forceActiveFocus(reason)
+                    root.revealMember(candidate)
                 }
 
                 function moveFromAction(actionIndex, direction) {
@@ -160,14 +198,18 @@ Popup {
                     event.accepted = true
                     const candidate = root.memberAt((index - 1 + memberRepeater.count)
                                                     % memberRepeater.count)
-                    if (candidate !== null)
+                    if (candidate !== null) {
                         candidate.forceActiveFocus(Qt.BacktabFocusReason)
+                        root.revealMember(candidate)
+                    }
                 }
                 Keys.onDownPressed: event => {
                     event.accepted = true
                     const candidate = root.memberAt((index + 1) % memberRepeater.count)
-                    if (candidate !== null)
+                    if (candidate !== null) {
                         candidate.forceActiveFocus(Qt.TabFocusReason)
+                        root.revealMember(candidate)
+                    }
                 }
                 Keys.onTabPressed: event => {
                     event.accepted = true
@@ -370,4 +412,5 @@ Popup {
             }
         }
     }
+}
 }
