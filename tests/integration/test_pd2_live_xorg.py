@@ -8,6 +8,7 @@ import os
 import stat
 import sys
 import tempfile
+import tomllib
 import unittest
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -20,8 +21,13 @@ from pd2_live_xorg import (  # noqa: E402
     LiveXorgConfig,
     LiveXorgHarnessPort,
     ProcessIdentity,
+    WindowGeometry,
     XrandrOutput,
+    _session_config,
     _xorg_config,
+    parse_cardinals,
+    parse_window_geometry,
+    parse_window_ids,
     parse_xrandr_outputs,
 )
 
@@ -59,6 +65,40 @@ DUMMY1 connected 1600x900+0+900 (normal left inverted right x axis y axis) 0mm x
 DUMMY2 disconnected (normal left inverted right x axis y axis)
 """
 
+DESKTOP_LEFT = 0x500001
+DESKTOP_RIGHT = 0x500002
+PANEL_LEFT = 0x500003
+PANEL_RIGHT = 0x500004
+SURFACE_GEOMETRIES = {
+    DESKTOP_LEFT: WindowGeometry(0, 0, 1600, 900),
+    DESKTOP_RIGHT: WindowGeometry(1600, 0, 1600, 900),
+    PANEL_LEFT: WindowGeometry(0, 852, 1600, 48),
+    PANEL_RIGHT: WindowGeometry(1600, 852, 1600, 48),
+}
+SURFACE_TYPES = {
+    DESKTOP_LEFT: b"_NET_WM_WINDOW_TYPE_DESKTOP",
+    DESKTOP_RIGHT: b"_NET_WM_WINDOW_TYPE_DESKTOP",
+    PANEL_LEFT: b"_NET_WM_WINDOW_TYPE_DOCK",
+    PANEL_RIGHT: b"_NET_WM_WINDOW_TYPE_DOCK",
+}
+
+
+def xwininfo_payload(window: int, geometry: WindowGeometry) -> bytes:
+    return f"""xwininfo: Window id: 0x{window:x} "Private surface"
+
+  Absolute upper-left X:  {geometry.x}
+  Absolute upper-left Y:  {geometry.y}
+  Relative upper-left X:  0
+  Relative upper-left Y:  0
+  Width: {geometry.width}
+  Height: {geometry.height}
+  Depth: 24
+  Border width: 0
+  Class: InputOutput
+  Map State: IsViewable
+  Override Redirect State: no
+""".encode("ascii")
+
 
 class FakeChild:
     def __init__(self, pid: int) -> None:
@@ -95,6 +135,17 @@ class FakeOperations:
         self.stop_succeeds = True
         self.session_marker = session_marker
         self.ambiguous_descendant = ambiguous_descendant
+        self.surface_geometries = dict(SURFACE_GEOMETRIES)
+        self.surface_types = dict(SURFACE_TYPES)
+        self.surface_owner = 2004
+        self.surface_focus = False
+        self.surface_list = tuple(SURFACE_GEOMETRIES)
+        self.window_geometry_payloads = {
+            window: xwininfo_payload(window, geometry)
+            for window, geometry in SURFACE_GEOMETRIES.items()
+        }
+        self.panel_strut_bottom = 48
+        self.shell_start_time = 20_040
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
         child = FakeChild(1000 + len(self.children))
@@ -127,6 +178,63 @@ class FakeOperations:
             return CommandResult(
                 0, b"_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0x400001\n"
             )
+        if command[-1] == "_NET_CLIENT_LIST_STACKING":
+            values = b", ".join(f"0x{window:x}".encode("ascii") for window in self.surface_list)
+            return CommandResult(
+                0, b"_NET_CLIENT_LIST_STACKING(WINDOW): window id # " + values + b"\n"
+            )
+        if command[0].endswith("xprop") and len(command) == 4 and command[1] == "-id":
+            window = int(command[2], 16)
+            property_name = command[3]
+            if property_name == "_NET_WM_WINDOW_TYPE":
+                window_type = self.surface_types.get(window, b"_NET_WM_WINDOW_TYPE_NORMAL")
+                return CommandResult(
+                    0, b"_NET_WM_WINDOW_TYPE(ATOM) = " + window_type + b"\n"
+                )
+            if property_name == "_NET_WM_PID":
+                return CommandResult(
+                    0, f"_NET_WM_PID(CARDINAL) = {self.surface_owner}\n".encode("ascii")
+                )
+            if property_name == "WM_HINTS":
+                focus = "True" if self.surface_focus else "False"
+                return CommandResult(
+                    0,
+                    (
+                        "WM_HINTS(WM_HINTS):\n"
+                        f"\t\tClient accepts input or input focus: {focus}\n"
+                        "\t\tInitial state is Normal State.\n"
+                    ).encode("ascii"),
+                )
+            geometry = self.surface_geometries[window]
+            if property_name == "_NET_WM_STRUT":
+                return CommandResult(
+                    0,
+                    f"_NET_WM_STRUT(CARDINAL) = 0, 0, 0, {self.panel_strut_bottom}\n".encode(
+                        "ascii"
+                    ),
+                )
+            if property_name == "_NET_WM_STRUT_PARTIAL":
+                values = (
+                    0,
+                    0,
+                    0,
+                    48,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    geometry.x,
+                    geometry.x + geometry.width - 1,
+                )
+                payload = ", ".join(str(value) for value in values)
+                return CommandResult(
+                    0, f"_NET_WM_STRUT_PARTIAL(CARDINAL) = {payload}\n".encode("ascii")
+                )
+        if command[0].endswith("xwininfo") and command[1] == "-id":
+            window = int(command[2], 16)
+            return CommandResult(0, self.window_geometry_payloads[window])
         return CommandResult(0)
 
     def stop(self, child: FakeChild, timeout: float) -> bool:
@@ -160,6 +268,8 @@ class FakeOperations:
             identities = [ProcessIdentity(2001, 20_010)]
         elif executable.name == "prismdrake-session":
             identities = [ProcessIdentity(2002, 20_020)]
+        elif executable.name == "prismdrake-shell":
+            identities = [ProcessIdentity(2004, self.shell_start_time)]
         else:
             return ()
         if self.ambiguous_descendant:
@@ -179,6 +289,7 @@ def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
         xrandr=Path("/usr/bin/xrandr"),
         openbox=Path("/usr/bin/openbox"),
         xprop=Path("/usr/bin/xprop"),
+        xwininfo=Path("/usr/bin/xwininfo"),
         dbus_run_session=Path("/usr/bin/dbus-run-session"),
         dbus_daemon=Path("/usr/bin/dbus-daemon"),
         installed_executables=installed or {},
@@ -227,6 +338,66 @@ class XrandrParserTests(unittest.TestCase):
         self.assertNotIn("Display", payload.splitlines()[0])
 
 
+class SurfaceParserTests(unittest.TestCase):
+    def test_parses_bounded_window_lists_cardinals_and_geometry(self) -> None:
+        self.assertEqual(
+            parse_window_ids(
+                b"_NET_CLIENT_LIST_STACKING(WINDOW): window id # 0x500001, 0x500004\n",
+                b"_NET_CLIENT_LIST_STACKING",
+            ),
+            (DESKTOP_LEFT, PANEL_RIGHT),
+        )
+        self.assertEqual(
+            parse_cardinals(
+                b"_NET_WM_STRUT(CARDINAL) = 0, 0, 0, 48\n",
+                b"_NET_WM_STRUT",
+                4,
+            ),
+            (0, 0, 0, 48),
+        )
+        self.assertEqual(
+            parse_window_geometry(
+                xwininfo_payload(DESKTOP_RIGHT, SURFACE_GEOMETRIES[DESKTOP_RIGHT])
+            ),
+            SURFACE_GEOMETRIES[DESKTOP_RIGHT],
+        )
+
+    def test_surface_parsers_reject_ambiguous_or_unmapped_observations(self) -> None:
+        cases = (
+            lambda: parse_window_ids(
+                b"_NET_CLIENT_LIST_STACKING(WINDOW): window id # 0x1, 0x1\n",
+                b"_NET_CLIENT_LIST_STACKING",
+            ),
+            lambda: parse_window_ids(
+                b"_NET_CLIENT_LIST_STACKING(WINDOW): window id # 0x0\n",
+                b"_NET_CLIENT_LIST_STACKING",
+            ),
+            lambda: parse_cardinals(
+                b"_NET_WM_STRUT(CARDINAL) = 0, 0, 48\n", b"_NET_WM_STRUT", 4
+            ),
+            lambda: parse_window_geometry(
+                xwininfo_payload(DESKTOP_LEFT, SURFACE_GEOMETRIES[DESKTOP_LEFT]).replace(
+                    b"Map State: IsViewable", b"Map State: IsUnMapped"
+                )
+            ),
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                with self.assertRaises(HarnessError):
+                    case()
+
+    def test_private_session_config_selects_two_panel_solid_wallpaper_policy(self) -> None:
+        payload = _session_config()
+        document = tomllib.loads(payload)
+        self.assertEqual(document["schema_version"], 2)
+        self.assertEqual(document["panel"]["output_policy"], "all")
+        self.assertEqual(document["panel"]["size_px"], 48)
+        self.assertEqual(document["desktop"]["wallpaper_source"], "")
+        self.assertEqual(document["desktop"]["background_color"], "#182033")
+        self.assertEqual(document["developer"]["mock_capability_overrides"], [])
+        self.assertNotIn("/home/", payload)
+
+
 class LivePortTests(unittest.TestCase):
     def test_starts_real_adapter_commands_and_observes_two_output_topology(self) -> None:
         operations = FakeOperations()
@@ -262,7 +433,7 @@ class LivePortTests(unittest.TestCase):
         port = LiveXorgHarnessPort(config(), operations)
 
         with self.assertRaisesRegex(HarnessError, "^live_step_not_implemented$"):
-            port.run_step("installed_workflow", "verify_panel_policy_both_outputs")
+            port.run_step("installed_workflow", "invoke_launcher_through_shellctl")
         with self.assertRaisesRegex(
             HarnessError, "^live_process_ownership_unavailable$"
         ):
@@ -317,6 +488,110 @@ class LivePortTests(unittest.TestCase):
 
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
         self.assertEqual(operations.stop_calls, list(reversed(operations.children)))
+
+    def test_observes_two_coherent_wallpaper_desktops_and_bottom_panels(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+
+        self.assertEqual(
+            port.run_step(
+                "installed_workflow", "verify_desktop_wallpaper_both_outputs"
+            ),
+            Observation(True, True),
+        )
+        self.assertEqual(
+            port.run_step("installed_workflow", "verify_panel_policy_both_outputs"),
+            Observation(True, True),
+        )
+
+        _argv, environment = operations.spawn_calls[2]
+        configuration = (
+            Path(environment["XDG_CONFIG_HOME"]) / "prismdrake" / "config.toml"
+        )
+        self.assertEqual(stat.S_IMODE(configuration.stat().st_mode), 0o600)
+        self.assertEqual(configuration.read_text(encoding="ascii"), _session_config())
+        geometry_queries = [
+            argv
+            for argv, _environment in operations.run_calls
+            if argv[0] == "/usr/bin/xwininfo"
+        ]
+        self.assertEqual(len(geometry_queries), 6)
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_surface_observation_fails_closed_for_owner_focus_geometry_and_strut(self) -> None:
+        cases = (
+            ("owner", "surface_window_owner_invalid"),
+            ("focus", "surface_window_focus_policy_invalid"),
+            ("geometry", "x11_window_geometry_invalid"),
+            ("strut", "panel_strut_invalid"),
+        )
+        for mutation, expected in cases:
+            with self.subTest(mutation=mutation):
+                operations = FakeOperations()
+                port = LiveXorgHarnessPort(config(installed_paths()), operations)
+                for identifier in (
+                    "start_isolated_two_output_x11",
+                    "start_installed_prismdrake_session",
+                    "verify_component_readiness",
+                ):
+                    port.run_step("installed_workflow", identifier)
+                if mutation == "owner":
+                    operations.surface_owner += 1
+                elif mutation == "focus":
+                    operations.surface_focus = True
+                elif mutation == "geometry":
+                    operations.window_geometry_payloads[DESKTOP_LEFT] = b"unmapped\n"
+                else:
+                    port.run_step(
+                        "installed_workflow", "verify_desktop_wallpaper_both_outputs"
+                    )
+                    operations.panel_strut_bottom = 47
+                identifier = (
+                    "verify_panel_policy_both_outputs"
+                    if mutation == "strut"
+                    else "verify_desktop_wallpaper_both_outputs"
+                )
+                with self.assertRaisesRegex(HarnessError, f"^{expected}$"):
+                    port.run_step("installed_workflow", identifier)
+                self.assertEqual(
+                    port.cleanup("installed_workflow"), Observation(True, True)
+                )
+
+    def test_panel_observation_rejects_desktop_or_shell_epoch_change(self) -> None:
+        for mutation, expected in (
+            ("desktop", "desktop_surface_epoch_changed"),
+            ("shell", "surface_shell_identity_changed"),
+        ):
+            with self.subTest(mutation=mutation):
+                operations = FakeOperations()
+                port = LiveXorgHarnessPort(config(installed_paths()), operations)
+                for identifier in (
+                    "start_isolated_two_output_x11",
+                    "start_installed_prismdrake_session",
+                    "verify_component_readiness",
+                    "verify_desktop_wallpaper_both_outputs",
+                ):
+                    port.run_step("installed_workflow", identifier)
+                if mutation == "desktop":
+                    changed = WindowGeometry(0, 0, 1599, 900)
+                    operations.window_geometry_payloads[DESKTOP_LEFT] = xwininfo_payload(
+                        DESKTOP_LEFT, changed
+                    )
+                else:
+                    operations.shell_start_time += 1
+                with self.assertRaisesRegex(HarnessError, f"^{expected}$"):
+                    port.run_step(
+                        "installed_workflow", "verify_panel_policy_both_outputs"
+                    )
+                self.assertEqual(
+                    port.cleanup("installed_workflow"), Observation(True, True)
+                )
 
     def test_session_readiness_rejects_safe_mode_and_ambiguous_process_owner(self) -> None:
         for operations, expected in (

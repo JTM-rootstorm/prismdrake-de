@@ -30,9 +30,11 @@ MAX_COMMAND_OUTPUT_BYTES = 65_536
 MAX_EXECUTABLE_BYTES = 128 * 1024 * 1024
 MAX_PROCESS_SCAN_ENTRIES = 32_768
 MAX_PROCESS_ANCESTRY_DEPTH = 64
+MAX_SURFACE_WINDOWS = 64
 OUTPUT_MODE = "1600x900"
 OUTPUT_WIDTH = 1600
 OUTPUT_HEIGHT = 900
+PANEL_HEIGHT = 48
 PRIMARY_OUTPUT = "DUMMY0"
 SECONDARY_OUTPUT = "DUMMY1"
 
@@ -283,6 +285,16 @@ class XrandrOutput:
         return self.connected and self.width is not None
 
 
+@dataclass(frozen=True)
+class WindowGeometry:
+    """Bounded mapped X11 window geometry from ``xwininfo``."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+
 _OUTPUT_LINE = re.compile(
     rb"^(?P<name>[A-Za-z0-9_.:-]{1,128}) "
     rb"(?P<state>connected|disconnected)"
@@ -334,6 +346,155 @@ def parse_xrandr_outputs(payload: bytes) -> tuple[XrandrOutput, ...]:
     return tuple(outputs)
 
 
+def parse_window_ids(payload: bytes, property_name: bytes) -> tuple[int, ...]:
+    """Parse one bounded X11 WINDOW-list property without retaining names."""
+
+    if (
+        not payload
+        or len(payload) > MAX_COMMAND_OUTPUT_BYTES
+        or b"\x00" in payload
+        or re.fullmatch(rb"_[A-Z0-9_]{1,80}", property_name) is None
+    ):
+        raise HarnessError("x11_window_list_invalid")
+    prefix = property_name + b"(WINDOW): window id # "
+    if not payload.startswith(prefix) or not payload.endswith(b"\n"):
+        raise HarnessError("x11_window_list_invalid")
+    values = payload[len(prefix) : -1].split(b", ")
+    if not values or len(values) > MAX_SURFACE_WINDOWS:
+        raise HarnessError("x11_window_list_invalid")
+    result: list[int] = []
+    for value in values:
+        if re.fullmatch(rb"0x[0-9a-f]{1,8}", value) is None:
+            raise HarnessError("x11_window_list_invalid")
+        parsed = int(value, 16)
+        if parsed == 0 or parsed in result:
+            raise HarnessError("x11_window_list_invalid")
+        result.append(parsed)
+    return tuple(result)
+
+
+def parse_cardinals(payload: bytes, property_name: bytes, count: int) -> tuple[int, ...]:
+    """Parse one exact bounded CARDINAL property."""
+
+    if (
+        not payload
+        or len(payload) > MAX_COMMAND_OUTPUT_BYTES
+        or b"\x00" in payload
+        or count < 1
+        or count > 16
+        or re.fullmatch(rb"_[A-Z0-9_]{1,80}", property_name) is None
+    ):
+        raise HarnessError("x11_cardinal_property_invalid")
+    prefix = property_name + b"(CARDINAL) = "
+    if not payload.startswith(prefix) or not payload.endswith(b"\n"):
+        raise HarnessError("x11_cardinal_property_invalid")
+    values = payload[len(prefix) : -1].split(b", ")
+    if len(values) != count:
+        raise HarnessError("x11_cardinal_property_invalid")
+    result: list[int] = []
+    for value in values:
+        if re.fullmatch(rb"[0-9]{1,10}", value) is None:
+            raise HarnessError("x11_cardinal_property_invalid")
+        parsed = int(value)
+        if parsed > 0xFFFF_FFFF:
+            raise HarnessError("x11_cardinal_property_invalid")
+        result.append(parsed)
+    return tuple(result)
+
+
+def parse_window_geometry(payload: bytes) -> WindowGeometry:
+    """Extract geometry and mapping state without retaining a window title."""
+
+    if not payload or len(payload) > MAX_COMMAND_OUTPUT_BYTES or b"\x00" in payload:
+        raise HarnessError("x11_window_geometry_invalid")
+    patterns = {
+        "x": rb"^  Absolute upper-left X:\s+(-?[0-9]{1,7})$",
+        "y": rb"^  Absolute upper-left Y:\s+(-?[0-9]{1,7})$",
+        "width": rb"^  Width:\s+([1-9][0-9]{0,6})$",
+        "height": rb"^  Height:\s+([1-9][0-9]{0,6})$",
+        "border": rb"^  Border width:\s+([0-9]{1,6})$",
+    }
+    values: dict[str, int] = {}
+    lines = payload.splitlines()
+    for key, pattern in patterns.items():
+        matches = [re.fullmatch(pattern, line) for line in lines]
+        captures = [match.group(1) for match in matches if match is not None]
+        if len(captures) != 1:
+            raise HarnessError("x11_window_geometry_invalid")
+        values[key] = int(captures[0])
+    if (
+        values["border"] != 0
+        or lines.count(b"  Map State: IsViewable") != 1
+        or lines.count(b"  Override Redirect State: no") != 1
+    ):
+        raise HarnessError("x11_window_geometry_invalid")
+    return WindowGeometry(values["x"], values["y"], values["width"], values["height"])
+
+
+def _session_config() -> str:
+    """Return the complete private PD2 demonstration configuration."""
+
+    return """schema_version = 2
+profile = "lustre"
+
+[appearance]
+accent = "#4D7FFF"
+transparency_enabled = true
+blur_quality = "balanced"
+reduced_motion = false
+high_contrast = false
+text_scale = 1.0
+cursor_theme = "default"
+cursor_size_px = 24
+icon_theme = "hicolor"
+
+[panel]
+edge = "bottom"
+size_px = 48
+autohide = "never"
+grouping = "when_full"
+clock_format = "locale"
+output_policy = "all"
+outputs = []
+
+[launcher]
+layout = "expanded"
+search_providers = ["applications", "settings"]
+recent_items = "local_only"
+
+[notifications]
+enabled = true
+history = "session"
+default_timeout_ms = 5000
+do_not_disturb = false
+
+[desktop]
+wallpaper_source = ""
+background_color = "#182033"
+wallpaper_mode = "fill"
+icons_enabled = false
+
+[integration]
+export_gtk = true
+export_qt = true
+export_xsettings = true
+export_portal = true
+
+[accessibility]
+focus_emphasis = "standard"
+animation_scale = 1.0
+minimum_target_size_px = 40
+
+[keyboard]
+menu_key_opens_launcher = true
+focus_wraps = false
+
+[developer]
+diagnostics_enabled = false
+mock_capability_overrides = []
+"""
+
+
 @dataclass(frozen=True)
 class LiveXorgConfig:
     """Exact executable inputs for a private Xorg-dummy demonstration run."""
@@ -342,6 +503,7 @@ class LiveXorgConfig:
     xrandr: Path
     openbox: Path
     xprop: Path
+    xwininfo: Path
     dbus_run_session: Path
     dbus_daemon: Path
     installed_executables: Mapping[str, Path]
@@ -404,6 +566,8 @@ class LiveXorgHarnessPort:
         ("installed_workflow", "start_isolated_two_output_x11"),
         ("installed_workflow", "start_installed_prismdrake_session"),
         ("installed_workflow", "verify_component_readiness"),
+        ("installed_workflow", "verify_desktop_wallpaper_both_outputs"),
+        ("installed_workflow", "verify_panel_policy_both_outputs"),
         ("failure_replay", "two_same_scale_outputs_at_startup"),
         ("failure_replay", "add_second_output_after_startup"),
         ("failure_replay", "remove_primary_output"),
@@ -423,6 +587,8 @@ class LiveXorgHarnessPort:
         self._xorg: ChildProcess | None = None
         self._openbox: ChildProcess | None = None
         self._session: ChildProcess | None = None
+        self._desktop_surfaces: dict[int, WindowGeometry] | None = None
+        self._surface_shell_identity: ProcessIdentity | None = None
 
     def installed_executable_hashes(self) -> Mapping[str, str]:
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
@@ -451,6 +617,10 @@ class LiveXorgHarnessPort:
         elif identifier == "verify_component_readiness":
             self._wait_for_session_readiness()
             self.capture_process_ownership()
+        elif identifier == "verify_desktop_wallpaper_both_outputs":
+            self._require_desktop_wallpaper_surfaces()
+        elif identifier == "verify_panel_policy_both_outputs":
+            self._require_panel_surfaces()
         elif identifier == "two_same_scale_outputs_at_startup":
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
@@ -535,6 +705,8 @@ class LiveXorgHarnessPort:
                 clean = self._operations.stop(child, self._config.stop_timeout) and clean
                 setattr(self, attribute, None)
         self._display = None
+        self._desktop_surfaces = None
+        self._surface_shell_identity = None
         if self._runtime is not None:
             try:
                 shutil.rmtree(self._runtime)
@@ -652,6 +824,14 @@ class LiveXorgHarnessPort:
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
             raise HarnessError("installed_executable_set_invalid")
         executables = self._config.installed_executables
+        configuration_directory = self._runtime / "config" / "prismdrake"
+        try:
+            configuration_directory.mkdir(mode=0o700)
+            configuration = configuration_directory / "config.toml"
+            configuration.write_text(_session_config(), encoding="ascii")
+            configuration.chmod(0o600)
+        except OSError as error:
+            raise HarnessError("private_session_configuration_failed") from error
         environment = self._x11_environment()
         environment.update(
             {
@@ -749,6 +929,139 @@ class LiveXorgHarnessPort:
         ):
             raise HarnessError("prismdrake_session_runtime_invalid")
         return True
+
+    def _require_desktop_wallpaper_surfaces(self) -> None:
+        self._require_topology(two_outputs=True)
+        shell = self._require_surface_shell()
+        desktops = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DESKTOP", shell)
+        expected = {
+            WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+            WindowGeometry(OUTPUT_WIDTH, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+        }
+        if len(desktops) != 2 or set(desktops.values()) != expected:
+            raise HarnessError("desktop_wallpaper_surface_invalid")
+        # The production readiness byte is emitted only after wallpaper,
+        # settings, output, and desktop generations align. Requiring that
+        # marker together with two mapped shell-owned DesktopWallpaper views
+        # observes the solid fallback on each output without capturing pixels.
+        self._desktop_surfaces = desktops
+        self._surface_shell_identity = shell
+
+    def _require_panel_surfaces(self) -> None:
+        if self._desktop_surfaces is None or self._surface_shell_identity is None:
+            raise HarnessError("desktop_surface_observation_missing")
+        self._require_topology(two_outputs=True)
+        shell = self._require_surface_shell()
+        if shell != self._surface_shell_identity:
+            raise HarnessError("surface_shell_identity_changed")
+        desktops = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DESKTOP", shell)
+        if desktops != self._desktop_surfaces:
+            raise HarnessError("desktop_surface_epoch_changed")
+        panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
+        expected_geometries = {
+            WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT),
+            WindowGeometry(
+                OUTPUT_WIDTH,
+                OUTPUT_HEIGHT - PANEL_HEIGHT,
+                OUTPUT_WIDTH,
+                PANEL_HEIGHT,
+            ),
+        }
+        if len(panels) != 2 or set(panels.values()) != expected_geometries:
+            raise HarnessError("panel_surface_invalid")
+        for window, geometry in panels.items():
+            strut = self._window_cardinals(window, b"_NET_WM_STRUT", 4)
+            partial = self._window_cardinals(window, b"_NET_WM_STRUT_PARTIAL", 12)
+            if strut != (0, 0, 0, PANEL_HEIGHT) or partial != (
+                0,
+                0,
+                0,
+                PANEL_HEIGHT,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                geometry.x,
+                geometry.x + geometry.width - 1,
+            ):
+                raise HarnessError("panel_strut_invalid")
+
+    def _require_surface_shell(self) -> ProcessIdentity:
+        if self._session is None or self._session.poll() is not None:
+            raise HarnessError("prismdrake_session_not_started")
+        if self._session_marker_state() != "ready":
+            raise HarnessError("prismdrake_session_readiness_lost")
+        executable = self._config.installed_executables.get("prismdrake-shell")
+        if executable is None:
+            raise HarnessError("surface_shell_identity_invalid")
+        identities = self._operations.descendants(self._session, executable)
+        if len(identities) != 1:
+            raise HarnessError("surface_shell_identity_invalid")
+        return identities[0]
+
+    def _observe_surface_windows(
+        self, window_type: bytes, shell: ProcessIdentity
+    ) -> dict[int, WindowGeometry]:
+        result = self._run_x11(
+            (str(self._config.xprop), "-root", "_NET_CLIENT_LIST_STACKING")
+        )
+        if result.returncode != 0:
+            raise HarnessError("x11_window_list_query_failed")
+        windows = parse_window_ids(result.stdout, b"_NET_CLIENT_LIST_STACKING")
+        observed: dict[int, WindowGeometry] = {}
+        expected_type = b"_NET_WM_WINDOW_TYPE(ATOM) = " + window_type + b"\n"
+        valid_type = re.compile(
+            rb"_NET_WM_WINDOW_TYPE\(ATOM\) = _NET_WM_WINDOW_TYPE_[A-Z_]{1,64}"
+            rb"(?:, _NET_WM_WINDOW_TYPE_[A-Z_]{1,64})*\n"
+        )
+        for window in windows:
+            payload = self._window_property(window, b"_NET_WM_WINDOW_TYPE")
+            if payload != expected_type:
+                if valid_type.fullmatch(payload) is None:
+                    raise HarnessError("x11_window_type_invalid")
+                continue
+            owner = self._window_cardinals(window, b"_NET_WM_PID", 1)
+            if owner != (shell.pid,):
+                raise HarnessError("surface_window_owner_invalid")
+            hints = self._window_property(window, b"WM_HINTS")
+            focus_lines = [
+                line
+                for line in hints.splitlines()
+                if re.fullmatch(
+                    rb"[ \t]+Client accepts input or input focus: (?:True|False)",
+                    line,
+                )
+            ]
+            if len(focus_lines) != 1 or not focus_lines[0].endswith(b": False"):
+                raise HarnessError("surface_window_focus_policy_invalid")
+            geometry_result = self._run_x11(
+                (str(self._config.xwininfo), "-id", f"0x{window:x}", "-stats")
+            )
+            if geometry_result.returncode != 0:
+                raise HarnessError("x11_window_geometry_query_failed")
+            observed[window] = parse_window_geometry(geometry_result.stdout)
+        return observed
+
+    def _window_property(self, window: int, property_name: bytes) -> bytes:
+        try:
+            decoded = property_name.decode("ascii")
+        except UnicodeDecodeError as error:
+            raise HarnessError("x11_property_name_invalid") from error
+        result = self._run_x11(
+            (str(self._config.xprop), "-id", f"0x{window:x}", decoded)
+        )
+        if result.returncode != 0:
+            raise HarnessError("x11_window_property_query_failed")
+        return result.stdout
+
+    def _window_cardinals(
+        self, window: int, property_name: bytes, count: int
+    ) -> tuple[int, ...]:
+        return parse_cardinals(
+            self._window_property(window, property_name), property_name, count
+        )
 
     def _wait_for_xorg(self) -> bool:
         deadline = self._operations.monotonic() + self._config.readiness_timeout
