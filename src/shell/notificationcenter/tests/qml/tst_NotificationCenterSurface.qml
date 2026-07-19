@@ -140,15 +140,14 @@ TestCase {
         themeGeneration.notification.reducedMotion = true
         themeGeneration.notification.minimumTargetSize = 56
         themeGeneration.notification.bodyFontPixels = 22
-        wait(0)
 
         compare(center.LayoutMirroring.enabled, true)
         compare(transients.LayoutMirroring.enabled, true)
         const dnd = findChild(center, "notificationCenterDoNotDisturb")
         const clear = findChild(center, "notificationCenterClearHistory")
         const card = findChild(center, "notificationCardBackground").parent
-        verify(dnd.height >= 56)
-        verify(clear.height >= 56)
+        tryVerify(() => dnd.height >= 56)
+        tryVerify(() => clear.height >= 56)
         compare(card.effectiveMotionDuration, 0)
         compare(card.tokens.highContrast, true)
         compare(card.tokens.opaqueFallbackActive, true)
