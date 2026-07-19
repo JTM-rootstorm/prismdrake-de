@@ -873,6 +873,11 @@ control::ShellRequestFailure Pd2ShellRuntime::focusPanel(const composition::Outp
     return control::ShellRequestFailure::none;
 }
 
+control::ShellRequestFailure Pd2ShellRuntime::releasePanelKeyboardAccess() {
+    return panels_->releaseKeyboardAccess() ? control::ShellRequestFailure::none
+                                            : control::ShellRequestFailure::internal;
+}
+
 QScreen *Pd2ShellRuntime::screen(std::string_view outputName) {
     const auto screens = QGuiApplication::screens();
     const auto found = std::ranges::find_if(screens, [outputName](QScreen *value) {

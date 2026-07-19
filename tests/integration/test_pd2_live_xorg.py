@@ -1504,10 +1504,23 @@ class LivePortTests(unittest.TestCase):
             port.cleanup("installed_workflow"), Observation(True, True)
         )
         self.assertEqual(workflow.calls, list(LIFECYCLE_STEP_CATEGORIES))
-        self.assertEqual(
-            port.cleanup("installed_workflow"), Observation(True, True)
-        )
-        self.assertEqual(workflow.calls, list(LIFECYCLE_STEP_CATEGORIES))
+
+    def test_lifecycle_fixture_dismisses_quick_settings_before_launcher(self) -> None:
+        port = LiveXorgHarnessPort(config(installed_paths()), FakeOperations())
+        with patch.object(port, "_xdotool") as xdotool, patch.object(
+            port, "_wait_accessible_absent"
+        ) as wait_absent, patch.object(
+            port,
+            "_invoke_shellctl",
+            side_effect=HarnessError("stop_after_dismissal"),
+        ):
+            with self.assertRaisesRegex(HarnessError, "^stop_after_dismissal$"):
+                port.prepare_survival_fixture()
+
+        xdotool.assert_called_once_with("key", "--clearmodifiers", "Escape")
+        selector, timeout_error = wait_absent.call_args.args
+        self.assertEqual((selector.name, selector.role), ("Quick settings", "pane"))
+        self.assertEqual(timeout_error, "lifecycle_quick_settings_dismissal_timeout")
 
     def test_starts_real_adapter_commands_and_observes_two_output_topology(self) -> None:
         operations = FakeOperations()

@@ -260,6 +260,17 @@ Result<void> ShellRuntimeComposition::escape() {
 
 control::ShellRequestFailure
 ShellRuntimeComposition::applyPresentation(const composition::CompositionTransition &transition) {
+    const bool focusesSingleton = std::ranges::any_of(
+        transition.intents(), [](const composition::CompositionIntent &intent) {
+            const auto *focus = std::get_if<composition::FocusSurfaceIntent>(&intent);
+            return focus != nullptr && focus->family != composition::SurfaceFamily::actionMenu;
+        });
+    if (focusesSingleton) {
+        const auto released = presentation_port_->releasePanelKeyboardAccess();
+        if (released != control::ShellRequestFailure::none) {
+            return released;
+        }
+    }
     if (transition.disposition() == composition::TransitionDisposition::blockedByHigherPriority) {
         const auto focused = presentation_port_->apply(transition.intents());
         return focused == control::ShellRequestFailure::none ? control::ShellRequestFailure::busy

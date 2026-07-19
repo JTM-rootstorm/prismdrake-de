@@ -49,6 +49,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     apply(std::span<const composition::CompositionIntent> intents) override;
     [[nodiscard]] control::ShellRequestFailure
     focusPanel(const composition::OutputName &output) override;
+    [[nodiscard]] control::ShellRequestFailure releasePanelKeyboardAccess() override;
 
   private:
     explicit Pd2ShellRuntime(ShellRuntimeOptions options);

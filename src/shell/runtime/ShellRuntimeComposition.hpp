@@ -26,6 +26,7 @@ class ShellRuntimePresentationPort {
     apply(std::span<const composition::CompositionIntent> intents) = 0;
     [[nodiscard]] virtual control::ShellRequestFailure
     focusPanel(const composition::OutputName &output) = 0;
+    [[nodiscard]] virtual control::ShellRequestFailure releasePanelKeyboardAccess() = 0;
 };
 
 /// Display-free runtime owner of output placement, authority epochs, popup routing, and

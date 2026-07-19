@@ -70,6 +70,7 @@ class TopologyHarness final {
 class PresentationPort final : public ShellRuntimePresentationPort {
   public:
     [[nodiscard]] ShellRequestFailure apply(std::span<const CompositionIntent> intents) override {
+        events.emplace_back("apply");
         batches.emplace_back(intents.begin(), intents.end());
         return failure;
     }
@@ -79,10 +80,49 @@ class PresentationPort final : public ShellRuntimePresentationPort {
         return failure;
     }
 
+    [[nodiscard]] ShellRequestFailure releasePanelKeyboardAccess() override {
+        events.emplace_back("release_panel_keyboard");
+        ++panelKeyboardReleases;
+        return releaseFailure;
+    }
+
     ShellRequestFailure failure{ShellRequestFailure::none};
+    ShellRequestFailure releaseFailure{ShellRequestFailure::none};
     std::vector<std::vector<CompositionIntent>> batches;
+    std::vector<std::string> events;
+    std::size_t panelKeyboardReleases{0U};
     std::optional<std::string> focusedPanel;
 };
+
+TEST(ShellRuntimeCompositionTest, ReleasesPanelKeyboardBeforeFocusedSingletonPresentation) {
+    PresentationPort port;
+    ShellRuntimeComposition runtime{port};
+    TopologyHarness topology;
+
+    ASSERT_TRUE(runtime.observeOutputs(topology.observe(1U)));
+    ASSERT_TRUE(runtime.observeSettingsOwner(authority(10U, 1U)));
+    port.events.clear();
+    port.panelKeyboardReleases = 0U;
+
+    EXPECT_EQ(runtime.request(control::ShellAction::open_quick_settings, "LEFT-1"),
+              ShellRequestFailure::none);
+    EXPECT_EQ(port.events,
+              (std::vector<std::string>{"release_panel_keyboard", "apply"}));
+    EXPECT_EQ(port.panelKeyboardReleases, 1U);
+
+    PresentationPort rejecting;
+    ShellRuntimeComposition rejectedRuntime{rejecting};
+    ASSERT_TRUE(rejectedRuntime.observeOutputs(topology.observe(2U)));
+    ASSERT_TRUE(rejectedRuntime.observeSettingsOwner(authority(11U, 1U)));
+    rejecting.releaseFailure = ShellRequestFailure::internal;
+    rejecting.events.clear();
+    rejecting.batches.clear();
+    EXPECT_EQ(rejectedRuntime.request(control::ShellAction::open_quick_settings, "LEFT-1"),
+              ShellRequestFailure::internal);
+    EXPECT_EQ(rejecting.events,
+              (std::vector<std::string>{"release_panel_keyboard"}));
+    EXPECT_TRUE(rejecting.batches.empty());
+}
 
 TEST(ShellRuntimeCompositionTest, RoutesShell1AndQuickSettingsThroughOneOutputGeneration) {
     PresentationPort port;

@@ -2735,6 +2735,11 @@ class LiveXorgHarnessPort:
     def prepare_survival_fixture(self) -> LifecycleWindowAuthorityObservation:
         self._controlled_windows.clear()
         self._controlled_processes.clear()
+        self._xdotool("key", "--clearmodifiers", "Escape")
+        self._wait_accessible_absent(
+            ControlSelector("Quick settings", "pane"),
+            "lifecycle_quick_settings_dismissal_timeout",
+        )
         self._invoke_shellctl("launcher", "toggle")
         self._focus_launcher_result("lifecycle_survival_launcher_timeout")
         self._invoke_accessible(
