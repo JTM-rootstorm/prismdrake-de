@@ -2069,6 +2069,7 @@ class LiveXorgHarnessPort:
             self._replay_conflicting_notification_owner()
         elif identifier == "lose_x_server":
             self._prepare_restart_state()
+            previous_shell = self._component_identity("prismdrake-shell")
             if self._xorg is None or not self._operations.stop(
                 self._xorg, self._config.stop_timeout
             ):
@@ -2077,6 +2078,7 @@ class LiveXorgHarnessPort:
             result = self._run_x11((str(self._config.xrandr), "--query"))
             if result.returncode == 0:
                 raise HarnessError("x_server_loss_unobserved")
+            self._wait_for_x_server_loss_response(previous_shell)
             self.cleanup("x_server_loss_fatal_cleanup")
         elif identifier == "enter_and_exit_safe_mode":
             self._start_environment(two_outputs=True)
@@ -2124,11 +2126,30 @@ class LiveXorgHarnessPort:
         except Exception:
             raise HarnessError("live_malformed_notification_history_failed") from None
 
+    def _wait_for_x_server_loss_response(self, previous_shell: ProcessIdentity) -> None:
+        if self._session is None:
+            raise HarnessError("prismdrake_session_not_started")
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._session.poll() is not None:
+                return
+            try:
+                shell = self._component_identity("prismdrake-shell")
+            except HarnessError as error:
+                if str(error) == "component_identity_invalid":
+                    return
+                raise
+            if shell != previous_shell:
+                return
+            self._operations.pause(0.01)
+        raise HarnessError("x_server_loss_session_response_timeout")
+
     def _replay_conflicting_notification_owner(self) -> None:
         try:
             self._start_environment(two_outputs=True)
             self._start_private_bus()
             self._start_notification_conflict_siblings()
+            siblings_before = self._notification_conflict_sibling_identities()
             executable = self._config.installed_executables.get("prismdrake-notifyd")
             if executable is None:
                 raise HarnessError("component_identity_unavailable")
@@ -2139,6 +2160,26 @@ class LiveXorgHarnessPort:
                 self._notification_conflict_sibling_identities,
             )
             validate_failure_evidence(evidence)
+            if self._notification_conflict_sibling_identities() != siblings_before:
+                raise HarnessError("notification_failure_sibling_changed")
+            shell_pid, shell_start_time = siblings_before["prismdrake-shell"]
+            self._require_failure_replay_surfaces(
+                {
+                    WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+                    WindowGeometry(OUTPUT_WIDTH, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+                },
+                {
+                    WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT),
+                    WindowGeometry(
+                        OUTPUT_WIDTH,
+                        OUTPUT_HEIGHT - PANEL_HEIGHT,
+                        OUTPUT_WIDTH,
+                        PANEL_HEIGHT,
+                    ),
+                },
+                shell=ProcessIdentity(shell_pid, shell_start_time),
+            )
+            self._invoke_shellctl("notifications", "open")
         except Exception:
             raise HarnessError("live_notification_owner_conflict_failed") from None
 
@@ -4713,6 +4754,8 @@ class LiveXorgHarnessPort:
         self,
         expected_desktops: set[WindowGeometry],
         expected_panels: set[WindowGeometry],
+        *,
+        shell: ProcessIdentity | None = None,
     ) -> None:
         """Require the shell to republish the exact post-mutation output surfaces."""
 
@@ -4722,7 +4765,7 @@ class LiveXorgHarnessPort:
             or len(expected_desktops) > 2
         ):
             raise HarnessError("failure_surface_contract_invalid")
-        shell = self._require_surface_shell()
+        shell = shell or self._require_surface_shell()
         deadline = self._operations.monotonic() + self._config.readiness_timeout
         desktops: dict[int, WindowGeometry] = {}
         panels: dict[int, WindowGeometry] = {}

@@ -213,6 +213,7 @@ class FakeOperations:
         self.unrelated_replacement: str | None = None
         self.xorg_stopped = False
         self.xorg_query_survives_stop = False
+        self.xorg_loss_publishes_shell_response = True
         self.shell_crashes = 0
         self.safe_mode_published = True
         self.events: list[tuple[str, object]] = []
@@ -249,6 +250,8 @@ class FakeOperations:
                 marker = instance / self.session_marker
                 marker.touch(mode=0o600)
                 marker.chmod(0o600)
+        if argv and Path(argv[0]).name == "prismdrake-shell":
+            self.surface_owner = child.pid
         return child
 
     def run(
@@ -435,6 +438,8 @@ class FakeOperations:
                 self.bus_socket_identity = None
             elif executable == "Xorg":
                 self.xorg_stopped = True
+                if self.xorg_loss_publishes_shell_response:
+                    self.component_start_times["prismdrake-shell"] += 1
             child.returncode = 0
         return self.stop_succeeds
 
@@ -3052,6 +3057,19 @@ class LivePortTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(HarnessError, "^x_server_loss_unobserved$"):
+            port.run_step("failure_replay", "lose_x_server")
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_x_server_loss_requires_a_bounded_session_or_shell_response(self) -> None:
+        operations = FakeOperations()
+        operations.xorg_loss_publishes_shell_response = False
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+
+        with self.assertRaisesRegex(
+            HarnessError, "^x_server_loss_session_response_timeout$"
+        ):
             port.run_step("failure_replay", "lose_x_server")
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
 
