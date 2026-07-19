@@ -501,6 +501,33 @@ TEST(ApplicationRootMonitorTest, DiscardsBlockedStaleCollectionBeforeMutatingOwn
     EXPECT_EQ(degraded.count(), 0);
 }
 
+TEST(ApplicationRootMonitorTest, CoalescesRecoveryStormToActiveAndLatestCollection) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const auto root = temporary.filePath(QStringLiteral("applications")).toStdString();
+    ASSERT_TRUE(QDir{}.mkpath(QString::fromStdString(root)));
+    auto state = std::make_shared<BlockingCollectorState>();
+    state->results = {{{{root}}, true}, {{{root}}, false}};
+    auto monitor = ApplicationRootMonitor::create(
+        {{{root}}}, {8U, std::chrono::milliseconds{10}, std::chrono::milliseconds{10}}, nullptr,
+        std::make_unique<BlockingWatchCandidateCollector>(state));
+    ASSERT_TRUE(monitor);
+    QTRY_COMPARE_WITH_TIMEOUT(collectorCalls(state), 1U, 1000);
+
+    for (std::size_t request = 0U; request < 10'000U; ++request) {
+        monitor.value()->requestRecovery();
+    }
+    EXPECT_EQ(collectorCalls(state), 1U);
+
+    releaseCollectorCall(state, 1U);
+    QTRY_COMPARE_WITH_TIMEOUT(collectorCalls(state), 2U, 1000);
+    releaseCollectorCall(state, 2U);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.value()->watchedPathCount(), 1, 1000);
+    QTest::qWait(50);
+    EXPECT_EQ(collectorCalls(state), 2U);
+    EXPECT_FALSE(monitor.value()->degraded());
+}
+
 TEST(ApplicationRootMonitorTest, PerformsExactlyThreeAutomaticRecoveryAttempts) {
     QTemporaryDir temporary;
     ASSERT_TRUE(temporary.isValid());

@@ -244,8 +244,10 @@ class ApplicationRootMonitor::CollectionWorker final {
             return;
         }
         latest_generation_.store(generation, std::memory_order_release);
-        static_cast<void>(QMetaObject::invokeMethod(
-            context_, [this, generation] { process(generation); }, Qt::QueuedConnection));
+        if (dispatch_scheduled_.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        scheduleDrain();
     }
 
     void stop() noexcept {
@@ -262,6 +264,30 @@ class ApplicationRootMonitor::CollectionWorker final {
     }
 
   private:
+    void scheduleDrain() {
+        if (!QMetaObject::invokeMethod(context_, [this] { drain(); }, Qt::QueuedConnection)) {
+            dispatch_scheduled_.store(false, std::memory_order_release);
+        }
+    }
+
+    void drain() {
+        Q_ASSERT(QThread::currentThread() == context_->thread());
+        const auto generation = latest_generation_.load(std::memory_order_acquire);
+        process(generation);
+        dispatch_scheduled_.store(false, std::memory_order_release);
+        if (stopping_.load(std::memory_order_acquire) ||
+            latest_generation_.load(std::memory_order_acquire) == generation) {
+            return;
+        }
+
+        bool expected = false;
+        if (dispatch_scheduled_.compare_exchange_strong(
+                expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+            // Yield to the worker event loop while retaining exactly one latest successor.
+            scheduleDrain();
+        }
+    }
+
     void process(std::uint64_t generation) {
         Q_ASSERT(QThread::currentThread() == context_->thread());
         const auto stopToken = stop_source_.get_token();
@@ -353,6 +379,7 @@ class ApplicationRootMonitor::CollectionWorker final {
     std::unique_ptr<ApplicationPathWatcher> watcher_;
     std::stop_source stop_source_;
     std::atomic<std::uint64_t> latest_generation_{0U};
+    std::atomic_bool dispatch_scheduled_{false};
     std::atomic_bool stopping_{false};
     QThread thread_;
     QObject *context_{nullptr};
