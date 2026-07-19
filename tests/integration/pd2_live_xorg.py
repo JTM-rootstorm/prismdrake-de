@@ -4139,13 +4139,13 @@ class LiveXorgHarnessPort:
     def _configure_primary(self) -> None:
         self._xrandr(
             "--output", PRIMARY_OUTPUT, "--mode", OUTPUT_MODE,
-            "--scale", "1x1", "--pos", "0x0", "--primary",
+            "--pos", "0x0", "--primary",
         )
 
     def _enable_secondary(self) -> None:
         self._xrandr(
             "--output", SECONDARY_OUTPUT, "--mode", OUTPUT_MODE,
-            "--scale", "1x1", "--pos", "1600x0",
+            "--pos", "1600x0",
         )
 
     def _query_outputs(self) -> dict[str, XrandrOutput]:

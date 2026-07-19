@@ -1442,9 +1442,18 @@ class LivePortTests(unittest.TestCase):
         self.assertEqual(openbox_env["DISPLAY"], ":140")
         self.assertTrue(
             any(
-                argv[-8:] == (
+                argv[-7:] == (
+                    "--output", "DUMMY0", "--mode", "1600x900",
+                    "--pos", "0x0", "--primary",
+                )
+                for argv, _env in operations.run_calls
+            )
+        )
+        self.assertTrue(
+            any(
+                argv[-6:] == (
                     "--output", "DUMMY1", "--mode", "1600x900",
-                    "--scale", "1x1", "--pos", "1600x0",
+                    "--pos", "1600x0",
                 )
                 for argv, _env in operations.run_calls
             )
