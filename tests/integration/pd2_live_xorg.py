@@ -20,11 +20,18 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation
+from pd2_live_atspi import (
+    ControlSelector,
+    LiveAtspiError,
+    invoke_reviewed_action,
+    observe_showing_control,
+)
 
 
 MAX_COMMAND_OUTPUT_BYTES = 65_536
@@ -38,6 +45,10 @@ OUTPUT_HEIGHT = 900
 PANEL_HEIGHT = 48
 PRIMARY_OUTPUT = "DUMMY0"
 SECONDARY_OUTPUT = "DUMMY1"
+CONTROLLED_APPLICATION_NAME = "Prismdrake Controlled Application"
+CONTROLLED_DESKTOP_FILE = "prismdrake-controlled.desktop"
+CONTROLLED_WINDOW_ONE = "Prismdrake Demo App One"
+CONTROLLED_WINDOW_TWO = "Prismdrake Demo App Two"
 
 
 @dataclass(frozen=True)
@@ -88,6 +99,12 @@ class Operations(Protocol):
         self, child: ChildProcess, executable: Path
     ) -> Sequence[ProcessIdentity]: ...
 
+    def identify_pid(self, pid: int, executable: Path) -> ProcessIdentity | None: ...
+
+    def stop_identity(
+        self, identity: ProcessIdentity, executable: Path, timeout: float
+    ) -> bool: ...
+
     def socket_identity(self, path: Path) -> tuple[int, int] | None: ...
 
     def socket_connectable(self, path: Path) -> bool: ...
@@ -95,6 +112,109 @@ class Operations(Protocol):
     def monotonic(self) -> float: ...
 
     def pause(self, duration: float) -> None: ...
+
+
+class AccessibilityOperations(Protocol):
+    """Bounded shell-owned AT-SPI observation and action boundary."""
+
+    def observe(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> bool: ...
+
+    def invoke(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> bool: ...
+
+    def reject_stale_action(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> bool: ...
+
+
+class SystemAccessibilityOperations:
+    """Real AT-SPI adapter that returns only fixed categorical outcomes."""
+
+    def __init__(self) -> None:
+        self._atspi: object | None = None
+
+    @staticmethod
+    @contextmanager
+    def _environment(environment: Mapping[str, str]):
+        if not all(
+            isinstance(environment.get(name), str) and environment[name]
+            for name in ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
+        ):
+            raise HarnessError("live_atspi_environment_invalid")
+        selected = {
+            name: environment[name]
+            for name in ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
+        }
+        previous = {name: os.environ.get(name) for name in selected}
+        try:
+            os.environ.update(selected)
+            yield
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+    def _binding(self) -> object:
+        if self._atspi is None:
+            try:
+                import gi
+
+                gi.require_version("Atspi", "2.0")
+                from gi.repository import Atspi
+
+                Atspi.init()
+            except Exception as error:
+                raise HarnessError("live_atspi_unavailable") from error
+            self._atspi = Atspi
+        return self._atspi
+
+    @staticmethod
+    def _owner(shell_pid: int):
+        def matches(application: object) -> bool:
+            return application.get_process_id() == shell_pid
+
+        return matches
+
+    def observe(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> bool:
+        try:
+            with self._environment(environment):
+                observe_showing_control(
+                    self._binding(), self._owner(shell_pid), selector
+                )
+        except LiveAtspiError:
+            return False
+        return True
+
+    def invoke(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> bool:
+        try:
+            with self._environment(environment):
+                invoke_reviewed_action(
+                    self._binding(), self._owner(shell_pid), selector
+                )
+        except LiveAtspiError:
+            return False
+        return True
+
+    def reject_stale_action(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> bool:
+        try:
+            with self._environment(environment):
+                invoke_reviewed_action(
+                    self._binding(), self._owner(shell_pid), selector
+                )
+        except LiveAtspiError as error:
+            return str(error) == "atspi_control_identity"
+        return False
 
 
 class SystemOperations:
@@ -216,6 +336,42 @@ class SystemOperations:
             if self._executable_matches(pid, executable):
                 matches.append(ProcessIdentity(pid, start_time))
         return tuple(sorted(matches, key=lambda identity: identity.pid))
+
+    def identify_pid(self, pid: int, executable: Path) -> ProcessIdentity | None:
+        record = self._process_record(pid)
+        if record is None or not self._executable_matches(pid, executable):
+            return None
+        return ProcessIdentity(pid, record[1])
+
+    def stop_identity(
+        self, identity: ProcessIdentity, executable: Path, timeout: float
+    ) -> bool:
+        if self.identify_pid(identity.pid, executable) != identity:
+            return True
+        try:
+            os.kill(identity.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.identify_pid(identity.pid, executable) != identity:
+                return True
+            time.sleep(0.01)
+        if self.identify_pid(identity.pid, executable) != identity:
+            return True
+        try:
+            os.kill(identity.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        while time.monotonic() < deadline + 0.25:
+            if self.identify_pid(identity.pid, executable) != identity:
+                return True
+            time.sleep(0.01)
+        return False
 
     def socket_identity(self, path: Path) -> tuple[int, int] | None:
         try:
@@ -479,7 +635,7 @@ icon_theme = "hicolor"
 edge = "bottom"
 size_px = 48
 autohide = "never"
-grouping = "when_full"
+grouping = "always"
 clock_format = "locale"
 output_policy = "all"
 outputs = []
@@ -533,6 +689,8 @@ class LiveXorgConfig:
     xwininfo: Path
     dbus_daemon: Path
     installed_executables: Mapping[str, Path]
+    xdotool: Path | None = None
+    controlled_window_fixture: Path | None = None
     first_display: int = 120
     last_display: int = 159
     readiness_timeout: float = 8.0
@@ -594,6 +752,17 @@ class LiveXorgHarnessPort:
         ("installed_workflow", "verify_component_readiness"),
         ("installed_workflow", "verify_desktop_wallpaper_both_outputs"),
         ("installed_workflow", "verify_panel_policy_both_outputs"),
+        ("installed_workflow", "invoke_launcher_through_shellctl"),
+        ("installed_workflow", "search_controlled_application"),
+        ("installed_workflow", "pin_controlled_application"),
+        ("installed_workflow", "launch_controlled_application"),
+        ("installed_workflow", "launch_second_window"),
+        ("installed_workflow", "verify_task_grouping"),
+        ("installed_workflow", "activate_one_window"),
+        ("installed_workflow", "minimize_one_window"),
+        ("installed_workflow", "reactivate_one_window"),
+        ("installed_workflow", "close_both_windows_through_panel"),
+        ("installed_workflow", "verify_authoritative_task_removal"),
         ("failure_replay", "two_same_scale_outputs_at_startup"),
         ("failure_replay", "add_second_output_after_startup"),
         ("failure_replay", "remove_primary_output"),
@@ -604,10 +773,14 @@ class LiveXorgHarnessPort:
     }
 
     def __init__(
-        self, config: LiveXorgConfig, operations: Operations | None = None
+        self,
+        config: LiveXorgConfig,
+        operations: Operations | None = None,
+        accessibility: AccessibilityOperations | None = None,
     ) -> None:
         self._config = config
         self._operations = operations or SystemOperations()
+        self._accessibility = accessibility or SystemAccessibilityOperations()
         self._runtime: Path | None = None
         self._display: str | None = None
         self._xorg: ChildProcess | None = None
@@ -618,6 +791,8 @@ class LiveXorgHarnessPort:
         self._bus_socket_identity: tuple[int, int] | None = None
         self._desktop_surfaces: dict[int, WindowGeometry] | None = None
         self._surface_shell_identity: ProcessIdentity | None = None
+        self._controlled_windows: dict[str, int] = {}
+        self._controlled_processes: dict[str, ProcessIdentity] = {}
 
     def installed_executable_hashes(self) -> Mapping[str, str]:
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
@@ -650,6 +825,113 @@ class LiveXorgHarnessPort:
             self._require_desktop_wallpaper_surfaces()
         elif identifier == "verify_panel_policy_both_outputs":
             self._require_panel_surfaces()
+        elif identifier == "invoke_launcher_through_shellctl":
+            self._invoke_shellctl("launcher", "toggle")
+            self._wait_accessible(
+                ControlSelector("Search applications", "editable_text", require_focused=True),
+                "launcher_search_focus_timeout",
+            )
+        elif identifier == "search_controlled_application":
+            self._xdotool("type", "--clearmodifiers", "--delay", "0", CONTROLLED_APPLICATION_NAME)
+            self._wait_accessible(
+                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
+                "controlled_launcher_result_timeout",
+            )
+        elif identifier == "pin_controlled_application":
+            self._xdotool("key", "Down")
+            self._xdotool("key", "shift+F10")
+            self._invoke_accessible(ControlSelector("Pin to panel", "menu_item", "Press"))
+            self._xdotool("key", "shift+F10")
+            self._wait_accessible(
+                ControlSelector("Unpin from panel", "menu_item"),
+                "controlled_pin_publication_timeout",
+            )
+            self._xdotool("key", "Escape")
+        elif identifier == "launch_controlled_application":
+            self._invoke_accessible(
+                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button", "Press")
+            )
+            self._controlled_windows[CONTROLLED_WINDOW_ONE] = self._wait_controlled_window(
+                CONTROLLED_WINDOW_ONE
+            )
+            self._record_controlled_process(CONTROLLED_WINDOW_ONE)
+        elif identifier == "launch_second_window":
+            self._invoke_shellctl("launcher", "toggle")
+            self._wait_accessible(
+                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
+                "controlled_launcher_result_timeout",
+            )
+            self._xdotool("key", "Down")
+            self._xdotool("key", "shift+F10")
+            self._invoke_accessible(ControlSelector("Second window", "menu_item", "Press"))
+            self._controlled_windows[CONTROLLED_WINDOW_TWO] = self._wait_controlled_window(
+                CONTROLLED_WINDOW_TWO
+            )
+            self._record_controlled_process(CONTROLLED_WINDOW_TWO)
+            if len(set(self._controlled_windows.values())) != 2:
+                raise HarnessError("controlled_window_identity_collision")
+        elif identifier == "verify_task_grouping":
+            self._invoke_accessible(
+                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button", "Press")
+            )
+            for title in (CONTROLLED_WINDOW_ONE, CONTROLLED_WINDOW_TWO):
+                self._wait_accessible(
+                    ControlSelector(f"Activate {title}", "menu_item"),
+                    "controlled_task_group_timeout",
+                )
+        elif identifier == "activate_one_window":
+            self._invoke_accessible(
+                ControlSelector(f"Activate {CONTROLLED_WINDOW_ONE}", "menu_item", "Press")
+            )
+            self._wait_window_active(CONTROLLED_WINDOW_ONE, minimized=False)
+        elif identifier == "minimize_one_window":
+            self._open_controlled_group()
+            self._invoke_accessible(
+                ControlSelector(f"Minimize {CONTROLLED_WINDOW_ONE}", "menu_item", "Press")
+            )
+            self._wait_window_active(CONTROLLED_WINDOW_ONE, minimized=True)
+        elif identifier == "reactivate_one_window":
+            self._open_controlled_group()
+            self._invoke_accessible(
+                ControlSelector(f"Activate {CONTROLLED_WINDOW_ONE}", "menu_item", "Press")
+            )
+            self._wait_window_active(CONTROLLED_WINDOW_ONE, minimized=False)
+        elif identifier == "close_both_windows_through_panel":
+            self._open_controlled_group()
+            self._invoke_accessible(
+                ControlSelector(f"Close {CONTROLLED_WINDOW_TWO}", "menu_item", "Press")
+            )
+            self._wait_window_absent(CONTROLLED_WINDOW_TWO)
+            self._invoke_shellctl("panel", "focus")
+            self._wait_accessible(
+                ControlSelector("Open applications", "push_button", require_focused=True),
+                "panel_focus_timeout",
+            )
+            self._xdotool("key", "Tab")
+            self._wait_accessible(
+                ControlSelector(
+                    CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
+                ),
+                "controlled_task_focus_timeout",
+            )
+            self._xdotool("key", "shift+F10")
+            self._invoke_accessible(
+                ControlSelector(
+                    f"Close {CONTROLLED_APPLICATION_NAME}", "menu_item", "Press"
+                )
+            )
+            self._wait_window_absent(CONTROLLED_WINDOW_ONE)
+        elif identifier == "verify_authoritative_task_removal":
+            for title in (CONTROLLED_WINDOW_ONE, CONTROLLED_WINDOW_TWO):
+                if self._controlled_window_ids(title):
+                    raise HarnessError("controlled_task_removal_timeout")
+            if not self._reject_stale_accessible(
+                ControlSelector(
+                    f"Close {CONTROLLED_APPLICATION_NAME}", "menu_item", "Press"
+                )
+            ):
+                raise HarnessError("stale_task_action_accepted")
+            self._controlled_windows.clear()
         elif identifier == "two_same_scale_outputs_at_startup":
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
@@ -733,6 +1015,15 @@ class LiveXorgHarnessPort:
     def cleanup(self, phase: str) -> Observation:
         del phase
         clean = True
+        fixture = self._config.controlled_window_fixture
+        if fixture is not None:
+            for identity in self._controlled_processes.values():
+                clean = (
+                    self._operations.stop_identity(
+                        identity, fixture, self._config.stop_timeout
+                    )
+                    and clean
+                )
         for attribute in ("_session", "_bus", "_openbox", "_xorg"):
             child = getattr(self, attribute)
             if child is not None:
@@ -743,6 +1034,8 @@ class LiveXorgHarnessPort:
         self._bus_socket_identity = None
         self._desktop_surfaces = None
         self._surface_shell_identity = None
+        self._controlled_windows.clear()
+        self._controlled_processes.clear()
         if self._runtime is not None:
             try:
                 shutil.rmtree(self._runtime)
@@ -786,6 +1079,7 @@ class LiveXorgHarnessPort:
         for directory in ("home", "config", "cache", "data", "state"):
             path = self._runtime / directory
             path.mkdir(mode=0o700)
+        self._write_controlled_desktop_entry()
         config_path = self._runtime / "xorg.conf"
         config_path.write_text(_xorg_config(), encoding="ascii")
         config_path.chmod(0o600)
@@ -842,6 +1136,207 @@ class LiveXorgHarnessPort:
             )
         return env
 
+    def _write_controlled_desktop_entry(self) -> None:
+        fixture = self._config.controlled_window_fixture
+        if fixture is None:
+            return
+        try:
+            metadata = fixture.lstat()
+        except OSError as error:
+            raise HarnessError("controlled_fixture_unavailable") from error
+        native = os.fspath(fixture)
+        if (
+            not fixture.is_absolute()
+            or stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_mode & 0o111 == 0
+            or any(character.isspace() for character in native)
+        ):
+            raise HarnessError("controlled_fixture_invalid")
+        if self._runtime is None:
+            raise HarnessError("live_environment_not_started")
+        applications = self._runtime / "data" / "applications"
+        try:
+            applications.mkdir(mode=0o700)
+            desktop = applications / CONTROLLED_DESKTOP_FILE
+            desktop.write_text(
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                f"Name={CONTROLLED_APPLICATION_NAME}\n"
+                f"Exec={native} --instance one\n"
+                "StartupWMClass=PrismdrakeDemo\n"
+                "Actions=Second;\n"
+                "\n"
+                "[Desktop Action Second]\n"
+                "Name=Second window\n"
+                f"Exec={native} --instance two\n",
+                encoding="ascii",
+            )
+            desktop.chmod(0o600)
+        except OSError as error:
+            raise HarnessError("controlled_desktop_entry_failed") from error
+
+    def _shell_identity(self) -> ProcessIdentity:
+        shell = self._require_surface_shell()
+        if self._surface_shell_identity is not None and shell != self._surface_shell_identity:
+            raise HarnessError("surface_shell_identity_changed")
+        return shell
+
+    def _wait_accessible(self, selector: ControlSelector, timeout_error: str) -> None:
+        shell = self._shell_identity()
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._accessibility.observe(
+                shell.pid, selector, self.probe_environment()
+            ):
+                return
+            self._operations.pause(0.05)
+        raise HarnessError(timeout_error)
+
+    def _invoke_accessible(self, selector: ControlSelector) -> None:
+        self._wait_accessible(selector, "controlled_accessible_action_timeout")
+        shell = self._shell_identity()
+        if not self._accessibility.invoke(
+            shell.pid, selector, self.probe_environment()
+        ):
+            raise HarnessError("controlled_accessible_action_rejected")
+
+    def _reject_stale_accessible(self, selector: ControlSelector) -> bool:
+        shell = self._shell_identity()
+        return self._accessibility.reject_stale_action(
+            shell.pid, selector, self.probe_environment()
+        )
+
+    def _invoke_shellctl(self, group: str, action: str) -> None:
+        executable = self._config.installed_executables.get("prismdrake-shellctl")
+        if executable is None:
+            raise HarnessError("shellctl_unavailable")
+        result = self._operations.run(
+            (str(executable), group, action), self.probe_environment(), 3.0
+        )
+        if result.returncode != 0:
+            raise HarnessError("shellctl_request_failed")
+
+    def _xdotool(self, *arguments: str) -> CommandResult:
+        executable = self._config.xdotool
+        if executable is None:
+            raise HarnessError("xdotool_unavailable")
+        result = self._operations.run(
+            (str(executable), *arguments), self.probe_environment(), 3.0
+        )
+        if result.returncode != 0:
+            raise HarnessError("xdotool_request_failed")
+        return result
+
+    def _controlled_window_ids(self, title: str) -> tuple[int, ...]:
+        if title not in {CONTROLLED_WINDOW_ONE, CONTROLLED_WINDOW_TWO}:
+            raise HarnessError("controlled_window_selector_invalid")
+        executable = self._config.xdotool
+        if executable is None:
+            raise HarnessError("xdotool_unavailable")
+        result = self._operations.run(
+            (str(executable), "search", "--onlyvisible", "--name", f"^{title}$"),
+            self.probe_environment(),
+            3.0,
+        )
+        if result.returncode == 1 and not result.stdout and not result.stderr:
+            return ()
+        if result.returncode != 0 or result.stderr or len(result.stdout) > 1024:
+            raise HarnessError("controlled_window_query_failed")
+        identifiers: list[int] = []
+        for line in result.stdout.splitlines():
+            if re.fullmatch(rb"[1-9][0-9]{0,19}", line) is None:
+                raise HarnessError("controlled_window_query_invalid")
+            identifier = int(line)
+            if identifier > 0xFFFFFFFF or identifier in identifiers:
+                raise HarnessError("controlled_window_query_invalid")
+            identifiers.append(identifier)
+        if len(identifiers) > 2:
+            raise HarnessError("controlled_window_query_invalid")
+        return tuple(identifiers)
+
+    def _wait_controlled_window(self, title: str) -> int:
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            identifiers = self._controlled_window_ids(title)
+            if len(identifiers) == 1:
+                return identifiers[0]
+            if len(identifiers) > 1:
+                break
+            self._operations.pause(0.05)
+        raise HarnessError("controlled_window_timeout")
+
+    def _record_controlled_process(self, title: str) -> None:
+        fixture = self._config.controlled_window_fixture
+        window = self._controlled_windows.get(title)
+        if fixture is None or window is None:
+            return
+        owner = self._window_cardinals(window, b"_NET_WM_PID", 1)[0]
+        identity = self._operations.identify_pid(owner, fixture)
+        if identity is None or identity in self._controlled_processes.values():
+            raise HarnessError("controlled_process_identity_invalid")
+        self._controlled_processes[title] = identity
+
+    def _wait_window_absent(self, title: str) -> None:
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if not self._controlled_window_ids(title):
+                self._controlled_windows.pop(title, None)
+                return
+            self._operations.pause(0.05)
+        raise HarnessError("controlled_window_close_timeout")
+
+    def _window_state_atoms(self, window: int) -> frozenset[bytes]:
+        payload = self._window_property(window, b"_NET_WM_STATE")
+        if payload == b"_NET_WM_STATE:  not found.\n":
+            return frozenset()
+        match = re.fullmatch(
+            rb"_NET_WM_STATE\(ATOM\) = ([A-Z0-9_, ]{1,1024})\n", payload
+        )
+        if match is None:
+            raise HarnessError("controlled_window_state_invalid")
+        atoms = tuple(part.strip() for part in match.group(1).split(b","))
+        if not atoms or any(not atom.startswith(b"_NET_WM_STATE_") for atom in atoms):
+            raise HarnessError("controlled_window_state_invalid")
+        return frozenset(atoms)
+
+    def _active_window(self) -> int | None:
+        result = self._run_x11((str(self._config.xprop), "-root", "_NET_ACTIVE_WINDOW"))
+        if result.returncode != 0:
+            raise HarnessError("controlled_active_window_query_failed")
+        if result.stdout == b"_NET_ACTIVE_WINDOW(WINDOW): window id # 0x0\n":
+            return None
+        identifiers = parse_window_ids(result.stdout, b"_NET_ACTIVE_WINDOW")
+        if len(identifiers) != 1:
+            raise HarnessError("controlled_active_window_query_failed")
+        return identifiers[0]
+
+    def _wait_window_active(self, title: str, *, minimized: bool) -> None:
+        window = self._controlled_windows.get(title)
+        if window is None:
+            raise HarnessError("controlled_window_identity_missing")
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            hidden = b"_NET_WM_STATE_HIDDEN" in self._window_state_atoms(window)
+            active = self._active_window() == window
+            if hidden == minimized and (minimized or active):
+                return
+            self._operations.pause(0.05)
+        raise HarnessError(
+            "controlled_window_minimization_timeout"
+            if minimized
+            else "controlled_window_activation_timeout"
+        )
+
+    def _open_controlled_group(self) -> None:
+        self._invoke_accessible(
+            ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button", "Press")
+        )
+        self._wait_accessible(
+            ControlSelector(f"Activate {CONTROLLED_WINDOW_ONE}", "menu_item"),
+            "controlled_task_group_timeout",
+        )
+
     def _x11_environment(self) -> dict[str, str]:
         if self._display is None:
             raise HarnessError("xorg_not_started")
@@ -882,6 +1377,7 @@ class LiveXorgHarnessPort:
                 "QSG_RHI_BACKEND": "software",
                 "QT_QPA_PLATFORM": "xcb",
                 "QT_QUICK_CONTROLS_STYLE": "Basic",
+                "QT_LINUX_ACCESSIBILITY_ALWAYS_ON": "1",
             }
         )
         argv = (

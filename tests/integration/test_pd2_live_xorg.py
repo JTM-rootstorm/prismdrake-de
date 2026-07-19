@@ -17,6 +17,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation  # noqa: E402
 from pd2_live_xorg import (  # noqa: E402
+    CONTROLLED_APPLICATION_NAME,
+    CONTROLLED_WINDOW_ONE,
+    CONTROLLED_WINDOW_TWO,
     CommandResult,
     LiveXorgConfig,
     LiveXorgHarnessPort,
@@ -69,6 +72,8 @@ DESKTOP_LEFT = 0x500001
 DESKTOP_RIGHT = 0x500002
 PANEL_LEFT = 0x500003
 PANEL_RIGHT = 0x500004
+CONTROLLED_ONE_ID = 0x600001
+CONTROLLED_TWO_ID = 0x600002
 SURFACE_GEOMETRIES = {
     DESKTOP_LEFT: WindowGeometry(0, 0, 1600, 900),
     DESKTOP_RIGHT: WindowGeometry(1600, 0, 1600, 900),
@@ -151,6 +156,9 @@ class FakeOperations:
         }
         self.panel_strut_bottom = 48
         self.shell_start_time = 20_040
+        self.controlled_windows: dict[str, int] = {}
+        self.controlled_hidden: set[int] = set()
+        self.active_window: int | None = None
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
         child = FakeChild(1000 + len(self.children))
@@ -192,6 +200,28 @@ class FakeOperations:
             if self.query_payloads:
                 return CommandResult(0, self.query_payloads.pop(0))
             return CommandResult(0, self.query_payload)
+        if command[0].endswith("xdotool"):
+            if len(command) == 5 and command[1:4] == (
+                "search",
+                "--onlyvisible",
+                "--name",
+            ):
+                title = command[4].removeprefix("^").removesuffix("$")
+                identifier = self.controlled_windows.get(title)
+                return (
+                    CommandResult(0, f"{identifier}\n".encode("ascii"))
+                    if identifier is not None
+                    else CommandResult(1)
+                )
+            return CommandResult(0)
+        if command[-1] == "_NET_ACTIVE_WINDOW":
+            active = self.active_window or 0
+            return CommandResult(
+                0,
+                f"_NET_ACTIVE_WINDOW(WINDOW): window id # 0x{active:x}\n".encode(
+                    "ascii"
+                ),
+            )
         if "_NET_SUPPORTING_WM_CHECK" in command:
             return CommandResult(
                 0, b"_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0x400001\n"
@@ -223,6 +253,13 @@ class FakeOperations:
                         "\t\tInitial state is Normal State.\n"
                     ).encode("ascii"),
                 )
+            if property_name == "_NET_WM_STATE":
+                if window in self.controlled_hidden:
+                    return CommandResult(
+                        0,
+                        b"_NET_WM_STATE(ATOM) = _NET_WM_STATE_HIDDEN\n",
+                    )
+                return CommandResult(0, b"_NET_WM_STATE:  not found.\n")
             geometry = self.surface_geometries[window]
             if property_name == "_NET_WM_STRUT":
                 return CommandResult(
@@ -293,6 +330,18 @@ class FakeOperations:
             return ()
         return tuple(identities)
 
+    def identify_pid(self, pid: int, executable: Path) -> ProcessIdentity | None:
+        del executable
+        if pid not in (3001, 3002):
+            return None
+        return ProcessIdentity(pid, pid * 10)
+
+    def stop_identity(
+        self, identity: ProcessIdentity, executable: Path, timeout: float
+    ) -> bool:
+        del executable, timeout
+        return identity in (ProcessIdentity(3001, 30_010), ProcessIdentity(3002, 30_020))
+
     def socket_identity(self, path: Path) -> tuple[int, int] | None:
         if path != self.bus_socket_path:
             return None
@@ -313,6 +362,76 @@ class FakeOperations:
         self.bus_socket_identity = (1, 101)
 
 
+class FakeAccessibility:
+    def __init__(self, operations: FakeOperations) -> None:
+        self.operations = operations
+        self.pinned = False
+        self.observed: list[str] = []
+        self.invoked: list[str] = []
+
+    def observe(
+        self, shell_pid: int, selector: object, environment: Mapping[str, str]
+    ) -> bool:
+        self.observed.append(selector.name)
+        if (
+            shell_pid != self.operations.surface_owner
+            or "DBUS_SESSION_BUS_ADDRESS" not in environment
+        ):
+            return False
+        if selector.name == "Unpin from panel":
+            return self.pinned
+        if selector.name == f"Close {CONTROLLED_APPLICATION_NAME}":
+            return len(self.operations.controlled_windows) == 1
+        for title in (CONTROLLED_WINDOW_ONE, CONTROLLED_WINDOW_TWO):
+            if selector.name.endswith(title):
+                return title in self.operations.controlled_windows
+        return True
+
+    def invoke(
+        self, shell_pid: int, selector: object, environment: Mapping[str, str]
+    ) -> bool:
+        if not self.observe(shell_pid, selector, environment):
+            return False
+        self.invoked.append(selector.name)
+        if selector.name == "Pin to panel":
+            self.pinned = True
+        elif selector.name == CONTROLLED_APPLICATION_NAME:
+            if CONTROLLED_WINDOW_ONE not in self.operations.controlled_windows:
+                self.operations.controlled_windows[CONTROLLED_WINDOW_ONE] = CONTROLLED_ONE_ID
+                self.operations.active_window = CONTROLLED_ONE_ID
+        elif selector.name == "Second window":
+            self.operations.controlled_windows[CONTROLLED_WINDOW_TWO] = CONTROLLED_TWO_ID
+            self.operations.active_window = CONTROLLED_TWO_ID
+        elif selector.name.startswith("Activate "):
+            title = selector.name.removeprefix("Activate ")
+            identifier = self.operations.controlled_windows[title]
+            self.operations.controlled_hidden.discard(identifier)
+            self.operations.active_window = identifier
+        elif selector.name.startswith("Minimize "):
+            title = selector.name.removeprefix("Minimize ")
+            identifier = self.operations.controlled_windows[title]
+            self.operations.controlled_hidden.add(identifier)
+        elif selector.name == f"Close {CONTROLLED_APPLICATION_NAME}":
+            title, identifier = next(iter(self.operations.controlled_windows.items()))
+            del self.operations.controlled_windows[title]
+            self.operations.controlled_hidden.discard(identifier)
+        elif selector.name.startswith("Close "):
+            title = selector.name.removeprefix("Close ")
+            identifier = self.operations.controlled_windows.pop(title)
+            self.operations.controlled_hidden.discard(identifier)
+        return True
+
+    def reject_stale_action(
+        self, shell_pid: int, selector: object, environment: Mapping[str, str]
+    ) -> bool:
+        return (
+            "DBUS_SESSION_BUS_ADDRESS" in environment
+            and shell_pid == self.operations.surface_owner
+            and selector.name == f"Close {CONTROLLED_APPLICATION_NAME}"
+            and not self.operations.controlled_windows
+        )
+
+
 def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
     return LiveXorgConfig(
         xorg=Path("/usr/bin/Xorg"),
@@ -322,6 +441,7 @@ def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
         xwininfo=Path("/usr/bin/xwininfo"),
         dbus_daemon=Path("/usr/bin/dbus-daemon"),
         installed_executables=installed or {},
+        xdotool=Path("/usr/bin/xdotool"),
         first_display=140,
         last_display=140,
         readiness_timeout=0.2,
@@ -421,6 +541,7 @@ class SurfaceParserTests(unittest.TestCase):
         self.assertEqual(document["schema_version"], 2)
         self.assertEqual(document["panel"]["output_policy"], "all")
         self.assertEqual(document["panel"]["size_px"], 48)
+        self.assertEqual(document["panel"]["grouping"], "always")
         self.assertEqual(document["desktop"]["wallpaper_source"], "")
         self.assertEqual(document["desktop"]["background_color"], "#182033")
         self.assertEqual(document["developer"]["mock_capability_overrides"], [])
@@ -457,12 +578,12 @@ class LivePortTests(unittest.TestCase):
         self.assertEqual(cleanup, Observation(True, True))
         self.assertEqual(operations.stop_calls, list(reversed(operations.children)))
 
-    def test_unsupported_shell_step_and_unstarted_process_attestation_fail_closed(self) -> None:
+    def test_unsupported_step_and_unstarted_process_attestation_fail_closed(self) -> None:
         operations = FakeOperations()
         port = LiveXorgHarnessPort(config(), operations)
 
         with self.assertRaisesRegex(HarnessError, "^live_step_not_implemented$"):
-            port.run_step("installed_workflow", "invoke_launcher_through_shellctl")
+            port.run_step("installed_workflow", "create_normal_notification")
         with self.assertRaisesRegex(
             HarnessError, "^live_process_ownership_unavailable$"
         ):
@@ -529,6 +650,7 @@ class LivePortTests(unittest.TestCase):
                     "QT_QPA_PLATFORM",
                     "QSG_RHI_BACKEND",
                     "QT_QUICK_CONTROLS_STYLE",
+                    "QT_LINUX_ACCESSIBILITY_ALWAYS_ON",
                 }
             },
         )
@@ -580,6 +702,60 @@ class LivePortTests(unittest.TestCase):
             if argv[0] == "/usr/bin/xwininfo"
         ]
         self.assertEqual(len(geometry_queries), 6)
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_runs_controlled_launcher_pin_and_two_window_panel_lifecycle(self) -> None:
+        operations = FakeOperations()
+        accessibility = FakeAccessibility(operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        identifiers = (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+            "verify_desktop_wallpaper_both_outputs",
+            "verify_panel_policy_both_outputs",
+            "invoke_launcher_through_shellctl",
+            "search_controlled_application",
+            "pin_controlled_application",
+            "launch_controlled_application",
+            "launch_second_window",
+            "verify_task_grouping",
+            "activate_one_window",
+            "minimize_one_window",
+            "reactivate_one_window",
+            "close_both_windows_through_panel",
+            "verify_authoritative_task_removal",
+        )
+
+        for identifier in identifiers:
+            with self.subTest(identifier=identifier):
+                self.assertEqual(
+                    port.run_step("installed_workflow", identifier),
+                    Observation(True, True),
+                )
+
+        shellctl_calls = [
+            argv
+            for argv, _environment in operations.run_calls
+            if argv[0] == "/usr/bin/prismdrake-shellctl"
+        ]
+        self.assertEqual(
+            shellctl_calls,
+            [
+                ("/usr/bin/prismdrake-shellctl", "launcher", "toggle"),
+                ("/usr/bin/prismdrake-shellctl", "launcher", "toggle"),
+                ("/usr/bin/prismdrake-shellctl", "panel", "focus"),
+            ],
+        )
+        self.assertTrue(accessibility.pinned)
+        self.assertEqual(operations.controlled_windows, {})
+        self.assertIn("Pin to panel", accessibility.invoked)
+        self.assertIn("Second window", accessibility.invoked)
+        self.assertIn(
+            f"Close {CONTROLLED_APPLICATION_NAME}", accessibility.invoked
+        )
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_surface_observation_fails_closed_for_owner_focus_geometry_and_strut(self) -> None:
