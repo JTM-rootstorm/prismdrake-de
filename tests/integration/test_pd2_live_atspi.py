@@ -20,6 +20,8 @@ from pd2_live_atspi import (  # noqa: E402
     MAX_CHILDREN,
     MAX_NAME_LENGTH,
     invoke_reviewed_action,
+    observe_control_absence,
+    observe_control_state,
     observe_showing_control,
     validate_categorical_result,
 )
@@ -34,6 +36,7 @@ class FakeRole:
     LABEL = "label"
     MENU = "menu"
     MENU_ITEM = "menu_item"
+    NOTIFICATION = "notification"
     PANEL = "panel"
     PUSH_BUTTON = "push_button"
     RADIO_MENU_ITEM = "radio_menu_item"
@@ -42,6 +45,7 @@ class FakeRole:
 
 
 class FakeStateType:
+    CHECKED = "checked"
     ENABLED = "enabled"
     FOCUSABLE = "focusable"
     FOCUSED = "focused"
@@ -209,6 +213,62 @@ class LiveAtspiHelperTests(unittest.TestCase):
         self.assertEqual(result.category, "atspi_action_invoked")
         self.assertEqual(self.action.calls, [0])
         self.assertEqual(calls, [self.application, self.application])
+
+    def test_observes_reviewed_checked_state_on_exact_control(self) -> None:
+        control = FakeNode(
+            "Do not disturb",
+            FakeRole.CHECK_BOX,
+            states={*VISIBLE, FakeStateType.CHECKED},
+        )
+        atspi, application = fixture([control])
+        selector = ControlSelector("Do not disturb", "check_box")
+
+        result = observe_control_state(
+            atspi, exact_owner(application), selector, "CHECKED", True
+        )
+
+        self.assertEqual(result.category, "atspi_control_state_observed")
+        self.assert_category(
+            "atspi_control_state_mismatch",
+            lambda: observe_control_state(
+                atspi, exact_owner(application), selector, "CHECKED", False
+            ),
+        )
+        self.assert_category(
+            "atspi_state_not_reviewed",
+            lambda: observe_control_state(
+                atspi, exact_owner(application), selector, "FOCUSED", True
+            ),
+        )
+
+    def test_proves_control_absence_without_treating_tree_failure_as_absence(self) -> None:
+        selector = ControlSelector("Transient notifications", "notification")
+        hidden = FakeNode(
+            "Transient notifications",
+            FakeRole.NOTIFICATION,
+            states={FakeStateType.ENABLED},
+        )
+        atspi, application = fixture([hidden])
+
+        result = observe_control_absence(
+            atspi, exact_owner(application), selector
+        )
+        self.assertEqual(result.category, "atspi_control_absent")
+
+        hidden.states = set(VISIBLE)
+        self.assert_category(
+            "atspi_control_present",
+            lambda: observe_control_absence(
+                atspi, exact_owner(application), selector
+            ),
+        )
+        application.children.insert(0, FakeNode("private", disappears=True))
+        self.assert_category(
+            "atspi_node_unavailable",
+            lambda: observe_control_absence(
+                atspi, exact_owner(application), selector
+            ),
+        )
 
     def test_rejects_duplicate_applications_and_duplicate_showing_controls(self) -> None:
         duplicate_application = FakeNode(APPLICATION_NAME)

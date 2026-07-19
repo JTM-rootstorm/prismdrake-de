@@ -17,6 +17,7 @@ MAX_NAME_LENGTH = 256
 MAX_NODES = 1024
 
 REVIEWED_ACTIONS = frozenset({"Press"})
+REVIEWED_STATES = frozenset({"CHECKED"})
 ROLE_ENUM_NAMES = {
     "check_box": ("CHECK_BOX",),
     "dialog": ("DIALOG",),
@@ -24,11 +25,19 @@ ROLE_ENUM_NAMES = {
     "label": ("LABEL",),
     "menu": ("MENU",),
     "menu_item": ("MENU_ITEM", "CHECK_MENU_ITEM", "RADIO_MENU_ITEM"),
+    "notification": ("NOTIFICATION",),
     "panel": ("FILLER", "PANEL"),
     "push_button": ("PUSH_BUTTON",),
     "toggle_button": ("TOGGLE_BUTTON",),
 }
-RESULT_CATEGORIES = frozenset({"atspi_action_invoked", "atspi_control_ready"})
+RESULT_CATEGORIES = frozenset(
+    {
+        "atspi_action_invoked",
+        "atspi_control_absent",
+        "atspi_control_ready",
+        "atspi_control_state_observed",
+    }
+)
 
 
 class LiveAtspiError(RuntimeError):
@@ -261,6 +270,45 @@ def observe_showing_control(
 
     _resolve_control(atspi, owner_probe, selector, require_action=False)
     return CategoricalResult("atspi_control_ready")
+
+
+def observe_control_absence(
+    atspi: Any, owner_probe: OwnerProbe, selector: ControlSelector
+) -> CategoricalResult:
+    """Prove no exact visible control exists while keeping tree failures fatal."""
+
+    _validate_selector(selector, require_action=False)
+    application = _find_application(atspi)
+    _verify_owner(application, owner_probe)
+    for node in _walk(application):
+        if _node_name(node) != selector.name or not _role_matches(
+            atspi, node, selector.role
+        ):
+            continue
+        if _has_state(atspi, node, "SHOWING") and _has_state(
+            atspi, node, "VISIBLE"
+        ):
+            _fail("atspi_control_present")
+    return CategoricalResult("atspi_control_absent")
+
+
+def observe_control_state(
+    atspi: Any,
+    owner_probe: OwnerProbe,
+    selector: ControlSelector,
+    state_name: str,
+    expected: bool,
+) -> CategoricalResult:
+    """Prove one reviewed state on an exact visible shell control."""
+
+    if state_name not in REVIEWED_STATES or not isinstance(expected, bool):
+        _fail("atspi_state_not_reviewed")
+    _application, control = _resolve_control(
+        atspi, owner_probe, selector, require_action=False
+    )
+    if _has_state(atspi, control, state_name) != expected:
+        _fail("atspi_control_state_mismatch")
+    return CategoricalResult("atspi_control_state_observed")
 
 
 def invoke_reviewed_action(
