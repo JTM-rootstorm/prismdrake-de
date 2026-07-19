@@ -189,12 +189,21 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py resolutions \
   --source-checkout /absolute/clean/prismdrake-de \
   --output /absolute/private/evidence/pd2-resolutions.json
 
-python3 tests/gentoo/pd2_portage_lifecycle_collector.py package-test \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+install -d -o prismdrake -g prismdrake -m 0700 \
+  /absolute/private/evidence/non-root
+install -o prismdrake -g prismdrake -m 0600 \
+  /absolute/private/evidence/pd2-installed-preflight.json \
+  /absolute/private/evidence/non-root/pd2-installed-preflight.json
+chown -R prismdrake:prismdrake \
+  /absolute/clean/prismdrake-de /absolute/retained-test-build
+
+runuser --user prismdrake -- \
+  python3 tests/gentoo/pd2_portage_lifecycle_collector.py package-test \
+  --attestation /absolute/private/evidence/non-root/pd2-installed-preflight.json \
   --test-build /absolute/retained-test-build \
   --source-checkout /absolute/clean/prismdrake-de \
   --controlled-window-fixture /absolute/retained-test-build/tests/integration/prismdrake-controlled-window-fixture \
-  --output /absolute/private/evidence/pd2-package-test.json
+  --output /absolute/private/evidence/non-root/pd2-package-test.json
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py sandbox-tests \
   --attestation /absolute/private/evidence/pd2-installed-preflight.json \
@@ -221,6 +230,12 @@ any QA report fails the stage. The resolution stage verifies the
 the fixed `/usr/bin/emerge` pretend command once with `USE=-test` and once with
 `USE=test`.
 
+The two `chown` targets above are disposable guest copies dedicated to the
+lifecycle run, never the host checkout or Portage's live repository. They make
+the exact clean source and final retained build readable and owned by the
+ordinary test user without changing Git bytes or the canonical root-owned
+preflight artifact.
+
 The CTest collectors require the retained build's exact clean source directory
 and configured revision, compare the complete ordered inventory to
 `tests/gentoo/pd2-ctest-inventory-v1.json`, hash actual CTest commands,
@@ -228,9 +243,12 @@ project-owned command files, and the controlled fixture, then parse CTest JUnit
 output. A disabled, failed, missing, additional, or unreviewed skipped selected
 test fails the stage. The only reviewed package-selection skip is
 `AtomicFileTest.RejectsDestinationOwnedByAnotherUser`, recorded with reason
-`requires_non_root_owner_transition` and CTest's `status=notrun` plus
+`requires_root_ownership_transition` and CTest's `status=notrun` plus
 `<skipped>` encoding when it actually skips. Exactly the four reviewed tests
-are excluded from the package selection. The
+are excluded from the package selection. The package-test collector rejects
+effective UID 0 and must run as the ordinary `prismdrake` test user against the
+final retained build, matching Portage `userpriv`; root remains required for
+VDB, preflight, unmerge, and reinstall observation. The
 outside-sandbox collector executes the two exact-environment tests once and
 both Openbox tests five times against the same test manifest. The collector
 uses only canonical absolute tool paths; there are no public tool-path
@@ -283,7 +301,7 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py finalize \
   --attestation /absolute/private/evidence/pd2-installed-preflight.json \
   --qa /absolute/private/evidence/pd2-portage-qa.json \
   --resolutions /absolute/private/evidence/pd2-resolutions.json \
-  --package-test /absolute/private/evidence/pd2-package-test.json \
+  --package-test /absolute/private/evidence/non-root/pd2-package-test.json \
   --linkage /absolute/private/evidence/pd2-linkage.json \
   --sandbox-tests /absolute/private/evidence/pd2-sandbox-tests.json \
   --initial-demonstration /absolute/private/evidence/pd2-initial-demonstration.json \

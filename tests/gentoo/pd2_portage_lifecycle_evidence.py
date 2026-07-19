@@ -44,7 +44,7 @@ EXCLUDED_TESTS = (
     "TaskControllerOpenboxStabilizationIntegrationTest",
 )
 OPTIONAL_PACKAGE_SKIP_TEST = "AtomicFileTest.RejectsDestinationOwnedByAnotherUser"
-OPTIONAL_PACKAGE_SKIP_REASON = "requires_non_root_owner_transition"
+OPTIONAL_PACKAGE_SKIP_REASON = "requires_root_ownership_transition"
 EXCLUSION_REASONS = (
     "exact_child_environment",
     "exact_child_environment",

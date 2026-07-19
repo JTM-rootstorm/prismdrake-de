@@ -368,7 +368,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 "excluded_tests": list(EXCLUDED_TESTS),
             }), encoding="utf-8")
             calls: list[list[str]] = []
-            skipped_junit: str | None = None
+            skipped_junit: str | None = OPTIONAL_PACKAGE_SKIP_TEST
 
             def runner(command: list[str], cwd: Path | None) -> str:
                 del cwd
@@ -411,9 +411,13 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             package = capture_package_test(
                 attestation, build, source, fixture,
                 hash_file=hash_file, command_runner=runner,
+                effective_uid=lambda: 1000,
             )
             self.assertEqual(package["executed_test_count"], 2)
-            self.assertEqual(package["skipped_tests"], [])
+            self.assertEqual(package["skipped_tests"], [{
+                "test_id": OPTIONAL_PACKAGE_SKIP_TEST,
+                "reason": "requires_root_ownership_transition",
+            }])
             self.assertEqual(package["inventory_contract_sha256"], "1" * 64)
             self.assertEqual(tuple(package["excluded_tests"]), EXCLUDED_TESTS)
             self.assertIn("--exclude-regex", calls[-1])
@@ -437,6 +441,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 capture_package_test(
                     attestation, build, source, fixture,
                     hash_file=hash_file, command_runner=runner,
+                    effective_uid=lambda: 1000,
                 )
             contract_document["exact_test_count"] -= 1
             contract.write_text(json.dumps(contract_document), encoding="utf-8")
@@ -445,11 +450,12 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             package = capture_package_test(
                 attestation, build, source, fixture,
                 hash_file=hash_file, command_runner=runner,
+                effective_uid=lambda: 1000,
             )
             self.assertEqual(package["passed_test_count"], 1)
             self.assertEqual(package["skipped_tests"], [{
                 "test_id": OPTIONAL_PACKAGE_SKIP_TEST,
-                "reason": "requires_non_root_owner_transition",
+                "reason": "requires_root_ownership_transition",
             }])
 
             skipped_junit = ordinary
@@ -457,6 +463,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 capture_package_test(
                     attestation, build, source, fixture,
                     hash_file=hash_file, command_runner=runner,
+                    effective_uid=lambda: 1000,
                 )
 
             def disabled_runner(command: list[str], cwd: Path | None) -> str:
@@ -474,6 +481,23 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 capture_package_test(
                     attestation, build, source, fixture,
                     hash_file=hash_file, command_runner=disabled_runner,
+                    effective_uid=lambda: 1000,
+                )
+
+            skipped_junit = None
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^package_test_required_skip_mismatch$"):
+                capture_package_test(
+                    attestation, build, source, fixture,
+                    hash_file=hash_file, command_runner=runner,
+                    effective_uid=lambda: 1000,
+                )
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^package_test_requires_non_root_user$"):
+                capture_package_test(
+                    attestation, build, source, fixture,
+                    hash_file=hash_file, command_runner=runner,
+                    effective_uid=lambda: 0,
                 )
 
             escaped = root / "escaped-test.py"

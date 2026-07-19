@@ -83,7 +83,7 @@ CTEST_INVENTORY_RELATIVE_PATH = Path("tests/gentoo/pd2-ctest-inventory-v1.json")
 BUILD_PROVENANCE_PATH = Path("/usr/share/prismdrake/build-provenance.json")
 EXCLUSION_REGEX = "^(?:" + "|".join(re.escape(name) for name in EXCLUDED_TESTS) + ")$"
 OPTIONAL_PACKAGE_SKIP_TEST = "AtomicFileTest.RejectsDestinationOwnedByAnotherUser"
-OPTIONAL_PACKAGE_SKIP_REASON = "requires_non_root_owner_transition"
+OPTIONAL_PACKAGE_SKIP_REASON = "requires_root_ownership_transition"
 
 
 class Pd2CollectorError(RuntimeError):
@@ -846,9 +846,11 @@ def capture_package_test(
         controlled_fixture: Path, ctest: Path = CTEST_PATH,
         hash_file: Callable[[Path], str] = sha256_regular_file,
         command_runner: Callable[[list[str], Path | None], str] = run_checked,
+        effective_uid: Callable[[], int] = os.geteuid,
 ) -> dict[str, Any]:
     """Inventory and execute the exact package-test CTest selection."""
 
+    _require(effective_uid() != 0, "package_test_requires_non_root_user")
     binding = _binding(attestation)
     verify_test_build(
         build_directory, source_checkout, binding["source_revision"], hash_file,
@@ -880,6 +882,8 @@ def capture_package_test(
         ctest, build_directory, ["--exclude-regex", EXCLUSION_REGEX], included_names,
         command_runner, (OPTIONAL_PACKAGE_SKIP_TEST,),
     )
+    _require(skipped == (OPTIONAL_PACKAGE_SKIP_TEST,),
+             "package_test_required_skip_mismatch")
     return {
         **binding,
         "features_test": True,
