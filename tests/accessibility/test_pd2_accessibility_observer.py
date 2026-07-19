@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -73,19 +74,65 @@ class AccessibilityObserverTests(unittest.TestCase):
         self.assertTrue(
             all(result["status"] in {"passed", "skipped"} for result in results.values())
         )
-        self.assertEqual(results[("running_task", "state_active")]["status"], "passed")
+        self.assertEqual(results[("running_task", "state_active")]["status"], "skipped")
+        self.assertEqual(
+            results[("running_task", "escape_recovery")]["status"], "passed"
+        )
+        self.assertEqual(
+            results[("launcher_results", "enter_activation")]["status"], "passed"
+        )
         self.assertEqual(
             results[("panel", "accessible_description")]["reason_code"],
             "live_adapter_unimplemented",
         )
 
     def test_restart_focus_is_never_inferred_from_process_recovery(self) -> None:
-        for check in observer.MATRIX_CHECKS:
+        for check in set(observer.MATRIX_CHECKS) - {
+            "accessible_name",
+            "accessible_role",
+        }:
             result = self.observed("service_restart_focus_recovery", check)
             self.assertEqual(result["status"], "skipped")
             self.assertTrue(result["reviewed"])
             self.assertEqual(result["reason_code"], "live_adapter_unimplemented")
             self.assertIn("post restart keyboard focus", result["reason"])
+        self.assertEqual(
+            self.observed("service_restart_focus_recovery", "accessible_name")[
+                "status"
+            ],
+            "passed",
+        )
+        self.assertEqual(
+            self.observed("service_restart_focus_recovery", "accessible_role")[
+                "status"
+            ],
+            "passed",
+        )
+
+    def test_downgrades_indirect_or_non_atspi_state_inferences(self) -> None:
+        downgraded = (
+            ("pinned_task", "accessible_name"),
+            ("pinned_task", "arrow_navigation"),
+            ("running_task", "state_active"),
+            ("running_task", "state_minimized"),
+            ("grouped_task", "state_expanded"),
+            ("group_popup", "accessible_role"),
+            ("launcher", "state_expanded"),
+            ("launcher_results", "state_focused"),
+            ("launcher_results", "state_selected"),
+            ("transient_notification", "enter_activation"),
+            ("transient_notification", "state_urgent"),
+            ("notification_center", "state_expanded"),
+            ("quick_settings", "state_expanded"),
+            ("logout_confirmation", "state_expanded"),
+        )
+        for surface, check in downgraded:
+            with self.subTest(surface=surface, check=check):
+                result = self.observed(surface, check)
+                self.assertEqual(result["status"], "skipped")
+                self.assertEqual(
+                    result["reason_code"], "live_adapter_unimplemented"
+                )
 
     def test_live_atspi_requires_all_installed_tier_c_observations(self) -> None:
         with (
@@ -146,6 +193,25 @@ class AccessibilityObserverTests(unittest.TestCase):
         source = Path(observer.__file__).read_text(encoding="utf-8")
         self.assertIn("from gi.repository import Atspi", source)
         self.assertNotIn("import pyatspi", source)
+
+    def test_direct_collector_invocation_needs_no_role_prefix(self) -> None:
+        executable = Path(observer.__file__)
+        self.assertTrue(executable.stat().st_mode & stat.S_IXUSR)
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                str(executable),
+                "--surface",
+                "running_task",
+                "--check",
+                "escape_recovery",
+            ],
+        ):
+            options = observer.parse_arguments()
+        self.assertEqual(options.role, "accessibility")
+        self.assertEqual(options.surface, "running_task")
+        self.assertEqual(options.check, "escape_recovery")
 
 
 if __name__ == "__main__":
