@@ -142,6 +142,8 @@ Button {
 
         contentItem: Column {
             spacing: root.tokens.tilePadding
+            LayoutMirroring.enabled: root.mirrored
+            LayoutMirroring.childrenInherit: true
             Accessible.role: Accessible.PopupMenu
             Accessible.name: qsTr("Application actions for %1").arg(root.presentationName)
             Accessible.description: qsTr("Launch an application action or change its pinned state")
@@ -180,6 +182,19 @@ Button {
                         const previous = index > 0 ? actionRepeater.itemAt(index - 1) : pinItem
                         if (previous !== null)
                             previous.forceActiveFocus(Qt.BacktabFocusReason)
+                    }
+                    Keys.onUpPressed: event => {
+                        event.accepted = true
+                        const previous = index > 0 ? actionRepeater.itemAt(index - 1) : pinItem
+                        if (previous !== null)
+                            previous.forceActiveFocus(Qt.BacktabFocusReason)
+                    }
+                    Keys.onDownPressed: event => {
+                        event.accepted = true
+                        const next = index + 1 < actionRepeater.count
+                                   ? actionRepeater.itemAt(index + 1) : pinItem
+                        if (next !== null)
+                            next.forceActiveFocus(Qt.TabFocusReason)
                     }
                     onClicked: {
                         if (actionPresentation !== null)
@@ -243,6 +258,19 @@ Button {
                                ? actionRepeater.itemAt(actionRepeater.count - 1) : pinItem
                     if (last !== null)
                         last.forceActiveFocus(Qt.BacktabFocusReason)
+                }
+                Keys.onUpPressed: event => {
+                    event.accepted = true
+                    const last = actionRepeater.count > 0
+                               ? actionRepeater.itemAt(actionRepeater.count - 1) : pinItem
+                    if (last !== null)
+                        last.forceActiveFocus(Qt.BacktabFocusReason)
+                }
+                Keys.onDownPressed: event => {
+                    event.accepted = true
+                    const first = actionRepeater.count > 0 ? actionRepeater.itemAt(0) : pinItem
+                    if (first !== null)
+                        first.forceActiveFocus(Qt.TabFocusReason)
                 }
                 onClicked: {
                     root.presentation.requestPinToggle()
