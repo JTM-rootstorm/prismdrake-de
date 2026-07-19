@@ -240,6 +240,13 @@ TEST(DesktopEntryDiscoveryTest, RejectsUnsafeOrOversizedSyntheticLocations) {
     ASSERT_FALSE(nul);
     EXPECT_EQ(nul.error().code, ErrorCode::invalid_argument);
 
+    const std::string malformedUtf8{"private-utf8-\xc0\xaf.desktop", 23U};
+    const auto invalidUtf8 =
+        makeDiscoveredDesktopFileLocation("/fixture/applications", malformedUtf8, 0U);
+    ASSERT_FALSE(invalidUtf8);
+    EXPECT_EQ(invalidUtf8.error().code, ErrorCode::invalid_argument);
+    EXPECT_EQ(invalidUtf8.error().message.find("private-utf8"), std::string::npos);
+
     const std::filesystem::path oversizedRoot{
         "/" + std::string(maximumDiscoveredDesktopFileLocationBytes, 'a')};
     const auto oversized = makeDiscoveredDesktopFileLocation(oversizedRoot, "tool.desktop", 0U);

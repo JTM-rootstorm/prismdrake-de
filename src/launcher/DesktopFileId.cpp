@@ -1,5 +1,6 @@
 #include "DesktopFileId.hpp"
 
+#include <cstdint>
 #include <utility>
 
 namespace prismdrake::launcher {
@@ -14,6 +15,54 @@ using foundation::Result;
     return Result<DesktopFileId>::failure(Error{code, std::move(message), std::move(recovery)});
 }
 
+[[nodiscard]] bool validDesktopFileUtf8(std::string_view value) noexcept {
+    std::size_t offset = 0U;
+    std::size_t codePoints = 0U;
+    while (offset < value.size()) {
+        const auto lead = static_cast<std::uint8_t>(value[offset]);
+        std::uint32_t codePoint = 0U;
+        std::size_t length = 0U;
+        if (lead <= 0x7fU) {
+            codePoint = lead;
+            length = 1U;
+        } else if (lead >= 0xc2U && lead <= 0xdfU) {
+            codePoint = lead & 0x1fU;
+            length = 2U;
+        } else if (lead >= 0xe0U && lead <= 0xefU) {
+            codePoint = lead & 0x0fU;
+            length = 3U;
+        } else if (lead >= 0xf0U && lead <= 0xf4U) {
+            codePoint = lead & 0x07U;
+            length = 4U;
+        } else {
+            return false;
+        }
+        if (length > value.size() - offset) {
+            return false;
+        }
+        for (std::size_t index = 1U; index < length; ++index) {
+            const auto continuation = static_cast<std::uint8_t>(value[offset + index]);
+            if ((continuation & 0xc0U) != 0x80U) {
+                return false;
+            }
+            codePoint = (codePoint << 6U) | (continuation & 0x3fU);
+        }
+        if ((length == 2U && codePoint < 0x80U) || (length == 3U && codePoint < 0x800U) ||
+            (length == 4U && codePoint < 0x10000U) ||
+            (codePoint >= 0xd800U && codePoint <= 0xdfffU) || codePoint > 0x10ffffU ||
+            codePoint <= 0x1fU || codePoint == 0x7fU ||
+            (codePoint >= 0x80U && codePoint <= 0x9fU)) {
+            return false;
+        }
+        ++codePoints;
+        if (codePoints > maximumDesktopFileIdCodePoints) {
+            return false;
+        }
+        offset += length;
+    }
+    return true;
+}
+
 } // namespace
 
 Result<DesktopFileId> deriveDesktopFileId(std::string_view relativePath) {
@@ -23,9 +72,9 @@ Result<DesktopFileId> deriveDesktopFileId(std::string_view relativePath) {
                        "Use a shorter path beneath the applications directory.");
     }
     if (relativePath.empty() || relativePath.front() == '/' || relativePath.back() == '/' ||
-        relativePath.find('\0') != std::string_view::npos) {
+        !validDesktopFileUtf8(relativePath)) {
         return failure(ErrorCode::invalid_argument, "The desktop-file relative path is invalid.",
-                       "Use a nonempty relative path without null bytes.");
+                       "Use a nonempty relative path containing bounded UTF-8 without controls.");
     }
     const auto finalSeparator = relativePath.rfind('/');
     const auto fileName = finalSeparator == std::string_view::npos

@@ -74,9 +74,9 @@ Each window is associated in this exact order:
 
 At steps 2 through 4, more than one matching visible desktop entry is ambiguous.
 The core does not select by discovery order, path precedence, popularity,
-process name, or icon. It publishes the bounded fallback identity and one
-redacted diagnostic containing only the evidence class, not candidate paths,
-window titles, or raw metadata.
+process name, or icon. It publishes the fixed `unknown-application` identity and
+one redacted diagnostic containing only the evidence class, not candidate
+paths, window titles, or raw metadata.
 
 The complete association snapshot records an evidence enum for these six
 classes. Consumers may present a generic state for weak or unknown association,

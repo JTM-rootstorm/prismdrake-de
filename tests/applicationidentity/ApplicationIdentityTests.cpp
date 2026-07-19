@@ -78,18 +78,21 @@ TEST(ApplicationIdentityTest, AmbiguityPublishesUnknownAndOnlyRedactedCategory) 
     EXPECT_EQ(result.value()->diagnostics.front().window, window(8U, 9U));
 }
 
-TEST(ApplicationIdentityTest, PreservesNonAsciiAndIncarnationInImmutableSnapshot) {
+TEST(ApplicationIdentityTest, PreservesNonAsciiAndAllowsXidReuseAcrossSnapshots) {
     const std::vector catalog{application("unicode.desktop", "Äpp")};
-    const std::vector windows{
-        WindowAssociationObservation{window(10U, 100U), std::nullopt, std::nullopt, "Äpp"},
+    const std::vector firstWindow{
+        WindowAssociationObservation{window(10U, 100U), std::nullopt, std::nullopt, "Äpp"}};
+    const std::vector reusedWindow{
         WindowAssociationObservation{window(10U, 101U), std::nullopt, std::nullopt, "äpp"}};
 
-    const auto result = associateApplications(catalog, windows, 12U);
+    const auto first = associateApplications(catalog, firstWindow, 12U);
+    const auto reused = associateApplications(catalog, reusedWindow, 13U);
 
-    ASSERT_TRUE(result);
-    EXPECT_EQ(result.value()->associations[0].applicationId.value(), "unicode.desktop");
-    EXPECT_EQ(result.value()->associations[1].applicationId.value(), "wm-class:äpp");
-    EXPECT_NE(result.value()->associations[0].window, result.value()->associations[1].window);
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(reused);
+    EXPECT_EQ(first.value()->associations[0].applicationId.value(), "unicode.desktop");
+    EXPECT_EQ(reused.value()->associations[0].applicationId.value(), "wm-class:äpp");
+    EXPECT_NE(first.value()->associations[0].window, reused.value()->associations[0].window);
 }
 
 TEST(ApplicationIdentityTest, RejectsDuplicateAndMalformedEvidenceWithoutPublishing) {
@@ -103,6 +106,10 @@ TEST(ApplicationIdentityTest, RejectsDuplicateAndMalformedEvidenceWithoutPublish
         WindowAssociationObservation{window(1U, 1U), std::nullopt, std::nullopt, "safe"},
         WindowAssociationObservation{window(1U, 1U), std::nullopt, std::nullopt, "safe"}};
     EXPECT_FALSE(associateApplications(catalog, duplicateWindows, 1U));
+    const std::vector reusedXidInSnapshot{
+        WindowAssociationObservation{window(2U, 1U), std::nullopt, std::nullopt, "safe"},
+        WindowAssociationObservation{window(2U, 2U), std::nullopt, std::nullopt, "safe"}};
+    EXPECT_FALSE(associateApplications(catalog, reusedXidInSnapshot, 1U));
     EXPECT_FALSE(associateApplications(catalog, validWindows, 0U));
     EXPECT_FALSE(ObservedWindowIdentity::fromObservation(0U, 1U));
     EXPECT_FALSE(ObservedWindowIdentity::fromObservation(1U, 0U));

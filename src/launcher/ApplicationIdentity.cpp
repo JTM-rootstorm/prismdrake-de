@@ -160,14 +160,14 @@ associateApplications(const std::vector<CatalogApplicationIdentity> &catalog,
                 "Use unique identifiers and bounded StartupWMClass values.");
         }
     }
-    std::set<std::pair<std::uint32_t, std::uint64_t>> windowIds;
+    std::set<std::uint32_t> windowIds;
     for (const auto &window : windows) {
-        if (!windowIds.emplace(window.window.xid(), window.window.incarnation()).second ||
+        if (!windowIds.insert(window.window.xid()).second ||
             (window.wmClassClass && !normalized(*window.wmClassClass)) ||
             (window.wmClassInstance && !normalized(*window.wmClassInstance))) {
             return failure<std::shared_ptr<const ApplicationAssociationSnapshot>>(
                 ErrorCode::validation_error, "The copied window identity evidence is invalid.",
-                "Use unique window incarnations and bounded decoded WM_CLASS fields.");
+                "Use unique XIDs within one snapshot and bounded decoded WM_CLASS fields.");
         }
     }
 

@@ -12,6 +12,7 @@ namespace prismdrake::launcher {
 inline constexpr std::size_t maximumDesktopFileRelativePathBytes = 4096U;
 inline constexpr std::size_t maximumDesktopFilePathComponents = 64U;
 inline constexpr std::size_t maximumDesktopFileIdBytes = 4096U;
+inline constexpr std::size_t maximumDesktopFileIdCodePoints = 4096U;
 
 /// A Desktop Entry Specification file identifier derived from a relative path.
 class DesktopFileId final {

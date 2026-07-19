@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <vector>
 
 namespace prismdrake::launcher {
 namespace {
@@ -77,6 +78,26 @@ TEST(DesktopFileIdTest, RejectsNullWithoutDisclosingInput) {
     EXPECT_EQ(result.error().code, ErrorCode::invalid_argument);
     EXPECT_EQ(result.error().message.find(privateValue), std::string::npos);
     EXPECT_EQ(result.error().recovery.find(privateValue), std::string::npos);
+}
+
+TEST(DesktopFileIdTest, AcceptsUnicodeAndRejectsMalformedUtf8AndControls) {
+    const auto unicode = deriveDesktopFileId("工具/Prismdrake.desktop");
+    ASSERT_TRUE(unicode);
+    EXPECT_EQ(unicode.value().value(), "工具-Prismdrake.desktop");
+
+    const std::vector<std::string> invalidPaths{
+        std::string{"tool\x80.desktop", 13U},
+        std::string{"tool\xc0\xaf.desktop", 14U},
+        std::string{"tool\xed\xa0\x80.desktop", 15U},
+        std::string{"tool\xf4\x90\x80\x80.desktop", 16U},
+        std::string{"tool\x1f.desktop", 13U},
+        std::string{"tool\xc2\x80.desktop", 14U},
+    };
+    for (const auto &path : invalidPaths) {
+        const auto result = deriveDesktopFileId(path);
+        ASSERT_FALSE(result);
+        EXPECT_EQ(result.error().code, ErrorCode::invalid_argument);
+    }
 }
 
 } // namespace
