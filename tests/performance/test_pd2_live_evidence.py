@@ -36,6 +36,7 @@ from pd2_live_evidence import (  # noqa: E402
     write_evidence,
 )
 from collect_pd2_live_evidence import (  # noqa: E402
+    attest_source_and_observers,
     build_observer_environment,
     observer_commands,
     reviewed_skip,
@@ -416,6 +417,33 @@ class CommandAdapterTests(unittest.TestCase):
             environment["PRISMDRAKE_PD2_IDLE_SERIES"], "/evidence/idle.json"
         )
         self.assertNotIn("UNRELATED_SECRET", environment)
+
+    def test_collector_attests_clean_source_and_rejects_external_observer(self) -> None:
+        commands = ObserverCommands(*([Path(__file__).resolve()] * 5))
+        clean_results = (
+            subprocess.CompletedProcess(
+                [], 0, (REVISION + "\n").encode("ascii"), b""
+            ),
+            subprocess.CompletedProcess(
+                [], 0, (str(Path(__file__).resolve().parents[2]) + "\n").encode(), b""
+            ),
+            subprocess.CompletedProcess([], 0, b"", b""),
+            subprocess.CompletedProcess([], 0, b"", b""),
+            subprocess.CompletedProcess([], 0, b"", b""),
+        )
+        with (
+            mock.patch.dict(os.environ, {"PRISMDRAKE_PD2_GIT": "/bin/true"}),
+            mock.patch.object(subprocess, "run", side_effect=clean_results),
+        ):
+            attest_source_and_observers(REVISION, commands)
+
+        external = ObserverCommands(*([Path("/bin/true")] * 5))
+        with (
+            mock.patch.dict(os.environ, {"PRISMDRAKE_PD2_GIT": "/bin/true"}),
+            mock.patch.object(subprocess, "run", side_effect=clean_results),
+            self.assertRaisesRegex(Exception, "observer_source_binding_invalid"),
+        ):
+            attest_source_and_observers(REVISION, external)
 
     def test_reviewed_skip_parser_accepts_only_closed_reason_codes(self) -> None:
         self.assertEqual(

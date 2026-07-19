@@ -23,12 +23,14 @@ from pd2_live_evidence import (
     SKIP_CODES,
     CommandLiveEvidencePort,
     LiveCollectionConfig,
+    ObserverCommand,
     ObserverCommands,
     collect_evidence,
     write_evidence,
 )
 
 
+ROOT = Path(__file__).resolve().parents[2]
 SAFE_TEXT = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .,:;_+()'=-]{0,255}")
 OBSERVER_ENVIRONMENT_KEYS = (
     "AT_SPI_BUS_ADDRESS",
@@ -161,6 +163,71 @@ def observer_commands(options: object) -> ObserverCommands:
     return ObserverCommands(*individual)
 
 
+def attest_source_and_observers(
+    source_revision: str, commands: ObserverCommands
+) -> None:
+    """Bind every executable observer to one clean exact source checkout."""
+
+    git = Path(os.environ.get("PRISMDRAKE_PD2_GIT", "/usr/bin/git"))
+    if not git.is_absolute() or not git.is_file() or not os.access(git, os.X_OK):
+        raise CollectorError("source_attestation_unavailable")
+
+    def git_command(*arguments: str) -> subprocess.CompletedProcess[bytes]:
+        try:
+            return subprocess.run(
+                (str(git), "-C", str(ROOT), *arguments),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=10.0,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise CollectorError("source_attestation_failed") from error
+
+    head = git_command("rev-parse", "--verify", "HEAD")
+    try:
+        observed_revision = head.stdout.decode("ascii").strip()
+    except UnicodeError as error:
+        raise CollectorError("source_attestation_failed") from error
+    if head.returncode != 0 or head.stderr or observed_revision != source_revision:
+        raise CollectorError("source_revision_mismatch")
+
+    root = git_command("rev-parse", "--show-toplevel")
+    try:
+        observed_root = Path(root.stdout.decode("utf-8").strip()).resolve()
+    except (UnicodeError, OSError) as error:
+        raise CollectorError("source_attestation_failed") from error
+    if root.returncode != 0 or root.stderr or observed_root != ROOT.resolve():
+        raise CollectorError("source_directory_mismatch")
+
+    for arguments in (("diff", "--quiet"), ("diff", "--cached", "--quiet")):
+        result = git_command(*arguments)
+        if result.returncode != 0 or result.stdout or result.stderr:
+            raise CollectorError("source_checkout_dirty")
+    status = git_command("status", "--porcelain=v1", "--untracked-files=all")
+    if status.returncode != 0 or status.stdout or status.stderr:
+        raise CollectorError("source_checkout_dirty")
+
+    source_root = ROOT.resolve()
+    for value in (
+        commands.environment,
+        commands.performance,
+        commands.accessibility,
+        commands.internationalization,
+        commands.cleanup,
+    ):
+        executable_path = (
+            value.executable if isinstance(value, ObserverCommand) else value
+        )
+        try:
+            resolved = executable_path.resolve(strict=True)
+        except OSError as error:
+            raise CollectorError("observer_source_binding_invalid") from error
+        if executable_path.is_symlink() or not resolved.is_relative_to(source_root):
+            raise CollectorError("observer_source_binding_invalid")
+
+
 def run(options: object) -> None:
     skips = dict(options.reviewed_skip)
     if len(skips) != len(options.reviewed_skip):
@@ -178,6 +245,7 @@ def run(options: object) -> None:
         limitations=tuple(options.limitation),
     )
     commands = observer_commands(options)
+    attest_source_and_observers(options.source_revision, commands)
     port = CommandLiveEvidencePort(commands, build_observer_environment(options))
     write_evidence(options.output, collect_evidence(config, port))
 
