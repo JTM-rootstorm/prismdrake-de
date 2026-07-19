@@ -226,6 +226,7 @@ target_link_libraries(prismdrake-visual-cadence-evidence
     PRIVATE
         Prismdrake::settings-core
         Prismdrake::grouped-task-presentation
+        Prismdrake::shell-accessibility
         Prismdrake::shell-task-presentation
         Prismdrake::shell-panel-qml
         Prismdrake::shell-theme
