@@ -183,6 +183,7 @@ class FakeOperations:
         self.missing_surface_types: set[int] = set()
         self.surface_owner = 2004
         self.surface_focus = False
+        self.surface_focus_windows: set[int] = set()
         self.surface_list = tuple(SURFACE_GEOMETRIES)
         self.window_geometry_payloads = {
             window: xwininfo_payload(window, geometry)
@@ -215,6 +216,7 @@ class FakeOperations:
         self.shell_crashes = 0
         self.safe_mode_published = True
         self.events: list[tuple[str, object]] = []
+        self.unavailable_displays: set[int] = set()
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
         self.events.append(("spawn", Path(argv[0]).name))
@@ -331,7 +333,11 @@ class FakeOperations:
                     0, f"_NET_WM_PID(CARDINAL) = {owner}\n".encode("ascii")
                 )
             if property_name == "WM_HINTS":
-                focus = "True" if self.surface_focus else "False"
+                focus = (
+                    "True"
+                    if self.surface_focus or window in self.surface_focus_windows
+                    else "False"
+                )
                 return CommandResult(
                     0,
                     (
@@ -395,8 +401,7 @@ class FakeOperations:
         return self.stop_succeeds
 
     def display_available(self, number: int) -> bool:
-        del number
-        return True
+        return number not in self.unavailable_displays
 
     def identify(
         self, child: FakeChild, executable: Path
@@ -478,6 +483,9 @@ class FakeOperations:
 
     def monotonic(self) -> float:
         return self.now
+
+    def monotonic_ns(self) -> int:
+        return int(self.now * 1_000_000_000)
 
     def pause(self, duration: float) -> None:
         self.now += duration
@@ -617,6 +625,12 @@ class FakeAccessibility:
                 "Quick settings",
                 "Notification center",
             }
+            or (
+                shell_pid == self.operations.surface_owner
+                and "DBUS_SESSION_BUS_ADDRESS" in environment
+                and selector.role == "menu_item"
+                and selector.name in self.invoked
+            )
         )
 
     def reject_stale_action(
@@ -985,15 +999,22 @@ class SurfaceParserTests(unittest.TestCase):
         self.assertEqual(document["desktop"]["wallpaper_source"], "")
         self.assertEqual(document["desktop"]["background_color"], "#182033")
         self.assertEqual(document["notifications"]["history"], "session")
+        self.assertFalse(document["appearance"]["reduced_motion"])
         self.assertEqual(document["developer"]["mock_capability_overrides"], [])
         self.assertNotIn("/home/", payload)
 
         persistent = tomllib.loads(_session_config("persistent"))
         self.assertEqual(persistent["notifications"]["history"], "persistent")
+        reduced = tomllib.loads(_session_config(reduced_motion=True))
+        self.assertTrue(reduced["appearance"]["reduced_motion"])
         with self.assertRaisesRegex(
             HarnessError, "^private_session_history_mode_invalid$"
         ):
             _session_config("disabled")
+        with self.assertRaisesRegex(
+            HarnessError, "^private_session_reduced_motion_invalid$"
+        ):
+            _session_config(reduced_motion=1)  # type: ignore[arg-type]
 
 
 class SessionTransitionParserTests(unittest.TestCase):
@@ -1358,7 +1379,7 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertEqual(port.notification_method_latency_ns(), 975)
 
-    def test_tier_c_material_rejects_argb_surface_depth(self) -> None:
+    def test_tier_c_material_accepts_argb_and_rejects_unreviewed_surface_depth(self) -> None:
         operations = FakeOperations()
         operations.window_geometry_payloads[DESKTOP_LEFT] = operations.window_geometry_payloads[
             DESKTOP_LEFT
@@ -1366,6 +1387,14 @@ class LivePortTests(unittest.TestCase):
         port = LiveXorgHarnessPort(config(), operations)
         port._display = ":140"  # noqa: SLF001
 
+        self.assertEqual(
+            port._tier_c_window_geometry(DESKTOP_LEFT),  # noqa: SLF001
+            WindowGeometry(0, 0, 1600, 900),
+        )
+
+        operations.window_geometry_payloads[DESKTOP_LEFT] = operations.window_geometry_payloads[
+            DESKTOP_LEFT
+        ].replace(b"  Depth: 32", b"  Depth: 16")
         with self.assertRaisesRegex(HarnessError, "^tier_c_surface_depth_invalid$"):
             port._tier_c_window_geometry(DESKTOP_LEFT)  # noqa: SLF001
 
@@ -1506,6 +1535,20 @@ class LivePortTests(unittest.TestCase):
                         if workflow is None:
                             workflow = port._tier_c_workflow  # noqa: SLF001
                         self.assertIs(port._tier_c_workflow, workflow)  # noqa: SLF001
+                session_environment = next(
+                    environment
+                    for argv, environment in operations.spawn_calls
+                    if Path(argv[0]).name == "prismdrake-session"
+                )
+                tier_c_configuration = (
+                    Path(session_environment["XDG_CONFIG_HOME"])
+                    / "prismdrake"
+                    / "config.toml"
+                )
+                self.assertEqual(
+                    tier_c_configuration.read_text(encoding="ascii"),
+                    _session_config(reduced_motion=True),
+                )
                 self.assertEqual(
                     port.cleanup("tier_c_replay"), Observation(True, True)
                 )
@@ -1522,7 +1565,7 @@ class LivePortTests(unittest.TestCase):
             ]
             self.assertEqual(
                 [environment["DISPLAY"] for environment in traced_spawns],
-                [":1140", ":1140"],
+                [":140", ":1140"],
             )
             traced_commands = [
                 environment["DISPLAY"]
@@ -1530,7 +1573,7 @@ class LivePortTests(unittest.TestCase):
                 if Path(argv[0]).name in {"prismdrake-shellctl", "xdotool"}
             ]
             self.assertTrue(traced_commands)
-            self.assertEqual(set(traced_commands), {":1140"})
+            self.assertEqual(set(traced_commands), {":140"})
             self.assertIn(ProcessIdentity(3001, 30_010), operations.stop_identity_calls)
             self.assertEqual(capture.call_count, len(TIER_C_STEPS) * 2)
             self.assertIn("Desktop wallpaper", accessibility.absent)
@@ -1544,13 +1587,42 @@ class LivePortTests(unittest.TestCase):
             ]
             expected_keys: list[str] = []
             for identifier in TIER_C_STEPS:
+                if identifier == "task_actions":
+                    expected_keys.append("Tab")
                 expected_keys.extend(
                     live_xorg.TIER_C_KEY_ARGUMENTS[key]
                     for key in live_xorg.STEP_CONTRACTS[identifier].keys
                 )
                 if identifier in {"notification_center", "quick_settings"}:
                     expected_keys.append("Escape")
+                if identifier == "launcher":
+                    expected_keys.append("Tab")
             self.assertEqual(key_calls, expected_keys)
+
+    def test_tier_c_skips_real_display_with_unavailable_proxy_pair(self) -> None:
+        operations = FakeOperations()
+        operations.unavailable_displays.add(1140)
+        traces: list[FakeTierCTrace] = []
+
+        def trace_factory(trace_config, environment):
+            del environment
+            self.assertEqual(trace_config.real_display, ":141")
+            self.assertEqual(trace_config.fake_display, ":1141")
+            trace = FakeTierCTrace(trace_config.fake_display)
+            traces.append(trace)
+            return trace
+
+        port = LiveXorgHarnessPort(
+            replace(config(), last_display=141),
+            operations,
+            tier_c_trace_factory=trace_factory,
+        )
+        port._start_environment(two_outputs=True, tier_c=True)  # noqa: SLF001
+
+        self.assertEqual(port._display, ":141")  # noqa: SLF001
+        self.assertEqual(port.cleanup("tier_c_replay"), Observation(True, True))
+        self.assertEqual(len(traces), 1)
+        self.assertTrue(traces[0].finished)
 
     def test_logout_methods_use_shellctl_accessibility_and_reject_stale_id(self) -> None:
         monitor_calls: list[object] = []
@@ -2192,12 +2264,29 @@ class LivePortTests(unittest.TestCase):
             "verify_authoritative_task_removal",
         )
 
+        acknowledgements: list[int] = []
+        common_actions = {
+            "activate_one_window",
+            "minimize_one_window",
+            "reactivate_one_window",
+        }
         for identifier in identifiers:
             with self.subTest(identifier=identifier):
                 self.assertEqual(
                     port.run_step("installed_workflow", identifier),
                     Observation(True, True),
                 )
+                if identifier in common_actions:
+                    acknowledgements.append(
+                        port.common_action_acknowledgement_ns(identifier)
+                    )
+
+        self.assertEqual(acknowledgements, [0, 0, 0])
+        for identifier in (*common_actions, "not-reviewed"):
+            with self.subTest(unavailable=identifier), self.assertRaisesRegex(
+                HarnessError, "^common_action_acknowledgement_unavailable$"
+            ):
+                port.common_action_acknowledgement_ns(identifier)
 
         shellctl_calls = [
             argv
@@ -2376,6 +2465,24 @@ class LivePortTests(unittest.TestCase):
                 port.run_step("installed_workflow", identifier),
                 Observation(True, True),
             )
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_panel_surface_observation_accepts_one_keyboard_focused_dock(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+            "verify_desktop_wallpaper_both_outputs",
+        ):
+            port.run_step("installed_workflow", identifier)
+        operations.surface_focus_windows.add(PANEL_LEFT)
+
+        self.assertEqual(
+            port.run_step("installed_workflow", "verify_panel_policy_both_outputs"),
+            Observation(True, True),
+        )
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_panel_observation_rejects_desktop_or_shell_epoch_change(self) -> None:
@@ -2681,6 +2788,32 @@ class LivePortTests(unittest.TestCase):
         with self.assertRaisesRegex(HarnessError, "^desktop_wallpaper_surface_invalid$"):
             port.run_step("failure_replay", "start_with_invalid_wallpaper")
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_desktop_surface_observation_waits_for_both_mapped_outputs(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+        original = port._observe_surface_windows  # noqa: SLF001
+        calls = 0
+
+        def delayed(window_type, shell):
+            nonlocal calls
+            calls += 1
+            observed = original(window_type, shell)
+            if calls == 1:
+                return {DESKTOP_LEFT: observed[DESKTOP_LEFT]}
+            return observed
+
+        with patch.object(port, "_observe_surface_windows", side_effect=delayed):
+            port._require_desktop_wallpaper_surfaces()  # noqa: SLF001
+
+        self.assertGreaterEqual(calls, 2)
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_malformed_pin_recovery_requires_a_valid_private_replacement(self) -> None:
         operations = FakeOperations()

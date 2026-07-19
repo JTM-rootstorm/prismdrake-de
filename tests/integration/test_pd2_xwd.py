@@ -39,6 +39,7 @@ def xwd(
     width: int = 2,
     height: int = 1,
     byte_order: int = 0,
+    depth: int = 24,
     bits_per_pixel: int = 32,
     bytes_per_line: int = 8,
     colors: bytes = b"",
@@ -50,7 +51,7 @@ def xwd(
         header_size,
         7,
         2,
-        24,
+        depth,
         width,
         height,
         0,
@@ -501,6 +502,50 @@ class XwdSampleFingerprintTests(unittest.TestCase):
         big_endian = fingerprint_xwd_samples(xwd(byte_order=1), points)
 
         self.assertNotEqual(little_endian, big_endian)
+
+    def test_strict_opacity_accepts_depth_24_and_opaque_depth_32_samples(self) -> None:
+        points = ((0, 0), (1, 0))
+
+        depth_24 = fingerprint_xwd_samples(xwd(), points, require_opaque=True)
+        depth_32_lsb = fingerprint_xwd_samples(
+            xwd(
+                pixels=bytes.fromhex("102030ff 405060ff"),
+                depth=32,
+                byte_order=0,
+            ),
+            points,
+            require_opaque=True,
+        )
+        depth_32_msb = fingerprint_xwd_samples(
+            xwd(
+                pixels=bytes.fromhex("ff102030 ff405060"),
+                depth=32,
+                byte_order=1,
+            ),
+            points,
+            require_opaque=True,
+        )
+
+        self.assertEqual(len(depth_24), FINGERPRINT_BYTES)
+        self.assertEqual(len(depth_32_lsb), FINGERPRINT_BYTES)
+        self.assertEqual(len(depth_32_msb), FINGERPRINT_BYTES)
+
+    def test_strict_opacity_rejects_translucent_samples_and_invalid_layouts(self) -> None:
+        points = ((0, 0), (1, 0))
+        for payload, category in (
+            (xwd(depth=32), "xwd_sample_not_opaque"),
+            (xwd(b"\x00" * 4, depth=16, bits_per_pixel=16, bytes_per_line=4),
+             "xwd_sample_opacity_invalid"),
+        ):
+            with self.subTest(category=category), self.assertRaisesRegex(
+                XwdEvidenceError, f"^{category}$"
+            ):
+                fingerprint_xwd_samples(payload, points, require_opaque=True)
+
+        with self.assertRaisesRegex(
+            XwdEvidenceError, "^xwd_sample_opacity_invalid$"
+        ):
+            fingerprint_xwd_samples(xwd(), points, require_opaque=1)  # type: ignore[arg-type]
 
 
 class SurfaceTransitionTests(unittest.TestCase):

@@ -12,10 +12,10 @@ import re
 from dataclasses import dataclass
 
 
-MAX_TRACE_BYTES = 1_048_576
-MAX_TRACE_LINES = 16_384
+MAX_TRACE_BYTES = 8 * 1_048_576
+MAX_TRACE_LINES = 131_072
 MAX_LINE_BYTES = 65_536
-MAX_REQUESTS = 8_192
+MAX_REQUESTS = 32_768
 
 
 class X11TraceError(ValueError):
@@ -62,12 +62,14 @@ _REPLY = re.compile(
 )
 _SERVER_EVENT = re.compile(
     r"^(?P<connection>[0-9a-f]{3}):>:[0-9a-f]{4}: "
-    r"Event [A-Za-z][A-Za-z0-9]*(?:\([0-9]+\))?(?: .*)?$"
+    r"Event (?:\(generated\) )?[A-Za-z][A-Za-z0-9-]*(?:\([0-9]+\))?(?: .*)?$"
 )
 _SERVER_ERROR = re.compile(
     r"^(?P<connection>[0-9a-f]{3}):>:[0-9a-f]{4}:(?:[0-9]+: )?"
-    r"(?:Error|unexpected Reply)(?: .*)?$"
+    r"(?:Error(?: .*)?|unexpected Reply(?::.*| .*)?)$"
 )
+_CLIENT_GOODBYE = re.compile(r"^(?P<connection>[0-9a-f]{3}):>: GoodBye$")
+_CLIENT_EOF = re.compile(r"^(?P<connection>[0-9a-f]{3}):<:sent EOF$")
 
 _BACKDROP_ATOMS = (
     "_KDE_NET_WM_BLUR_BEHIND_REGION",
@@ -138,6 +140,7 @@ def parse_x11trace(
     server_setups: set[str] = set()
     requests: dict[tuple[str, str], str] = {}
     reply_boundaries: set[tuple[str, str]] = set()
+    closed_connections: set[str] = set()
 
     core_get_image_count = 0
     mit_shm_get_image_count = 0
@@ -170,7 +173,11 @@ def parse_x11trace(
             connection = match.group("connection")
             sequence = match.group("sequence")
             key = (connection, sequence)
-            if connection not in client_setups or connection not in server_setups:
+            if (
+                connection not in client_setups
+                or connection not in server_setups
+                or connection in closed_connections
+            ):
                 _fail("trace_request_before_handshake")
             if key in requests:
                 _fail("trace_duplicate_request")
@@ -180,7 +187,14 @@ def parse_x11trace(
             extension = match.group("extension")
             opcode = int(match.group("opcode"))
             operation = match.group("operation")
-            if operation == "UNKNOWN":
+            minor = match.group("minor")
+            # x11trace 1.4 does not decode MIT-SHM CreateSegment (minor 7).
+            # Its fixed extension/minor identity cannot be the forbidden
+            # GetImage request (minor 4), so retain the record and still fail
+            # closed for every other undecoded request.
+            if operation == "UNKNOWN" and not (
+                extension == "MIT-SHM" and minor == "7"
+            ):
                 _fail("trace_contains_undecoded_request")
             requests[key] = operation
 
@@ -207,6 +221,8 @@ def parse_x11trace(
             connection = match.group("connection")
             sequence = match.group("sequence")
             key = (connection, sequence)
+            if connection in closed_connections:
+                _fail("trace_reply_without_request")
             request_operation = requests.get(key)
             if request_operation is None:
                 _fail("trace_reply_without_request")
@@ -219,8 +235,19 @@ def parse_x11trace(
 
         match = _SERVER_EVENT.fullmatch(line) or _SERVER_ERROR.fullmatch(line)
         if match is not None:
-            if match.group("connection") not in server_setups:
+            if (
+                match.group("connection") not in server_setups
+                or match.group("connection") in closed_connections
+            ):
                 _fail("trace_server_packet_before_handshake")
+            continue
+
+        match = _CLIENT_GOODBYE.fullmatch(line) or _CLIENT_EOF.fullmatch(line)
+        if match is not None:
+            connection = match.group("connection")
+            if connection not in server_setups or connection in closed_connections:
+                _fail("trace_grammar_invalid")
+            closed_connections.add(connection)
             continue
 
         _fail("trace_grammar_invalid")

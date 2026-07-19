@@ -204,7 +204,7 @@ class X11TraceSupervisorTests(unittest.TestCase):
                 "--fakedisplay",
                 ":78",
                 "--waitforclient",
-                "--stopwhendone",
+                "--keeprunning",
                 "--maxlistlength",
                 str(MAX_LIST_LENGTH),
                 "--outfile",
@@ -230,7 +230,7 @@ class X11TraceSupervisorTests(unittest.TestCase):
         self.assertEqual(summary.request_count, 1)
         self.assertFalse(factory.output_path.exists())
         self.assertEqual(list(self.root.iterdir()), [])
-        self.assertEqual(factory.process.terminate_calls, 0)
+        self.assertEqual(factory.process.terminate_calls, 1)
         self.assertEqual(factory.process.kill_calls, 0)
         self.assertGreaterEqual(factory.process.wait_calls, 1)
 
@@ -242,7 +242,7 @@ class X11TraceSupervisorTests(unittest.TestCase):
             "x11trace_capture_incomplete",
             lambda: supervisor.finish(clients_exited=True),
         )
-        self.assertEqual(process.terminate_calls, 1)
+        self.assertEqual(process.terminate_calls, 2)
         self.assertEqual(process.kill_calls, 1)
         self.assertGreaterEqual(process.wait_calls, 2)
 

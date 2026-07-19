@@ -35,7 +35,7 @@ TIER_C_ASSERTIONS = (
 )
 FINGERPRINT_BYTES = 32
 REVIEWED_SAMPLE_COUNT = 4
-XWD_SAMPLE_FINGERPRINT_KIND = "xwd_sha256_reviewed_samples_v1"
+XWD_SAMPLE_FINGERPRINT_KIND = "xwd_sha256_opaque_reviewed_samples_v2"
 CONTROLLED_APPLICATION_NAME = "Prismdrake Controlled Application"
 
 _KEYS = frozenset(
@@ -107,6 +107,7 @@ class MaterialObservation:
 
     category: str
     sample_count: int
+    opaque_sample_count: int
     fingerprint_kind: str
     first_fingerprint: bytes = field(repr=False)
     settled_fingerprint: bytes = field(repr=False)
@@ -180,18 +181,18 @@ _POINTS = ((8, 8), (16, 8), (8, 16), (16, 16))
 STEP_CONTRACTS: Mapping[str, TierCStepContract] = MappingProxyType({
     "desktop": TierCStepContract(
         "desktop",
-        ("SUPER_D", "TAB"),
-        ControlSelector("Open applications", "push_button"),
+        ("TAB",),
         ControlSelector("Open applications", "push_button", require_focused=True),
-        ControlSelector("Open applications", "push_button"),
+        ControlSelector("Open applications", "push_button", require_focused=True),
+        ControlSelector("Open applications", "push_button", require_focused=True),
         _POINTS,
     ),
     "panel": TierCStepContract(
         "panel",
         ("TAB",),
-        ControlSelector("Open applications", "push_button"),
         ControlSelector("Open applications", "push_button", require_focused=True),
-        ControlSelector("Open notification center", "push_button"),
+        ControlSelector("Open applications", "push_button", require_focused=True),
+        ControlSelector("Open applications", "push_button", require_focused=True),
         _POINTS,
     ),
     "launcher": TierCStepContract(
@@ -204,10 +205,16 @@ STEP_CONTRACTS: Mapping[str, TierCStepContract] = MappingProxyType({
     ),
     "task_actions": TierCStepContract(
         "task_actions",
-        ("TAB", "MENU", "ESCAPE"),
-        ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
-        ControlSelector("Open applications", "push_button", require_focused=True),
-        ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
+        ("MENU", "ESCAPE"),
+        ControlSelector(
+            CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
+        ),
+        ControlSelector(
+            CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
+        ),
+        ControlSelector(
+            CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
+        ),
         _POINTS,
     ),
     "notification": TierCStepContract(
@@ -313,6 +320,7 @@ def _validate_material(result: Any) -> None:
         or result.category != "tier_c_material_observed"
         or result.status != "passed"
         or result.sample_count != REVIEWED_SAMPLE_COUNT
+        or result.opaque_sample_count != REVIEWED_SAMPLE_COUNT
         or result.fingerprint_kind != XWD_SAMPLE_FINGERPRINT_KIND
         or not _valid_fingerprint(result.first_fingerprint)
         or not _valid_fingerprint(result.settled_fingerprint)

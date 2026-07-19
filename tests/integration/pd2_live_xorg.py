@@ -250,6 +250,8 @@ class Operations(Protocol):
 
     def monotonic(self) -> float: ...
 
+    def monotonic_ns(self) -> int: ...
+
     def pause(self, duration: float) -> None: ...
 
 
@@ -711,6 +713,9 @@ class SystemOperations:
 
     def monotonic(self) -> float:
         return time.monotonic()
+
+    def monotonic_ns(self) -> int:
+        return time.monotonic_ns()
 
     def pause(self, duration: float) -> None:
         time.sleep(duration)
@@ -1381,11 +1386,16 @@ def parse_window_geometry(payload: bytes) -> WindowGeometry:
     return WindowGeometry(values["x"], values["y"], values["width"], values["height"])
 
 
-def _session_config(history_mode: str = "session") -> str:
+def _session_config(
+    history_mode: str = "session", *, reduced_motion: bool = False
+) -> str:
     """Return the complete private PD2 demonstration configuration."""
 
     if history_mode not in {"session", "persistent"}:
         raise HarnessError("private_session_history_mode_invalid")
+    if type(reduced_motion) is not bool:
+        raise HarnessError("private_session_reduced_motion_invalid")
+    reduced_motion_value = "true" if reduced_motion else "false"
     return f"""schema_version = 2
 profile = "lustre"
 
@@ -1393,7 +1403,7 @@ profile = "lustre"
 accent = "#4D7FFF"
 transparency_enabled = true
 blur_quality = "balanced"
-reduced_motion = false
+reduced_motion = {reduced_motion_value}
 high_contrast = false
 text_scale = 1.0
 cursor_theme = "default"
@@ -1626,6 +1636,7 @@ class LiveXorgHarnessPort:
         self._surface_shell_identity: ProcessIdentity | None = None
         self._controlled_windows: dict[str, int] = {}
         self._controlled_processes: dict[str, ProcessIdentity] = {}
+        self._common_action_acknowledgements: dict[str, int] = {}
         self._notification_epoch: _NotificationEpoch | None = None
         self._settings_epoch: _SettingsEpoch | None = None
         self._failure_settingsd: ChildProcess | None = None
@@ -1690,6 +1701,20 @@ class LiveXorgHarnessPort:
             return epoch.sender.take_notify_reply_latency_ns()
         except Exception:
             raise HarnessError("notification_latency_unavailable") from None
+
+    def common_action_acknowledgement_ns(self, identifier: str) -> int:
+        """Consume one exact action invocation-to-first-visible duration."""
+
+        if identifier not in {
+            "activate_one_window",
+            "minimize_one_window",
+            "reactivate_one_window",
+        }:
+            raise HarnessError("common_action_acknowledgement_unavailable")
+        latency = self._common_action_acknowledgements.pop(identifier, None)
+        if type(latency) is not int or not 0 <= latency <= 60_000_000_000:
+            raise HarnessError("common_action_acknowledgement_unavailable")
+        return latency
 
     def run_step(self, phase: str, identifier: str) -> Observation:
         if (phase, identifier) not in self._SUPPORTED_STEPS:
@@ -1778,20 +1803,23 @@ class LiveXorgHarnessPort:
                     "controlled_task_group_timeout",
                 )
         elif identifier == "activate_one_window":
-            self._invoke_accessible(
-                ControlSelector(f"Activate {CONTROLLED_WINDOW_ONE}", "menu_item", "Press")
+            self._invoke_common_action(
+                identifier,
+                ControlSelector(f"Activate {CONTROLLED_WINDOW_ONE}", "menu_item", "Press"),
             )
             self._wait_window_active(CONTROLLED_WINDOW_ONE, minimized=False)
         elif identifier == "minimize_one_window":
             self._open_controlled_group()
-            self._invoke_accessible(
-                ControlSelector(f"Minimize {CONTROLLED_WINDOW_ONE}", "menu_item", "Press")
+            self._invoke_common_action(
+                identifier,
+                ControlSelector(f"Minimize {CONTROLLED_WINDOW_ONE}", "menu_item", "Press"),
             )
             self._wait_window_active(CONTROLLED_WINDOW_ONE, minimized=True)
         elif identifier == "reactivate_one_window":
             self._open_controlled_group()
-            self._invoke_accessible(
-                ControlSelector(f"Activate {CONTROLLED_WINDOW_ONE}", "menu_item", "Press")
+            self._invoke_common_action(
+                identifier,
+                ControlSelector(f"Activate {CONTROLLED_WINDOW_ONE}", "menu_item", "Press"),
             )
             self._wait_window_active(CONTROLLED_WINDOW_ONE, minimized=False)
         elif identifier == "close_both_windows_through_panel":
@@ -2258,7 +2286,7 @@ class LiveXorgHarnessPort:
                 "--name",
                 f"^{title}$",
             ),
-            self.probe_environment(),
+            self._private_bus_environment(),
             3.0,
         )
         if result.returncode == 1 and not result.stdout and not result.stderr:
@@ -2311,7 +2339,7 @@ class LiveXorgHarnessPort:
         self._start_environment(two_outputs=True, tier_c=True)
         if self._tier_c_trace is None:
             raise HarnessError("tier_c_trace_start_failed")
-        self._start_session()
+        self._start_session(_session_config(reduced_motion=True))
         self._wait_for_session_readiness()
         self._require_desktop_wallpaper_surfaces()
         self._require_panel_surfaces()
@@ -2332,7 +2360,12 @@ class LiveXorgHarnessPort:
         result = self._run_x11(
             (str(self._config.xwininfo), "-id", f"0x{window:x}", "-stats")
         )
-        if result.returncode != 0 or result.stdout.splitlines().count(b"  Depth: 24") != 1:
+        depth_lines = [
+            line
+            for line in result.stdout.splitlines()
+            if re.fullmatch(rb"  Depth: (?:24|32)", line) is not None
+        ]
+        if result.returncode != 0 or len(depth_lines) != 1:
             raise HarnessError("tier_c_surface_depth_invalid")
         return parse_window_geometry(result.stdout)
 
@@ -2409,7 +2442,7 @@ class LiveXorgHarnessPort:
             surface = self._tier_c_named_surface(LAUNCHER_WINDOW_TITLE)
         elif identifier == "task_actions":
             self._prepare_tier_c_controlled_application()
-            self._invoke_shellctl("panel", "focus")
+            self._focus_controlled_panel_task("tier_c_task_focus_timeout")
             surface = self._tier_c_panel_surface()
         elif identifier == "notification":
             self._run_notification_step("create_normal_notification")
@@ -2449,6 +2482,27 @@ class LiveXorgHarnessPort:
     ) -> TierCKeyboardObservation:
         if identifier != self._tier_c_identifier or not keys:
             raise HarnessError("tier_c_keyboard_state_invalid")
+        if identifier == "notification":
+            if keys != ("TAB", "TAB", "ENTER"):
+                raise HarnessError("tier_c_keyboard_mapping_invalid")
+            self._xdotool("key", "--clearmodifiers", "Tab")
+            self.observe_atspi(
+                ControlSelector(
+                    CONTROLLED_APPLICATION_NAME,
+                    "push_button",
+                    require_focused=True,
+                )
+            )
+            self._xdotool("key", "--clearmodifiers", "Tab")
+            self.observe_atspi(
+                ControlSelector(
+                    "Open notification center",
+                    "push_button",
+                    require_focused=True,
+                )
+            )
+            self._xdotool("key", "--clearmodifiers", "Return")
+            return TierCKeyboardObservation("tier_c_keyboard_complete", len(keys))
         for key in keys:
             mapped = TIER_C_KEY_ARGUMENTS.get(key)
             if mapped is None:
@@ -2510,6 +2564,7 @@ class LiveXorgHarnessPort:
             self._runtime,
             environment,
             sample_points=sample_points,
+            require_opaque_samples=True,
         )
         self._operations.pause(0.05)
         settled = capture_window_fingerprint(
@@ -2518,6 +2573,7 @@ class LiveXorgHarnessPort:
             self._runtime,
             environment,
             sample_points=sample_points,
+            require_opaque_samples=True,
         )
         transparent = transparent_reference_fingerprint(
             geometry.width, geometry.height, sample_points, depth=24
@@ -2525,7 +2581,8 @@ class LiveXorgHarnessPort:
         return TierCMaterialObservation(
             "tier_c_material_observed",
             len(sample_points),
-            "xwd_sha256_reviewed_samples_v1",
+            len(sample_points),
+            "xwd_sha256_opaque_reviewed_samples_v2",
             first,
             settled,
             transparent,
@@ -2537,7 +2594,7 @@ class LiveXorgHarnessPort:
         shell = self._shell_identity()
         environment = self.probe_environment()
         panel = ControlSelector(
-            "Open applications", "push_button", require_focused=True
+            "Open notification center", "push_button", require_focused=True
         )
         wallpaper = ControlSelector("Desktop wallpaper", "panel")
         deadline = self._operations.monotonic() + self._config.readiness_timeout
@@ -2560,7 +2617,9 @@ class LiveXorgHarnessPort:
                 raise HarnessError("tier_c_surface_geometry_changed")
             self.observe_atspi(
                 ControlSelector(
-                    "Open applications", "push_button", require_focused=True
+                    "Open notification center",
+                    "push_button",
+                    require_focused=True,
                 )
             )
         elif identifier == "panel":
@@ -2583,10 +2642,7 @@ class LiveXorgHarnessPort:
                 self._operations.pause(0.05)
             else:
                 raise HarnessError("tier_c_launcher_dismissal_timeout")
-            self._wait_accessible(
-                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
-                "tier_c_task_publication_timeout",
-            )
+            self._focus_controlled_panel_task("tier_c_task_publication_timeout")
         elif identifier == "task_actions":
             if self._tier_c_window_geometry(window) != expected_geometry:
                 raise HarnessError("tier_c_surface_geometry_changed")
@@ -3510,7 +3566,10 @@ class LiveXorgHarnessPort:
         config_path.chmod(0o600)
 
         for number in range(self._config.first_display, self._config.last_display + 1):
-            if not self._operations.display_available(number):
+            fake_number = number + 1000
+            if not self._operations.display_available(number) or (
+                tier_c and not self._operations.display_available(fake_number)
+            ):
                 continue
             display = f":{number}"
             argv = (
@@ -4120,6 +4179,33 @@ class LiveXorgHarnessPort:
         ):
             raise HarnessError("controlled_accessible_action_rejected")
 
+    def _invoke_common_action(
+        self, identifier: str, selector: ControlSelector
+    ) -> None:
+        if (
+            identifier in self._common_action_acknowledgements
+            or selector.role != "menu_item"
+            or selector.action != "Press"
+        ):
+            raise HarnessError("common_action_acknowledgement_state_invalid")
+        self._wait_accessible(selector, "controlled_accessible_action_timeout")
+        shell = self._shell_identity()
+        environment = self.probe_environment()
+        started_ns = self._operations.monotonic_ns()
+        if not self._accessibility.invoke(shell.pid, selector, environment):
+            raise HarnessError("controlled_accessible_action_rejected")
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._accessibility.observe_absent(shell.pid, selector, environment):
+                finished_ns = self._operations.monotonic_ns()
+                latency_ns = finished_ns - started_ns
+                if not 0 <= latency_ns <= 60_000_000_000:
+                    raise HarnessError("common_action_acknowledgement_clock_invalid")
+                self._common_action_acknowledgements[identifier] = latency_ns
+                return
+            self._operations.pause(0.005)
+        raise HarnessError("common_action_acknowledgement_timeout")
+
     def _reject_stale_accessible(self, selector: ControlSelector) -> bool:
         shell = self._shell_identity()
         return self._accessibility.reject_stale_action(
@@ -4131,7 +4217,7 @@ class LiveXorgHarnessPort:
         if executable is None:
             raise HarnessError("shellctl_unavailable")
         result = self._operations.run(
-            (str(executable), group, action), self.probe_environment(), 3.0
+            (str(executable), group, action), self._private_bus_environment(), 3.0
         )
         if result.returncode != 0:
             raise HarnessError("shellctl_request_failed")
@@ -4141,7 +4227,7 @@ class LiveXorgHarnessPort:
         if executable is None:
             raise HarnessError("xdotool_unavailable")
         result = self._operations.run(
-            (str(executable), *arguments), self.probe_environment(), 3.0
+            (str(executable), *arguments), self._private_bus_environment(), 3.0
         )
         if result.returncode != 0:
             raise HarnessError("xdotool_request_failed")
@@ -4155,7 +4241,7 @@ class LiveXorgHarnessPort:
             raise HarnessError("xdotool_unavailable")
         result = self._operations.run(
             (str(executable), "search", "--onlyvisible", "--name", f"^{title}$"),
-            self.probe_environment(),
+            self._private_bus_environment(),
             3.0,
         )
         if result.returncode == 1 and not result.stdout and not result.stderr:
@@ -4288,6 +4374,12 @@ class LiveXorgHarnessPort:
             raise HarnessError("xorg_not_started")
         env = self._base_environment()
         env["DISPLAY"] = self._display
+        return env
+
+    def _traced_x11_environment(
+        self, environment: Mapping[str, str] | None = None
+    ) -> dict[str, str]:
+        env = dict(environment) if environment is not None else self._x11_environment()
         if self._tier_c_trace is not None:
             try:
                 return self._tier_c_trace.client_environment(env)
@@ -4300,7 +4392,10 @@ class LiveXorgHarnessPort:
 
         if self._session is None or self._session.poll() is not None:
             raise HarnessError("prismdrake_session_not_started")
-        return self._private_bus_environment()
+        environment = self._private_bus_environment()
+        if self._tier_c_trace is not None:
+            return self._traced_x11_environment(environment)
+        return environment
 
     def _run_x11(self, argv: Sequence[str]) -> CommandResult:
         return self._operations.run(argv, self._x11_environment(), 3.0)
@@ -4325,6 +4420,8 @@ class LiveXorgHarnessPort:
             raise HarnessError("private_session_configuration_failed") from error
         self._start_private_bus()
         environment = self._private_bus_environment()
+        if self._tier_c_trace is not None:
+            environment = self._traced_x11_environment(environment)
         environment.update(
             {
                 "QT_QUICK_BACKEND": "software",
@@ -4512,6 +4609,17 @@ class LiveXorgHarnessPort:
             WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
             WindowGeometry(OUTPUT_WIDTH, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
         }
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while len(desktops) != 2 or set(desktops.values()) != expected:
+            if self._operations.monotonic() >= deadline:
+                raise HarnessError("desktop_wallpaper_surface_invalid")
+            self._operations.pause(0.05)
+            try:
+                desktops = self._observe_surface_windows(
+                    b"_NET_WM_WINDOW_TYPE_DESKTOP", shell
+                )
+            except HarnessError:
+                desktops = {}
         if len(desktops) != 2 or set(desktops.values()) != expected:
             raise HarnessError("desktop_wallpaper_surface_invalid")
         # The production readiness byte is emitted only after wallpaper,
@@ -4606,7 +4714,10 @@ class LiveXorgHarnessPort:
                     line,
                 )
             ]
-            if len(focus_lines) != 1 or not focus_lines[0].endswith(b": False"):
+            if len(focus_lines) != 1 or (
+                window_type == b"_NET_WM_WINDOW_TYPE_DESKTOP"
+                and not focus_lines[0].endswith(b": False")
+            ):
                 raise HarnessError("surface_window_focus_policy_invalid")
             geometry_result = self._run_x11(
                 (str(self._config.xwininfo), "-id", f"0x{window:x}", "-stats")

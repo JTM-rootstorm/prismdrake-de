@@ -89,7 +89,7 @@ def _fail(category: str) -> None:
 
 def _parse_xwd(
     payload: bytes,
-) -> tuple[int, int, int, int, int, int, int, int, int, bytes]:
+) -> tuple[int, int, int, int, int, int, int, int, int, int, int, int, bytes]:
     """Parse one complete bounded XWD pixel plane into private layout state."""
 
     if not isinstance(payload, bytes):
@@ -135,9 +135,6 @@ def _parse_xwd(
     del (
         x_offset,
         visual_class,
-        red_mask,
-        green_mask,
-        blue_mask,
         bits_per_rgb,
         window_x,
         window_y,
@@ -186,6 +183,9 @@ def _parse_xwd(
         bitmap_pad,
         bits_per_pixel,
         bytes_per_line,
+        red_mask,
+        green_mask,
+        blue_mask,
         payload[pixel_offset:],
     )
 
@@ -203,6 +203,9 @@ def fingerprint_xwd(payload: bytes) -> bytes:
         _bitmap_pad,
         bits_per_pixel,
         bytes_per_line,
+        _red_mask,
+        _green_mask,
+        _blue_mask,
         pixels,
     ) = _parse_xwd(payload)
     digest = hashlib.sha256()
@@ -214,9 +217,12 @@ def fingerprint_xwd(payload: bytes) -> bytes:
 
 
 def fingerprint_xwd_samples(
-    payload: bytes, points: Sequence[tuple[int, int]]
+    payload: bytes,
+    points: Sequence[tuple[int, int]],
+    *,
+    require_opaque: bool = False,
 ) -> bytes:
-    """Fingerprint only fixed pixels at strict caller-selected coordinates."""
+    """Fingerprint fixed pixels and optionally require every sample to be opaque."""
 
     (
         depth,
@@ -228,8 +234,13 @@ def fingerprint_xwd_samples(
         bitmap_pad,
         bits_per_pixel,
         bytes_per_line,
+        red_mask,
+        green_mask,
+        blue_mask,
         pixels,
     ) = _parse_xwd(payload)
+    if type(require_opaque) is not bool:
+        _fail("xwd_sample_opacity_invalid")
     if bits_per_pixel not in (8, 16, 24, 32):
         _fail("xwd_sample_layout_invalid")
     if (
@@ -253,6 +264,25 @@ def fingerprint_xwd_samples(
         normalized.append(point)
 
     pixel_bytes = bits_per_pixel // 8
+    alpha_mask = 0
+    if require_opaque:
+        if depth == 24:
+            pass
+        elif depth == 32 and bits_per_pixel == 32:
+            pixel_mask = 0xFFFFFFFF
+            rgb_masks = (red_mask, green_mask, blue_mask)
+            if (
+                any(mask == 0 or mask & ~pixel_mask for mask in rgb_masks)
+                or red_mask & green_mask
+                or red_mask & blue_mask
+                or green_mask & blue_mask
+            ):
+                _fail("xwd_sample_opacity_invalid")
+            alpha_mask = pixel_mask & ~(red_mask | green_mask | blue_mask)
+            if alpha_mask == 0:
+                _fail("xwd_sample_opacity_invalid")
+        else:
+            _fail("xwd_sample_opacity_invalid")
     digest = hashlib.sha256()
     digest.update(
         struct.pack(
@@ -274,6 +304,11 @@ def fingerprint_xwd_samples(
         sample = pixels[offset : offset + pixel_bytes]
         if len(sample) != pixel_bytes:
             _fail("xwd_sample_layout_invalid")
+        if alpha_mask:
+            byte_order_name = "little" if byte_order == 0 else "big"
+            pixel_value = int.from_bytes(sample, byte_order_name)
+            if pixel_value & alpha_mask != alpha_mask:
+                _fail("xwd_sample_not_opaque")
         digest.update(struct.pack(">2I", x, y))
         digest.update(sample)
     return digest.digest()
@@ -343,12 +378,16 @@ def capture_window_fingerprint(
     x11_environment: Mapping[str, str],
     runner: XwdCaptureRunner | None = None,
     sample_points: Sequence[tuple[int, int]] | None = None,
+    *,
+    require_opaque_samples: bool = False,
 ) -> bytes:
     """Capture one exact X11 window and return only its bounded fingerprint.
 
     When ``sample_points`` is supplied, only those reviewed pixel coordinates
-    contribute to the returned fingerprint. Raw capture bytes remain confined
-    to the private temporary file in either mode.
+    contribute to the returned fingerprint. ``require_opaque_samples`` accepts
+    depth-24 surfaces or requires every sampled depth-32 alpha field to be full.
+    Raw capture bytes remain confined to the private temporary file in either
+    mode.
     """
 
     _require_xwd_executable(xwd_executable)
@@ -417,7 +456,9 @@ def capture_window_fingerprint(
         payload = _read_capture(output, created)
         if sample_points is None:
             return fingerprint_xwd(payload)
-        return fingerprint_xwd_samples(payload, sample_points)
+        return fingerprint_xwd_samples(
+            payload, sample_points, require_opaque=require_opaque_samples
+        )
     finally:
         if descriptor is not None:
             try:

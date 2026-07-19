@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import stat
 import subprocess
 import tempfile
@@ -305,7 +306,7 @@ class X11TraceSupervisor:
                 "--fakedisplay",
                 config.fake_display,
                 "--waitforclient",
-                "--stopwhendone",
+                "--keeprunning",
                 "--maxlistlength",
                 str(MAX_LIST_LENGTH),
                 "--outfile",
@@ -573,12 +574,17 @@ class X11TraceSupervisor:
             failure = self._monitor_failure()
             if failure is not None:
                 _fail(failure)
-            try:
-                returncode = process.wait(timeout=float(self._config.shutdown_seconds))
-            except Exception:
-                self._terminate_process()
-                _fail("x11trace_capture_incomplete")
-            if returncode != 0 or process.poll() != 0:
+            returncode = process.poll()
+            if returncode is None:
+                try:
+                    process.terminate()
+                    returncode = process.wait(
+                        timeout=float(self._config.shutdown_seconds)
+                    )
+                except Exception:
+                    self._terminate_process()
+                    _fail("x11trace_capture_incomplete")
+            if returncode not in (0, -signal.SIGTERM) or process.poll() != returncode:
                 _fail("x11trace_capture_incomplete")
             payload = self._read_complete_trace()
             try:

@@ -69,6 +69,49 @@ class X11TraceParserTests(unittest.TestCase):
             )
         )
 
+    def test_accepts_one_terminal_goodbye_for_a_known_connection(self) -> None:
+        summary = self.require_clean(trace() + b"000:>: GoodBye\n")
+
+        self.assertTrue(summary.trace_complete)
+        self.assertEqual(summary.request_count, 3)
+
+    def test_accepts_one_terminal_eof_for_a_known_connection(self) -> None:
+        summary = self.require_clean(trace() + b"000:<:sent EOF\n")
+
+        self.assertTrue(summary.trace_complete)
+        self.assertEqual(summary.request_count, 3)
+
+    def test_accepts_generated_server_event(self) -> None:
+        summary = self.require_clean(
+            trace()
+            + b"000:>:0003: Event (generated) ClientMessage(33) "
+            + b"format=0x20 window=0x00200001\n"
+        )
+
+        self.assertTrue(summary.trace_complete)
+
+    def test_accepts_extension_event_and_unexpected_reply_detail(self) -> None:
+        summary = self.require_clean(
+            trace()
+            + b"000:>:0003: Event RANDR-RRNotify(1) kind=OutputChange(0x00)\n"
+            + b"000:>:0004:32: unexpected Reply: data1=0x00 data2=0x00\n"
+        )
+
+        self.assertTrue(summary.trace_complete)
+
+    def test_rejects_unknown_duplicate_or_nonterminal_goodbye(self) -> None:
+        cases = (
+            trace() + b"001:>: GoodBye\n",
+            trace() + b"000:>: GoodBye\n000:>: GoodBye\n",
+            trace()
+            + b"000:>: GoodBye\n"
+            + b"000:<:0004: 4: Request(43): GetInputFocus\n",
+        )
+        for payload in cases:
+            with self.subTest(payload_length=len(payload)):
+                with self.assertRaises(X11TraceError):
+                    self.parse(payload)
+
     def test_rejects_core_get_image_opcode_even_if_name_is_misleading(self) -> None:
         payload = trace(
             "000:<:0004: 20: Request(73): HarmlessName drawable=0x00200001 "
@@ -193,6 +236,23 @@ class X11TraceParserTests(unittest.TestCase):
             with self.subTest(suffix=suffix[:20]):
                 with self.assertRaises(X11TraceError):
                     self.parse(trace() + suffix.encode("utf-8"))
+
+    def test_accepts_only_known_safe_undecoded_mit_shm_create_segment(self) -> None:
+        summary = self.require_clean(
+            trace()
+            + b"000:<:0004: 16: MIT-SHM-Request(130,7): UNKNOWN opcode=0x82\n"
+        )
+
+        self.assertTrue(summary.trace_complete)
+        self.assertEqual(summary.mit_shm_get_image_count, 0)
+
+        with self.assertRaisesRegex(
+            X11TraceError, "^trace_contains_undecoded_request$"
+        ):
+            self.parse(
+                trace()
+                + b"000:<:0004: 16: MIT-SHM-Request(130,4): UNKNOWN opcode=0x82\n"
+            )
 
     def test_rejects_oversized_byte_line_and_line_count_inputs(self) -> None:
         oversized_bytes = b"x" * (MAX_TRACE_BYTES + 1)

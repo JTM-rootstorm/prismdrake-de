@@ -123,6 +123,7 @@ class FakePort:
         return MaterialObservation(
             "tier_c_material_observed",
             len(sample_points),
+            len(sample_points),
             XWD_SAMPLE_FINGERPRINT_KIND,
             digest,
             digest,
@@ -146,19 +147,45 @@ class FakePort:
 
 
 class TierCWorkflowTests(unittest.TestCase):
+    def test_desktop_tab_moves_from_the_reviewed_launcher_control(self) -> None:
+        contract = STEP_CONTRACTS["desktop"]
+
+        self.assertEqual(contract.keys, ("TAB",))
+        self.assertEqual(contract.focus_selector.name, "Open applications")
+        self.assertTrue(contract.focus_selector.require_focused)
+
     def test_panel_tab_starts_from_the_reviewed_launcher_control(self) -> None:
         contract = STEP_CONTRACTS["panel"]
 
         self.assertEqual(contract.keys, ("TAB",))
         self.assertEqual(contract.surface_selector.name, "Open applications")
         self.assertEqual(contract.focus_selector.name, "Open applications")
+        self.assertEqual(contract.readable_selector.name, "Open applications")
+        self.assertTrue(contract.surface_selector.require_focused)
         self.assertTrue(contract.focus_selector.require_focused)
+        self.assertTrue(contract.readable_selector.require_focused)
 
     def test_launcher_enter_activates_the_prepared_controlled_result(self) -> None:
         contract = STEP_CONTRACTS["launcher"]
 
         self.assertEqual(contract.keys, ("ENTER",))
         self.assertEqual(contract.focus_selector.name, "Search applications")
+        self.assertTrue(contract.focus_selector.require_focused)
+
+    def test_task_menu_starts_from_the_focused_authoritative_task(self) -> None:
+        contract = STEP_CONTRACTS["task_actions"]
+
+        self.assertEqual(contract.keys, ("MENU", "ESCAPE"))
+        self.assertTrue(contract.surface_selector.require_focused)
+        self.assertEqual(
+            contract.surface_selector.name, "Prismdrake Controlled Application"
+        )
+
+    def test_notification_opens_center_from_the_next_panel_control(self) -> None:
+        contract = STEP_CONTRACTS["notification"]
+
+        self.assertEqual(contract.keys, ("TAB", "TAB", "ENTER"))
+        self.assertEqual(contract.focus_selector.name, "Open applications")
         self.assertTrue(contract.focus_selector.require_focused)
 
     def make_workflow(self) -> tuple[TierCReplayWorkflow, FakePort, FakeTrace]:
@@ -295,7 +322,7 @@ class TierCWorkflowTests(unittest.TestCase):
     def test_rejects_incomplete_or_malformed_keyboard_observation(self) -> None:
         cases = (
             object(),
-            KeyboardObservation("tier_c_keyboard_complete", 1),
+            KeyboardObservation("tier_c_keyboard_complete", 0),
             KeyboardObservation("tier_c_step_complete", 2),
             KeyboardObservation("tier_c_keyboard_complete", True),
             KeyboardObservation("tier_c_keyboard_complete", 2, "failed"),
@@ -338,31 +365,35 @@ class TierCWorkflowTests(unittest.TestCase):
         cases = (
             object(),
             MaterialObservation(
-                "tier_c_material_observed", 3, XWD_SAMPLE_FINGERPRINT_KIND,
+                "tier_c_material_observed", 3, 3, XWD_SAMPLE_FINGERPRINT_KIND,
                 stable, stable, reference
             ),
             MaterialObservation(
-                "tier_c_material_observed", 4, "full_xwd_fingerprint",
+                "tier_c_material_observed", 4, 3, XWD_SAMPLE_FINGERPRINT_KIND,
                 stable, stable, reference
             ),
             MaterialObservation(
-                "tier_c_material_observed", 4, XWD_SAMPLE_FINGERPRINT_KIND,
+                "tier_c_material_observed", 4, 4, "full_xwd_fingerprint",
+                stable, stable, reference
+            ),
+            MaterialObservation(
+                "tier_c_material_observed", 4, 4, XWD_SAMPLE_FINGERPRINT_KIND,
                 b"a", b"a", reference
             ),
             MaterialObservation(
-                "tier_c_material_observed", 4, XWD_SAMPLE_FINGERPRINT_KIND,
+                "tier_c_material_observed", 4, 4, XWD_SAMPLE_FINGERPRINT_KIND,
                 stable, b"c" * 32, reference
             ),
             MaterialObservation(
-                "tier_c_material_observed", 4, XWD_SAMPLE_FINGERPRINT_KIND,
+                "tier_c_material_observed", 4, 4, XWD_SAMPLE_FINGERPRINT_KIND,
                 stable, stable, stable
             ),
             MaterialObservation(
-                "tier_c_step_complete", 4, XWD_SAMPLE_FINGERPRINT_KIND,
+                "tier_c_step_complete", 4, 4, XWD_SAMPLE_FINGERPRINT_KIND,
                 stable, stable, reference
             ),
             MaterialObservation(
-                "tier_c_material_observed", 4, XWD_SAMPLE_FINGERPRINT_KIND,
+                "tier_c_material_observed", 4, 4, XWD_SAMPLE_FINGERPRINT_KIND,
                 stable, stable, reference, "failed"
             ),
         )
