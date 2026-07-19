@@ -3,12 +3,16 @@ include(GNUInstallDirs)
 add_library(prismdrake-session-core STATIC
     ChildProcess.cpp
     ChildProcess.hpp
+    LogoutTransaction.cpp
+    LogoutTransaction.hpp
     RestartPolicy.cpp
     RestartPolicy.hpp
     SessionEnvironment.cpp
     SessionEnvironment.hpp
     SessionOptions.cpp
     SessionOptions.hpp
+    SessionControlService.cpp
+    SessionControlService.hpp
     SessionRuntime.cpp
     SessionRuntime.hpp
     SessionSupervisor.cpp
@@ -21,7 +25,7 @@ target_include_directories(prismdrake-session-core
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
 target_link_libraries(prismdrake-session-core
     PUBLIC Prismdrake::foundation
-    PRIVATE Prismdrake::sd-bus)
+    PUBLIC Prismdrake::sd-bus)
 
 prismdrake_configure_cpp_target(prismdrake-session-core)
 prismdrake_enable_warnings(prismdrake-session-core)
