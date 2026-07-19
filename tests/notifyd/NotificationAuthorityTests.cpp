@@ -260,6 +260,39 @@ TEST(NotificationAuthorityTest, StaleNativeCommandsHaveNoSideEffects) {
     EXPECT_EQ(owner.records().size(), 1U);
 }
 
+TEST(NotificationAuthorityTest, DismissClosesLiveRecordBeforeHistoryClear) {
+    auto clock = std::make_shared<TestMonotonicClock>();
+    auto owner = authority(clock);
+    const auto created = owner.notify(notification("Dismissed", ":1.56"));
+    ASSERT_TRUE(created);
+
+    const auto dismissed =
+        owner.dismiss(created.value().recordId, created.value().contentGeneration);
+
+    ASSERT_TRUE(dismissed);
+    EXPECT_TRUE(dismissed.value().published);
+    ASSERT_EQ(dismissed.value().closeEvents.size(), 1U);
+    EXPECT_EQ(dismissed.value().closeEvents.front().notificationId,
+              created.value().notificationId);
+    EXPECT_EQ(dismissed.value().closeEvents.front().reason, CloseReason::dismissed);
+    EXPECT_EQ(dismissed.value().closeEvents.front().destination, ":1.56");
+    ASSERT_EQ(owner.records().size(), 1U);
+    const auto &history = owner.records().front();
+    EXPECT_EQ(history.recordId, created.value().recordId);
+    EXPECT_EQ(history.contentGeneration, created.value().contentGeneration);
+    EXPECT_FALSE(history.notificationId);
+    EXPECT_FALSE(history.sender);
+    EXPECT_FALSE(history.expiresAt);
+    EXPECT_FALSE(history.transientPresentation);
+    ASSERT_EQ(history.actions.size(), 1U);
+    EXPECT_FALSE(history.actions.front().enabled);
+
+    const auto cleared = owner.clearHistory();
+    ASSERT_TRUE(cleared);
+    EXPECT_GT(cleared.value(), dismissed.value().stateGeneration);
+    EXPECT_TRUE(owner.records().empty());
+}
+
 TEST(NotificationAuthorityTest, PersistentHistoryIsPrivateBoundedAndRestoresDisabledActions) {
     TemporaryDirectory temporary;
     const auto stateHome = temporary.path() / "state";

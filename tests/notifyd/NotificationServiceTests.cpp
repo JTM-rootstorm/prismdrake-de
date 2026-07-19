@@ -536,6 +536,50 @@ TEST_F(NotificationServiceFixture, NativeStateMutationsUseTypedGenerationAndStal
                  "org.prismdrake.NotificationCenter1.Error.UnsupportedSchemaVersion");
 }
 
+TEST_F(NotificationServiceFixture, NativeDismissSignalsSenderAndRetainsClosedHistory) {
+    SignalCapture capture;
+    Slot closeSlot;
+    ASSERT_GE(sd_bus_match_signal(bus_.get(), closeSlot.put(), standardService, standardPath,
+                                  standardInterface, "NotificationClosed", captureClose, &capture),
+              0);
+    const auto created = notify(bus_.get(), 0U, "Dismissed", {"open", "Open"});
+    ASSERT_GE(created.result, 0);
+    auto state = currentState(bus_.get());
+    ASSERT_TRUE(state);
+    ASSERT_EQ(state->at("records").size(), 1U);
+    const auto &record = state->at("records").front();
+    const auto recordId = record.at("record_id").get<std::uint64_t>();
+    const auto contentGeneration = record.at("content_generation").get<std::uint64_t>();
+
+    ErrorCapture dismissError;
+    Message dismissReply;
+    ASSERT_GE(sd_bus_call_method(bus_.get(), centerService, centerPath, centerInterface, "Dismiss",
+                                 &dismissError.value, dismissReply.put(), "tt", recordId,
+                                 contentGeneration),
+              0);
+    ASSERT_TRUE(processUntil(bus_.get(), [&capture] { return capture.closes == 1U; }));
+    EXPECT_EQ(capture.id, created.id);
+    EXPECT_EQ(capture.reason, 2U);
+    state = currentState(bus_.get());
+    ASSERT_TRUE(state);
+    ASSERT_EQ(state->at("records").size(), 1U);
+    const auto &history = state->at("records").front();
+    EXPECT_EQ(history.at("record_id"), recordId);
+    EXPECT_EQ(history.at("content_generation"), contentGeneration);
+    EXPECT_FALSE(history.contains("notification_id"));
+    EXPECT_FALSE(history.at("transient"));
+    EXPECT_FALSE(history.at("actions").front().at("enabled"));
+
+    ErrorCapture clearError;
+    Message clearReply;
+    ASSERT_GE(sd_bus_call_method(bus_.get(), centerService, centerPath, centerInterface,
+                                 "ClearHistory", &clearError.value, clearReply.put(), ""),
+              0);
+    state = currentState(bus_.get());
+    ASSERT_TRUE(state);
+    EXPECT_TRUE(state->at("records").empty());
+}
+
 TEST_F(NotificationServiceFixture, ReplacementTransfersActionAndCloseSignalsToNewSender) {
     auto &replacementBus = secondBus();
     SignalCapture capture;

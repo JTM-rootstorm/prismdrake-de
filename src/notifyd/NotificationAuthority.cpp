@@ -429,7 +429,17 @@ Result<MutationOutcome> NotificationAuthority::dismiss(std::uint64_t recordId,
     }
     const auto offset = static_cast<std::size_t>(std::distance(records_.begin(), record));
     auto candidate = records_;
-    candidate.erase(candidate.begin() + static_cast<std::ptrdiff_t>(offset));
+    auto &dismissed = candidate[offset];
+    dismissed.notificationId.reset();
+    dismissed.sender.reset();
+    dismissed.expiresAt.reset();
+    dismissed.transientPresentation = false;
+    for (auto &action : dismissed.actions) {
+        action.enabled = false;
+    }
+    if (history_mode_ == HistoryMode::disabled || dismissed.transientHint) {
+        candidate.erase(candidate.begin() + static_cast<std::ptrdiff_t>(offset));
+    }
     auto persisted = persistCandidate(candidate);
     if (!persisted) {
         return Result<MutationOutcome>::failure(persisted.error());
