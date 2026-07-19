@@ -208,6 +208,7 @@ TEST(WallpaperLoaderTest, RejectsRemoteUnsupportedAndNonRegularSources) {
         ASSERT_TRUE(result);
         EXPECT_EQ(result->status, WallpaperLoadStatus::unsupported);
         EXPECT_FALSE(result->hasImage());
+        EXPECT_EQ(result->backgroundColor, QColor{"#182033"});
     }
 }
 
@@ -225,18 +226,26 @@ TEST(WallpaperLoaderTest, RejectsMissingMalformedOversizedAndAllocationBombSourc
     const auto missing = loadAndWait(loader, request(files.path("missing.png"), {}, 1U));
     ASSERT_TRUE(missing);
     EXPECT_EQ(missing->status, WallpaperLoadStatus::unavailable);
+    EXPECT_FALSE(missing->hasImage());
+    EXPECT_EQ(missing->backgroundColor, QColor{"#182033"});
 
     const auto invalid = loadAndWait(loader, request(malformed, {}, 2U));
     ASSERT_TRUE(invalid);
     EXPECT_EQ(invalid->status, WallpaperLoadStatus::unsupported);
+    EXPECT_FALSE(invalid->hasImage());
+    EXPECT_EQ(invalid->backgroundColor, QColor{"#182033"});
 
     const auto tooLargeFile = loadAndWait(loader, request(oversized, {}, 3U));
     ASSERT_TRUE(tooLargeFile);
     EXPECT_EQ(tooLargeFile->status, WallpaperLoadStatus::tooLarge);
+    EXPECT_FALSE(tooLargeFile->hasImage());
+    EXPECT_EQ(tooLargeFile->backgroundColor, QColor{"#182033"});
 
     const auto bombResult = loadAndWait(loader, request(bomb, {}, 4U));
     ASSERT_TRUE(bombResult);
     EXPECT_EQ(bombResult->status, WallpaperLoadStatus::tooLarge);
+    EXPECT_FALSE(bombResult->hasImage());
+    EXPECT_EQ(bombResult->backgroundColor, QColor{"#182033"});
 }
 
 class BlockingDecoder final : public WallpaperDecoder {
@@ -257,6 +266,11 @@ class BlockingDecoder final : public WallpaperDecoder {
                 std::unique_lock lock{mutex_};
                 condition_.wait_for(lock, std::chrono::milliseconds{5});
             }
+            {
+                const std::scoped_lock lock{mutex_};
+                cancellationObserved_ = true;
+            }
+            condition_.notify_all();
             return {WallpaperLoadStatus::invalid, {}};
         }
         auto image = std::make_shared<QImage>(3, 2, QImage::Format_ARGB32);
@@ -274,10 +288,17 @@ class BlockingDecoder final : public WallpaperDecoder {
         return workerThread_;
     }
 
+    [[nodiscard]] bool waitForCancellation() const {
+        std::unique_lock lock{mutex_};
+        return condition_.wait_for(lock, std::chrono::seconds{2},
+                                   [this] { return cancellationObserved_; });
+    }
+
   private:
     mutable std::mutex mutex_;
     mutable std::condition_variable condition_;
     mutable bool firstEntered_{false};
+    mutable bool cancellationObserved_{false};
     mutable QThread *workerThread_{nullptr};
 };
 
@@ -319,6 +340,22 @@ TEST(WallpaperLoaderTest, CoalescesPendingWorkAndRejectsStaleWorkerPublication) 
     EXPECT_TRUE(published->hasImage());
     ASSERT_TRUE(loader.current());
     EXPECT_EQ(loader.current()->generation, 2U);
+}
+
+TEST(WallpaperLoaderTest, DestructionCancelsActiveWorkWithoutPublishing) {
+    auto decoder = std::make_shared<BlockingDecoder>();
+    QObject context;
+    bool callbackInvoked = false;
+    {
+        WallpaperLoader loader{decoder};
+        ASSERT_TRUE(loader.load(request("private-source.png", {}, 1U), &context,
+                                [&](auto) { callbackInvoked = true; }));
+        ASSERT_TRUE(decoder->waitForFirst());
+    }
+
+    EXPECT_TRUE(decoder->waitForCancellation());
+    QCoreApplication::processEvents();
+    EXPECT_FALSE(callbackInvoked);
 }
 
 TEST(WallpaperLoaderTest, RejectsRepeatedAndZeroGenerationsWithRedactedErrors) {
