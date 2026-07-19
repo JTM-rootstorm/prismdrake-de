@@ -1526,7 +1526,7 @@ class LivePortTests(unittest.TestCase):
             ),
         )
         self.assertEqual(session_environment["QT_QPA_PLATFORM"], "xcb")
-        self.assertEqual(session_environment["QSG_RHI_BACKEND"], "software")
+        self.assertEqual(session_environment["QT_QUICK_BACKEND"], "software")
         self.assertEqual(
             session_environment["DBUS_SESSION_BUS_ADDRESS"],
             bus_argv[4].removeprefix("--address="),
@@ -1539,7 +1539,7 @@ class LivePortTests(unittest.TestCase):
                 if key
                 not in {
                     "QT_QPA_PLATFORM",
-                    "QSG_RHI_BACKEND",
+                    "QT_QUICK_BACKEND",
                     "QT_QUICK_CONTROLS_STYLE",
                     "QT_LINUX_ACCESSIBILITY_ALWAYS_ON",
                 }

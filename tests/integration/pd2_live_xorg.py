@@ -1821,7 +1821,7 @@ class LiveXorgHarnessPort:
         environment = self._private_bus_environment()
         environment.update(
             {
-                "QSG_RHI_BACKEND": "software",
+                "QT_QUICK_BACKEND": "software",
                 "QT_QPA_PLATFORM": "xcb",
                 "QT_QUICK_CONTROLS_STYLE": "Basic",
                 "QT_LINUX_ACCESSIBILITY_ALWAYS_ON": "1",
@@ -3803,7 +3803,7 @@ class LiveXorgHarnessPort:
         environment = self._private_bus_environment()
         environment.update(
             {
-                "QSG_RHI_BACKEND": "software",
+                "QT_QUICK_BACKEND": "software",
                 "QT_QPA_PLATFORM": "xcb",
                 "QT_QUICK_CONTROLS_STYLE": "Basic",
                 "QT_LINUX_ACCESSIBILITY_ALWAYS_ON": "1",
