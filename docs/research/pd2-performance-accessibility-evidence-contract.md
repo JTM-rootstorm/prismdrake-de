@@ -245,3 +245,9 @@ Reliable screen-reader automation and every runtime observer must still be
 exercised on the reference VM. A genuinely unavailable dependency or
 unautomatable state may be represented only by an exact reviewed skip declared
 before collection. A skip does not satisfy the corresponding WP15 exit claim.
+
+The dedicated accessibility observer maps 48 matrix checks. Its description,
+Backtab, output-migration focus, and service-restart focus claims require the
+exact corresponding records from the 48-step installed workflow. Restart
+claims require the settingsd, notifyd, and shell focus-recovery records; generic
+process-restart success is not accepted as accessibility evidence.

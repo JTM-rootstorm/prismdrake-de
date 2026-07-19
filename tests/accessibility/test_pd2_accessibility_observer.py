@@ -71,6 +71,7 @@ class AccessibilityObserverTests(unittest.TestCase):
             for check in observer.MATRIX_CHECKS
         }
         self.assertEqual(len(results), 14 * 26)
+        self.assertEqual(len(observer.OBSERVED), 48)
         self.assertTrue(
             all(result["status"] in {"passed", "skipped"} for result in results.values())
         )
@@ -82,14 +83,17 @@ class AccessibilityObserverTests(unittest.TestCase):
             results[("launcher_results", "enter_activation")]["status"], "passed"
         )
         self.assertEqual(
-            results[("panel", "accessible_description")]["reason_code"],
-            "live_adapter_unimplemented",
+            results[("panel", "accessible_description")]["status"], "passed"
         )
+        self.assertEqual(results[("quick_settings", "tab_backtab")]["status"], "passed")
+        self.assertEqual(results[("output_migration", "state_focused")]["status"], "passed")
 
     def test_restart_focus_is_never_inferred_from_process_recovery(self) -> None:
         for check in set(observer.MATRIX_CHECKS) - {
+            "tab_backtab",
             "accessible_name",
             "accessible_role",
+            "state_focused",
         }:
             result = self.observed("service_restart_focus_recovery", check)
             self.assertEqual(result["status"], "skipped")
@@ -108,6 +112,65 @@ class AccessibilityObserverTests(unittest.TestCase):
             ],
             "passed",
         )
+        self.assertEqual(
+            self.observed("service_restart_focus_recovery", "state_focused")[
+                "status"
+            ],
+            "passed",
+        )
+        self.assertEqual(
+            self.observed("service_restart_focus_recovery", "tab_backtab")["status"],
+            "passed",
+        )
+
+    def test_new_live_mappings_require_the_exact_installed_result_ids(self) -> None:
+        cases = (
+            (
+                "verify_accessible_descriptions_states_and_backtab",
+                "panel",
+                "accessible_description",
+            ),
+            (
+                "verify_output_migration_accessibility",
+                "output_migration",
+                "state_focused",
+            ),
+            (
+                "verify_settingsd_focus_recovery",
+                "service_restart_focus_recovery",
+                "tab_backtab",
+            ),
+            (
+                "verify_notifyd_focus_recovery",
+                "service_restart_focus_recovery",
+                "accessible_name",
+            ),
+            (
+                "verify_shell_focus_recovery",
+                "service_restart_focus_recovery",
+                "accessible_role",
+            ),
+        )
+        for missing, surface, check in cases:
+            with self.subTest(missing=missing, surface=surface, check=check):
+                incomplete = dict(self.document)
+                incomplete["workflow"] = [
+                    record
+                    for record in self.document["workflow"]
+                    if record["id"] != missing
+                ]
+                with (
+                    mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
+                    mock.patch.object(observer, "require_gi_atspi", return_value=object()),
+                    mock.patch.object(
+                        observer, "installed_evidence", return_value=incomplete
+                    ),
+                    self.assertRaisesRegex(
+                        observer.AccessibilityObserverError,
+                        "^installed_demo_observation_missing$",
+                    ),
+                ):
+                    observer.accessibility_result(surface, check)
 
     def test_downgrades_indirect_or_non_atspi_state_inferences(self) -> None:
         downgraded = (

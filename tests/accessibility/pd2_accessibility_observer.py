@@ -75,8 +75,14 @@ def requirement(*items: tuple[str, str]) -> EvidenceRequirement:
 # expanded into states or settings variants that the live workflow did not
 # actually observe.
 OBSERVED: dict[tuple[str, str], EvidenceRequirement] = {
+    ("panel", "tab_backtab"): requirement(
+        ("installed_workflow", "verify_accessible_descriptions_states_and_backtab")
+    ),
     ("panel", "accessible_name"): requirement(("tier_c_replay", "panel")),
     ("panel", "accessible_role"): requirement(("tier_c_replay", "panel")),
+    ("panel", "accessible_description"): requirement(
+        ("installed_workflow", "verify_accessible_descriptions_states_and_backtab")
+    ),
     ("panel", "state_focused"): requirement(("tier_c_replay", "panel")),
     ("running_task", "escape_recovery"): requirement(
         ("tier_c_replay", "task_actions")
@@ -145,11 +151,17 @@ OBSERVED: dict[tuple[str, str], EvidenceRequirement] = {
     ("quick_settings", "space_activation"): requirement(
         ("tier_c_replay", "quick_settings")
     ),
+    ("quick_settings", "tab_backtab"): requirement(
+        ("installed_workflow", "verify_accessible_descriptions_states_and_backtab")
+    ),
     ("quick_settings", "accessible_name"): requirement(
         ("tier_c_replay", "quick_settings")
     ),
     ("quick_settings", "accessible_role"): requirement(
         ("tier_c_replay", "quick_settings")
+    ),
+    ("quick_settings", "accessible_description"): requirement(
+        ("installed_workflow", "verify_accessible_descriptions_states_and_backtab")
     ),
     ("quick_settings", "state_focused"): requirement(
         ("tier_c_replay", "quick_settings")
@@ -169,13 +181,37 @@ OBSERVED: dict[tuple[str, str], EvidenceRequirement] = {
     ("logout_confirmation", "state_focused"): requirement(
         ("tier_c_replay", "logout")
     ),
+    ("output_migration", "tab_backtab"): requirement(
+        ("installed_workflow", "verify_output_migration_accessibility")
+    ),
+    ("output_migration", "accessible_name"): requirement(
+        ("installed_workflow", "verify_output_migration_accessibility")
+    ),
+    ("output_migration", "accessible_role"): requirement(
+        ("installed_workflow", "verify_output_migration_accessibility")
+    ),
+    ("output_migration", "state_focused"): requirement(
+        ("installed_workflow", "verify_output_migration_accessibility")
+    ),
+    ("service_restart_focus_recovery", "tab_backtab"): requirement(
+        ("installed_workflow", "verify_settingsd_focus_recovery"),
+        ("installed_workflow", "verify_notifyd_focus_recovery"),
+        ("installed_workflow", "verify_shell_focus_recovery"),
+    ),
     ("service_restart_focus_recovery", "accessible_name"): requirement(
-        ("failure_replay", "restart_notifyd"),
-        ("failure_replay", "restart_shell"),
+        ("installed_workflow", "verify_settingsd_focus_recovery"),
+        ("installed_workflow", "verify_notifyd_focus_recovery"),
+        ("installed_workflow", "verify_shell_focus_recovery"),
     ),
     ("service_restart_focus_recovery", "accessible_role"): requirement(
-        ("failure_replay", "restart_notifyd"),
-        ("failure_replay", "restart_shell"),
+        ("installed_workflow", "verify_settingsd_focus_recovery"),
+        ("installed_workflow", "verify_notifyd_focus_recovery"),
+        ("installed_workflow", "verify_shell_focus_recovery"),
+    ),
+    ("service_restart_focus_recovery", "state_focused"): requirement(
+        ("installed_workflow", "verify_settingsd_focus_recovery"),
+        ("installed_workflow", "verify_notifyd_focus_recovery"),
+        ("installed_workflow", "verify_shell_focus_recovery"),
     ),
 }
 
