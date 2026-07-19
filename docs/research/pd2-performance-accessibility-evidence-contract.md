@@ -212,7 +212,8 @@ cmake -S . -B build/performance-gcc -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DPRISMDRAKE_WARNINGS_AS_ERRORS=ON
 cmake --build build/performance-gcc --target \
-  prismdrake-pd1-performance-evidence prismdrake-pd2-asset-performance
+  prismdrake-pd1-performance-evidence prismdrake-pd2-asset-performance \
+  prismdrake-controlled-window-fixture
 env \
   PRISMDRAKE_PD2_BUILD_DIRECTORY="$PWD/build/performance-gcc" \
   PRISMDRAKE_PD2_PERFORMANCE_RUNNER="$PWD/build/performance-gcc/tests/performance/prismdrake-pd1-performance-evidence" \
