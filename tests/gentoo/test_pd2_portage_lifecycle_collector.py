@@ -40,6 +40,7 @@ from pd2_portage_lifecycle_collector import (
     load_capture_json,
     run_checked,
     sha256_regular_file,
+    stage_document,
     verify_exact_source,
 )
 from pd2_portage_lifecycle_evidence import (
@@ -190,24 +191,64 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 path_exists=lambda path: str(path).endswith("/current-theme"),
             )
 
-    def test_finalizer_requires_exact_preflight_and_both_demo_harness_bindings(self) -> None:
+    @staticmethod
+    def lifecycle_stages(document: dict) -> list[dict]:
+        unmerge = document["unmerge"]
+        return [
+            stage_document("pd2_portage_qa", "portage_qa", document["portage_qa"]),
+            stage_document(
+                "pd2_portage_resolutions", "resolutions", document["resolutions"],
+            ),
+            stage_document("pd2_package_test", "package_test", document["package_test"]),
+            stage_document(
+                "pd2_direct_linkage", "direct_linkage", document["direct_linkage"],
+            ),
+            stage_document(
+                "pd2_sandbox_exclusions", "sandbox_exclusions",
+                document["sandbox_exclusions"],
+            ),
+            stage_document(
+                "pd2_installed_demonstration", "demonstration",
+                document["installed_demonstrations"][0],
+            ),
+            stage_document("pd2_unmerge_absence", "unmerge_absence", {
+                "owned_removable_paths_absent": unmerge["owned_removable_paths_absent"],
+                "absent_path_count": unmerge["absent_path_count"],
+                "removable_path_set_sha256": unmerge["removable_path_set_sha256"],
+            }),
+            stage_document(
+                "pd2_user_data_preservation", "user_data", unmerge["user_data"],
+            ),
+            stage_document(
+                "pd2_ordinary_reinstall", "ordinary_reinstall",
+                document["ordinary_reinstall"],
+            ),
+            stage_document(
+                "pd2_installed_demonstration", "demonstration",
+                document["installed_demonstrations"][1],
+            ),
+        ]
+
+    def test_finalizer_assembles_only_closed_stage_artifacts(self) -> None:
         attestation = example_attestation_document()
         draft = example_evidence_document()
-        self.assertEqual(finalize_lifecycle(attestation, draft), draft)
-        mutations = (
-            lambda value: value["source"].update({"revision": "f" * 40}),
-            lambda value: value["tested_artifact"].update({"artifact_sha256": "0" * 64}),
-            lambda value: value["initial_install"]["executables"][0].update(
-                {"sha256": "0" * 64}),
-            lambda value: value["installed_demonstrations"][1].update(
-                {"harness_manifest_sha256": "0" * 64}),
-        )
-        for index, mutation in enumerate(mutations):
-            with self.subTest(index=index):
-                changed = example_evidence_document()
-                mutation(changed)
-                with self.assertRaises(Pd2CollectorError):
-                    finalize_lifecycle(attestation, changed)
+        stages = self.lifecycle_stages(draft)
+        self.assertEqual(finalize_lifecycle(attestation, *stages), draft)
+
+        wrong_kind = copy.deepcopy(stages)
+        wrong_kind[0]["stage_kind"] = "pd2_package_test"
+        with self.assertRaisesRegex(Pd2CollectorError, "^final_stage_invalid$"):
+            finalize_lifecycle(attestation, *wrong_kind)
+
+        extra_key = copy.deepcopy(stages)
+        extra_key[1]["caller_note"] = "trust me"
+        with self.assertRaisesRegex(Pd2CollectorError, "^final_stage_invalid$"):
+            finalize_lifecycle(attestation, *extra_key)
+
+        wrong_phase = copy.deepcopy(stages)
+        wrong_phase[-1]["demonstration"]["phase"] = "initial_install"
+        with self.assertRaises(Pd2CollectorError):
+            finalize_lifecycle(attestation, *wrong_phase)
 
     def test_hashes_bounded_regular_files_without_following_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

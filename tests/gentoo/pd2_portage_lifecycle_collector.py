@@ -54,7 +54,6 @@ from pd2_portage_lifecycle_evidence import (
     MAX_EVIDENCE_BYTES,
     Pd2EvidenceError,
     USER_DATA_KINDS,
-    load_evidence,
     validate_evidence_document,
 )
 
@@ -1135,32 +1134,89 @@ def capture_unmerge_absence(
     }
 
 
+def stage_document(kind: str, field: str, value: Any) -> dict[str, Any]:
+    """Wrap one collector-owned stage payload in a closed stage envelope."""
+
+    return {"schema_version": 1, "stage_kind": kind, field: value}
+
+
+def _stage_payload(stage: Any, kind: str, field: str) -> Any:
+    _require(isinstance(stage, dict) and set(stage) == {
+        "schema_version", "stage_kind", field,
+    }, "final_stage_invalid")
+    _require(stage["schema_version"] == 1 and stage["stage_kind"] == kind,
+             "final_stage_invalid")
+    return stage[field]
+
+
 def finalize_lifecycle(
-        attestation: dict[str, Any], draft: dict[str, Any],
+        attestation: dict[str, Any], qa_stage: dict[str, Any],
+        resolutions_stage: dict[str, Any], package_test_stage: dict[str, Any],
+        linkage_stage: dict[str, Any], sandbox_tests_stage: dict[str, Any],
+        initial_demonstration_stage: dict[str, Any],
+        unmerge_stage: dict[str, Any], preservation_stage: dict[str, Any],
+        ordinary_reinstall_stage: dict[str, Any],
+        reinstall_demonstration_stage: dict[str, Any],
 ) -> dict[str, Any]:
-    """Bind a complete draft to the preflight and validate every phase."""
+    """Assemble the lifecycle only from closed collector stage artifacts."""
 
     try:
         validate_attestation_document(attestation)
     except Pd2AttestationError as error:
         raise Pd2CollectorError(str(error)) from error
-    _require(draft.get("source") == attestation["source"], "final_source_mismatch")
-    _require(draft.get("tested_artifact") == attestation["tested_artifact"],
-             "final_tested_artifact_mismatch")
-    _require(draft.get("initial_install") == attestation["installed"],
-             "final_initial_install_mismatch")
-    demonstrations = draft.get("installed_demonstrations")
-    _require(isinstance(demonstrations, list) and len(demonstrations) == 2,
-             "final_demonstrations_missing")
-    _require(all(item.get("harness_manifest_sha256") ==
-                 attestation["demo_harness"]["manifest_sha256"]
-                 for item in demonstrations),
-             "final_demo_harness_mismatch")
+    qa = _stage_payload(qa_stage, "pd2_portage_qa", "portage_qa")
+    resolutions = _stage_payload(
+        resolutions_stage, "pd2_portage_resolutions", "resolutions",
+    )
+    package_test = _stage_payload(
+        package_test_stage, "pd2_package_test", "package_test",
+    )
+    linkage = _stage_payload(linkage_stage, "pd2_direct_linkage", "direct_linkage")
+    sandbox = _stage_payload(
+        sandbox_tests_stage, "pd2_sandbox_exclusions", "sandbox_exclusions",
+    )
+    initial_demo = _stage_payload(
+        initial_demonstration_stage, "pd2_installed_demonstration", "demonstration",
+    )
+    unmerge_absence = _stage_payload(
+        unmerge_stage, "pd2_unmerge_absence", "unmerge_absence",
+    )
+    user_data = _stage_payload(
+        preservation_stage, "pd2_user_data_preservation", "user_data",
+    )
+    ordinary_reinstall = _stage_payload(
+        ordinary_reinstall_stage, "pd2_ordinary_reinstall", "ordinary_reinstall",
+    )
+    reinstall_demo = _stage_payload(
+        reinstall_demonstration_stage, "pd2_installed_demonstration", "demonstration",
+    )
+    binding = _binding(attestation)
+    document = {
+        "schema_version": 1,
+        "evidence_kind": "pd2_portage_installed_lifecycle",
+        "source": attestation["source"],
+        "portage_qa": qa,
+        "resolutions": resolutions,
+        "tested_artifact": attestation["tested_artifact"],
+        "package_test": package_test,
+        "initial_install": attestation["installed"],
+        "direct_linkage": linkage,
+        "sandbox_exclusions": sandbox,
+        "installed_demonstrations": [initial_demo, reinstall_demo],
+        "unmerge": {
+            **binding,
+            "atom": PACKAGE_ATOM,
+            "result": "passed",
+            **unmerge_absence,
+            "user_data": user_data,
+        },
+        "ordinary_reinstall": ordinary_reinstall,
+    }
     try:
-        validate_evidence_document(draft)
+        validate_evidence_document(document)
     except Pd2EvidenceError as error:
         raise Pd2CollectorError(str(error)) from error
-    return draft
+    return document
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1216,7 +1272,16 @@ def main(argv: list[str] | None = None) -> int:
     unmerge.add_argument("--output", type=Path, required=True)
     finalize = subparsers.add_parser("finalize")
     finalize.add_argument("--attestation", type=Path, required=True)
-    finalize.add_argument("--draft", type=Path, required=True)
+    finalize.add_argument("--qa", type=Path, required=True)
+    finalize.add_argument("--resolutions", type=Path, required=True)
+    finalize.add_argument("--package-test", type=Path, required=True)
+    finalize.add_argument("--linkage", type=Path, required=True)
+    finalize.add_argument("--sandbox-tests", type=Path, required=True)
+    finalize.add_argument("--initial-demonstration", type=Path, required=True)
+    finalize.add_argument("--unmerge", type=Path, required=True)
+    finalize.add_argument("--preservation", type=Path, required=True)
+    finalize.add_argument("--ordinary-reinstall", type=Path, required=True)
+    finalize.add_argument("--reinstall-demonstration", type=Path, required=True)
     finalize.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args(argv)
     try:
@@ -1228,46 +1293,81 @@ def main(argv: list[str] | None = None) -> int:
         elif arguments.command == "preservation":
             before = {kind: getattr(arguments, f"before_{kind}") for kind in USER_DATA_KINDS}
             after = {kind: getattr(arguments, f"after_{kind}") for kind in USER_DATA_KINDS}
-            document = {"user_data": capture_user_state_preservation(before, after)}
+            document = stage_document(
+                "pd2_user_data_preservation", "user_data",
+                capture_user_state_preservation(before, after),
+            )
         elif arguments.command == "qa":
             attestation = load_attestation(arguments.attestation)
-            document = capture_portage_qa(attestation, arguments.source_checkout)
+            document = stage_document(
+                "pd2_portage_qa", "portage_qa",
+                capture_portage_qa(attestation, arguments.source_checkout),
+            )
         elif arguments.command == "resolutions":
             attestation = load_attestation(arguments.attestation)
-            document = {"resolutions": capture_portage_resolutions(
-                attestation, arguments.source_checkout,
-            )}
+            document = stage_document(
+                "pd2_portage_resolutions", "resolutions",
+                capture_portage_resolutions(attestation, arguments.source_checkout),
+            )
         elif arguments.command == "package-test":
             attestation = load_attestation(arguments.attestation)
-            document = capture_package_test(
-                attestation, arguments.test_build, arguments.source_checkout,
-                arguments.controlled_window_fixture,
+            document = stage_document(
+                "pd2_package_test", "package_test", capture_package_test(
+                    attestation, arguments.test_build, arguments.source_checkout,
+                    arguments.controlled_window_fixture,
+                ),
             )
         elif arguments.command == "sandbox-tests":
             attestation = load_attestation(arguments.attestation)
-            document = {"sandbox_exclusions": capture_sandbox_exclusions(
-                attestation, arguments.test_build, arguments.source_checkout,
-                arguments.controlled_window_fixture,
-            )}
+            document = stage_document(
+                "pd2_sandbox_exclusions", "sandbox_exclusions",
+                capture_sandbox_exclusions(
+                    attestation, arguments.test_build, arguments.source_checkout,
+                    arguments.controlled_window_fixture,
+                ),
+            )
         elif arguments.command == "linkage":
             attestation = load_attestation(arguments.attestation)
-            document = capture_direct_linkage(attestation, SCANELF_PATH)
+            document = stage_document(
+                "pd2_direct_linkage", "direct_linkage",
+                capture_direct_linkage(attestation, SCANELF_PATH),
+            )
         elif arguments.command == "reinstall":
             attestation = load_attestation(arguments.attestation)
-            document = capture_ordinary_reinstall(attestation)
+            document = stage_document(
+                "pd2_ordinary_reinstall", "ordinary_reinstall",
+                capture_ordinary_reinstall(attestation),
+            )
         elif arguments.command == "demonstration":
             attestation = load_attestation(arguments.attestation)
-            document = capture_installed_demonstration(
-                attestation, arguments.phase, arguments.evidence,
+            document = stage_document(
+                "pd2_installed_demonstration", "demonstration",
+                capture_installed_demonstration(
+                    attestation, arguments.phase, arguments.evidence,
+                ),
             )
         elif arguments.command == "unmerge":
             attestation = load_attestation(arguments.attestation)
             validate_attestation_document(attestation)
-            document = capture_unmerge_absence(attestation["installed"]["ownership"]["paths"])
+            document = stage_document(
+                "pd2_unmerge_absence", "unmerge_absence",
+                capture_unmerge_absence(attestation["installed"]["ownership"]["paths"]),
+            )
         else:
             attestation = load_attestation(arguments.attestation)
-            draft = load_evidence(arguments.draft)
-            document = finalize_lifecycle(attestation, draft)
+            document = finalize_lifecycle(
+                attestation,
+                load_capture_json(arguments.qa),
+                load_capture_json(arguments.resolutions),
+                load_capture_json(arguments.package_test),
+                load_capture_json(arguments.linkage),
+                load_capture_json(arguments.sandbox_tests),
+                load_capture_json(arguments.initial_demonstration),
+                load_capture_json(arguments.unmerge),
+                load_capture_json(arguments.preservation),
+                load_capture_json(arguments.ordinary_reinstall),
+                load_capture_json(arguments.reinstall_demonstration),
+            )
         atomic_write_json(arguments.output, document)
     except (Pd2AttestationError, Pd2CollectorError, Pd2EvidenceError,
             Pd2LifecycleHashError) as error:
