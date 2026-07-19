@@ -72,8 +72,13 @@ Formatting is checked without rewriting source:
 
 ```sh
 cmake --build --preset clang-debug --target format-check
-cmake --build --preset clang-debug --target prismdrake-shell-notification-qml_qmllint
+cmake --build --preset clang-debug --target all_qmllint
 ```
+
+The aggregate QML-lint target covers the desktop, launcher, notification,
+panel, and quick-settings modules. Module-specific `_qmllint` targets remain
+available for focused development, but they do not satisfy the complete PD2
+QML-lint gate on their own.
 
 The authoritative formatting and QML-lint paths run in the Gentoo reference
 environment with the supported Qt 6.11-or-newer toolkit. Set
