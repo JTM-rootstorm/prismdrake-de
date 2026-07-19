@@ -106,6 +106,14 @@ carry a verified or observed version.
   compiled panel, launcher, and notification modules use QML, Quick, and Quick
   Controls. Its icon resolver directly uses system Qt SVG for bounded raster
   and SVG icon loading; the product dependency retains the Qt 6.11 floor.
+  The shell's expanded-state accessibility adapter subclasses Qt Quick's
+  complete accessible-item implementation because Qt 6.11 does not expose the
+  `expanded`, `collapsed`, or `expandable` state bits through the public QML
+  `Accessible` attachment. This narrow adapter uses the matching system Qt
+  Quick private development interface; it does not pin Prismdrake to Qt 6.11.1,
+  but Prismdrake must be rebuilt against the installed `qtdeclarative` build
+  when that private ABI changes. The Gentoo product ebuild records that rebuild
+  relationship with the `:6=` slot operator.
   System Qt Linguist tools compile committed long-string and right-to-left
   pseudo-locale catalogs at build time. The resulting QM files are installed as
   shell data; qttools is not a runtime dependency. A missing catalog fails soft

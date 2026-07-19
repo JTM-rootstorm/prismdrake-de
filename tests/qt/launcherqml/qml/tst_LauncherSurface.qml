@@ -37,6 +37,13 @@ TestCase {
         return findChild(surface, "launcherStateLabel")
     }
 
+    function verifyAccessibleExpandedState(item, expanded) {
+        const state = launcherFixture.accessibleExpandedState(item)
+        compare(state.expandable, true)
+        compare(state.expanded, expanded)
+        compare(state.collapsed, !expanded)
+    }
+
     function initTestCase() {
         failOnWarning(/.*/)
     }
@@ -128,6 +135,35 @@ TestCase {
         keyClick(Qt.Key_Escape)
         tryCompare(menu, "visible", false)
         tryCompare(result, "activeFocus", true)
+    }
+
+    function test_launcherResultExportsRealAccessibleExpandedState() {
+        const result = surface.resultAt(0)
+        verify(result.applicationResult)
+        verifyAccessibleExpandedState(result, false)
+
+        result.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Menu)
+        const menu = findChild(result, "launcherActionsMenu")
+        tryCompare(menu, "opened", true)
+        verifyAccessibleExpandedState(result, true)
+
+        result.closeActionMenu()
+        tryCompare(menu, "opened", false)
+        verifyAccessibleExpandedState(result, false)
+    }
+
+    function test_shellDestinationDoesNotExportAccessibleExpandedState() {
+        verify(launcherFixture.publishQuickSettingsDestination())
+        tryCompare(surface, "resultCount", 1)
+        const destination = surface.resultAt(0)
+        compare(destination.presentation.kindId, "destination")
+        compare(destination.applicationResult, false)
+
+        const state = launcherFixture.accessibleExpandedState(destination)
+        compare(state.expandable, false)
+        compare(state.expanded, false)
+        compare(state.collapsed, false)
     }
 
     function test_actionMenuBoundsLongLabelsAndScrollsInRightToLeft() {

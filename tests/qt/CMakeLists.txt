@@ -30,6 +30,24 @@ prismdrake_enable_sanitizers(prismdrake-shell-theme-snapshot-tests)
 gtest_discover_tests(prismdrake-shell-theme-snapshot-tests
     DISCOVERY_MODE PRE_TEST)
 
+add_executable(prismdrake-expanded-state-accessibility-tests
+    ExpandedStateAccessibilityTests.cpp)
+target_link_libraries(prismdrake-expanded-state-accessibility-tests
+    PRIVATE
+        GTest::gtest
+        Prismdrake::shell-accessibility
+        Qt6::Qml
+        Qt6::QuickControls2)
+
+prismdrake_configure_cpp_target(prismdrake-expanded-state-accessibility-tests)
+prismdrake_enable_warnings(prismdrake-expanded-state-accessibility-tests)
+prismdrake_enable_sanitizers(prismdrake-expanded-state-accessibility-tests)
+add_test(NAME ExpandedStateAccessibilityTest
+    COMMAND prismdrake-expanded-state-accessibility-tests)
+set_tests_properties(ExpandedStateAccessibilityTest PROPERTIES
+    ENVIRONMENT
+        "QT_QPA_PLATFORM=offscreen;QSG_RHI_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+
 add_executable(prismdrake-shell-launcher-presentation-tests
     LauncherPresentationModelTests.cpp)
 target_link_libraries(prismdrake-shell-launcher-presentation-tests
@@ -113,6 +131,7 @@ target_link_libraries(prismdrake-panel-surface-qml-tests
     PRIVATE
         Prismdrake::settings-core
         Prismdrake::grouped-task-presentation
+        Prismdrake::shell-accessibility
         Prismdrake::shell-task-presentation
         Prismdrake::shell-theme
         Prismdrake::shell-panel-qml

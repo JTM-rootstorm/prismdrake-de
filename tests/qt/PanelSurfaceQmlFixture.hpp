@@ -9,6 +9,7 @@
 #include <QAbstractItemModel>
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
 
 #include <cstdint>
 #include <filesystem>
@@ -82,6 +83,7 @@ class PanelSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool swapFirstTwoTasks();
     Q_INVOKABLE bool removeTask(int row);
     Q_INVOKABLE bool setTaskMinimized(int row, bool minimized);
+    Q_INVOKABLE QVariantMap accessibleExpandedState(QObject *object) const;
 
   signals:
     void themeGenerationChanged();

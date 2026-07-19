@@ -283,9 +283,11 @@ unautomatable state may be represented only by an exact reviewed skip declared
 before collection. A skip does not satisfy the corresponding WP15 exit claim.
 
 The dedicated accessibility observer classifies all 364 cells explicitly: 49
-use exact installed or Tier C observations, 98 use named QML CTest targets, 134
-are reviewed not-applicable semantics, and 83 remain reviewed unimplemented
-evidence gaps. The latter are visible skips and do not satisfy an exit claim.
+use exact installed or Tier C observations, 181 use named QML CTest targets,
+and 134 are reviewed not-applicable semantics. No cell is silently omitted or
+left as an unimplemented adapter. A passing CTest-backed cell still requires
+the source-bound package-test artifact; it is not a substitute for the 49 live
+observations.
 Its description, Backtab, output-migration focus, and service-restart focus
 claims require the exact corresponding records from the 48-step installed
 workflow. Restart claims require the settingsd, notifyd, and shell

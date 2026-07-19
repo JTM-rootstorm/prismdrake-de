@@ -1,6 +1,7 @@
 #include "PanelSurfaceQmlFixture.hpp"
 
 #include "EwmhTaskList.hpp"
+#include "ExpandedStateAccessibility.hpp"
 #include "WindowMetadata.hpp"
 
 #include <QQmlContext>
@@ -96,6 +97,16 @@ QAbstractItemModel *PanelSurfaceQmlFixture::groupedTaskModel() const noexcept {
 QString PanelSurfaceQmlFixture::taskGeneration() const {
     const auto snapshot = task_presentation_ ? task_presentation_->currentSnapshot() : nullptr;
     return snapshot ? QString::number(snapshot->generation().value()) : QString{};
+}
+
+QVariantMap PanelSurfaceQmlFixture::accessibleExpandedState(QObject *object) const {
+    const auto state = prismdrake::shell::accessibility::queryExpandedState(object);
+    if (!state) {
+        return {};
+    }
+    return {{QStringLiteral("expandable"), state->expandable},
+            {QStringLiteral("expanded"), state->expanded},
+            {QStringLiteral("collapsed"), state->collapsed}};
 }
 
 bool PanelSurfaceQmlFixture::resetLustre() {
@@ -593,6 +604,7 @@ void PanelSurfaceQmlFixture::removeTemporaryDirectory() {
 }
 
 void PanelSurfaceQmlSetup::qmlEngineAvailable(QQmlEngine *engine) {
+    prismdrake::shell::accessibility::installExpandedStateAccessibility();
     engine->rootContext()->setContextProperty(QStringLiteral("panelFixture"),
                                               new PanelSurfaceQmlFixture(engine));
 }

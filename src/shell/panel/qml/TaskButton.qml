@@ -26,6 +26,8 @@ Control {
                                  && (taskPointerArea.pressedButtons & Qt.LeftButton) !== 0
     readonly property string text: presentationTitle
     readonly property bool actionMenuOpen: taskActionMenu.opened
+    readonly property bool prismdrakeAccessibleExpandable: true
+    readonly property bool prismdrakeAccessibleExpanded: actionMenuOpen
     readonly property var actionTarget: taskActionMenu.actionTarget
     readonly property string accessibleDescriptionBase: qsTr("Generic application icon. %1. %2")
                                                             .arg(presentationApplicationId)

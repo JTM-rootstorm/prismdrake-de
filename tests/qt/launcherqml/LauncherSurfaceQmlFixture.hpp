@@ -8,6 +8,7 @@
 #include <QAbstractItemModel>
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
 
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +46,7 @@ class LauncherSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool publishRepresentativeResults();
     Q_INVOKABLE bool publishLongResult();
     Q_INVOKABLE bool publishOverflowActions();
+    Q_INVOKABLE bool publishQuickSettingsDestination();
     Q_INVOKABLE bool publishLoading();
     Q_INVOKABLE bool publishNoResults();
     Q_INVOKABLE bool publishEmptyCatalog();
@@ -54,6 +56,7 @@ class LauncherSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool rejectInvalidPublication();
     Q_INVOKABLE bool publishCapturedSearch();
     Q_INVOKABLE void captureSearch(const QString &query);
+    Q_INVOKABLE QVariantMap accessibleExpandedState(QObject *object) const;
 
   signals:
     void themeGenerationChanged();

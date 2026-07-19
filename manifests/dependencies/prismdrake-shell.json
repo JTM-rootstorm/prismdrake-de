@@ -40,7 +40,7 @@
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
       "fallback": null,
-      "reason": "The Experimental shell executable and panel, launcher, and notification modules directly use system QML, Qt Quick, and Quick Controls. The maintainer-selected Qt 6.11 floor is verified by the Gentoo qtdeclarative 6.11.1-r1 reference environment."
+      "reason": "The shell directly uses system QML, Qt Quick, and Quick Controls. Qt 6.11 does not expose expanded, collapsed, or expandable states through the public QML Accessible attachment, so a narrow adapter preserves the complete default behavior through the matching private Qt Quick accessible-item interface and adds only those state bits. The Gentoo ebuild uses :6= to rebuild Prismdrake when that private ABI changes. The Qt 6.11 floor is verified with qtdeclarative 6.11.1-r1."
     },
     {
       "name": "qtsvg",

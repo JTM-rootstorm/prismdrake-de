@@ -47,7 +47,7 @@ DEPEND="
 	>=dev-cpp/nlohmann_json-3.11
 	dev-cpp/tomlplusplus
 	>=dev-qt/qtbase-6.11:6[X,accessibility,dbus,gui,opengl]
-	>=dev-qt/qtdeclarative-6.11:6[accessibility,opengl]
+	>=dev-qt/qtdeclarative-6.11:6=[accessibility,opengl]
 	>=dev-qt/qtsvg-6.11:6
 	sys-libs/basu
 	x11-libs/libxcb
@@ -55,7 +55,7 @@ DEPEND="
 RDEPEND="
 	dev-cpp/tomlplusplus
 	>=dev-qt/qtbase-6.11:6[X,accessibility,dbus,gui,opengl]
-	>=dev-qt/qtdeclarative-6.11:6[accessibility,opengl]
+	>=dev-qt/qtdeclarative-6.11:6=[accessibility,opengl]
 	>=dev-qt/qtsvg-6.11:6
 	sys-apps/dbus
 	sys-libs/basu

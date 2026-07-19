@@ -22,6 +22,8 @@ Button {
     readonly property bool applicationResult: presentation !== null
                                               && presentation.kindId === "application"
     readonly property bool pinned: presentation !== null && presentation.pinned
+    readonly property bool prismdrakeAccessibleExpandable: applicationResult
+    readonly property bool prismdrakeAccessibleExpanded: actionsMenu.opened
     readonly property string terminalStatus: terminalRequired
                                              ? qsTr("Requires a terminal") : ""
 

@@ -19,6 +19,8 @@ Control {
     readonly property bool down: primaryTap.pressed
     readonly property bool actionMenuOpen: contextMenu.opened
     readonly property bool groupPopupOpen: groupPopup.opened
+    readonly property bool prismdrakeAccessibleExpandable: true
+    readonly property bool prismdrakeAccessibleExpanded: actionMenuOpen || groupPopupOpen
     readonly property var focusTarget: groupPopup.opened && groupPopup.memberAt(0) !== null
                                        ? groupPopup.memberAt(0) : root
     readonly property real availableWindowWidth: Window.window !== null

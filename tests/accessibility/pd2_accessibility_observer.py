@@ -236,7 +236,8 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "space_activation", "escape_recovery", "menu_key", "shift_f10",
             "accessible_name", "accessible_role", "accessible_description",
             "state_focused", "state_active", "state_minimized", "state_disabled",
-            "state_urgent", "state_checked", "minimum_target_size", "high_contrast",
+            "state_urgent", "state_checked", "state_expanded", "minimum_target_size",
+            "high_contrast",
             "reduced_motion", "disabled_transparency", "text_scale", "rtl_smoke",
             "long_string_layout",
         }),
@@ -247,7 +248,8 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "tab_backtab", "arrow_navigation", "enter_activation",
             "space_activation", "accessible_description", "state_checked",
             "state_active", "state_minimized", "state_disabled", "state_urgent",
-            "minimum_target_size", "high_contrast", "reduced_motion",
+            "state_expanded", "minimum_target_size", "high_contrast",
+            "reduced_motion",
             "disabled_transparency", "text_scale", "rtl_smoke", "long_string_layout",
         }),
     ),
@@ -257,7 +259,8 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "tab_backtab", "arrow_navigation", "enter_activation", "space_activation",
             "escape_recovery", "menu_key", "shift_f10", "accessible_description",
             "state_focused", "state_active", "state_minimized", "state_disabled",
-            "state_urgent", "state_checked", "minimum_target_size", "high_contrast",
+            "state_urgent", "state_checked", "state_expanded", "minimum_target_size",
+            "high_contrast",
             "reduced_motion", "disabled_transparency", "text_scale", "rtl_smoke",
             "long_string_layout",
         }),
@@ -289,7 +292,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({
             "tab_backtab", "space_activation", "menu_key", "accessible_description",
             "state_selected", "state_checked", "state_focused", "state_disabled",
-            "minimum_target_size", "high_contrast", "reduced_motion",
+            "state_expanded", "minimum_target_size", "high_contrast", "reduced_motion",
             "disabled_transparency", "text_scale",
             "rtl_smoke", "long_string_layout",
         }),
@@ -537,6 +540,20 @@ CTEST_CASE_EVIDENCE.update({
     for surface in ("quick_settings", "logout_confirmation")
     for check in ("high_contrast", "reduced_motion")
 })
+CTEST_CASE_EVIDENCE.update({
+    ("pinned_task", "state_expanded"): (
+        "PanelSurfaceRealAdapters::test_pinnedTaskExportsRealAccessibleExpandedState",
+    ),
+    ("running_task", "state_expanded"): (
+        "PanelSurfaceRealAdapters::test_runningTaskExportsRealAccessibleExpandedState",
+    ),
+    ("grouped_task", "state_expanded"): (
+        "PanelSurfaceRealAdapters::test_groupedTaskExportsRealAccessibleExpandedState",
+    ),
+    ("launcher_results", "state_expanded"): (
+        "LauncherSurfaceRealAdapters::test_launcherResultExportsRealAccessibleExpandedState",
+    ),
+})
 if not set(CTEST_CASE_EVIDENCE) <= set(CTEST_OBSERVED):
     raise RuntimeError("accessibility_ctest_case_map_invalid")
 
@@ -614,20 +631,12 @@ _MATRIX_KEYS = {
 }
 UNIMPLEMENTED_CHECKS = {
     "panel": frozenset(),
-    "pinned_task": frozenset({
-        "state_expanded",
-    }),
-    "running_task": frozenset({
-        "state_expanded",
-    }),
-    "grouped_task": frozenset({
-        "state_expanded",
-    }),
+    "pinned_task": frozenset(),
+    "running_task": frozenset(),
+    "grouped_task": frozenset(),
     "group_popup": frozenset(),
     "launcher": frozenset(),
-    "launcher_results": frozenset({
-        "state_expanded",
-    }),
+    "launcher_results": frozenset(),
     "desktop_surface_exclusion": frozenset(),
     "transient_notification": frozenset(),
     "notification_center": frozenset(),
@@ -641,15 +650,7 @@ UNIMPLEMENTED = {
     for surface, checks in UNIMPLEMENTED_CHECKS.items()
     for check in checks
 }
-UNIMPLEMENTED_REASONS = {
-    key: (
-        "Qt 6.11 QQuickAccessibleAttached cannot publish the expanded accessibility "
-        "state for this real menu or popup; closing this cell requires a reviewed "
-        "C++ accessibility backend path"
-    )
-    for key in UNIMPLEMENTED
-    if key[1] == "state_expanded"
-}
+UNIMPLEMENTED_REASONS: dict[tuple[str, str], str] = {}
 if set(UNIMPLEMENTED_REASONS) != UNIMPLEMENTED:
     raise RuntimeError("accessibility_unimplemented_reason_map_invalid")
 if (

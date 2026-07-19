@@ -85,7 +85,7 @@ class ProductEbuildContractTests(unittest.TestCase):
     def test_qt_product_dependencies_keep_the_6_11_floor(self) -> None:
         expected = {
             ">=dev-qt/qtbase-6.11:6",
-            ">=dev-qt/qtdeclarative-6.11:6",
+            ">=dev-qt/qtdeclarative-6.11:6=",
             ">=dev-qt/qtsvg-6.11:6",
         }
         for variable in ("DEPEND", "RDEPEND"):
@@ -97,6 +97,14 @@ class ProductEbuildContractTests(unittest.TestCase):
                     if "dev-qt/" in line
                 }
                 self.assertEqual(qt_atoms, expected)
+
+    def test_qtdeclarative_private_abi_changes_trigger_rebuilds(self) -> None:
+        for variable in ("DEPEND", "RDEPEND"):
+            body = dependency_body(self.source, variable)
+            with self.subTest(variable=variable):
+                self.assertIn(
+                    ">=dev-qt/qtdeclarative-6.11:6=[accessibility,opengl]", body
+                )
 
     def test_qt_linguist_tools_are_an_unconditional_build_dependency(self) -> None:
         bdepend = dependency_body(self.source, "BDEPEND")

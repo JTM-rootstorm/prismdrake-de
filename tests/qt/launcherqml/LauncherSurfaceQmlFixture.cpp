@@ -6,6 +6,7 @@
 #include "DesktopEntryParser.hpp"
 #include "DesktopEntryVisibility.hpp"
 #include "DesktopFileId.hpp"
+#include "ExpandedStateAccessibility.hpp"
 
 #include <QQmlContext>
 #include <QQmlEngine>
@@ -85,6 +86,16 @@ QObject *LauncherSurfaceQmlFixture::themeGeneration() const noexcept {
 
 QAbstractItemModel *LauncherSurfaceQmlFixture::launcherModel() const noexcept {
     return launcher_presentation_.get();
+}
+
+QVariantMap LauncherSurfaceQmlFixture::accessibleExpandedState(QObject *object) const {
+    const auto state = prismdrake::shell::accessibility::queryExpandedState(object);
+    if (!state) {
+        return {};
+    }
+    return {{QStringLiteral("expandable"), state->expandable},
+            {QStringLiteral("expanded"), state->expanded},
+            {QStringLiteral("collapsed"), state->collapsed}};
 }
 
 bool LauncherSurfaceQmlFixture::resetLustre() {
@@ -197,6 +208,31 @@ bool LauncherSurfaceQmlFixture::publishOverflowActions() {
                       "Exercises bounded action-menu layout", false}};
     return rebuildCatalog() &&
            publishSearch({}, prismdrake::launcher::maximumApplicationSearchWorkUnits);
+}
+
+bool LauncherSurfaceQmlFixture::publishQuickSettingsDestination() {
+    if (!catalog_ && !publishRepresentativeResults()) {
+        return false;
+    }
+    constexpr std::string_view queryText{"quick settings"};
+    auto searchQuery = prismdrake::launcher::parseApplicationSearchQuery(queryText);
+    auto presentationQuery = prismdrake::launcher::parseApplicationSearchQuery(queryText);
+    if (!searchQuery || !presentationQuery) {
+        return false;
+    }
+    const auto generation = ++request_generation_;
+    auto operation = prismdrake::launcher::createApplicationSearch(catalog_, generation,
+                                                                   std::move(searchQuery).value());
+    if (!operation) {
+        return false;
+    }
+    prismdrake::foundation::CancellationSource cancellation;
+    auto search = operation.value().advance(prismdrake::launcher::maximumApplicationSearchWorkUnits,
+                                            cancellation.token());
+    return search &&
+           launcher_presentation_
+               ->applySnapshot(catalog_, std::move(search).value(), &presentationQuery.value())
+               .hasValue();
 }
 
 bool LauncherSurfaceQmlFixture::publishLoading() {
@@ -372,6 +408,7 @@ void LauncherSurfaceQmlFixture::removeTemporaryDirectory() {
 }
 
 void LauncherSurfaceQmlSetup::qmlEngineAvailable(QQmlEngine *engine) {
+    prismdrake::shell::accessibility::installExpandedStateAccessibility();
     engine->rootContext()->setContextProperty(QStringLiteral("launcherFixture"),
                                               new LauncherSurfaceQmlFixture(engine));
 }

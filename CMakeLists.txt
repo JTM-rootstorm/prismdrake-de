@@ -94,16 +94,18 @@ add_subdirectory(src/foundation)
 add_subdirectory(src/launcher)
 add_subdirectory(src/notifications)
 
-set(prismdrake_qt_components Core Gui Qml Quick QuickControls2 Svg)
+set(prismdrake_qt_components
+    Core Gui Qml Quick QuickPrivate QuickControls2 QuickTemplates2Private Svg)
 if(BUILD_TESTING)
     list(APPEND prismdrake_qt_components QuickTest)
 endif()
 find_package(Qt6 6.11 CONFIG QUIET COMPONENTS ${prismdrake_qt_components})
 if(NOT Qt6_FOUND)
     message(FATAL_ERROR
-        "Prismdrake shell presentation requires system-packaged Qt Core, GUI, QML, Quick, "
+        "Prismdrake shell presentation requires system-packaged Qt Core, GUI, QML, Quick "
+        "development interfaces, "
         "Quick Controls, and SVG 6.11 or newer; tests also require Quick Test. Install "
-        ">=dev-qt/qtbase-6.11:6, >=dev-qt/qtdeclarative-6.11:6, and "
+        ">=dev-qt/qtbase-6.11:6, >=dev-qt/qtdeclarative-6.11:6=, and "
         ">=dev-qt/qtsvg-6.11:6 on Gentoo, "
         "or equivalent Qt 6.11-or-newer system packages on another supported host. "
         "Prismdrake does not download or vendor Qt.")

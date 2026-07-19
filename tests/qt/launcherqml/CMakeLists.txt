@@ -9,6 +9,7 @@ target_compile_definitions(prismdrake-launcher-surface-qml-tests PRIVATE
 target_link_libraries(prismdrake-launcher-surface-qml-tests
     PRIVATE
         Prismdrake::settings-core
+        Prismdrake::shell-accessibility
         Prismdrake::shell-launcher-presentation
         Prismdrake::shell-launcher-qml
         Prismdrake::shell-theme

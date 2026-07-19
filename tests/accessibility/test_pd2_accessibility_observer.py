@@ -76,11 +76,10 @@ class AccessibilityObserverTests(unittest.TestCase):
         self.assertTrue(
             all(result["status"] in {"passed", "skipped"} for result in results.values())
         )
-        self.assertEqual(results[("running_task", "state_expanded")]["status"], "skipped")
-        self.assertEqual(
-            results[("running_task", "state_expanded")]["reason_code"],
-            "live_adapter_unimplemented",
-        )
+        for surface in (
+            "pinned_task", "running_task", "grouped_task", "launcher_results"
+        ):
+            self.assertEqual(results[(surface, "state_expanded")]["status"], "passed")
         self.assertEqual(results[("running_task", "long_string_layout")]["status"], "passed")
         self.assertEqual(results[("running_task", "state_active")]["status"], "passed")
         self.assertEqual(
@@ -208,9 +207,9 @@ class AccessibilityObserverTests(unittest.TestCase):
                 self.assertIn("C++ accessibility backend", result["reason"])
 
     def test_new_ctest_cells_name_existing_exact_qml_cases(self) -> None:
-        self.assertEqual(len(observer.CTEST_OBSERVED), 177)
-        self.assertEqual(len(observer.CTEST_CASE_EVIDENCE), 79)
-        self.assertEqual(len(observer.UNIMPLEMENTED), 4)
+        self.assertEqual(len(observer.CTEST_OBSERVED), 181)
+        self.assertEqual(len(observer.CTEST_CASE_EVIDENCE), 83)
+        self.assertEqual(len(observer.UNIMPLEMENTED), 0)
         sources = {
             "PanelSurfaceRealAdapters": (
                 ACCESSIBILITY.parents[1] / "tests/qt/qml-panel/tst_PanelSurface.qml"

@@ -1,3 +1,4 @@
+add_subdirectory(accessibility)
 add_subdirectory(theme)
 add_subdirectory(notifications)
 add_subdirectory(notificationcenter)

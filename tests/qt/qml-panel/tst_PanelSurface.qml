@@ -90,6 +90,13 @@ TestCase {
         verify(menu.height <= task.height)
     }
 
+    function verifyAccessibleExpandedState(item, expanded) {
+        const state = panelFixture.accessibleExpandedState(item)
+        compare(state.expandable, true)
+        compare(state.expanded, expanded)
+        compare(state.collapsed, !expanded)
+    }
+
     function initTestCase() {
         failOnWarning(/.*/)
     }
@@ -329,6 +336,55 @@ TestCase {
         tryCompare(panelFixture, "closeCount", 1)
         compare(panelFixture.lastCloseTitle, "Terminal")
         compare(panelFixture.lastCloseGeneration, panelFixture.taskGeneration)
+    }
+
+    function test_runningTaskExportsRealAccessibleExpandedState() {
+        const running = panel.taskAt(0)
+        verifyAccessibleExpandedState(running, false)
+
+        verify(running.openActionMenu())
+        tryCompare(contextMenu(running), "opened", true)
+        verifyAccessibleExpandedState(running, true)
+
+        running.closeActionMenu(false)
+        tryCompare(contextMenu(running), "opened", false)
+        verifyAccessibleExpandedState(running, false)
+    }
+
+    function test_pinnedTaskExportsRealAccessibleExpandedState() {
+        groupedTasks = true
+        verify(panelFixture.publishPinnedOnlyGroup())
+        tryCompare(panel, "taskCount", 1)
+        const pinned = panel.taskAt(0)
+        compare(pinned.presentation.pinned, true)
+        compare(pinned.presentation.running, false)
+        verifyAccessibleExpandedState(pinned, false)
+
+        verify(pinned.openActionMenu())
+        tryCompare(groupedContextMenu(pinned), "opened", true)
+        verifyAccessibleExpandedState(pinned, true)
+
+        pinned.closeActionMenu(false)
+        tryCompare(groupedContextMenu(pinned), "opened", false)
+        verifyAccessibleExpandedState(pinned, false)
+    }
+
+    function test_groupedTaskExportsRealAccessibleExpandedState() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+        const grouped = panel.taskAt(0)
+        compare(grouped.presentation.primaryOpensGroup, true)
+        verifyAccessibleExpandedState(grouped, false)
+
+        verify(grouped.requestPrimary())
+        const popup = findChild(grouped, "panelTaskGroupPopup")
+        tryCompare(popup, "opened", true)
+        verifyAccessibleExpandedState(grouped, true)
+
+        popup.dismiss()
+        tryCompare(popup, "opened", false)
+        verifyAccessibleExpandedState(grouped, false)
     }
 
     function test_groupPopupKeyboardActionsAndAccessibilityAreDeterministic() {

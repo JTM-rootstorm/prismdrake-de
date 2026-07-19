@@ -82,6 +82,7 @@ add_executable(prismdrake-shell main.cpp)
 add_dependencies(prismdrake-shell prismdrake-translations)
 target_link_libraries(prismdrake-shell
     PRIVATE
+        Prismdrake::shell-accessibility
         Prismdrake::shell-runtime
         Prismdrake::shell-launcher-qml
         Prismdrake::shell-notification-qml

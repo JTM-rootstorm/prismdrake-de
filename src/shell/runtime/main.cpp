@@ -1,6 +1,7 @@
 #include "Pd2ShellRuntime.hpp"
 
 #include "ExitStatus.hpp"
+#include "ExpandedStateAccessibility.hpp"
 #include "ShellRuntimeOptions.hpp"
 #include "TerminationSignalBridge.hpp"
 #include "TranslationCatalog.hpp"
@@ -18,6 +19,7 @@ namespace {
     application.setQuitOnLastWindowClosed(false);
     QCoreApplication::setApplicationName(QStringLiteral("prismdrake-shell"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("prismdrake.org"));
+    prismdrake::shell::accessibility::installExpandedStateAccessibility();
     const auto translations = prismdrake::shell::runtime::TranslationCatalog::install(
         application, prismdrake::shell::runtime::defaultTranslationDirectory(),
         QLocale::system().uiLanguages());
