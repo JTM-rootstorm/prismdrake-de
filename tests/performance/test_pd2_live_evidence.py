@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from collections.abc import Mapping
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -32,6 +33,10 @@ from pd2_live_evidence import (  # noqa: E402
     ObserverCommands,
     collect_evidence,
     write_evidence,
+)
+from collect_pd2_live_evidence import (  # noqa: E402
+    build_observer_environment,
+    reviewed_skip,
 )
 
 
@@ -298,6 +303,36 @@ class CommandAdapterTests(unittest.TestCase):
                     self.assertRaises(EvidenceError),
                 ):
                     CommandLiveEvidencePort(commands).live_atspi()
+
+    def test_cli_environment_binds_identity_and_drops_unrelated_secrets(self) -> None:
+        options = SimpleNamespace(
+            source_revision=REVISION,
+            environment_id=ENVIRONMENT_ID,
+        )
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "DISPLAY": ":140",
+                "DBUS_SESSION_BUS_ADDRESS": "private-runtime-value",
+                "UNRELATED_SECRET": "must-not-propagate",
+            },
+            clear=True,
+        ):
+            environment = build_observer_environment(options)
+        self.assertEqual(environment["PRISMDRAKE_PD2_SOURCE_REVISION"], REVISION)
+        self.assertEqual(
+            environment["PRISMDRAKE_PD2_REFERENCE_ENVIRONMENT_ID"], ENVIRONMENT_ID
+        )
+        self.assertEqual(environment["PRISMDRAKE_PD2_METHOD_ID"], LIVE_METHOD_ID)
+        self.assertNotIn("UNRELATED_SECRET", environment)
+
+    def test_reviewed_skip_parser_accepts_only_closed_reason_codes(self) -> None:
+        self.assertEqual(
+            reviewed_skip("accessibility.panel.state_checked=not_applicable"),
+            ("accessibility.panel.state_checked", "not_applicable"),
+        )
+        with self.assertRaisesRegex(Exception, "invalid_reviewed_skip"):
+            reviewed_skip("accessibility.panel.state_checked=automatic_pass")
 
 
 if __name__ == "__main__":

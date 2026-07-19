@@ -77,10 +77,23 @@ validator also rejects common private path and address markers, IPv4 addresses,
 X11-style hexadecimal identifiers, and private-content-shaped fields. The
 redaction block explicitly attests to each excluded category.
 
-## Validation-only workflow
+## Collection and validation workflow
 
-The live adapters must write their independently observed values into the
-contract without passing private runtime identifiers through to the artifact.
+[`collect_pd2_live_evidence.py`](../../tests/performance/collect_pd2_live_evidence.py)
+assembles independently observed values without passing private runtime
+identifiers through to the artifact. Every observer response is bound to the
+exact source revision, reference-environment identity, and `pd2-live-v1`
+method identity. The collector rejects missing or mismatched bindings, stale
+reviewed-skip policy, observer diagnostics, incomplete cleanup, and Qt below
+6.11. It validates the complete contract before atomically creating a private
+mode-0600 artifact.
+
+The command requires exact environment, performance, accessibility,
+internationalization, and cleanup observer executables. Search catalog sizes,
+PD1 reference identity, limitations, and each reviewed skip are explicit
+arguments. Observer runtime values such as the isolated display and bus remain
+in an allow-listed child environment and are never copied into evidence.
+
 Validate the transferred artifact with:
 
 ```bash
@@ -97,20 +110,24 @@ Run the hermetic contract suite with:
 
 ```bash
 python3 tests/performance/test_pd2_evidence_contract.py
+python3 tests/performance/test_pd2_live_evidence.py
 ```
 
 ## Live adapter seams
 
-This scaffold intentionally does not instrument `ShellRuntime` or QML. Live
-collectors still need reviewed adapters for the session and shell readiness
-endpoints, launcher and popup acknowledgement, catalog/icon/wallpaper timing,
-notification D-Bus timing, settings switches, output reconciliation, and
-common actions. The existing PD1 scheduler-wakeup method may supply an injected
-PD2 observation when its scope and revision match; it is not copied or
-reinterpreted by this contract.
+The collector provides closed command seams for all 15 performance groups,
+including the parameterized search, icon-cache, and output-reconciliation
+endpoints. It requests all 364 ordered surface checks independently, including
+RTL and long-string observations, then separately requests live AT-SPI, a
+screen-reader workflow, and the six internationalization checks. A command
+must emit one bounded JSON envelope and no standard-error diagnostics. No shell
+is involved.
 
-The existing AT-SPI driver may supply part of the accessibility result after it
-is extended to the PD2 surface matrix. A reliable screen-reader workflow and
-live output-migration/focus-recovery checks remain distinct adapters. Missing
-dependencies or adapters must be emitted as reviewed skips until real evidence
-is collected; a skip does not satisfy the corresponding WP15 exit claim.
+This layer intentionally does not reinterpret historical PD1 artifacts or
+instrument `ShellRuntime` and QML itself. The PD1 startup, scheduler-wakeup,
+and AT-SPI implementations remain unchanged; their methods may be extended by
+new PD2 observer executables only where endpoint scope and revision binding
+match. Reliable screen-reader automation and every runtime observer must still
+be exercised on the reference VM. A genuinely unavailable dependency or
+unautomatable state may be represented only by an exact reviewed skip declared
+before collection. A skip does not satisfy the corresponding WP15 exit claim.
