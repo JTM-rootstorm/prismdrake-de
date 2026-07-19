@@ -185,8 +185,7 @@ template <typename Value>
 [[nodiscard]] Result<void> ensurePrivateDirectory(const std::filesystem::path &path) {
     if (::mkdir(path.c_str(), 0700) != 0 && errno != EEXIST) {
         return Result<void>::failure(
-            {errno == EACCES || errno == EPERM ? ErrorCode::permission_denied
-                                                : ErrorCode::io_error,
+            {errno == EACCES || errno == EPERM ? ErrorCode::permission_denied : ErrorCode::io_error,
              "A private pin-state directory could not be created.",
              "Review the XDG state-directory boundary."});
     }
@@ -338,9 +337,10 @@ Result<PinStateStore> PinStateStore::open(std::filesystem::path stateFile) {
 
 Result<PinStateStore>
 PinStateStore::openInStateDirectory(std::filesystem::path prismdrakeStateDirectory) {
-    const bool containsTraversal = std::ranges::any_of(
-        prismdrakeStateDirectory,
-        [](const std::filesystem::path &component) { return component == ".."; });
+    const bool containsTraversal =
+        std::ranges::any_of(prismdrakeStateDirectory, [](const std::filesystem::path &component) {
+            return component == "..";
+        });
     if (prismdrakeStateDirectory.empty() || !prismdrakeStateDirectory.is_absolute() ||
         containsTraversal || prismdrakeStateDirectory.filename() != "prismdrake") {
         return failure<PinStateStore>(ErrorCode::invalid_argument,
