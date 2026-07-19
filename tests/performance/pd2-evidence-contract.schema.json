@@ -1,0 +1,447 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdrake.org/schemas/test/pd2-performance-accessibility-evidence-v1.json",
+  "title": "Prismdrake PD2 performance and accessibility evidence contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence_kind",
+    "evidence_purpose",
+    "release_budget",
+    "source_revision",
+    "pd1_reference",
+    "environment",
+    "method",
+    "performance",
+    "accessibility",
+    "internationalization",
+    "limitations",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evidence_kind": { "const": "pd2_performance_accessibility" },
+    "evidence_purpose": { "enum": ["reference_measurement", "contract_test"] },
+    "release_budget": { "const": false },
+    "source_revision": { "$ref": "#/$defs/revision" },
+    "pd1_reference": { "$ref": "#/$defs/pd1_reference" },
+    "environment": { "$ref": "#/$defs/environment" },
+    "method": { "$ref": "#/$defs/method" },
+    "performance": { "$ref": "#/$defs/performance" },
+    "accessibility": { "$ref": "#/$defs/accessibility" },
+    "internationalization": { "$ref": "#/$defs/internationalization" },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/safe_text" }
+    },
+    "redaction": { "$ref": "#/$defs/redaction" }
+  },
+  "$defs": {
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "safe_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;_+()'=-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "pd1_reference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "source_revision", "evidence_id"],
+          "properties": {
+            "status": { "const": "identified" },
+            "source_revision": { "$ref": "#/$defs/revision" },
+            "evidence_id": { "$ref": "#/$defs/identity" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "explanation"],
+          "properties": {
+            "status": { "const": "unavailable" },
+            "explanation": { "$ref": "#/$defs/safe_text" }
+          }
+        }
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reference_environment_id",
+        "operating_system",
+        "architecture",
+        "qt_version",
+        "display_backend",
+        "window_manager",
+        "compilers"
+      ],
+      "properties": {
+        "kind": { "enum": ["reference_vm", "contract_test"] },
+        "reference_environment_id": { "$ref": "#/$defs/identity" },
+        "operating_system": { "$ref": "#/$defs/safe_text" },
+        "architecture": { "$ref": "#/$defs/identity" },
+        "qt_version": { "type": "string", "pattern": "^[0-9]+[.][0-9]+[.][0-9]+$" },
+        "display_backend": { "enum": ["x11", "offscreen_contract_test"] },
+        "window_manager": { "$ref": "#/$defs/identity" },
+        "compilers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["family", "version"],
+            "properties": {
+              "family": { "enum": ["gcc", "clang"] },
+              "version": { "type": "string", "pattern": "^[0-9]+[.][0-9]+(?:[.][0-9]+)?$" }
+            }
+          }
+        }
+      }
+    },
+    "method": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collection_mode", "clock", "sample_isolation", "description"],
+      "properties": {
+        "collection_mode": { "enum": ["injected_measurements", "validate_only"] },
+        "clock": { "enum": ["monotonic", "monotonic_raw", "scheduler_trace"] },
+        "sample_isolation": { "enum": ["fresh_session_per_series", "single_bounded_session", "contract_test"] },
+        "description": { "$ref": "#/$defs/safe_text" }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contains_filesystem_paths",
+        "contains_private_content",
+        "contains_network_or_bus_addresses",
+        "contains_process_ids",
+        "contains_x11_window_ids",
+        "diagnostics_are_closed_ids"
+      ],
+      "properties": {
+        "contains_filesystem_paths": { "const": false },
+        "contains_private_content": { "const": false },
+        "contains_network_or_bus_addresses": { "const": false },
+        "contains_process_ids": { "const": false },
+        "contains_x11_window_ids": { "const": false },
+        "diagnostics_are_closed_ids": { "const": true }
+      }
+    },
+    "skip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reviewed", "reason_code", "reason"],
+      "properties": {
+        "status": { "const": "skipped" },
+        "reviewed": { "const": true },
+        "reason_code": {
+          "enum": [
+            "not_applicable",
+            "dependency_unavailable",
+            "reference_environment_unsupported",
+            "live_adapter_unimplemented",
+            "runtime_surface_unavailable",
+            "contract_test_fixture"
+          ]
+        },
+        "reason": { "$ref": "#/$defs/safe_text" }
+      }
+    },
+    "comparison": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "statistic", "pd1_value"],
+          "properties": {
+            "status": { "const": "no_regression" },
+            "statistic": { "const": "median" },
+            "pd1_value": { "type": "number", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "statistic", "pd1_value", "explanation"],
+          "properties": {
+            "status": { "const": "regression" },
+            "statistic": { "const": "median" },
+            "pd1_value": { "type": "number", "minimum": 0 },
+            "explanation": { "$ref": "#/$defs/safe_text" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "explanation"],
+          "properties": {
+            "status": { "enum": ["not_available", "not_comparable"] },
+            "explanation": { "$ref": "#/$defs/safe_text" }
+          }
+        }
+      ]
+    },
+    "observed_measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "unit", "samples", "method", "pd1_comparison"],
+      "properties": {
+        "status": { "const": "observed" },
+        "unit": { "enum": ["milliseconds", "wakeups_per_minute"] },
+        "samples": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 1000,
+          "items": { "type": "number", "minimum": 0, "maximum": 1000000000 }
+        },
+        "method": { "$ref": "#/$defs/safe_text" },
+        "pd1_comparison": { "$ref": "#/$defs/comparison" }
+      }
+    },
+    "measurement": {
+      "oneOf": [
+        { "$ref": "#/$defs/observed_measurement" },
+        { "$ref": "#/$defs/skip" }
+      ]
+    },
+    "controlled_search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["catalog_size", "measurement"],
+      "properties": {
+        "catalog_size": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "measurement": { "$ref": "#/$defs/measurement" }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_ready",
+        "shell_complete_presentation",
+        "launcher_acknowledgement",
+        "search_response",
+        "catalog_refresh",
+        "icon_decode_cache",
+        "wallpaper_decode_publication",
+        "notification_method_latency",
+        "notification_center_open",
+        "quick_settings_open",
+        "profile_switch",
+        "dnd_switch",
+        "output_reconciliation",
+        "idle_wakeups",
+        "common_action_acknowledgement"
+      ],
+      "properties": {
+        "session_ready": { "$ref": "#/$defs/measurement" },
+        "shell_complete_presentation": { "$ref": "#/$defs/measurement" },
+        "launcher_acknowledgement": { "$ref": "#/$defs/measurement" },
+        "search_response": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/controlled_search" }
+        },
+        "catalog_refresh": { "$ref": "#/$defs/measurement" },
+        "icon_decode_cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decode", "cache_hit"],
+          "properties": {
+            "decode": { "$ref": "#/$defs/measurement" },
+            "cache_hit": { "$ref": "#/$defs/measurement" }
+          }
+        },
+        "wallpaper_decode_publication": { "$ref": "#/$defs/measurement" },
+        "notification_method_latency": { "$ref": "#/$defs/measurement" },
+        "notification_center_open": { "$ref": "#/$defs/measurement" },
+        "quick_settings_open": { "$ref": "#/$defs/measurement" },
+        "profile_switch": { "$ref": "#/$defs/measurement" },
+        "dnd_switch": { "$ref": "#/$defs/measurement" },
+        "output_reconciliation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["add", "remove"],
+          "properties": {
+            "add": { "$ref": "#/$defs/measurement" },
+            "remove": { "$ref": "#/$defs/measurement" }
+          }
+        },
+        "idle_wakeups": { "$ref": "#/$defs/measurement" },
+        "common_action_acknowledgement": { "$ref": "#/$defs/measurement" }
+      }
+    },
+    "executed_check": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "method"],
+          "properties": {
+            "status": { "const": "passed" },
+            "method": { "$ref": "#/$defs/safe_text" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "method", "finding"],
+          "properties": {
+            "status": { "const": "failed" },
+            "method": { "$ref": "#/$defs/safe_text" },
+            "finding": { "$ref": "#/$defs/safe_text" }
+          }
+        }
+      ]
+    },
+    "check_result": {
+      "oneOf": [
+        { "$ref": "#/$defs/executed_check" },
+        { "$ref": "#/$defs/skip" }
+      ]
+    },
+    "matrix_checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tab_backtab",
+        "arrow_navigation",
+        "enter_activation",
+        "space_activation",
+        "escape_recovery",
+        "menu_key",
+        "shift_f10",
+        "accessible_name",
+        "accessible_role",
+        "accessible_description",
+        "state_focused",
+        "state_selected",
+        "state_active",
+        "state_urgent",
+        "state_minimized",
+        "state_disabled",
+        "state_unavailable",
+        "state_checked",
+        "state_expanded",
+        "minimum_target_size",
+        "high_contrast",
+        "reduced_motion",
+        "disabled_transparency",
+        "text_scale",
+        "rtl_smoke",
+        "long_string_layout"
+      ],
+      "properties": {
+        "tab_backtab": { "$ref": "#/$defs/check_result" },
+        "arrow_navigation": { "$ref": "#/$defs/check_result" },
+        "enter_activation": { "$ref": "#/$defs/check_result" },
+        "space_activation": { "$ref": "#/$defs/check_result" },
+        "escape_recovery": { "$ref": "#/$defs/check_result" },
+        "menu_key": { "$ref": "#/$defs/check_result" },
+        "shift_f10": { "$ref": "#/$defs/check_result" },
+        "accessible_name": { "$ref": "#/$defs/check_result" },
+        "accessible_role": { "$ref": "#/$defs/check_result" },
+        "accessible_description": { "$ref": "#/$defs/check_result" },
+        "state_focused": { "$ref": "#/$defs/check_result" },
+        "state_selected": { "$ref": "#/$defs/check_result" },
+        "state_active": { "$ref": "#/$defs/check_result" },
+        "state_urgent": { "$ref": "#/$defs/check_result" },
+        "state_minimized": { "$ref": "#/$defs/check_result" },
+        "state_disabled": { "$ref": "#/$defs/check_result" },
+        "state_unavailable": { "$ref": "#/$defs/check_result" },
+        "state_checked": { "$ref": "#/$defs/check_result" },
+        "state_expanded": { "$ref": "#/$defs/check_result" },
+        "minimum_target_size": { "$ref": "#/$defs/check_result" },
+        "high_contrast": { "$ref": "#/$defs/check_result" },
+        "reduced_motion": { "$ref": "#/$defs/check_result" },
+        "disabled_transparency": { "$ref": "#/$defs/check_result" },
+        "text_scale": { "$ref": "#/$defs/check_result" },
+        "rtl_smoke": { "$ref": "#/$defs/check_result" },
+        "long_string_layout": { "$ref": "#/$defs/check_result" }
+      }
+    },
+    "matrix_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "checks"],
+      "properties": {
+        "surface": {
+          "enum": [
+            "panel",
+            "pinned_task",
+            "running_task",
+            "grouped_task",
+            "group_popup",
+            "launcher",
+            "launcher_results",
+            "desktop_surface_exclusion",
+            "transient_notification",
+            "notification_center",
+            "quick_settings",
+            "logout_confirmation",
+            "output_migration",
+            "service_restart_focus_recovery"
+          ]
+        },
+        "checks": { "$ref": "#/$defs/matrix_checks" }
+      }
+    },
+    "accessibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matrix", "live_atspi", "screen_reader_workflow"],
+      "properties": {
+        "matrix": {
+          "type": "array",
+          "minItems": 14,
+          "maxItems": 14,
+          "items": { "$ref": "#/$defs/matrix_entry" }
+        },
+        "live_atspi": { "$ref": "#/$defs/check_result" },
+        "screen_reader_workflow": { "$ref": "#/$defs/check_result" }
+      }
+    },
+    "internationalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qt_translation_routing",
+        "rtl_fixture",
+        "long_string_fixture",
+        "locale_aware_clock",
+        "localized_desktop_search",
+        "fragile_fragment_audit"
+      ],
+      "properties": {
+        "qt_translation_routing": { "$ref": "#/$defs/check_result" },
+        "rtl_fixture": { "$ref": "#/$defs/check_result" },
+        "long_string_fixture": { "$ref": "#/$defs/check_result" },
+        "locale_aware_clock": { "$ref": "#/$defs/check_result" },
+        "localized_desktop_search": { "$ref": "#/$defs/check_result" },
+        "fragile_fragment_audit": { "$ref": "#/$defs/check_result" }
+      }
+    }
+  }
+}
