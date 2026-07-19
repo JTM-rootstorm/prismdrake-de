@@ -109,7 +109,7 @@ ShellRuntimeComposition::observeOutputs(const outputs::SurfaceRegistrySnapshot &
         primary = std::move(name).value();
     }
     auto next = composition::OutputPlacementSnapshot::create(
-        snapshot.topologyGeneration(), std::move(placements), std::move(primary));
+        snapshot.surfaceGeneration(), std::move(placements), std::move(primary));
     if (!next) {
         return Result<void>::failure(next.error());
     }

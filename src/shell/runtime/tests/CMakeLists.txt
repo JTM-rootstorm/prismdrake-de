@@ -15,6 +15,7 @@ if(GTest_FOUND)
         tests/DevelopmentNotificationOwnerTests.cpp
         tests/FatalDisplayShutdownTests.cpp
         tests/ShellControlBusOwnerTests.cpp
+        tests/ShellOutputMonitorTests.cpp
         tests/ShellRuntimeOptionsTests.cpp
         tests/TerminationSignalBridgeTests.cpp)
     target_link_libraries(prismdrake-shell-runtime-tests

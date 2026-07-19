@@ -118,7 +118,7 @@ void PanelSurfaceHost::removeProperties(WindowEntry &entry) noexcept {
 }
 
 Result<void> PanelSurfaceHost::apply(const outputs::SurfaceRegistrySnapshot &snapshot) {
-    if (!connection_.healthy() || snapshot.topologyGeneration() <= topology_generation_) {
+    if (!connection_.healthy() || snapshot.surfaceGeneration() <= topology_generation_) {
         return invalidSnapshot<void>();
     }
     std::set<std::string> desired;
@@ -169,7 +169,7 @@ Result<void> PanelSurfaceHost::apply(const outputs::SurfaceRegistrySnapshot &sna
             entry->view->show();
         }
     }
-    topology_generation_ = snapshot.topologyGeneration();
+    topology_generation_ = snapshot.surfaceGeneration();
     return Result<void>::success();
 }
 

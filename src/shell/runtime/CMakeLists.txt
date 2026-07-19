@@ -27,6 +27,8 @@ add_library(prismdrake-shell-runtime STATIC
     ShellRuntime.hpp
     ShellRuntimeOptions.cpp
     ShellRuntimeOptions.hpp
+    ShellOutputMonitor.cpp
+    ShellOutputMonitor.hpp
     TerminationSignalBridge.cpp
     TerminationSignalBridge.hpp)
 add_library(Prismdrake::shell-runtime ALIAS prismdrake-shell-runtime)

@@ -22,6 +22,8 @@ enum class PanelOutputPolicy : std::uint8_t {
 struct PanelPlacementPolicy final {
     PanelOutputPolicy policy;
     std::vector<std::string> outputNames;
+
+    friend bool operator==(const PanelPlacementPolicy &, const PanelPlacementPolicy &) = default;
 };
 
 enum class SurfaceKind : std::uint8_t {
@@ -60,6 +62,8 @@ struct SurfacePlacement final {
 class SurfaceRegistrySnapshot final {
   public:
     [[nodiscard]] std::uint64_t topologyGeneration() const noexcept { return topology_generation_; }
+    [[nodiscard]] std::uint64_t settingsGeneration() const noexcept { return settings_generation_; }
+    [[nodiscard]] std::uint64_t surfaceGeneration() const noexcept { return surface_generation_; }
     [[nodiscard]] const std::optional<std::string> &primaryOutputName() const noexcept {
         return primary_output_name_;
     }
@@ -74,6 +78,8 @@ class SurfaceRegistrySnapshot final {
     friend class OutputSurfaceRegistry;
 
     std::uint64_t topology_generation_{0U};
+    std::uint64_t settings_generation_{0U};
+    std::uint64_t surface_generation_{0U};
     std::optional<std::string> primary_output_name_;
     std::vector<SurfacePlacement> desktops_;
     std::vector<SurfacePlacement> panels_;
@@ -90,6 +96,12 @@ class OutputSurfaceRegistry final {
 
     [[nodiscard]] foundation::Result<SurfaceRegistrySnapshot>
     observe(const ReconciledTopologySnapshot &topology, const PanelPlacementPolicy &panelPolicy);
+    [[nodiscard]] foundation::Result<SurfaceRegistrySnapshot>
+    observe(const ReconciledTopologySnapshot &topology, const PanelPlacementPolicy &panelPolicy,
+            std::uint64_t settingsGeneration);
+    [[nodiscard]] foundation::Result<SurfaceRegistrySnapshot>
+    reconfigure(std::uint32_t panelHeightLogical, const ReconciledTopologySnapshot &topology,
+                const PanelPlacementPolicy &panelPolicy, std::uint64_t settingsGeneration);
 
     [[nodiscard]] foundation::Result<SurfacePlacement>
     anchorTransient(SurfaceKind kind, std::string_view invokingOutputName = {});
@@ -113,6 +125,9 @@ class OutputSurfaceRegistry final {
 
     std::uint32_t panel_height_logical_;
     std::optional<ReconciledTopologySnapshot> topology_;
+    std::optional<PanelPlacementPolicy> panel_policy_;
+    std::uint64_t settings_generation_{0U};
+    std::uint64_t surface_generation_{0U};
     std::optional<SurfaceRegistrySnapshot> current_;
     std::vector<TransientIntent> transient_intents_;
 };

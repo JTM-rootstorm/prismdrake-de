@@ -165,13 +165,60 @@ Result<OutputSurfaceRegistry> OutputSurfaceRegistry::create(std::uint32_t panelH
 Result<SurfaceRegistrySnapshot>
 OutputSurfaceRegistry::observe(const ReconciledTopologySnapshot &topology,
                                const PanelPlacementPolicy &panelPolicy) {
-    if (!validPolicy(panelPolicy) ||
-        (topology_ && topology.generation() <= topology_->generation())) {
+    const auto inferredSettingsGeneration = settings_generation_ == 0U ? 1U : settings_generation_;
+    return observe(topology, panelPolicy, inferredSettingsGeneration);
+}
+
+namespace {
+[[nodiscard]] bool sameTopology(const ReconciledTopologySnapshot &left,
+                                const ReconciledTopologySnapshot &right) {
+    if (left.generation() != right.generation() || left.root() != right.root() ||
+        left.primaryOutputName() != right.primaryOutputName() ||
+        left.outputs().size() != right.outputs().size()) {
+        return false;
+    }
+    for (std::size_t index = 0U; index < left.outputs().size(); ++index) {
+        const auto &a = left.outputs()[index];
+        const auto &b = right.outputs()[index];
+        if (a.outputId != b.outputId || a.crtcId != b.crtcId || a.name != b.name ||
+            a.nativeGeometry != b.nativeGeometry || a.logicalGeometry != b.logicalGeometry ||
+            a.devicePixelRatio != b.devicePixelRatio || a.status != b.status ||
+            a.primary != b.primary) {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
+Result<SurfaceRegistrySnapshot>
+OutputSurfaceRegistry::observe(const ReconciledTopologySnapshot &topology,
+                               const PanelPlacementPolicy &panelPolicy,
+                               std::uint64_t settingsGeneration) {
+    if (!validPolicy(panelPolicy) || settingsGeneration == 0U ||
+        (topology_ && topology.generation() < topology_->generation()) ||
+        settingsGeneration < settings_generation_) {
+        return invalidPolicy<SurfaceRegistrySnapshot>();
+    }
+    if (topology_ && topology.generation() == topology_->generation()) {
+        if (!sameTopology(*topology_, topology)) {
+            return invalidPolicy<SurfaceRegistrySnapshot>();
+        }
+        if (settingsGeneration == settings_generation_) {
+            if (panel_policy_ && *panel_policy_ == panelPolicy && current_) {
+                return Result<SurfaceRegistrySnapshot>::success(*current_);
+            }
+            return invalidPolicy<SurfaceRegistrySnapshot>();
+        }
+    }
+    if (surface_generation_ == std::numeric_limits<std::uint64_t>::max()) {
         return invalidPolicy<SurfaceRegistrySnapshot>();
     }
 
     SurfaceRegistrySnapshot snapshot;
     snapshot.topology_generation_ = topology.generation();
+    snapshot.settings_generation_ = settingsGeneration;
+    snapshot.surface_generation_ = surface_generation_ + 1U;
     snapshot.primary_output_name_ = topology.primaryOutputName();
     snapshot.events_ = topologyEvents(topology_, topology);
     const auto available = availableOutputs(topology);
@@ -219,8 +266,27 @@ OutputSurfaceRegistry::observe(const ReconciledTopologySnapshot &topology,
             return Result<SurfaceRegistrySnapshot>::failure(placement.error());
         }
     }
+    panel_policy_ = panelPolicy;
+    settings_generation_ = settingsGeneration;
+    surface_generation_ = snapshot.surface_generation_;
     current_ = snapshot;
     return Result<SurfaceRegistrySnapshot>::success(std::move(snapshot));
+}
+
+Result<SurfaceRegistrySnapshot> OutputSurfaceRegistry::reconfigure(
+    std::uint32_t panelHeightLogical, const ReconciledTopologySnapshot &topology,
+    const PanelPlacementPolicy &panelPolicy, std::uint64_t settingsGeneration) {
+    if (panelHeightLogical == 0U ||
+        panelHeightLogical > static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
+        return invalidPolicy<SurfaceRegistrySnapshot>();
+    }
+    const auto previousHeight = panel_height_logical_;
+    panel_height_logical_ = panelHeightLogical;
+    auto publication = observe(topology, panelPolicy, settingsGeneration);
+    if (!publication) {
+        panel_height_logical_ = previousHeight;
+    }
+    return publication;
 }
 
 Result<SurfacePlacement>

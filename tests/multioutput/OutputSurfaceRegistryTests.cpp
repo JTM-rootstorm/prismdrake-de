@@ -195,6 +195,34 @@ TEST(OutputSurfaceRegistryTest, PrimaryAndNamedPoliciesReevaluateWithoutRestart)
     EXPECT_EQ(fallback.value().panels()[0].outputName, "HDMI-1");
 }
 
+TEST(OutputSurfaceRegistryTest, ReconcilesNewSettingsPolicyWithoutForgingTopologyGeneration) {
+    auto registry = OutputSurfaceRegistry::create(48U).value();
+    const auto topology = twoOutputs(10U, 1U);
+    auto primary = registry.observe(topology, {PanelOutputPolicy::primary, {}}, 20U);
+    ASSERT_TRUE(primary);
+    ASSERT_EQ(primary.value().panels().size(), 1U);
+
+    auto all = registry.observe(topology, {PanelOutputPolicy::all, {}}, 21U);
+    ASSERT_TRUE(all);
+    EXPECT_EQ(all.value().topologyGeneration(), 10U);
+    EXPECT_EQ(all.value().settingsGeneration(), 21U);
+    EXPECT_GT(all.value().surfaceGeneration(), primary.value().surfaceGeneration());
+    ASSERT_EQ(all.value().panels().size(), 2U);
+
+    auto named = registry.observe(topology, {PanelOutputPolicy::named, {"DP-1"}}, 22U);
+    ASSERT_TRUE(named);
+    ASSERT_EQ(named.value().panels().size(), 1U);
+    EXPECT_EQ(named.value().panels()[0].outputName, "DP-1");
+
+    const auto repeated = registry.observe(topology, {PanelOutputPolicy::named, {"DP-1"}}, 22U);
+    ASSERT_TRUE(repeated);
+    EXPECT_EQ(repeated.value().surfaceGeneration(), named.value().surfaceGeneration());
+    EXPECT_FALSE(registry.observe(topology, {PanelOutputPolicy::all, {}}, 22U));
+    EXPECT_FALSE(registry.observe(topology, {PanelOutputPolicy::primary, {}}, 21U));
+    ASSERT_TRUE(registry.current());
+    EXPECT_EQ(registry.current()->panels()[0].outputName, "DP-1");
+}
+
 TEST(OutputSurfaceRegistryTest, PublishesGeometryAndScaleChangesAsOneNewGeneration) {
     const auto native =
         nativeTopology({candidate(1U, 10U, "HDMI-1", 0, 0, 1920U, 1080U)}, 1U, 1920U, 1080U);
@@ -256,7 +284,7 @@ TEST(OutputSurfaceRegistryTest, RemovalMigratesVisibleTransientsOrDismissesWitho
 TEST(OutputSurfaceRegistryTest, RejectsStaleGenerationAndMalformedNamedPolicy) {
     auto registry = OutputSurfaceRegistry::create(48U).value();
     ASSERT_TRUE(registry.observe(twoOutputs(4U), {PanelOutputPolicy::primary, {}}));
-    EXPECT_FALSE(registry.observe(twoOutputs(4U), {PanelOutputPolicy::primary, {}}));
+    EXPECT_TRUE(registry.observe(twoOutputs(4U), {PanelOutputPolicy::primary, {}}));
     auto ignoredNames =
         registry.observe(twoOutputs(5U), {PanelOutputPolicy::all, {"untrusted unused name\n"}});
     ASSERT_TRUE(ignoredNames);
