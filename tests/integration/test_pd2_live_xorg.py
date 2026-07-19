@@ -501,9 +501,11 @@ class FakeAccessibility:
         if selector.name == "Pin to panel":
             self.pinned = True
             if self.persist_pin:
-                directory = Path(environment["XDG_STATE_HOME"]) / "prismdrake"
+                state_directory = Path(environment["XDG_STATE_HOME"]) / "prismdrake"
+                state_directory.mkdir(mode=0o700, exist_ok=True)
+                directory = state_directory / "shell"
                 directory.mkdir(mode=0o700, exist_ok=True)
-                pins = directory / "pins.json"
+                pins = directory / "pinned-applications-v1.json"
                 pins.write_bytes(
                     b'{"schema_version":1,"pins":["prismdrake-controlled.desktop"]}\n'
                 )

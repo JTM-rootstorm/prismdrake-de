@@ -3214,9 +3214,11 @@ class LiveXorgHarnessPort:
     def _write_malformed_pin_state(self) -> Path:
         if self._runtime is None:
             raise HarnessError("live_environment_not_started")
-        directory = self._runtime / "state" / "prismdrake"
-        path = directory / "pins.json"
+        state_directory = self._runtime / "state" / "prismdrake"
+        directory = state_directory / "shell"
+        path = directory / "pinned-applications-v1.json"
         try:
+            state_directory.mkdir(mode=0o700)
             directory.mkdir(mode=0o700)
             path.write_bytes(b"{ malformed\n")
             path.chmod(0o600)
