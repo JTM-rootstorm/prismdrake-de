@@ -768,6 +768,9 @@ class LiveXorgHarnessPort:
         ("failure_replay", "remove_primary_output"),
         ("failure_replay", "select_new_primary_output"),
         ("failure_replay", "change_output_geometry"),
+        ("failure_replay", "restart_settingsd"),
+        ("failure_replay", "restart_notifyd"),
+        ("failure_replay", "restart_shell"),
         ("failure_replay", "replace_or_restart_window_manager"),
         ("failure_replay", "lose_x_server"),
     }
@@ -953,8 +956,31 @@ class LiveXorgHarnessPort:
             self._start_environment(two_outputs=True)
             self._xrandr("--output", SECONDARY_OUTPUT, "--pos", "0x900")
             self._require_topology(two_outputs=True, secondary_position=(0, 900))
+        elif identifier == "restart_settingsd":
+            self._prepare_restart_state()
+            self._restart_component("prismdrake-settingsd")
+        elif identifier == "restart_notifyd":
+            self._prepare_restart_state()
+            self._restart_component("prismdrake-notifyd")
+            self._invoke_shellctl("notifications", "open")
+            self._wait_accessible(
+                ControlSelector("Notification center", "panel"),
+                "notification_owner_reacquisition_timeout",
+            )
+        elif identifier == "restart_shell":
+            self._prepare_restart_state()
+            notifyd = self._component_identity("prismdrake-notifyd")
+            self._restart_component("prismdrake-shell")
+            if self._component_identity("prismdrake-notifyd") != notifyd:
+                raise HarnessError("notifyd_replaced_during_shell_restart")
+            self._wait_accessible(
+                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
+                "pin_state_reacquisition_timeout",
+            )
         elif identifier == "replace_or_restart_window_manager":
-            self._start_environment(two_outputs=True)
+            self._prepare_restart_state()
+            components = self._component_identities()
+            windows = dict(self._controlled_windows)
             if self._openbox is None or not self._operations.stop(
                 self._openbox, self._config.stop_timeout
             ):
@@ -964,6 +990,11 @@ class LiveXorgHarnessPort:
             self._start_openbox()
             if self._openbox is previous:
                 raise HarnessError("window_manager_replacement_invalid")
+            self._require_topology(two_outputs=True)
+            self._require_controlled_windows_unchanged(windows)
+            self._require_panel_surfaces()
+            if self._component_identities() != components:
+                raise HarnessError("prismdrake_child_changed_during_window_manager_restart")
         elif identifier == "lose_x_server":
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
@@ -1181,6 +1212,101 @@ class LiveXorgHarnessPort:
         if self._surface_shell_identity is not None and shell != self._surface_shell_identity:
             raise HarnessError("surface_shell_identity_changed")
         return shell
+
+    def _component_identity(self, name: str) -> ProcessIdentity:
+        if name not in {
+            "prismdrake-settingsd",
+            "prismdrake-notifyd",
+            "prismdrake-shell",
+        }:
+            raise HarnessError("component_identity_role_invalid")
+        if self._session is None or self._session.poll() is not None:
+            raise HarnessError("prismdrake_session_not_started")
+        executable = self._config.installed_executables.get(name)
+        if executable is None:
+            raise HarnessError("component_identity_unavailable")
+        identities = self._operations.descendants(self._session, executable)
+        if len(identities) != 1:
+            raise HarnessError("component_identity_invalid")
+        return identities[0]
+
+    def _component_identities(self) -> dict[str, ProcessIdentity]:
+        return {
+            name: self._component_identity(name)
+            for name in (
+                "prismdrake-settingsd",
+                "prismdrake-notifyd",
+                "prismdrake-shell",
+            )
+        }
+
+    def _prepare_restart_state(self) -> None:
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+            "verify_desktop_wallpaper_both_outputs",
+            "verify_panel_policy_both_outputs",
+            "invoke_launcher_through_shellctl",
+            "search_controlled_application",
+            "pin_controlled_application",
+            "launch_controlled_application",
+        ):
+            self.run_step("installed_workflow", identifier)
+        self._component_identities()
+
+    def _restart_component(self, name: str) -> None:
+        executable = self._config.installed_executables.get(name)
+        if executable is None:
+            raise HarnessError("component_identity_unavailable")
+        before = self._component_identities()
+        windows = dict(self._controlled_windows)
+        old = before[name]
+        if not self._operations.stop_identity(old, executable, self._config.stop_timeout):
+            raise HarnessError("component_restart_signal_failed")
+        if name == "prismdrake-shell":
+            self._surface_shell_identity = None
+
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        replacement: ProcessIdentity | None = None
+        while self._operations.monotonic() < deadline:
+            try:
+                candidate = self._component_identity(name)
+            except HarnessError as error:
+                if str(error) != "component_identity_invalid":
+                    raise
+            else:
+                if candidate != old:
+                    replacement = candidate
+                    break
+            self._operations.pause(0.05)
+        if replacement is None:
+            raise HarnessError("component_restart_timeout")
+
+        after = self._component_identities()
+        for role, identity in before.items():
+            if role != name and after[role] != identity:
+                raise HarnessError("unrelated_component_replaced_during_restart")
+        self._require_controlled_windows_unchanged(windows)
+        if name == "prismdrake-shell":
+            self._require_desktop_wallpaper_surfaces()
+            self._require_panel_surfaces()
+        else:
+            if self._component_identity("prismdrake-shell") != before["prismdrake-shell"]:
+                raise HarnessError("shell_replaced_during_service_restart")
+            self._wait_accessible(
+                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
+                "shell_owner_reacquisition_timeout",
+            )
+
+    def _require_controlled_windows_unchanged(
+        self, expected: Mapping[str, int]
+    ) -> None:
+        if not expected:
+            raise HarnessError("controlled_window_identity_missing")
+        for title, identifier in expected.items():
+            if self._controlled_window_ids(title) != (identifier,):
+                raise HarnessError("controlled_window_changed_during_restart")
 
     def _wait_accessible(self, selector: ControlSelector, timeout_error: str) -> None:
         shell = self._shell_identity()

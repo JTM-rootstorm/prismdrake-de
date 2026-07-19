@@ -155,10 +155,22 @@ class FakeOperations:
             for window, geometry in SURFACE_GEOMETRIES.items()
         }
         self.panel_strut_bottom = 48
-        self.shell_start_time = 20_040
+        self.component_pids = {
+            "prismdrake-settingsd": 2002,
+            "prismdrake-notifyd": 2003,
+            "prismdrake-shell": 2004,
+        }
+        self.component_start_times = {
+            "prismdrake-settingsd": 20_020,
+            "prismdrake-notifyd": 20_030,
+            "prismdrake-shell": 20_040,
+        }
         self.controlled_windows: dict[str, int] = {}
         self.controlled_hidden: set[int] = set()
         self.active_window: int | None = None
+        self.component_stop_succeeds = True
+        self.component_replacement_published = True
+        self.unrelated_replacement: str | None = None
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
         child = FakeChild(1000 + len(self.children))
@@ -324,11 +336,11 @@ class FakeOperations:
         argv, _environment = self.spawn_calls[child.pid - 1000]
         if child.poll() is not None or Path(argv[0]).name != "prismdrake-session":
             return ()
-        if executable.name == "prismdrake-shell":
-            identities = [ProcessIdentity(2004, self.shell_start_time)]
-        else:
+        pid = self.component_pids.get(executable.name)
+        start_time = self.component_start_times.get(executable.name)
+        if pid is None or start_time is None:
             return ()
-        return tuple(identities)
+        return (ProcessIdentity(pid, start_time),)
 
     def identify_pid(self, pid: int, executable: Path) -> ProcessIdentity | None:
         del executable
@@ -339,7 +351,21 @@ class FakeOperations:
     def stop_identity(
         self, identity: ProcessIdentity, executable: Path, timeout: float
     ) -> bool:
-        del executable, timeout
+        del timeout
+        component_pid = self.component_pids.get(executable.name)
+        if component_pid is not None:
+            current = ProcessIdentity(
+                component_pid, self.component_start_times[executable.name]
+            )
+            if identity != current:
+                return False
+            if not self.component_stop_succeeds:
+                return False
+            if self.component_replacement_published:
+                self.component_start_times[executable.name] += 1
+            if self.unrelated_replacement is not None:
+                self.component_start_times[self.unrelated_replacement] += 1
+            return True
         return identity in (ProcessIdentity(3001, 30_010), ProcessIdentity(3002, 30_020))
 
     def socket_identity(self, path: Path) -> tuple[int, int] | None:
@@ -818,7 +844,7 @@ class LivePortTests(unittest.TestCase):
                         DESKTOP_LEFT, changed
                     )
                 else:
-                    operations.shell_start_time += 1
+                    operations.component_start_times["prismdrake-shell"] += 1
                 with self.assertRaisesRegex(HarnessError, f"^{expected}$"):
                     port.run_step(
                         "installed_workflow", "verify_panel_policy_both_outputs"
@@ -938,7 +964,6 @@ class LivePortTests(unittest.TestCase):
             ("remove_primary_output", (TWO_OUTPUTS, TWO_OUTPUTS, ONLY_SECONDARY)),
             ("select_new_primary_output", (TWO_OUTPUTS, SECONDARY_PRIMARY)),
             ("change_output_geometry", (TWO_OUTPUTS, SECONDARY_BELOW)),
-            ("replace_or_restart_window_manager", (TWO_OUTPUTS,)),
         )
         for identifier, payloads in cases:
             with self.subTest(identifier=identifier):
@@ -948,9 +973,72 @@ class LivePortTests(unittest.TestCase):
                     port.run_step("failure_replay", identifier),
                     Observation(True, True),
                 )
+                self.assertEqual(
+                    port.cleanup("failure_replay"), Observation(True, True)
+                )
+
+    def test_service_shell_and_window_manager_restarts_preserve_exact_owners(self) -> None:
+        cases = (
+            ("restart_settingsd", "prismdrake-settingsd"),
+            ("restart_notifyd", "prismdrake-notifyd"),
+            ("restart_shell", "prismdrake-shell"),
+            ("replace_or_restart_window_manager", None),
+        )
+        for identifier, restarted in cases:
+            with self.subTest(identifier=identifier):
+                operations = FakeOperations()
+                accessibility = FakeAccessibility(operations)
+                before = dict(operations.component_start_times)
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()), operations, accessibility
+                )
+
+                self.assertEqual(
+                    port.run_step("failure_replay", identifier),
+                    Observation(True, True),
+                )
+                self.assertEqual(
+                    operations.controlled_windows,
+                    {CONTROLLED_WINDOW_ONE: CONTROLLED_ONE_ID},
+                )
+                for role, start_time in before.items():
+                    expected = start_time + (1 if role == restarted else 0)
+                    self.assertEqual(operations.component_start_times[role], expected)
                 if identifier == "replace_or_restart_window_manager":
-                    self.assertEqual(len(operations.spawn_calls), 3)
+                    self.assertEqual(len(operations.spawn_calls), 5)
                     self.assertEqual(len(operations.stop_calls), 1)
+                if identifier == "restart_notifyd":
+                    self.assertIn("Notification center", accessibility.observed)
+                if identifier == "restart_shell":
+                    self.assertTrue(accessibility.pinned)
+                    self.assertIn(CONTROLLED_APPLICATION_NAME, accessibility.observed)
+                self.assertEqual(
+                    port.cleanup("failure_replay"), Observation(True, True)
+                )
+
+    def test_component_restart_fails_closed_for_signal_timeout_and_sibling_drift(self) -> None:
+        cases = (
+            ("signal", "component_restart_signal_failed"),
+            ("timeout", "component_restart_timeout"),
+            ("sibling", "unrelated_component_replaced_during_restart"),
+        )
+        for mutation, expected in cases:
+            with self.subTest(mutation=mutation):
+                operations = FakeOperations()
+                if mutation == "signal":
+                    operations.component_stop_succeeds = False
+                elif mutation == "timeout":
+                    operations.component_replacement_published = False
+                else:
+                    operations.unrelated_replacement = "prismdrake-shell"
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()),
+                    operations,
+                    FakeAccessibility(operations),
+                )
+
+                with self.assertRaisesRegex(HarnessError, f"^{expected}$"):
+                    port.run_step("failure_replay", "restart_settingsd")
                 self.assertEqual(
                     port.cleanup("failure_replay"), Observation(True, True)
                 )
