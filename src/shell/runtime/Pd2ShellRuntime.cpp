@@ -12,6 +12,7 @@
 #include <QScreen>
 #include <QUrl>
 #include <QVariant>
+#include <QWindow>
 
 #include <QDebug>
 #include <algorithm>
@@ -590,6 +591,15 @@ Result<void> Pd2ShellRuntime::ensureSingletonViews() {
                 view->rootObject()->setProperty("themeGeneration", themeValue);
             }
         }
+        for (const auto &active : composition_.state().activeSurfaces()) {
+            if (active.family == composition::SurfaceFamily::actionMenu) {
+                continue;
+            }
+            auto positioned = position(active.family, active.output.value());
+            if (!positioned) {
+                return positioned;
+            }
+        }
         return Result<void>::success();
     }
     const auto create = [this](QString title, QString source, QString property, QObject *model) {
@@ -647,6 +657,29 @@ Result<void> Pd2ShellRuntime::ensureSingletonViews() {
         !transient_view_ || !logout_view_) {
         return Result<void>::failure(surfaceError());
     }
+    const auto trackPlacement = [this](QQuickView &view, composition::SurfaceFamily family) {
+        const auto reposition = [this, family]() {
+            const auto surfaces = composition_.state().activeSurfaces();
+            const auto active =
+                std::ranges::find(surfaces, family, &composition::ActiveSurface::family);
+            if (active == surfaces.end()) {
+                return;
+            }
+            auto positioned = position(family, active->output.value());
+            if (!positioned) {
+                report("surface size placement", positioned.error());
+            }
+        };
+        connect(&view, &QWindow::widthChanged, this,
+                [reposition](int) { reposition(); });
+        connect(&view, &QWindow::heightChanged, this,
+                [reposition](int) { reposition(); });
+    };
+    trackPlacement(*launcher_view_, composition::SurfaceFamily::launcher);
+    trackPlacement(*quick_settings_view_, composition::SurfaceFamily::quickSettings);
+    trackPlacement(*notification_center_view_, composition::SurfaceFamily::notificationCenter);
+    trackPlacement(*transient_view_, composition::SurfaceFamily::transientNotificationAction);
+    trackPlacement(*logout_view_, composition::SurfaceFamily::logoutConfirmation);
     connect(launcher_view_->rootObject(), SIGNAL(searchRequested(QString)), this,
             SLOT(launcherSearchRequested(QString)));
     connect(launcher_view_->rootObject(), SIGNAL(dismissRequested()), this,
