@@ -138,6 +138,21 @@ class FakePort:
 
 
 class TierCWorkflowTests(unittest.TestCase):
+    def test_panel_tab_starts_from_the_reviewed_launcher_control(self) -> None:
+        contract = STEP_CONTRACTS["panel"]
+
+        self.assertEqual(contract.keys, ("TAB",))
+        self.assertEqual(contract.surface_selector.name, "Open applications")
+        self.assertEqual(contract.focus_selector.name, "Open applications")
+        self.assertTrue(contract.focus_selector.require_focused)
+
+    def test_launcher_enter_activates_the_prepared_controlled_result(self) -> None:
+        contract = STEP_CONTRACTS["launcher"]
+
+        self.assertEqual(contract.keys, ("ENTER",))
+        self.assertEqual(contract.focus_selector.name, "Search applications")
+        self.assertTrue(contract.focus_selector.require_focused)
+
     def make_workflow(self) -> tuple[TierCReplayWorkflow, FakePort, FakeTrace]:
         port = FakePort()
         trace = FakeTrace()
@@ -167,18 +182,18 @@ class TierCWorkflowTests(unittest.TestCase):
         self.assertEqual(
             [operation[0] for operation in port.operations],
             [item for _step in TIER_C_STEPS for item in (
-                "prepare", "keys", "atspi", "atspi", "atspi", "material", "complete"
+                "prepare", "atspi", "atspi", "atspi", "material", "keys", "complete"
             )] + ["cleanup"],
         )
         for index, identifier in enumerate(TIER_C_STEPS):
             base = index * 7
             self.assertIs(port.operations[base][1], STEP_CONTRACTS[identifier])
             self.assertEqual(
-                port.operations[base + 1],
+                port.operations[base + 5],
                 ("keys", identifier, STEP_CONTRACTS[identifier].keys),
             )
             self.assertEqual(
-                port.operations[base + 5],
+                port.operations[base + 4],
                 ("material", identifier, STEP_CONTRACTS[identifier].sample_points),
             )
         for result in (*results, cleanup):

@@ -28,6 +28,7 @@ from pd2_xwd import (  # noqa: E402
     fingerprint_xwd,
     fingerprint_xwd_samples,
     require_complete_surface_transition,
+    transparent_reference_fingerprint,
 )
 
 
@@ -161,6 +162,32 @@ class CaptureFixture:
 
 
 class XwdCaptureBoundaryTests(unittest.TestCase):
+    def test_transparent_reference_matches_the_exact_reviewed_shape(self) -> None:
+        points = ((0, 0), (1, 0))
+        transparent = xwd(pixels=b"\x00" * 8, name=b"ignored")
+
+        self.assertEqual(
+            transparent_reference_fingerprint(2, 1, points),
+            fingerprint_xwd_samples(transparent, points),
+        )
+        self.assertNotEqual(
+            transparent_reference_fingerprint(2, 1, points),
+            fingerprint_xwd_samples(xwd(), points),
+        )
+
+        for dimensions in ((0, 1), (1, 0), (MAX_DIMENSION + 1, 1)):
+            with self.subTest(dimensions=dimensions), self.assertRaisesRegex(
+                XwdEvidenceError, "^xwd_dimensions_invalid$"
+            ):
+                transparent_reference_fingerprint(*dimensions, points)
+        for depth in (False, "bad", 0, 33):
+            with self.subTest(depth=depth), self.assertRaisesRegex(
+                XwdEvidenceError, "^xwd_pixel_layout_invalid$"
+            ):
+                transparent_reference_fingerprint(2, 1, points, depth=depth)
+        with self.assertRaisesRegex(XwdEvidenceError, "^xwd_capture_too_large$"):
+            transparent_reference_fingerprint(MAX_DIMENSION, MAX_DIMENSION, points)
+
     def test_runs_exact_executable_and_returns_only_a_fingerprint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             fixture = CaptureFixture(Path(temporary).resolve())

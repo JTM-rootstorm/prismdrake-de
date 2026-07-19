@@ -11,6 +11,7 @@ import tempfile
 import tomllib
 import unittest
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,6 +30,8 @@ from pd2_live_settings_workflow import (  # noqa: E402
     RESULT_CATEGORIES as SETTINGS_RESULT_CATEGORIES,
     SettingsWorkflowResult,
 )
+from pd2_tier_c_workflow import TIER_C_STEPS  # noqa: E402
+from pd2_x11trace import X11TraceSummary  # noqa: E402
 from pd2_notification_failure_replay import (  # noqa: E402
     FailureEvidence,
     MALFORMED_HISTORY_BYTES,
@@ -161,6 +164,7 @@ class FakeOperations:
         self.spawn_calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
         self.run_calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
         self.stop_calls: list[FakeChild] = []
+        self.stop_identity_calls: list[ProcessIdentity] = []
         self.children: list[FakeChild] = []
         self.now = 0.0
         self.stop_succeeds = True
@@ -200,8 +204,10 @@ class FakeOperations:
         self.xorg_query_survives_stop = False
         self.shell_crashes = 0
         self.safe_mode_published = True
+        self.events: list[tuple[str, object]] = []
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
+        self.events.append(("spawn", Path(argv[0]).name))
         child = FakeChild(1000 + len(self.children))
         self.children.append(child)
         self.spawn_calls.append((tuple(argv), dict(env)))
@@ -237,6 +243,7 @@ class FakeOperations:
     ) -> CommandResult:
         del timeout
         command = tuple(argv)
+        self.events.append(("run", Path(command[0]).name))
         self.run_calls.append((command, dict(env)))
         if command[-1] == "--query":
             if self.xorg_stopped and not self.xorg_query_survives_stop:
@@ -286,8 +293,13 @@ class FakeOperations:
                     0, b"_NET_WM_WINDOW_TYPE(ATOM) = " + window_type + b"\n"
                 )
             if property_name == "_NET_WM_PID":
+                controlled_owners = {
+                    CONTROLLED_ONE_ID: 3001,
+                    CONTROLLED_TWO_ID: 3002,
+                }
+                owner = controlled_owners.get(window, self.surface_owner)
                 return CommandResult(
-                    0, f"_NET_WM_PID(CARDINAL) = {self.surface_owner}\n".encode("ascii")
+                    0, f"_NET_WM_PID(CARDINAL) = {owner}\n".encode("ascii")
                 )
             if property_name == "WM_HINTS":
                 focus = "True" if self.surface_focus else "False"
@@ -389,6 +401,7 @@ class FakeOperations:
         self, identity: ProcessIdentity, executable: Path, timeout: float
     ) -> bool:
         del timeout
+        self.stop_identity_calls.append(identity)
         component_pid = self.component_pids.get(executable.name)
         if component_pid is not None:
             current = ProcessIdentity(
@@ -636,6 +649,36 @@ class FakeClosable:
 
     def close(self) -> None:
         self.close_calls += 1
+
+
+class FakeTierCTrace:
+    def __init__(self, proxy_display: str) -> None:
+        self.proxy_display = proxy_display
+        self.finished = False
+        self.poll_calls = 0
+        self.finish_calls: list[bool] = []
+        self.client_environments: list[dict[str, str]] = []
+
+    def client_environment(self, environment: Mapping[str, str]) -> dict[str, str]:
+        selected = dict(environment)
+        selected["DISPLAY"] = self.proxy_display
+        selected.pop("XAUTHORITY", None)
+        self.client_environments.append(selected)
+        return selected
+
+    def poll(self) -> None:
+        if self.finished:
+            raise RuntimeError("trace finished")
+        self.poll_calls += 1
+
+    def finish(self, *, clients_exited: bool) -> X11TraceSummary:
+        self.finish_calls.append(clients_exited)
+        self.finished = True
+        if clients_exited is not True:
+            raise RuntimeError("clients active")
+        return X11TraceSummary(
+            True, 1, 1, 0, 0, 0, 0, 0, 0, 0, False, False
+        )
 
 
 class FakeNotificationEpochFactory:
@@ -1076,6 +1119,179 @@ class NotificationFailureReplayAdapterTests(unittest.TestCase):
 
 
 class LivePortTests(unittest.TestCase):
+    def test_tier_c_material_rejects_argb_surface_depth(self) -> None:
+        operations = FakeOperations()
+        operations.window_geometry_payloads[DESKTOP_LEFT] = operations.window_geometry_payloads[
+            DESKTOP_LEFT
+        ].replace(b"  Depth: 24", b"  Depth: 32")
+        port = LiveXorgHarnessPort(config(), operations)
+        port._display = ":140"  # noqa: SLF001
+
+        with self.assertRaisesRegex(HarnessError, "^tier_c_surface_depth_invalid$"):
+            port._tier_c_window_geometry(DESKTOP_LEFT)  # noqa: SLF001
+
+    def test_quotes_whitespace_fixture_and_rejects_desktop_field_code_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            data.mkdir(mode=0o700)
+            fixture = root / "controlled fixture"
+            fixture.write_bytes(b"fixture")
+            fixture.chmod(0o700)
+            port = LiveXorgHarnessPort(
+                replace(config(), controlled_window_fixture=fixture), FakeOperations()
+            )
+            port._runtime = root  # noqa: SLF001
+
+            port._write_controlled_desktop_entry()  # noqa: SLF001
+
+            payload = (data / "applications" / "prismdrake-controlled.desktop").read_text(
+                encoding="ascii"
+            )
+            self.assertIn(f'Exec="{fixture}" --instance one\n', payload)
+            self.assertIn(f'Exec="{fixture}" --instance two\n', payload)
+
+        for marker in ("%", '"', "\\"):
+            with self.subTest(marker=marker), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "data").mkdir(mode=0o700)
+                fixture = root / f"controlled{marker}fixture"
+                fixture.write_bytes(b"fixture")
+                fixture.chmod(0o700)
+                port = LiveXorgHarnessPort(
+                    replace(config(), controlled_window_fixture=fixture),
+                    FakeOperations(),
+                )
+                port._runtime = root  # noqa: SLF001
+                with self.assertRaisesRegex(
+                    HarnessError, "^controlled_fixture_invalid$"
+                ):
+                    port._write_controlled_desktop_entry()  # noqa: SLF001
+
+    def test_routes_one_tier_c_workflow_through_proxy_and_natural_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "controlled fixture"
+            fixture.write_bytes(b"fixture")
+            fixture.chmod(0o700)
+            operations = FakeOperations()
+            accessibility = FakeAccessibility(operations)
+            named = {
+                live_xorg.LAUNCHER_WINDOW_TITLE: 0x510001,
+                live_xorg.NOTIFICATION_WINDOW_TITLE: 0x510002,
+                live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE: 0x510003,
+                QUICK_SETTINGS_WINDOW_TITLE: 0x510004,
+                live_xorg.LOGOUT_WINDOW_TITLE: 0x510005,
+            }
+            for index, (title, window) in enumerate(named.items()):
+                geometry = WindowGeometry(100 + index, 100, 380, 400)
+                operations.controlled_windows[title] = window
+                operations.surface_geometries[window] = geometry
+                operations.window_geometry_payloads[window] = xwininfo_payload(
+                    window, geometry
+                )
+
+            traces: list[FakeTierCTrace] = []
+
+            def trace_factory(trace_config, environment):
+                self.assertEqual(trace_config.real_display, ":140")
+                self.assertEqual(trace_config.fake_display, ":1140")
+                self.assertNotIn("DISPLAY", environment)
+                self.assertEqual(
+                    [event for event in operations.events if event[0] == "spawn"],
+                    [("spawn", "Xorg")],
+                )
+                operations.events.append(("trace", trace_config.fake_display))
+                trace = FakeTierCTrace(trace_config.fake_display)
+                traces.append(trace)
+                return trace
+
+            port = LiveXorgHarnessPort(
+                replace(
+                    config(installed_paths()), controlled_window_fixture=fixture
+                ),
+                operations,
+                accessibility,
+                notification_epoch_factory=FakeNotificationEpochFactory(),
+                tier_c_trace_factory=trace_factory,
+            )
+            real_xdotool = port._xdotool  # noqa: SLF001
+
+            def drive_tier_c_key(*arguments: str):
+                result = real_xdotool(*arguments)
+                if arguments[:2] != ("key", "--clearmodifiers"):
+                    return result
+                identifier = port._tier_c_identifier  # noqa: SLF001
+                if identifier == "launcher" and arguments[-1] == "Return":
+                    operations.controlled_windows.pop(
+                        live_xorg.LAUNCHER_WINDOW_TITLE, None
+                    )
+                    operations.controlled_windows[CONTROLLED_WINDOW_ONE] = (
+                        CONTROLLED_ONE_ID
+                    )
+                elif identifier == "logout" and arguments[-1] == "Return":
+                    if port._session is None:  # noqa: SLF001
+                        raise AssertionError("session missing before logout")
+                    port._session.returncode = 0  # type: ignore[attr-defined]  # noqa: SLF001
+                return result
+
+            with patch.object(
+                live_xorg, "capture_window_fingerprint", return_value=b"M" * 32
+            ) as capture, patch.object(port, "_xdotool", side_effect=drive_tier_c_key):
+                workflow = None
+                for identifier in TIER_C_STEPS:
+                    with self.subTest(identifier=identifier):
+                        self.assertEqual(
+                            port.run_step("tier_c_replay", identifier),
+                            Observation(True, True),
+                        )
+                        if workflow is None:
+                            workflow = port._tier_c_workflow  # noqa: SLF001
+                        self.assertIs(port._tier_c_workflow, workflow)  # noqa: SLF001
+                self.assertEqual(
+                    port.cleanup("tier_c_replay"), Observation(True, True)
+                )
+
+            self.assertEqual(len(traces), 1)
+            self.assertEqual(traces[0].finish_calls, [True])
+            self.assertTrue(traces[0].finished)
+            trace_index = operations.events.index(("trace", ":1140"))
+            self.assertEqual(operations.events[trace_index + 1], ("spawn", "openbox"))
+            traced_spawns = [
+                environment
+                for (argv, environment) in operations.spawn_calls
+                if Path(argv[0]).name in {"openbox", "prismdrake-session"}
+            ]
+            self.assertEqual(
+                [environment["DISPLAY"] for environment in traced_spawns],
+                [":1140", ":1140"],
+            )
+            traced_commands = [
+                environment["DISPLAY"]
+                for argv, environment in operations.run_calls
+                if Path(argv[0]).name in {"prismdrake-shellctl", "xdotool"}
+            ]
+            self.assertTrue(traced_commands)
+            self.assertEqual(set(traced_commands), {":1140"})
+            self.assertIn(ProcessIdentity(3001, 30_010), operations.stop_identity_calls)
+            self.assertEqual(capture.call_count, len(TIER_C_STEPS) * 2)
+            self.assertTrue(
+                all(call.args[3]["DISPLAY"] == ":140" for call in capture.call_args_list)
+            )
+            key_calls = [
+                argv[-1]
+                for argv, _environment in operations.run_calls
+                if argv[:3] == ("/usr/bin/xdotool", "key", "--clearmodifiers")
+            ]
+            expected_keys: list[str] = []
+            for identifier in TIER_C_STEPS:
+                expected_keys.extend(
+                    live_xorg.TIER_C_KEY_ARGUMENTS[key]
+                    for key in live_xorg.STEP_CONTRACTS[identifier].keys
+                )
+                if identifier in {"notification_center", "quick_settings"}:
+                    expected_keys.append("Escape")
+            self.assertEqual(key_calls, expected_keys)
+
     def test_logout_methods_use_shellctl_accessibility_and_reject_stale_id(self) -> None:
         port = LiveXorgHarnessPort(config(installed_paths()), FakeOperations())
         components = LifecycleComponentObservation(

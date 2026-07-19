@@ -279,6 +279,63 @@ def fingerprint_xwd_samples(
     return digest.digest()
 
 
+def transparent_reference_fingerprint(
+    width: int,
+    height: int,
+    points: Sequence[tuple[int, int]],
+    *,
+    depth: int = 24,
+) -> bytes:
+    """Fingerprint an all-zero pixel reference with the reviewed window shape."""
+
+    if (
+        isinstance(width, bool)
+        or not isinstance(width, int)
+        or isinstance(height, bool)
+        or not isinstance(height, int)
+        or not 1 <= width <= MAX_DIMENSION
+        or not 1 <= height <= MAX_DIMENSION
+    ):
+        _fail("xwd_dimensions_invalid")
+    if isinstance(depth, bool) or not isinstance(depth, int) or not 1 <= depth <= 32:
+        _fail("xwd_pixel_layout_invalid")
+    bytes_per_line = width * 4
+    name = b"Prismdrake transparent reference\x00"
+    header_size = XWD_HEADER_BYTES + len(name)
+    pixel_bytes = bytes_per_line * height
+    if header_size + pixel_bytes > MAX_CAPTURE_BYTES:
+        _fail("xwd_capture_too_large")
+    fields = (
+        header_size,
+        XWD_FILE_VERSION,
+        XWD_Z_PIXMAP,
+        depth,
+        width,
+        height,
+        0,
+        0,
+        32,
+        0,
+        32,
+        32,
+        bytes_per_line,
+        4,
+        0x00FF0000,
+        0x0000FF00,
+        0x000000FF,
+        8,
+        256,
+        0,
+        width,
+        height,
+        0,
+        0,
+        0,
+    )
+    payload = struct.pack(">25I", *fields) + name + bytes(pixel_bytes)
+    return fingerprint_xwd_samples(payload, points)
+
+
 def capture_window_fingerprint(
     xwd_executable: Path,
     window_id: int,

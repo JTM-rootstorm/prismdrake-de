@@ -39,6 +39,7 @@ class FakeRole:
     NOTIFICATION = "notification"
     PANEL = "panel"
     PUSH_BUTTON = "push_button"
+    RADIO_BUTTON = "radio_button"
     RADIO_MENU_ITEM = "radio_menu_item"
     TEXT = "text"
     TOGGLE_BUTTON = "toggle_button"
@@ -200,6 +201,24 @@ class LiveAtspiHelperTests(unittest.TestCase):
         self.assertEqual(result.as_dict(), {"category": "atspi_control_ready", "status": "passed"})
         self.assertEqual(calls, [self.application])
         validate_categorical_result(result)
+
+    def test_observes_reviewed_radio_button_role(self) -> None:
+        radio = FakeNode(
+            "Use Prismdrake Lustre",
+            FakeRole.RADIO_BUTTON,
+            states=set(VISIBLE),
+        )
+        atspi, application = fixture([radio])
+
+        result = observe_showing_control(
+            atspi,
+            exact_owner(application),
+            ControlSelector(
+                "Use Prismdrake Lustre", "radio_button", require_focused=True
+            ),
+        )
+
+        self.assertEqual(result.category, "atspi_control_ready")
 
     def test_invokes_only_the_exact_reviewed_action_after_rechecking_owner(self) -> None:
         calls: list[FakeNode] = []

@@ -29,6 +29,7 @@ ROLE_ENUM_NAMES = {
     "panel": ("FILLER", "PANEL"),
     "pane": ("FILLER", "PANEL"),
     "push_button": ("PUSH_BUTTON",),
+    "radio_button": ("RADIO_BUTTON",),
     "toggle_button": ("TOGGLE_BUTTON",),
 }
 RESULT_CATEGORIES = frozenset(

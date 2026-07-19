@@ -201,20 +201,18 @@ STEP_CONTRACTS: Mapping[str, TierCStepContract] = MappingProxyType({
     ),
     "task_actions": TierCStepContract(
         "task_actions",
-        ("ESCAPE", "TAB", "MENU", "ESCAPE"),
+        ("TAB", "MENU", "ESCAPE"),
         ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
-        ControlSelector(
-            CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
-        ),
+        ControlSelector("Open applications", "push_button", require_focused=True),
         ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
         _POINTS,
     ),
     "notification": TierCStepContract(
         "notification",
-        ("TAB", "ENTER"),
+        ("TAB", "TAB", "ENTER"),
         ControlSelector("Transient notifications", "notification"),
         ControlSelector(
-            "Open notification center", "push_button", require_focused=True
+            "Open applications", "push_button", require_focused=True
         ),
         ControlSelector("Transient notifications", "notification"),
         _POINTS,
@@ -229,15 +227,17 @@ STEP_CONTRACTS: Mapping[str, TierCStepContract] = MappingProxyType({
     ),
     "quick_settings": TierCStepContract(
         "quick_settings",
-        ("ESCAPE", "SHIFT_TAB", "ENTER", "TAB"),
+        ("TAB", "SPACE"),
         ControlSelector("Quick settings", "pane"),
-        ControlSelector("Request logout", "push_button", require_focused=True),
+        ControlSelector(
+            "Use Prismdrake Lustre", "radio_button", require_focused=True
+        ),
         ControlSelector("Quick settings", "pane"),
         _POINTS,
     ),
     "logout": TierCStepContract(
         "logout",
-        ("ENTER", "TAB"),
+        ("TAB", "ENTER"),
         ControlSelector("Log out of Prismdrake", "dialog"),
         ControlSelector("Cancel logout", "push_button", require_focused=True),
         ControlSelector("Log out of Prismdrake", "dialog"),
@@ -386,10 +386,6 @@ class TierCReplayWorkflow:
             _validate_port_result(
                 self._port.prepare_step(contract), "tier_c_step_prepared"
             )
-            _validate_keyboard(
-                self._port.send_reviewed_keys(identifier, contract.keys),
-                len(contract.keys),
-            )
             _validate_atspi(self._port.observe_atspi(contract.surface_selector))
             _validate_atspi(self._port.observe_atspi(contract.focus_selector))
             _validate_atspi(self._port.observe_atspi(contract.readable_selector))
@@ -397,6 +393,10 @@ class TierCReplayWorkflow:
                 self._port.capture_reviewed_material(
                     identifier, contract.sample_points
                 )
+            )
+            _validate_keyboard(
+                self._port.send_reviewed_keys(identifier, contract.keys),
+                len(contract.keys),
             )
             _validate_port_result(
                 self._port.complete_step(identifier), "tier_c_step_complete"

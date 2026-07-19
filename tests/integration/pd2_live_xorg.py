@@ -28,6 +28,7 @@ from typing import Protocol
 
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation
 from pd2_live_atspi import (
+    CategoricalResult as AtspiCategoricalResult,
     ControlSelector,
     LiveAtspiError,
     invoke_reviewed_action,
@@ -80,7 +81,19 @@ from pd2_notification_failure_replay import (
     verify_conflicting_notification_owner,
     verify_malformed_history_recovery,
 )
-from pd2_xwd import capture_window_fingerprint
+from pd2_tier_c_workflow import (
+    ClientCleanupObservation as TierCClientCleanupObservation,
+    KeyboardObservation as TierCKeyboardObservation,
+    MaterialObservation as TierCMaterialObservation,
+    PortResult as TierCPortResult,
+    STEP_CONTRACTS,
+    TIER_C_STEPS,
+    TierCReplayWorkflow,
+    TierCStepContract,
+    validate_tier_c_result,
+)
+from pd2_x11trace_supervisor import X11TraceConfig, X11TraceSupervisor
+from pd2_xwd import capture_window_fingerprint, transparent_reference_fingerprint
 
 
 MAX_COMMAND_OUTPUT_BYTES = 65_536
@@ -99,6 +112,29 @@ CONTROLLED_DESKTOP_FILE = "prismdrake-controlled.desktop"
 CONTROLLED_WINDOW_ONE = "Prismdrake Demo App One"
 CONTROLLED_WINDOW_TWO = "Prismdrake Demo App Two"
 QUICK_SETTINGS_WINDOW_TITLE = "Prismdrake Quick Settings"
+LAUNCHER_WINDOW_TITLE = "Prismdrake Launcher"
+NOTIFICATION_WINDOW_TITLE = "Prismdrake Notifications"
+NOTIFICATION_CENTER_WINDOW_TITLE = "Prismdrake Notification Center"
+LOGOUT_WINDOW_TITLE = "Prismdrake Logout Confirmation"
+TIER_C_WINDOW_TITLES = frozenset(
+    {
+        LAUNCHER_WINDOW_TITLE,
+        NOTIFICATION_WINDOW_TITLE,
+        NOTIFICATION_CENTER_WINDOW_TITLE,
+        QUICK_SETTINGS_WINDOW_TITLE,
+        LOGOUT_WINDOW_TITLE,
+    }
+)
+TIER_C_KEY_ARGUMENTS: Mapping[str, str] = {
+    "SUPER_D": "super+d",
+    "TAB": "Tab",
+    "SHIFT_TAB": "shift+Tab",
+    "ENTER": "Return",
+    "ESCAPE": "Escape",
+    "SPACE": "space",
+    "MENU": "shift+F10",
+    "DOWN": "Down",
+}
 SETTINGS_WORKFLOW_CONFIG = SettingsWorkflowConfig(
     ("panel_primary", "panel_secondary", "quick_settings"),
     (
@@ -112,6 +148,11 @@ LIFECYCLE_REVIEWED_SURFACES = (
     "panel_secondary",
     "quick_settings",
 )
+
+
+TierCTraceFactory = Callable[
+    [X11TraceConfig, Mapping[str, str]], X11TraceSupervisor
+]
 
 
 @dataclass(frozen=True)
@@ -1227,6 +1268,7 @@ class LiveXorgHarnessPort:
         ("installed_workflow", "verify_complete_settings_generation"),
         ("installed_workflow", "switch_back_preserving_accessibility"),
         *(("installed_workflow", identifier) for identifier in LIFECYCLE_STEP_CATEGORIES),
+        *(("tier_c_replay", identifier) for identifier in TIER_C_STEPS),
         ("failure_replay", "two_same_scale_outputs_at_startup"),
         ("failure_replay", "add_second_output_after_startup"),
         ("failure_replay", "remove_primary_output"),
@@ -1254,6 +1296,7 @@ class LiveXorgHarnessPort:
         notification_epoch_factory: NotificationEpochFactory | None = None,
         settings_epoch_factory: SettingsEpochFactory | None = None,
         notification_failure_replay: NotificationFailureReplayPort | None = None,
+        tier_c_trace_factory: TierCTraceFactory | None = None,
     ) -> None:
         self._config = config
         self._operations = operations or SystemOperations()
@@ -1265,6 +1308,7 @@ class LiveXorgHarnessPort:
         self._notification_failure_replay = (
             notification_failure_replay or SystemNotificationFailureReplayPort()
         )
+        self._tier_c_trace_factory = tier_c_trace_factory or X11TraceSupervisor
         self._runtime: Path | None = None
         self._display: str | None = None
         self._xorg: ChildProcess | None = None
@@ -1295,6 +1339,11 @@ class LiveXorgHarnessPort:
         self._cleanup_processes: tuple[tuple[ProcessIdentity, Path], ...] = ()
         self._cleanup_runtime: Path | None = None
         self._cleanup_bus_path: Path | None = None
+        self._tier_c_trace: X11TraceSupervisor | None = None
+        self._tier_c_workflow: TierCReplayWorkflow | None = None
+        self._tier_c_surface: tuple[int, WindowGeometry] | None = None
+        self._tier_c_identifier: str | None = None
+        self._tier_c_logout_components: dict[str, ProcessIdentity] | None = None
 
     def installed_executable_hashes(self) -> Mapping[str, str]:
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
@@ -1309,6 +1358,10 @@ class LiveXorgHarnessPort:
     def run_step(self, phase: str, identifier: str) -> Observation:
         if (phase, identifier) not in self._SUPPORTED_STEPS:
             raise HarnessError("live_step_not_implemented")
+        if phase == "tier_c_replay":
+            result = self._installed_tier_c().run_step(identifier)
+            validate_tier_c_result(result)
+            return Observation(True, True)
         if phase == "failure_replay":
             # Each replay scenario begins from a fresh isolated X11 epoch.  The
             # contract invokes scenarios consecutively and cleans only once at
@@ -1839,7 +1892,7 @@ class LiveXorgHarnessPort:
         return window
 
     def _visible_named_window_ids(self, title: str) -> tuple[int, ...]:
-        if title != QUICK_SETTINGS_WINDOW_TITLE or self._config.xdotool is None:
+        if title not in TIER_C_WINDOW_TITLES or self._config.xdotool is None:
             raise HarnessError("live_settings_surface_query_invalid")
         result = self._operations.run(
             (
@@ -1867,6 +1920,374 @@ class LiveXorgHarnessPort:
         if len(identifiers) > 1:
             raise HarnessError("live_settings_surface_query_invalid")
         return tuple(identifiers)
+
+    def _installed_tier_c(self) -> TierCReplayWorkflow:
+        if self._tier_c_workflow is not None:
+            return self._tier_c_workflow
+        self._start_environment(two_outputs=True, tier_c=True)
+        if self._tier_c_trace is None:
+            raise HarnessError("tier_c_trace_start_failed")
+        self._start_session()
+        self._wait_for_session_readiness()
+        self._require_desktop_wallpaper_surfaces()
+        self._require_panel_surfaces()
+        self._tier_c_workflow = TierCReplayWorkflow(self, self._tier_c_trace)
+        return self._tier_c_workflow
+
+    def _tier_c_named_surface(self, title: str) -> tuple[int, WindowGeometry]:
+        windows = self._visible_named_window_ids(title)
+        if len(windows) != 1:
+            raise HarnessError("tier_c_surface_window_invalid")
+        window = windows[0]
+        shell = self._shell_identity()
+        if self._window_cardinals(window, b"_NET_WM_PID", 1) != (shell.pid,):
+            raise HarnessError("tier_c_surface_owner_invalid")
+        return window, self._tier_c_window_geometry(window)
+
+    def _tier_c_window_geometry(self, window: int) -> WindowGeometry:
+        result = self._run_x11(
+            (str(self._config.xwininfo), "-id", f"0x{window:x}", "-stats")
+        )
+        if result.returncode != 0 or result.stdout.splitlines().count(b"  Depth: 24") != 1:
+            raise HarnessError("tier_c_surface_depth_invalid")
+        return parse_window_geometry(result.stdout)
+
+    def _tier_c_panel_surface(self) -> tuple[int, WindowGeometry]:
+        self._require_panel_surfaces()
+        shell = self._shell_identity()
+        panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
+        expected = WindowGeometry(
+            0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT
+        )
+        matches = [
+            (window, geometry)
+            for window, geometry in panels.items()
+            if geometry == expected
+        ]
+        if len(matches) != 1:
+            raise HarnessError("tier_c_surface_window_invalid")
+        return matches[0]
+
+    def _tier_c_desktop_surface(self) -> tuple[int, WindowGeometry]:
+        self._require_desktop_wallpaper_surfaces()
+        expected = WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT)
+        matches = [
+            (window, geometry)
+            for window, geometry in (self._desktop_surfaces or {}).items()
+            if geometry == expected
+        ]
+        if len(matches) != 1:
+            raise HarnessError("tier_c_surface_window_invalid")
+        return matches[0]
+
+    def _prepare_tier_c_controlled_application(self) -> None:
+        if self._config.controlled_window_fixture is None:
+            raise HarnessError("controlled_fixture_unavailable")
+        if CONTROLLED_WINDOW_ONE not in self._controlled_windows:
+            self._controlled_windows[CONTROLLED_WINDOW_ONE] = self._wait_controlled_window(
+                CONTROLLED_WINDOW_ONE
+            )
+        if CONTROLLED_WINDOW_ONE not in self._controlled_processes:
+            self._record_controlled_process(CONTROLLED_WINDOW_ONE)
+
+    def prepare_step(self, contract: TierCStepContract) -> TierCPortResult:
+        if self._tier_c_trace is None or self._tier_c_workflow is None:
+            raise HarnessError("tier_c_environment_not_started")
+        identifier = contract.identifier
+        if identifier not in TIER_C_STEPS or self._tier_c_identifier is not None:
+            raise HarnessError("tier_c_step_state_invalid")
+
+        if identifier == "desktop":
+            self._invoke_shellctl("panel", "focus")
+            surface = self._tier_c_desktop_surface()
+        elif identifier == "panel":
+            self._invoke_shellctl("panel", "focus")
+            surface = self._tier_c_panel_surface()
+        elif identifier == "launcher":
+            self._invoke_shellctl("launcher", "toggle")
+            self._wait_accessible(
+                ControlSelector(
+                    "Search applications", "editable_text", require_focused=True
+                ),
+                "tier_c_launcher_focus_timeout",
+            )
+            self._xdotool(
+                "type",
+                "--clearmodifiers",
+                "--delay",
+                "0",
+                CONTROLLED_APPLICATION_NAME,
+            )
+            self._wait_accessible(
+                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
+                "tier_c_controlled_result_timeout",
+            )
+            surface = self._tier_c_named_surface(LAUNCHER_WINDOW_TITLE)
+        elif identifier == "task_actions":
+            self._prepare_tier_c_controlled_application()
+            self._invoke_shellctl("panel", "focus")
+            surface = self._tier_c_panel_surface()
+        elif identifier == "notification":
+            self._run_notification_step("create_normal_notification")
+            self._invoke_shellctl("panel", "focus")
+            surface = self._tier_c_named_surface(NOTIFICATION_WINDOW_TITLE)
+        elif identifier == "notification_center":
+            self._invoke_shellctl("notifications", "open")
+            self._wait_accessible(
+                ControlSelector("Notification center", "pane"),
+                "tier_c_notification_center_timeout",
+            )
+            surface = self._tier_c_named_surface(NOTIFICATION_CENTER_WINDOW_TITLE)
+        elif identifier == "quick_settings":
+            self._invoke_shellctl("quick-settings", "open")
+            self._wait_accessible(
+                ControlSelector("Quick settings", "pane"),
+                "tier_c_quick_settings_timeout",
+            )
+            surface = self._tier_c_named_surface(QUICK_SETTINGS_WINDOW_TITLE)
+        elif identifier == "logout":
+            self._invoke_shellctl("session", "logout")
+            self._wait_accessible(
+                ControlSelector("Log out of Prismdrake", "dialog"),
+                "tier_c_logout_timeout",
+            )
+            surface = self._tier_c_named_surface(LOGOUT_WINDOW_TITLE)
+            self._tier_c_logout_components = self._component_identities()
+        else:
+            raise HarnessError("tier_c_step_state_invalid")
+
+        self._tier_c_identifier = identifier
+        self._tier_c_surface = surface
+        return TierCPortResult("tier_c_step_prepared")
+
+    def send_reviewed_keys(
+        self, identifier: str, keys: tuple[str, ...]
+    ) -> TierCKeyboardObservation:
+        if identifier != self._tier_c_identifier or not keys:
+            raise HarnessError("tier_c_keyboard_state_invalid")
+        for key in keys:
+            mapped = TIER_C_KEY_ARGUMENTS.get(key)
+            if mapped is None:
+                raise HarnessError("tier_c_keyboard_mapping_invalid")
+            self._xdotool("key", "--clearmodifiers", mapped)
+        return TierCKeyboardObservation("tier_c_keyboard_complete", len(keys))
+
+    def observe_atspi(self, selector: ControlSelector) -> AtspiCategoricalResult:
+        shell = self._shell_identity()
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._accessibility.observe(
+                shell.pid, selector, self.probe_environment()
+            ):
+                return AtspiCategoricalResult("atspi_control_ready")
+            self._operations.pause(0.05)
+        raise HarnessError("tier_c_atspi_timeout")
+
+    def _wait_tier_c_accessible_state(
+        self,
+        selector: ControlSelector,
+        state_name: str,
+        expected: bool,
+        timeout_error: str,
+    ) -> None:
+        shell = self._shell_identity()
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._accessibility.observe_state(
+                shell.pid,
+                selector,
+                state_name,
+                expected,
+                self.probe_environment(),
+            ):
+                return
+            self._operations.pause(0.05)
+        raise HarnessError(timeout_error)
+
+    def capture_reviewed_material(
+        self, identifier: str, sample_points: tuple[tuple[int, int], ...]
+    ) -> TierCMaterialObservation:
+        if (
+            identifier != self._tier_c_identifier
+            or self._tier_c_surface is None
+            or self._config.xwd is None
+            or self._runtime is None
+            or self._display is None
+        ):
+            raise HarnessError("tier_c_material_state_invalid")
+        window, expected_geometry = self._tier_c_surface
+        geometry = self._tier_c_window_geometry(window)
+        if geometry != expected_geometry:
+            raise HarnessError("tier_c_surface_geometry_changed")
+        environment = {"DISPLAY": self._display}
+        first = capture_window_fingerprint(
+            self._config.xwd,
+            window,
+            self._runtime,
+            environment,
+            sample_points=sample_points,
+        )
+        self._operations.pause(0.05)
+        settled = capture_window_fingerprint(
+            self._config.xwd,
+            window,
+            self._runtime,
+            environment,
+            sample_points=sample_points,
+        )
+        transparent = transparent_reference_fingerprint(
+            geometry.width, geometry.height, sample_points, depth=24
+        )
+        return TierCMaterialObservation(
+            "tier_c_material_observed",
+            len(sample_points),
+            "xwd_sha256_reviewed_samples_v1",
+            first,
+            settled,
+            transparent,
+        )
+
+    def complete_step(self, identifier: str) -> TierCPortResult:
+        if identifier != self._tier_c_identifier or self._tier_c_surface is None:
+            raise HarnessError("tier_c_step_state_invalid")
+        window, expected_geometry = self._tier_c_surface
+        if identifier == "desktop":
+            if self._tier_c_window_geometry(window) != expected_geometry:
+                raise HarnessError("tier_c_surface_geometry_changed")
+            self.observe_atspi(
+                ControlSelector(
+                    "Open applications", "push_button", require_focused=True
+                )
+            )
+        elif identifier == "panel":
+            if self._tier_c_window_geometry(window) != expected_geometry:
+                raise HarnessError("tier_c_surface_geometry_changed")
+            self.observe_atspi(
+                ControlSelector(
+                    "Open notification center", "push_button", require_focused=True
+                )
+            )
+        elif identifier == "launcher":
+            self._controlled_windows[CONTROLLED_WINDOW_ONE] = self._wait_controlled_window(
+                CONTROLLED_WINDOW_ONE
+            )
+            self._record_controlled_process(CONTROLLED_WINDOW_ONE)
+            deadline = self._operations.monotonic() + self._config.readiness_timeout
+            while self._operations.monotonic() < deadline:
+                if not self._visible_named_window_ids(LAUNCHER_WINDOW_TITLE):
+                    break
+                self._operations.pause(0.05)
+            else:
+                raise HarnessError("tier_c_launcher_dismissal_timeout")
+            self._wait_accessible(
+                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
+                "tier_c_task_publication_timeout",
+            )
+        elif identifier == "task_actions":
+            if self._tier_c_window_geometry(window) != expected_geometry:
+                raise HarnessError("tier_c_surface_geometry_changed")
+            self.observe_atspi(
+                ControlSelector(
+                    CONTROLLED_APPLICATION_NAME,
+                    "push_button",
+                    require_focused=True,
+                )
+            )
+        elif identifier == "notification":
+            self.observe_atspi(ControlSelector("Notification center", "pane"))
+            self.observe_atspi(
+                ControlSelector("Do not disturb", "check_box", require_focused=True)
+            )
+        elif identifier == "notification_center":
+            self._wait_tier_c_accessible_state(
+                ControlSelector("Do not disturb", "check_box"),
+                "CHECKED",
+                True,
+                "tier_c_notification_toggle_failed",
+            )
+            self.observe_atspi(
+                ControlSelector(
+                    "Clear notification history", "push_button", require_focused=True
+                )
+            )
+            self._xdotool("key", "--clearmodifiers", "Escape")
+        elif identifier == "quick_settings":
+            forge = ControlSelector(
+                "Use Prismdrake Forge", "radio_button", require_focused=True
+            )
+            self.observe_atspi(forge)
+            self._wait_tier_c_accessible_state(
+                forge,
+                "CHECKED",
+                True,
+                "tier_c_profile_toggle_failed",
+            )
+            self._xdotool("key", "--clearmodifiers", "Escape")
+        elif identifier == "logout":
+            components = self._tier_c_logout_components
+            session = self._session
+            if components is None or session is None:
+                raise HarnessError("tier_c_logout_state_invalid")
+            deadline = self._operations.monotonic() + self._config.readiness_timeout
+            while self._operations.monotonic() < deadline:
+                if session.poll() is not None:
+                    break
+                self._operations.pause(0.05)
+            else:
+                raise HarnessError("tier_c_logout_shutdown_timeout")
+            if session.poll() != 0:
+                raise HarnessError("tier_c_logout_shutdown_failed")
+            for name, identity in components.items():
+                executable = self._config.installed_executables.get(name)
+                if (
+                    executable is None
+                    or self._operations.identify_pid(identity.pid, executable) is not None
+                ):
+                    raise HarnessError("tier_c_logout_component_alive")
+            fixture = self._config.controlled_window_fixture
+            if fixture is not None and not all(
+                self._operations.identify_pid(identity.pid, fixture) == identity
+                for identity in self._controlled_processes.values()
+            ):
+                raise HarnessError("tier_c_logout_killed_unrelated_client")
+            self._session = None
+            self._surface_shell_identity = None
+            self._tier_c_logout_components = None
+        else:
+            raise HarnessError("tier_c_step_state_invalid")
+        self._tier_c_identifier = None
+        self._tier_c_surface = None
+        return TierCPortResult("tier_c_step_complete")
+
+    def cleanup_clients(self) -> TierCClientCleanupObservation:
+        clean = True
+        if self._settings_epoch is not None:
+            clean = self._settings_epoch.close() and clean
+            self._settings_epoch = None
+        if self._notification_epoch is not None:
+            clean = self._notification_epoch.close() and clean
+            self._notification_epoch = None
+        fixture = self._config.controlled_window_fixture
+        if fixture is not None:
+            for identity in self._controlled_processes.values():
+                clean = self._operations.stop_identity(
+                    identity, fixture, self._config.stop_timeout
+                ) and clean
+        for attribute in ("_session", "_bus", "_openbox"):
+            child = getattr(self, attribute)
+            if child is not None:
+                clean = self._operations.stop(child, self._config.stop_timeout) and clean
+                setattr(self, attribute, None)
+        self._bus_process_identity = None
+        self._bus_socket_identity = None
+        self._surface_shell_identity = None
+        self._desktop_surfaces = None
+        self._controlled_windows.clear()
+        self._controlled_processes.clear()
+        self._tier_c_identifier = None
+        self._tier_c_surface = None
+        self._tier_c_logout_components = None
+        return TierCClientCleanupObservation("tier_c_clients_cleaned", clean)
 
     def capture_process_ownership(self) -> Mapping[str, object]:
         if (
@@ -2479,6 +2900,19 @@ class LiveXorgHarnessPort:
         )
 
     def cleanup(self, phase: str) -> Observation:
+        tier_c_error: Exception | None = None
+        if phase == "tier_c_replay":
+            try:
+                if self._tier_c_workflow is not None:
+                    result = self._tier_c_workflow.cleanup()
+                    validate_tier_c_result(result)
+                elif self._tier_c_trace is not None:
+                    clients = self.cleanup_clients()
+                    self._tier_c_trace.finish(clients_exited=clients.clients_exited)
+            except Exception as error:
+                tier_c_error = error
+            self._tier_c_workflow = None
+            self._tier_c_trace = None
         lifecycle_cleanup = phase == "installed_workflow" and self._lifecycle_cleanup_ready
         workflow = self._lifecycle_workflow if lifecycle_cleanup else None
         if lifecycle_cleanup:
@@ -2533,6 +2967,8 @@ class LiveXorgHarnessPort:
         self._lifecycle_shutdown_components = None
         self._lifecycle_shell_bound_notifyd = None
         self._lifecycle_survival_notification_prepared = False
+        if tier_c_error is not None:
+            raise tier_c_error
         return Observation(True, True)
 
     @staticmethod
@@ -2560,7 +2996,7 @@ class LiveXorgHarnessPort:
             raise HarnessError("installed_executable_read_failed") from error
         return digest.hexdigest()
 
-    def _start_environment(self, *, two_outputs: bool) -> None:
+    def _start_environment(self, *, two_outputs: bool, tier_c: bool = False) -> None:
         if self._xorg is not None or self._openbox is not None:
             raise HarnessError("live_environment_already_started")
         self._runtime = Path(tempfile.mkdtemp(prefix="prismdrake-pd2-"))
@@ -2607,6 +3043,32 @@ class LiveXorgHarnessPort:
             self._enable_secondary()
         else:
             self._xrandr("--output", SECONDARY_OUTPUT, "--off")
+        if tier_c:
+            if self._runtime is None or self._display is None:
+                raise HarnessError("tier_c_environment_not_started")
+            real_number = int(self._display[1:])
+            fake_display = f":{real_number + 1000}"
+            trace_config = X11TraceConfig(
+                self._runtime,
+                self._display,
+                fake_display,
+                maximum_capture_seconds=300.0,
+                readiness_seconds=min(max(self._config.readiness_timeout, 0.05), 10.0),
+                shutdown_seconds=min(max(self._config.stop_timeout, 0.05), 10.0),
+            )
+            try:
+                trace = self._tier_c_trace_factory(
+                    trace_config, self._base_environment()
+                )
+            except Exception:
+                raise HarnessError("tier_c_trace_start_failed") from None
+            if trace.proxy_display != fake_display or trace.finished:
+                try:
+                    trace.finish(clients_exited=False)
+                except Exception:
+                    pass
+                raise HarnessError("tier_c_trace_start_failed")
+            self._tier_c_trace = trace
         self._start_openbox()
 
     def _base_environment(self) -> dict[str, str]:
@@ -2639,9 +3101,13 @@ class LiveXorgHarnessPort:
             or stat.S_ISLNK(metadata.st_mode)
             or not stat.S_ISREG(metadata.st_mode)
             or metadata.st_mode & 0o111 == 0
-            or any(character.isspace() for character in native)
+            or any(
+                character in native
+                for character in ('"', "'", "\\", "`", "$", "%", "\n", "\r")
+            )
         ):
             raise HarnessError("controlled_fixture_invalid")
+        desktop_exec = f'"{native}"' if any(character.isspace() for character in native) else native
         if self._runtime is None:
             raise HarnessError("live_environment_not_started")
         applications = self._runtime / "data" / "applications"
@@ -2652,13 +3118,13 @@ class LiveXorgHarnessPort:
                 "[Desktop Entry]\n"
                 "Type=Application\n"
                 f"Name={CONTROLLED_APPLICATION_NAME}\n"
-                f"Exec={native} --instance one\n"
+                f"Exec={desktop_exec} --instance one\n"
                 "StartupWMClass=PrismdrakeDemo\n"
                 "Actions=Second;\n"
                 "\n"
                 "[Desktop Action Second]\n"
                 "Name=Second window\n"
-                f"Exec={native} --instance two\n",
+                f"Exec={desktop_exec} --instance two\n",
                 encoding="ascii",
             )
             desktop.chmod(0o600)
@@ -3069,6 +3535,11 @@ class LiveXorgHarnessPort:
             raise HarnessError("xorg_not_started")
         env = self._base_environment()
         env["DISPLAY"] = self._display
+        if self._tier_c_trace is not None:
+            try:
+                return self._tier_c_trace.client_environment(env)
+            except Exception:
+                raise HarnessError("tier_c_client_environment_invalid") from None
         return env
 
     def probe_environment(self) -> Mapping[str, str]:
