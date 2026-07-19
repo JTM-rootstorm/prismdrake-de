@@ -1212,6 +1212,7 @@ class LivePortTests(unittest.TestCase):
             root = Path(temporary)
             data = root / "data"
             data.mkdir(mode=0o700)
+            (root / "home").mkdir(mode=0o700)
             fixture = root / "controlled fixture"
             fixture.write_bytes(b"fixture")
             fixture.chmod(0o700)
@@ -1227,6 +1228,22 @@ class LivePortTests(unittest.TestCase):
             )
             self.assertIn(f'Exec="{fixture}" --instance one\n', payload)
             self.assertIn(f'Exec="{fixture}" --instance two\n', payload)
+            self.assertIn(f"Path={root / 'home'}\n", payload)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "data").mkdir(mode=0o700)
+            fixture = root / "controlled-fixture"
+            fixture.write_bytes(b"fixture")
+            fixture.chmod(0o700)
+            port = LiveXorgHarnessPort(
+                replace(config(), controlled_window_fixture=fixture), FakeOperations()
+            )
+            port._runtime = root  # noqa: SLF001
+            with self.assertRaisesRegex(
+                HarnessError, "^controlled_working_directory_invalid$"
+            ):
+                port._write_controlled_desktop_entry()  # noqa: SLF001
 
         for marker in ("%", '"', "\\"):
             with self.subTest(marker=marker), tempfile.TemporaryDirectory() as temporary:

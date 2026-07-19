@@ -102,6 +102,7 @@ from pd2_xwd import capture_window_fingerprint, transparent_reference_fingerprin
 
 MAX_COMMAND_OUTPUT_BYTES = 65_536
 MAX_EXECUTABLE_BYTES = 128 * 1024 * 1024
+MAX_DESKTOP_PATH_BYTES = 4096
 MAX_PROCESS_SCAN_ENTRIES = 32_768
 MAX_PROCESS_ANCESTRY_DEPTH = 64
 MAX_SURFACE_WINDOWS = 64
@@ -3256,6 +3257,22 @@ class LiveXorgHarnessPort:
         desktop_exec = f'"{native}"' if any(character.isspace() for character in native) else native
         if self._runtime is None:
             raise HarnessError("live_environment_not_started")
+        working_directory = self._runtime / "home"
+        working_native = os.fspath(working_directory)
+        try:
+            working_metadata = working_directory.lstat()
+            working_bytes = working_native.encode("ascii")
+        except (OSError, UnicodeEncodeError) as error:
+            raise HarnessError("controlled_working_directory_invalid") from error
+        if (
+            not working_directory.is_absolute()
+            or stat.S_ISLNK(working_metadata.st_mode)
+            or not stat.S_ISDIR(working_metadata.st_mode)
+            or len(working_bytes) > MAX_DESKTOP_PATH_BYTES
+            or any(byte < 0x20 or byte == 0x7F for byte in working_bytes)
+            or "\\" in working_native
+        ):
+            raise HarnessError("controlled_working_directory_invalid")
         applications = self._runtime / "data" / "applications"
         try:
             applications.mkdir(mode=0o700)
@@ -3265,6 +3282,7 @@ class LiveXorgHarnessPort:
                 "Type=Application\n"
                 f"Name={CONTROLLED_APPLICATION_NAME}\n"
                 f"Exec={desktop_exec} --instance one\n"
+                f"Path={working_native}\n"
                 "StartupWMClass=PrismdrakeDemo\n"
                 "Actions=Second;\n"
                 "\n"
