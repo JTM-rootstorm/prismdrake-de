@@ -92,8 +92,8 @@ class TaskIoWorker final {
     std::deque<RequestJob> pending_requests_;
     bool stopping_{false};
     int wake_descriptor_{-1};
-    std::atomic<int> operation_descriptor_{-1};
     std::atomic<TaskIoOperations *> operations_{nullptr};
+    std::mutex operations_mutex_;
     std::jthread thread_;
 };
 

@@ -70,28 +70,22 @@ inline constexpr std::size_t maximumQueuedTaskIoRequests = 64U;
     return merged;
 }
 
-class OperationDescriptorGuard final {
-  public:
-    OperationDescriptorGuard(std::atomic<int> &descriptor, int value) noexcept
-        : descriptor_(descriptor) {
-        descriptor_.store(value, std::memory_order_release);
-    }
-    ~OperationDescriptorGuard() { descriptor_.store(-1, std::memory_order_release); }
-
-  private:
-    std::atomic<int> &descriptor_;
-};
-
 class OperationsGuard final {
   public:
-    OperationsGuard(std::atomic<TaskIoOperations *> &published, TaskIoOperations *operations)
-        : published_(published) {
+    OperationsGuard(std::atomic<TaskIoOperations *> &published, std::mutex &mutex,
+                    TaskIoOperations *operations)
+        : published_(published), mutex_(mutex) {
+        std::scoped_lock lock{mutex_};
         published_.store(operations, std::memory_order_release);
     }
-    ~OperationsGuard() { published_.store(nullptr, std::memory_order_release); }
+    ~OperationsGuard() {
+        std::scoped_lock lock{mutex_};
+        published_.store(nullptr, std::memory_order_release);
+    }
 
   private:
     std::atomic<TaskIoOperations *> &published_;
+    std::mutex &mutex_;
 };
 
 } // namespace
@@ -136,12 +130,11 @@ TaskIoWorker::~TaskIoWorker() {
     }
     thread_.request_stop();
     (void)wake();
-    if (auto *operations = operations_.load(std::memory_order_acquire); operations != nullptr) {
-        operations->cancelWaits();
-    }
-    const int operationDescriptor = operation_descriptor_.load(std::memory_order_acquire);
-    if (operationDescriptor >= 0) {
-        (void)shutdown(operationDescriptor, SHUT_RDWR);
+    {
+        std::scoped_lock lock{operations_mutex_};
+        if (auto *operations = operations_.load(std::memory_order_acquire); operations != nullptr) {
+            operations->cancelWaits();
+        }
     }
     if (thread_.joinable()) {
         thread_.join();
@@ -169,9 +162,10 @@ Result<void> TaskIoWorker::submitRefresh(std::uint64_t token,
                                                     std::move(invalidatedWindows));
         }
         pending_refresh_ = RefreshJob{token, std::move(invalidatedWindows)};
-    }
-    if (!wake()) {
-        return Result<void>::failure(wakeFailure());
+        if (!wake()) {
+            pending_refresh_.reset();
+            return Result<void>::failure(wakeFailure());
+        }
     }
     return Result<void>::success();
 }
@@ -191,9 +185,10 @@ Result<void> TaskIoWorker::submitRequest(std::uint64_t appliedRefreshToken,
             return fullWorker();
         }
         pending_requests_.push_back(RequestJob{appliedRefreshToken, request, currentlyActive});
-    }
-    if (!wake()) {
-        return Result<void>::failure(wakeFailure());
+        if (!wake()) {
+            pending_requests_.pop_back();
+            return Result<void>::failure(wakeFailure());
+        }
     }
     return Result<void>::success();
 }
@@ -204,12 +199,16 @@ void TaskIoWorker::run(std::stop_token stopToken) {
     if (!operations) {
         setupError = operations.error();
     }
-    OperationDescriptorGuard descriptorGuard{
-        operation_descriptor_, operations ? operations.value()->eventFileDescriptor() : -1};
-    OperationsGuard operationsGuard{operations_, operations ? operations.value().get() : nullptr};
+    OperationsGuard operationsGuard{operations_, operations_mutex_,
+                                    operations ? operations.value().get() : nullptr};
     std::uint64_t currentRefreshToken = 0U;
 
     while (!stopToken.stop_requested()) {
+        bool workQueued = false;
+        {
+            std::scoped_lock lock{mutex_};
+            workQueued = pending_refresh_.has_value() || !pending_requests_.empty();
+        }
         const int eventDescriptor = operations ? operations.value()->eventFileDescriptor() : -1;
         std::array<pollfd, 2U> descriptors{{
             pollfd{wake_descriptor_, POLLIN, 0},
@@ -218,7 +217,7 @@ void TaskIoWorker::run(std::stop_token stopToken) {
         const nfds_t descriptorCount = eventDescriptor >= 0 ? descriptors.size() : 1U;
         int pollResult = -1;
         do {
-            pollResult = poll(descriptors.data(), descriptorCount, -1);
+            pollResult = poll(descriptors.data(), descriptorCount, workQueued ? 0 : -1);
         } while (pollResult < 0 && errno == EINTR && !stopToken.stop_requested());
         if (stopToken.stop_requested()) {
             return;

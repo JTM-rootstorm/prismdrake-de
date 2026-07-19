@@ -1,5 +1,8 @@
 #include "TaskIoWorker.hpp"
 
+#include "EwmhTaskList.hpp"
+#include "WindowMetadata.hpp"
+
 #include <gtest/gtest.h>
 
 #include <QCoreApplication>
@@ -11,10 +14,12 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <vector>
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -101,6 +106,60 @@ class BlockingOperations final : public TaskIoOperations {
     std::shared_ptr<BlockingState> state_;
 };
 
+[[nodiscard]] x11::WindowId testWindow() { return x11::WindowId::fromProtocol(42U).value(); }
+
+[[nodiscard]] x11::WindowIncarnationId testIncarnation() {
+    return x11::WindowIncarnationId::fromObserved(1U).value();
+}
+
+[[nodiscard]] x11::TaskModelObservation testObservation() {
+    auto list = x11::buildEwmhTaskListSnapshot(x11::EwmhTaskListObservation{
+        std::vector<std::uint32_t>{testWindow().value()}, std::nullopt, std::nullopt});
+    EXPECT_TRUE(list);
+    x11::WindowMetadata metadata{
+        testWindow(),
+        "worker fixture",
+        {x11::ApplicationIdentitySource::wmClass, std::nullopt, "Fixture", "fixture.desktop"},
+        x11::WindowType::normal,
+        true,
+        {},
+        0U,
+        false,
+        false,
+        false,
+        false,
+        false,
+        std::nullopt,
+        {}};
+    return {std::move(list).value(),
+            {{testWindow(), testIncarnation(), std::move(metadata), "application-x-executable"}}};
+}
+
+class CountingOperations final : public TaskIoOperations {
+  public:
+    CountingOperations(int descriptor, std::shared_ptr<std::atomic<int>> count)
+        : descriptor_(descriptor), count_(std::move(count)) {}
+    ~CountingOperations() override { (void)close(descriptor_); }
+
+    foundation::Result<x11::TaskModelObservation> refresh(std::span<const x11::WindowId>) override {
+        return foundation::Result<x11::TaskModelObservation>::success(testObservation());
+    }
+    foundation::Result<void> request(const x11::TaskRequestState &,
+                                     std::optional<x11::WindowId>) override {
+        count_->fetch_add(1, std::memory_order_relaxed);
+        return foundation::Result<void>::success();
+    }
+    [[nodiscard]] int eventFileDescriptor() const noexcept override { return descriptor_; }
+    foundation::Result<TaskEventRefreshPlan> drainEvents() override {
+        return foundation::Result<TaskEventRefreshPlan>::success({});
+    }
+    void cancelWaits() noexcept override { (void)shutdown(descriptor_, SHUT_RDWR); }
+
+  private:
+    int descriptor_;
+    std::shared_ptr<std::atomic<int>> count_;
+};
+
 [[nodiscard]] std::shared_ptr<BlockingState> blockingState() {
     int descriptors[2]{-1, -1};
     if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, descriptors) != 0) {
@@ -171,21 +230,69 @@ TEST(TaskIoWorkerTest, BlockingRefreshLeavesOwnerHeartbeatResponsive) {
 
 TEST(TaskIoWorkerTest, TeardownInterruptsAnUnresponsiveX11Wait) {
     ensureApplication();
-    auto state = blockingState();
-    ASSERT_TRUE(state);
-    QObject owner;
-    auto worker = TaskIoWorker::create(
-        owner, factory(state), [](auto, auto) {}, [](auto, auto) {}, [](auto) {});
-    ASSERT_TRUE(worker);
-    ASSERT_TRUE(worker.value()->submitRefresh(1U, {}));
-    {
-        std::unique_lock lock{state->mutex};
-        ASSERT_TRUE(state->enteredCondition.wait_for(lock, std::chrono::seconds{1},
-                                                     [&] { return state->entered; }));
-    }
     const auto started = std::chrono::steady_clock::now();
-    worker.value().reset();
-    EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::milliseconds{100});
+    for (int iteration = 0; iteration < 32; ++iteration) {
+        auto state = blockingState();
+        ASSERT_TRUE(state);
+        QObject owner;
+        auto worker = TaskIoWorker::create(
+            owner, factory(state), [](auto, auto) {}, [](auto, auto) {}, [](auto) {});
+        ASSERT_TRUE(worker);
+        ASSERT_TRUE(worker.value()->submitRefresh(1U, {}));
+        {
+            std::unique_lock lock{state->mutex};
+            ASSERT_TRUE(state->enteredCondition.wait_for(lock, std::chrono::seconds{1},
+                                                         [&] { return state->entered; }));
+        }
+        worker.value().reset();
+    }
+    EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds{1});
+}
+
+TEST(TaskIoWorkerTest, DrainsMultipleRequestsAfterOneAggregatedWake) {
+    ensureApplication();
+    int descriptors[2]{-1, -1};
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, descriptors), 0);
+    auto count = std::make_shared<std::atomic<int>>(0);
+    QObject owner;
+    int completions = 0;
+    auto worker = TaskIoWorker::create(
+        owner,
+        [descriptor = descriptors[0], count] {
+            return foundation::Result<std::unique_ptr<TaskIoOperations>>::success(
+                std::make_unique<CountingOperations>(descriptor, count));
+        },
+        [](auto, auto) {}, [&completions](auto, auto) { ++completions; }, [](auto) {});
+    ASSERT_TRUE(worker);
+
+    x11::TaskModel model;
+    auto snapshot = model.publish(testObservation());
+    ASSERT_TRUE(snapshot);
+    const auto lifetime = snapshot.value()->tasks().front().lifetime();
+    auto activate = x11::TaskRequestState::issue(*snapshot.value(), lifetime,
+                                                 x11::TaskRequestAction::activate, 8U);
+    auto closeRequest = x11::TaskRequestState::issue(*snapshot.value(), lifetime,
+                                                     x11::TaskRequestAction::close, 8U);
+    ASSERT_TRUE(activate);
+    ASSERT_TRUE(closeRequest);
+    ASSERT_TRUE(worker.value()->submitRefresh(1U, {}));
+    ASSERT_TRUE(worker.value()->submitRequest(1U, activate.value(), std::nullopt));
+    ASSERT_TRUE(worker.value()->submitRequest(1U, closeRequest.value(), std::nullopt));
+
+    QEventLoop loop;
+    QTimer poll;
+    poll.setInterval(1);
+    QObject::connect(&poll, &QTimer::timeout, &loop, [&] {
+        if (completions == 2) {
+            loop.quit();
+        }
+    });
+    QTimer::singleShot(1000, &loop, &QEventLoop::quit);
+    poll.start();
+    loop.exec();
+    EXPECT_EQ(completions, 2);
+    EXPECT_EQ(count->load(std::memory_order_relaxed), 2);
+    (void)close(descriptors[1]);
 }
 
 } // namespace
