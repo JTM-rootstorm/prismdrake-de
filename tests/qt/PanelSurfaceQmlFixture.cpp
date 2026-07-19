@@ -317,6 +317,40 @@ bool PanelSurfaceQmlFixture::publishRepresentativeGroups() {
     return true;
 }
 
+bool PanelSurfaceQmlFixture::publishPinnedOnlyGroup() {
+    tasks_.clear();
+    if (!publishTasks() || !grouped_task_presentation_) {
+        return false;
+    }
+    const auto taskSnapshot = task_source_->current();
+    auto notesId = prismdrake::launcher::deriveDesktopFileId("org.prismdrake.Notes.desktop");
+    if (!taskSnapshot || !taskSnapshot->tasks().empty() || !notesId) {
+        return false;
+    }
+    std::vector<PanelTaskGroup> groups;
+    groups.push_back({PanelTaskGroupKind::desktopEntry,
+                      "desktop:org.prismdrake.Notes.desktop",
+                      std::move(notesId).value(),
+                      "Notes",
+                      "accessories-text-editor",
+                      true,
+                      true,
+                      false,
+                      false,
+                      false,
+                      false,
+                      PanelTaskPrimaryAction::launch,
+                      {}});
+    auto grouped = std::make_shared<const GroupedTaskSnapshot>(GroupedTaskSnapshot{
+        taskSnapshot->generation(), 1U, 1U, 2U, 1U, 1U, config::GroupingMode::always,
+        config::GroupingMode::always, std::move(groups)});
+    if (!grouped_task_presentation_->applySnapshot(std::move(grouped))) {
+        return false;
+    }
+    emit taskModelChanged();
+    return true;
+}
+
 bool PanelSurfaceQmlFixture::swapFirstTwoTasks() {
     if (tasks_.size() < 2U) {
         return false;

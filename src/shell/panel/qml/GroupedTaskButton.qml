@@ -283,6 +283,8 @@ Control {
                 Accessible.role: Accessible.MenuItem
                 Accessible.name: qsTr("Open a new %1 window").arg(root.title)
                 Accessible.description: qsTr("Launch the associated desktop application")
+                Accessible.focusable: enabled
+                Accessible.onPressAction: openNewAction.clicked()
                 onClicked: {
                     if (root.presentation.requestOpenNew())
                         root.closeActionMenu(true)
@@ -303,6 +305,10 @@ Control {
                                  ? qsTr("Unpin %1").arg(root.title)
                                  : qsTr("Pin %1").arg(root.title)
                 Accessible.description: qsTr("Change the shared panel pin order")
+                Accessible.checkable: true
+                Accessible.checked: root.presentation !== null && root.presentation.pinned
+                Accessible.focusable: enabled
+                Accessible.onPressAction: pinAction.clicked()
                 onClicked: {
                     if (root.presentation.requestPinToggle())
                         root.closeActionMenu(true)
@@ -321,6 +327,7 @@ Control {
                 Accessible.role: Accessible.MenuItem
                 Accessible.name: qsTr("Minimize %1").arg(root.title)
                 Accessible.description: qsTr("Request that the only application window minimize")
+                Accessible.focusable: enabled
                 Accessible.onPressAction: minimizeAction.clicked()
                 onClicked: {
                     if (root.presentation.requestOnlyWindowMinimization())
@@ -339,6 +346,7 @@ Control {
                 Accessible.role: Accessible.MenuItem
                 Accessible.name: qsTr("Close %1").arg(root.title)
                 Accessible.description: qsTr("Request that the only application window close")
+                Accessible.focusable: enabled
                 Accessible.onPressAction: closeAction.clicked()
                 onClicked: {
                     if (root.presentation.requestOnlyWindowClose())

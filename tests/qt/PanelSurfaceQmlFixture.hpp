@@ -75,6 +75,7 @@ class PanelSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool publishForge();
     Q_INVOKABLE bool publishRepresentativeTasks();
     Q_INVOKABLE bool publishRepresentativeGroups();
+    Q_INVOKABLE bool publishPinnedOnlyGroup();
     Q_INVOKABLE bool swapFirstTwoTasks();
     Q_INVOKABLE bool removeTask(int row);
     Q_INVOKABLE bool setTaskMinimized(int row, bool minimized);

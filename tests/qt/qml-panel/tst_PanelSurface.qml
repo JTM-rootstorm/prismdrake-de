@@ -40,6 +40,16 @@ TestCase {
     SignalSpy { id: quickSettingsRequest; target: panel; signalName: "quickSettingsRequested" }
     SignalSpy { id: actionMenuOpened; target: panel; signalName: "actionMenuOpened" }
     SignalSpy { id: actionMenuClosed; target: panel; signalName: "actionMenuClosed" }
+    SignalSpy {
+        id: groupedLaunchRequested
+        target: panelFixture.groupedTaskModel
+        signalName: "launchRequested"
+    }
+    SignalSpy {
+        id: groupedPinChangeRequested
+        target: panelFixture.groupedTaskModel
+        signalName: "pinChangeRequested"
+    }
 
     function launcher() {
         return findChild(panel, "panelLauncherButton")
@@ -55,6 +65,10 @@ TestCase {
 
     function contextMenu(task) {
         return findChild(task, "panelTaskContextMenu")
+    }
+
+    function groupedContextMenu(task) {
+        return findChild(task, "panelGroupedTaskContextMenu")
     }
 
     function minimizeAction(task) {
@@ -94,6 +108,8 @@ TestCase {
         launcherRequest.clear()
         actionMenuOpened.clear()
         actionMenuClosed.clear()
+        groupedLaunchRequested.clear()
+        groupedPinChangeRequested.clear()
         tryCompare(panel, "taskCount", 3)
     }
 
@@ -158,6 +174,101 @@ TestCase {
         compare(quickSettingsRequest.signalArguments[0][0], "DP-1")
     }
 
+    function test_pinnedOnlyTaskKeyboardAccessibilityAndPinStateAreExact() {
+        groupedTasks = true
+        verify(panelFixture.publishPinnedOnlyGroup())
+        tryCompare(panel, "taskCount", 1)
+
+        const pinned = panel.taskAt(0)
+        verify(pinned !== null)
+        compare(pinned.presentation.pinned, true)
+        compare(pinned.presentation.running, false)
+        compare(pinned.presentation.windowCount, 0)
+        compare(pinned.presentation.active, false)
+        compare(pinned.presentation.minimized, false)
+        compare(pinned.presentation.urgent, false)
+        compare(pinned.presentation.modal, false)
+        compare(pinned.enabled, true)
+        compare(pinned.Accessible.role, Accessible.Button)
+        compare(pinned.Accessible.name, "Notes")
+        verify(pinned.Accessible.description.indexOf("Pinned, not running") >= 0)
+        compare(pinned.Accessible.focusable, true)
+        compare(pinned.Accessible.checkable, true)
+        compare(pinned.Accessible.checked, false)
+        verify(pinned.width >= panel.themeGeneration.panel.minimumTargetSize)
+        verify(pinned.height >= panel.themeGeneration.panel.minimumTargetSize)
+
+        panel.focusLauncher()
+        keyClick(Qt.Key_Tab)
+        tryCompare(pinned, "activeFocus", true)
+        compare(pinned.Accessible.focused, true)
+        keyClick(Qt.Key_Backtab)
+        tryCompare(launcher(), "activeFocus", true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(pinned, "activeFocus", true)
+        keyClick(Qt.Key_Right)
+        tryCompare(findChild(panel, "panelNotificationCenterButton"), "activeFocus", true)
+        keyClick(Qt.Key_Backtab)
+        tryCompare(pinned, "activeFocus", true)
+        keyClick(Qt.Key_Left)
+        tryCompare(launcher(), "activeFocus", true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(pinned, "activeFocus", true)
+
+        keyClick(Qt.Key_Space)
+        tryCompare(groupedLaunchRequested, "count", 1)
+        keyClick(Qt.Key_Return)
+        tryCompare(groupedLaunchRequested, "count", 2)
+
+        keyClick(Qt.Key_Menu)
+        const menu = groupedContextMenu(pinned)
+        tryCompare(menu, "opened", true)
+        const menuContent = menu.contentItem
+        compare(menuContent.Accessible.role, Accessible.PopupMenu)
+        compare(menuContent.Accessible.name, "Application actions for Notes")
+        compare(menuContent.Accessible.description,
+                "Open a new window or change the pinned state")
+
+        const openNew = findChild(pinned, "panelGroupedTaskOpenNew")
+        const pin = findChild(pinned, "panelGroupedTaskPinToggle")
+        const minimize = findChild(pinned, "panelGroupedTaskMinimize")
+        const close = findChild(pinned, "panelGroupedTaskClose")
+        verify(openNew !== null)
+        verify(pin !== null)
+        verify(minimize !== null)
+        verify(close !== null)
+        compare(openNew.enabled, true)
+        compare(openNew.Accessible.focusable, true)
+        verify(openNew.width >= panel.themeGeneration.panel.minimumTargetSize)
+        verify(openNew.height >= panel.themeGeneration.panel.minimumTargetSize)
+        compare(pin.enabled, true)
+        compare(pin.Accessible.role, Accessible.MenuItem)
+        compare(pin.Accessible.name, "Unpin Notes")
+        compare(pin.Accessible.description, "Change the shared panel pin order")
+        compare(pin.Accessible.checkable, true)
+        compare(pin.Accessible.checked, true)
+        compare(pin.Accessible.focusable, true)
+        verify(pin.width >= panel.themeGeneration.panel.minimumTargetSize)
+        verify(pin.height >= panel.themeGeneration.panel.minimumTargetSize)
+        compare(minimize.visible, false)
+        compare(minimize.enabled, false)
+        compare(minimize.Accessible.focusable, false)
+        compare(close.visible, false)
+        compare(close.enabled, false)
+        compare(close.Accessible.focusable, false)
+
+        pin.Accessible.pressAction()
+        tryCompare(groupedPinChangeRequested, "count", 1)
+        tryCompare(menu, "opened", false)
+        tryCompare(pinned, "activeFocus", true)
+
+        keyClick(Qt.Key_F10, Qt.ShiftModifier)
+        tryCompare(menu, "opened", true)
+        keyClick(Qt.Key_Escape)
+        tryCompare(menu, "opened", false)
+        tryCompare(pinned, "activeFocus", true)
+    }
+
     function test_singleWindowGroupedTaskExposesAccessibleWindowActions() {
         groupedTasks = true
         verify(panelFixture.publishRepresentativeGroups())
@@ -220,6 +331,10 @@ TestCase {
         verify(firstMember !== null)
         verify(secondMember !== null)
         verify(viewport !== null)
+        compare(viewport.Accessible.role, Accessible.PopupMenu)
+        compare(viewport.Accessible.name, "Windows for Editor")
+        compare(viewport.Accessible.description,
+                "Choose a window, then activate, minimize, or close it")
         verify(popup.width <= testCase.width)
         verify(viewport.contentWidth > viewport.availableWidth)
         tryCompare(firstMember, "activeFocus", true)
