@@ -169,7 +169,7 @@ python3 tests/performance/pd2_runtime_performance.py \
   --source-revision "$(git rev-parse HEAD)" \
   --environment-id gentoo-amd64-qemu-system \
   --installed-demo-evidence "/absolute/private/evidence/pd2-installed-demo.json" \
-  --controlled-window-fixture "$PWD/build/gcc-debug/tests/integration/prismdrake-controlled-window-fixture" \
+  --controlled-window-fixture "$PWD/build/performance-gcc/tests/integration/prismdrake-controlled-window-fixture" \
   --iterations 3 \
   --output "/absolute/private/evidence/pd2-runtime-performance.json"
 ```
@@ -208,12 +208,15 @@ durations use Python's monotonic nanosecond clock, while the shell-start endpoin
 uses Linux boot-time nanoseconds aligned with `/proc` process-start ticks.
 
 ```bash
-cmake --build build/gcc-debug --target \
+cmake -S . -B build/performance-gcc -G Ninja \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DPRISMDRAKE_WARNINGS_AS_ERRORS=ON
+cmake --build build/performance-gcc --target \
   prismdrake-pd1-performance-evidence prismdrake-pd2-asset-performance
 env \
-  PRISMDRAKE_PD2_BUILD_DIRECTORY="$PWD/build/gcc-debug" \
-  PRISMDRAKE_PD2_PERFORMANCE_RUNNER="$PWD/build/gcc-debug/tests/performance/prismdrake-pd1-performance-evidence" \
-  PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER="$PWD/build/gcc-debug/tests/performance/prismdrake-pd2-asset-performance" \
+  PRISMDRAKE_PD2_BUILD_DIRECTORY="$PWD/build/performance-gcc" \
+  PRISMDRAKE_PD2_PERFORMANCE_RUNNER="$PWD/build/performance-gcc/tests/performance/prismdrake-pd1-performance-evidence" \
+  PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER="$PWD/build/performance-gcc/tests/performance/prismdrake-pd2-asset-performance" \
   PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE="/absolute/private/evidence/pd2-runtime-performance.json" \
   PRISMDRAKE_PD2_IDLE_SERIES="/absolute/private/evidence/pd2-idle-series.json" \
   PRISMDRAKE_PD2_PD1_EVIDENCE="/absolute/private/evidence/pd1-performance.json" \
