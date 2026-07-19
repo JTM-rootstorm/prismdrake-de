@@ -27,6 +27,12 @@ Button {
     signal focusPrevious
     signal focusNext
     signal dismissRequested
+    signal actionMenuOpened
+    signal actionMenuClosed
+
+    function closeActionMenu() {
+        actionsMenu.close()
+    }
 
     function actionMenuItemAt(index) {
         return index >= 0 && index < actionMenuItems.length ? actionMenuItems[index] : null
@@ -113,7 +119,11 @@ Button {
     Menu {
         id: actionsMenu
         objectName: "launcherActionsMenu"
-        onClosed: root.forceActiveFocus(Qt.OtherFocusReason)
+        onOpened: root.actionMenuOpened()
+        onClosed: {
+            root.actionMenuClosed()
+            root.forceActiveFocus(Qt.OtherFocusReason)
+        }
 
         background: Rectangle {
             radius: root.tokens.tileRadius

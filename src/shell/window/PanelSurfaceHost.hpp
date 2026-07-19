@@ -32,9 +32,13 @@ class PanelSurfaceHost final {
     PanelSurfaceHost &operator=(const PanelSurfaceHost &) = delete;
 
     [[nodiscard]] foundation::Result<void> apply(const outputs::SurfaceRegistrySnapshot &snapshot);
+    /// Removes every panel and its reservation while retaining the healthy X11 host for a
+    /// later settings-owner epoch. The next complete snapshot may be applied at any generation.
+    void clear() noexcept;
     [[nodiscard]] foundation::Result<void> requestKeyboardAccess(std::string_view outputName);
     [[nodiscard]] foundation::Result<void> releaseKeyboardAccess();
     [[nodiscard]] QQuickView *view(std::string_view outputName) const noexcept;
+    [[nodiscard]] std::uint64_t currentGeneration() const noexcept { return topology_generation_; }
 
   private:
     struct WindowEntry;

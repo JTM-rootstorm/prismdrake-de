@@ -24,6 +24,8 @@ FocusScope {
     signal dismissRequested
     signal focusExitForward
     signal focusExitBackward
+    signal actionMenuOpened
+    signal actionMenuClosed
 
     function resultAt(index) {
         return results.itemAtIndex(index)
@@ -105,6 +107,20 @@ FocusScope {
         }
         clearFocusRecovery()
         search.forceActiveFocus(Qt.OtherFocusReason)
+    }
+
+    function restoreActionMenuFocus() {
+        focusRecoveryReady = true
+        recoverFocus()
+    }
+
+    function closeActionMenus() {
+        for (let index = 0; index < results.count; ++index) {
+            const candidate = results.itemAtIndex(index)
+            const resultButton = candidate as LauncherResultButton
+            if (resultButton !== null)
+                resultButton.closeActionMenu()
+        }
     }
 
     implicitWidth: 560
@@ -274,6 +290,11 @@ FocusScope {
                     onFocusPrevious: root.focusResult(index - 1, true)
                     onFocusNext: root.focusResult(index + 1, false)
                     onDismissRequested: root.dismissRequested()
+                    onActionMenuOpened: {
+                        root.captureFocusRecovery()
+                        root.actionMenuOpened()
+                    }
+                    onActionMenuClosed: root.actionMenuClosed()
                     Component.onCompleted: root.recoverFocus()
                     onPresentationChanged: Qt.callLater(root.recoverFocus)
                 }

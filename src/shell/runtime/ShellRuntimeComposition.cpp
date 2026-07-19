@@ -249,7 +249,9 @@ Result<void> ShellRuntimeComposition::escape() {
 control::ShellRequestFailure
 ShellRuntimeComposition::applyPresentation(const composition::CompositionTransition &transition) {
     if (transition.disposition() == composition::TransitionDisposition::blockedByHigherPriority) {
-        return control::ShellRequestFailure::busy;
+        const auto focused = presentation_port_->apply(transition.intents());
+        return focused == control::ShellRequestFailure::none ? control::ShellRequestFailure::busy
+                                                             : focused;
     }
     return presentation_port_->apply(transition.intents());
 }

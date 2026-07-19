@@ -47,6 +47,11 @@ class TaskController final {
     [[nodiscard]] std::size_t pendingRequestCount() const noexcept {
         return core_.pendingRequestCount();
     }
+    [[nodiscard]] foundation::Result<void> request(x11::TaskLifetimeId lifetime,
+                                                   x11::TaskModelGeneration generation,
+                                                   x11::TaskRequestAction action) {
+        return core_.handleIntent(lifetime, generation, action);
+    }
 
   private:
     TaskController(tasks::TaskPresentationModel &presentation, x11::X11Connection connection,

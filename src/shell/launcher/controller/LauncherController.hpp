@@ -91,12 +91,18 @@ class LauncherController final : public QObject {
     LauncherController &operator=(const LauncherController &) = delete;
 
     [[nodiscard]] LauncherPresentationModel *presentationModel() noexcept { return &presentation_; }
+    [[nodiscard]] const std::shared_ptr<const prismdrake::launcher::ApplicationCatalogSnapshot> &
+    catalog() const noexcept {
+        return catalog_;
+    }
     [[nodiscard]] foundation::Result<void> refresh();
     [[nodiscard]] foundation::Result<void> setSearchQuery(const QString &query);
     [[nodiscard]] foundation::Result<void>
     applyPinSnapshot(std::uint64_t generation,
                      const std::vector<prismdrake::launcher::DesktopFileId> &pins);
     [[nodiscard]] foundation::Result<void> setIconThemeGeneration(std::uint64_t generation);
+    [[nodiscard]] foundation::Result<void>
+    launchApplication(const prismdrake::launcher::DesktopFileId &desktopFileId);
 
   signals:
     void catalogRefreshFailed();
@@ -105,6 +111,7 @@ class LauncherController final : public QObject {
     void launchCompleted();
     void launchFailed();
     void applicationMonitorDegraded(bool degraded);
+    void catalogChanged();
     void pinChangeRequested(const prismdrake::shell::launcher::ApplicationPinIntent &intent);
     void
     shellDestinationRequested(const prismdrake::shell::launcher::ShellDestinationIntent &intent);

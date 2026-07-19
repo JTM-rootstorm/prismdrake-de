@@ -23,6 +23,8 @@ add_library(prismdrake-shell-runtime STATIC
     FatalDisplayShutdown.hpp
     NotificationRuntimeAdapter.cpp
     NotificationRuntimeAdapter.hpp
+    Pd2ShellRuntime.cpp
+    Pd2ShellRuntime.hpp
     ShellControlBusOwner.cpp
     ShellControlBusOwner.hpp
     ShellRuntime.cpp
@@ -44,6 +46,9 @@ target_link_libraries(prismdrake-shell-runtime
         Prismdrake::shell-notification-presentation
         Prismdrake::notification-center-client
         Prismdrake::notification-center-presentation
+        Prismdrake::shell-control-clients
+        Prismdrake::shell-desktop
+        Prismdrake::grouped-task-presentation
         Prismdrake::shell-control
         Prismdrake::shell-panel-window
         Prismdrake::shell-settings-client
@@ -69,6 +74,7 @@ target_link_libraries(prismdrake-shell
         Prismdrake::shell-launcher-qml
         Prismdrake::shell-notification-qml
         Prismdrake::shell-panel-qml
+        Prismdrake::shell-quick-settings-qml
         Qt6::Gui
         Qt6::Quick)
 prismdrake_configure_cpp_target(prismdrake-shell)

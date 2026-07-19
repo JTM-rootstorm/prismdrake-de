@@ -202,5 +202,114 @@ TEST(ShellRuntimeCompositionTest, FailedTopologyApplicationRetainsPreviousComple
     EXPECT_EQ(port.focusedPanel, "RIGHT-1");
 }
 
+TEST(ShellRuntimeCompositionTest, LogoutModalPreemptsSurfacesAndEscapeRequestsCancellation) {
+    PresentationPort port;
+    ShellRuntimeComposition runtime{port};
+    TopologyHarness topology;
+
+    ASSERT_TRUE(runtime.observeOutputs(topology.observe(1U)));
+    ASSERT_TRUE(runtime.observeSettingsOwner(authority(10U, 1U)));
+    ASSERT_EQ(runtime.request(control::ShellAction::open_quick_settings, "RIGHT-1"),
+              ShellRequestFailure::none);
+
+    ASSERT_TRUE(runtime.present(SurfaceFamily::logoutConfirmation, "LEFT-1",
+                                composition::FocusOrigin::windowManager()));
+    ASSERT_EQ(runtime.state().activeSurfaces().size(), 1U);
+    EXPECT_EQ(runtime.state().activeSurfaces().front().family, SurfaceFamily::logoutConfirmation);
+    EXPECT_EQ(runtime.request(control::ShellAction::toggle_launcher, "RIGHT-1"),
+              ShellRequestFailure::busy);
+
+    ASSERT_TRUE(runtime.escape());
+    ASSERT_FALSE(port.batches.empty());
+    EXPECT_TRUE(
+        std::holds_alternative<composition::CancelLogoutIntent>(port.batches.back().front()));
+    EXPECT_EQ(runtime.state().activeSurfaces().front().family, SurfaceFamily::logoutConfirmation);
+
+    ASSERT_TRUE(runtime.dismiss(SurfaceFamily::logoutConfirmation));
+    EXPECT_TRUE(runtime.state().activeSurfaces().empty());
+}
+
+TEST(ShellRuntimeCompositionTest, LauncherActionMenuRetainsParentAndRestoresExactResultOrigin) {
+    PresentationPort port;
+    ShellRuntimeComposition runtime{port};
+    TopologyHarness topology;
+
+    ASSERT_TRUE(runtime.observeOutputs(topology.observe(1U)));
+    ASSERT_TRUE(runtime.observeSettingsOwner(authority(10U, 1U)));
+    ASSERT_EQ(runtime.request(control::ShellAction::toggle_launcher, "LEFT-1"),
+              ShellRequestFailure::none);
+    auto output = composition::OutputName::create("LEFT-1").value();
+    auto controlId = composition::FocusControlId::create("launcher-result").value();
+    auto origin = composition::FocusOrigin::control(
+                      output, composition::FocusControlRole::launcherResult, controlId)
+                      .value();
+
+    ASSERT_TRUE(runtime.present(SurfaceFamily::actionMenu, "LEFT-1", origin));
+    ASSERT_EQ(runtime.state().activeSurfaces().size(), 2U);
+    EXPECT_NE(std::ranges::find(runtime.state().activeSurfaces(), SurfaceFamily::launcher,
+                                &composition::ActiveSurface::family),
+              runtime.state().activeSurfaces().end());
+    const auto &openBatch = port.batches.back();
+    EXPECT_FALSE(std::ranges::any_of(openBatch, [](const auto &intent) {
+        const auto *dismiss = std::get_if<composition::DismissSurfaceIntent>(&intent);
+        return dismiss && dismiss->family == SurfaceFamily::launcher;
+    }));
+
+    ASSERT_TRUE(runtime.dismiss(SurfaceFamily::actionMenu));
+    ASSERT_EQ(runtime.state().activeSurfaces().size(), 1U);
+    const auto &dismissBatch = port.batches.back();
+    const auto restore = std::ranges::find_if(dismissBatch, [](const auto &intent) {
+        return std::holds_alternative<composition::RestoreControlFocusIntent>(intent);
+    });
+    ASSERT_NE(restore, dismissBatch.end());
+    EXPECT_EQ(std::get<composition::RestoreControlFocusIntent>(*restore).origin, origin);
+}
+
+TEST(ShellRuntimeCompositionTest, LauncherMenuBlocksLowerPrioritySiblingUntilLogoutPreemptsStack) {
+    PresentationPort port;
+    ShellRuntimeComposition runtime{port};
+    TopologyHarness topology;
+
+    ASSERT_TRUE(runtime.observeOutputs(topology.observe(1U)));
+    ASSERT_TRUE(runtime.observeSettingsOwner(authority(10U, 1U)));
+    ASSERT_TRUE(runtime.observeNotificationOwner(authority(20U, 1U)));
+    ASSERT_EQ(runtime.request(control::ShellAction::toggle_launcher, "LEFT-1"),
+              ShellRequestFailure::none);
+    auto output = composition::OutputName::create("LEFT-1").value();
+    auto controlId = composition::FocusControlId::create("launcher-result").value();
+    auto origin = composition::FocusOrigin::control(
+                      output, composition::FocusControlRole::launcherResult, controlId)
+                      .value();
+    ASSERT_TRUE(runtime.present(SurfaceFamily::actionMenu, "LEFT-1", origin));
+
+    EXPECT_EQ(runtime.request(control::ShellAction::open_quick_settings, "LEFT-1"),
+              ShellRequestFailure::busy);
+    ASSERT_EQ(runtime.state().activeSurfaces().size(), 2U);
+    EXPECT_NE(std::ranges::find(runtime.state().activeSurfaces(), SurfaceFamily::launcher,
+                                &composition::ActiveSurface::family),
+              runtime.state().activeSurfaces().end());
+    EXPECT_NE(std::ranges::find(runtime.state().activeSurfaces(), SurfaceFamily::actionMenu,
+                                &composition::ActiveSurface::family),
+              runtime.state().activeSurfaces().end());
+    EXPECT_TRUE(
+        std::holds_alternative<composition::FocusSurfaceIntent>(port.batches.back().front()));
+    EXPECT_EQ(std::get<composition::FocusSurfaceIntent>(port.batches.back().front()).family,
+              SurfaceFamily::actionMenu);
+
+    ASSERT_TRUE(runtime.present(SurfaceFamily::logoutConfirmation, "LEFT-1",
+                                composition::FocusOrigin::windowManager()));
+    ASSERT_EQ(runtime.state().activeSurfaces().size(), 1U);
+    EXPECT_EQ(runtime.state().activeSurfaces().front().family, SurfaceFamily::logoutConfirmation);
+    const auto &logoutBatch = port.batches.back();
+    EXPECT_TRUE(std::ranges::any_of(logoutBatch, [](const auto &intent) {
+        const auto *dismiss = std::get_if<composition::DismissSurfaceIntent>(&intent);
+        return dismiss && dismiss->family == SurfaceFamily::launcher;
+    }));
+    EXPECT_TRUE(std::ranges::any_of(logoutBatch, [](const auto &intent) {
+        const auto *dismiss = std::get_if<composition::DismissSurfaceIntent>(&intent);
+        return dismiss && dismiss->family == SurfaceFamily::actionMenu;
+    }));
+}
+
 } // namespace
 } // namespace prismdrake::shell::runtime

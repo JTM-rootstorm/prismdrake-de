@@ -38,6 +38,7 @@ Control {
     signal focusExitForward
     signal focusExitBackward
     signal actionMenuOpening
+    signal actionMenuClosed
     signal clicked
 
     function openActionMenu() {
@@ -55,12 +56,15 @@ Control {
     }
 
     function closeActionMenu(restoreFocus) {
+        const wasOpen = taskActionMenu.opened
         taskActionMenu.opened = false
         taskActionMenu.actionTarget = null
         if (restoreFocus)
             actionFocusRestoreTimer.restart()
         else
             actionFocusRestoreTimer.stop()
+        if (wasOpen)
+            actionMenuClosed()
     }
 
     function restoreActionOriginFocus() {

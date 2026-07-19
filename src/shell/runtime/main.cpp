@@ -1,4 +1,4 @@
-#include "ShellRuntime.hpp"
+#include "Pd2ShellRuntime.hpp"
 
 #include "ExitStatus.hpp"
 #include "ShellRuntimeOptions.hpp"
@@ -31,7 +31,7 @@ namespace {
         return prismdrake::foundation::processExitCode(
             prismdrake::foundation::exitStatusFor(options.error()));
     }
-    auto runtime = prismdrake::shell::runtime::ShellRuntime::create(std::move(options).value());
+    auto runtime = prismdrake::shell::runtime::Pd2ShellRuntime::create(std::move(options).value());
     if (!runtime) {
         std::cerr << "prismdrake-shell: " << runtime.error().message << '\n';
         return prismdrake::foundation::processExitCode(

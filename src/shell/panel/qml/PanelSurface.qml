@@ -35,6 +35,8 @@ FocusScope {
     signal notificationRequested
     signal notificationCenterRequested(string outputName)
     signal quickSettingsRequested(string outputName)
+    signal actionMenuOpened(string outputName)
+    signal actionMenuClosed
     signal focusExitForward
     signal focusExitBackward
 
@@ -179,6 +181,22 @@ FocusScope {
             diagnostics.forceActiveFocus(Qt.OtherFocusReason)
         else
             launcher.forceActiveFocus(Qt.OtherFocusReason)
+    }
+
+    function restoreActionMenuFocus() {
+        if (pendingFocusIndex < 0)
+            return true
+        if (groupedTasksActive) {
+            const candidate = taskAt(Math.min(pendingFocusIndex, taskCount - 1))
+            pendingFocusIndex = -1
+            if (candidate !== null) {
+                candidate.forceActiveFocus(Qt.OtherFocusReason)
+                return true
+            }
+            return false
+        }
+        recoverFocus()
+        return true
     }
 
     function recoverGroupedFocus(groupIndex, memberIndex, reopenGroupPopup) {
@@ -332,7 +350,11 @@ FocusScope {
                         Component.onCompleted: focusRecoverySerial = root.allocateTaskFocusSerial()
                         onFocusExitForward: root.focusTask(index + 1, false)
                         onFocusExitBackward: root.focusTask(index - 1, true)
-                        onActionMenuOpening: root.prepareTaskActionMenu(index)
+                        onActionMenuOpening: {
+                            root.prepareTaskActionMenu(index)
+                            root.actionMenuOpened(root.outputName)
+                        }
+                        onActionMenuClosed: root.actionMenuClosed()
                         onClicked: root.closeTaskActionMenus()
                     }
                 }
@@ -359,7 +381,11 @@ FocusScope {
                         rightToLeft: root.layoutDirection === Qt.RightToLeft
                         onFocusExitForward: root.focusTask(index + 1, false)
                         onFocusExitBackward: root.focusTask(index - 1, true)
-                        onActionMenuOpening: root.prepareTaskActionMenu(index)
+                        onActionMenuOpening: {
+                            root.prepareTaskActionMenu(index)
+                            root.actionMenuOpened(root.outputName)
+                        }
+                        onActionMenuClosed: root.actionMenuClosed()
                         onClicked: root.closeTaskActionMenus()
                     }
                 }

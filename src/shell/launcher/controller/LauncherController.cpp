@@ -501,6 +501,29 @@ LauncherController::applyPinSnapshot(std::uint64_t generation,
     return presentation_.applyPinSnapshot(generation, pins);
 }
 
+Result<void>
+LauncherController::launchApplication(const prismdrake::launcher::DesktopFileId &desktopFileId) {
+    if (QThread::currentThread() != thread()) {
+        return ownerThreadError();
+    }
+    if (!catalog_ || !catalog_->complete) {
+        return Result<void>::failure({ErrorCode::cancelled, "launcher catalog is unavailable",
+                                      "retry against the next complete catalog generation"});
+    }
+    const auto entry = std::ranges::find_if(catalog_->eligibleEntryIndices, [&](auto index) {
+        return index < catalog_->discovery->entries.size() &&
+               catalog_->discovery->entries[index].id == desktopFileId;
+    });
+    if (entry == catalog_->eligibleEntryIndices.end() ||
+        !implementation_->submitLaunch(
+            LaunchJob{catalog_->discovery->entries[*entry], std::nullopt})) {
+        return Result<void>::failure({ErrorCode::not_found,
+                                      "the requested catalog application is unavailable",
+                                      "retry against the current grouped task publication"});
+    }
+    return Result<void>::success();
+}
+
 Result<void> LauncherController::setIconThemeGeneration(std::uint64_t generation) {
     if (QThread::currentThread() != thread()) {
         return ownerThreadError();
@@ -541,6 +564,7 @@ void LauncherController::handleRefreshCompletion(std::uint64_t generation, Resul
         return;
     }
     catalog_ = std::move(result).value();
+    emit catalogChanged();
     startCurrentSearch();
 }
 

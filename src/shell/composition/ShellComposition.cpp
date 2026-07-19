@@ -209,10 +209,17 @@ std::optional<std::size_t> ShellComposition::findFamily(SurfaceFamily family) co
 }
 
 std::optional<std::size_t> ShellComposition::findOnOutput(const OutputName &output) const noexcept {
-    const auto found =
-        std::find_if(active_surfaces_.begin(), active_surfaces_.end(),
-                     [&output](const auto &surface) { return surface.output == output; });
+    const auto found = std::max_element(
+        active_surfaces_.begin(), active_surfaces_.end(),
+        [&output](const auto &left, const auto &right) {
+            const auto leftPriority = left.output == output ? priority(left.family) : 0U;
+            const auto rightPriority = right.output == output ? priority(right.family) : 0U;
+            return leftPriority < rightPriority;
+        });
     if (found == active_surfaces_.end()) {
+        return std::nullopt;
+    }
+    if (found->output != output) {
         return std::nullopt;
     }
     return static_cast<std::size_t>(std::distance(active_surfaces_.begin(), found));
@@ -457,18 +464,32 @@ ShellComposition::presentImpl(SurfaceFamily family, std::optional<OutputName> re
 
     if (const auto conflict = findOnOutput(*target);
         conflict && active_surfaces_[*conflict].family != family) {
-        const auto existingPriority = priority(active_surfaces_[*conflict].family);
-        if (existingPriority > priority(family)) {
-            transition.disposition_ = TransitionDisposition::blockedByHigherPriority;
-            transition.intents_.emplace_back(FocusSurfaceIntent{
-                active_surfaces_[*conflict].family, active_surfaces_[*conflict].output});
-            focused_family_ = active_surfaces_[*conflict].family;
+        const bool launcherOwnsLocalMenu =
+            family == SurfaceFamily::actionMenu && origin.role() &&
+            *origin.role() == FocusControlRole::launcherResult &&
+            active_surfaces_[*conflict].family == SurfaceFamily::launcher;
+        if (launcherOwnsLocalMenu && !findFamily(family)) {
+            active_surfaces_.push_back({family, *target, std::move(origin)});
+            transition.intents_.emplace_back(PresentSurfaceIntent{family, *target});
+            focused_family_ = family;
+            transition.intents_.emplace_back(FocusSurfaceIntent{family, *target});
             return Result<CompositionTransition>::success(std::move(transition));
         }
-        const auto dismissed = active_surfaces_[*conflict];
-        transition.intents_.emplace_back(
-            DismissSurfaceIntent{dismissed.family, dismissed.output, DismissReason::conflict});
-        active_surfaces_.erase(active_surfaces_.begin() + static_cast<std::ptrdiff_t>(*conflict));
+        if (!launcherOwnsLocalMenu) {
+            const auto existingPriority = priority(active_surfaces_[*conflict].family);
+            if (existingPriority > priority(family)) {
+                transition.disposition_ = TransitionDisposition::blockedByHigherPriority;
+                transition.intents_.emplace_back(FocusSurfaceIntent{
+                    active_surfaces_[*conflict].family, active_surfaces_[*conflict].output});
+                focused_family_ = active_surfaces_[*conflict].family;
+                return Result<CompositionTransition>::success(std::move(transition));
+            }
+            const auto dismissed = active_surfaces_[*conflict];
+            transition.intents_.emplace_back(
+                DismissSurfaceIntent{dismissed.family, dismissed.output, DismissReason::conflict});
+            active_surfaces_.erase(active_surfaces_.begin() +
+                                   static_cast<std::ptrdiff_t>(*conflict));
+        }
     }
 
     if (const auto existingFamily = findFamily(family); existingFamily) {

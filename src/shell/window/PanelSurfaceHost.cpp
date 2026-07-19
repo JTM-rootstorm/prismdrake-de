@@ -75,13 +75,7 @@ PanelSurfaceHost::PanelSurfaceHost(x11::X11Connection connection, x11::AtomCache
     : connection_(std::move(connection)), atoms_(std::move(atoms)),
       screen_resolver_(std::move(screenResolver)), view_factory_(std::move(viewFactory)) {}
 
-PanelSurfaceHost::~PanelSurfaceHost() {
-    for (auto &[name, entry] : windows_) {
-        (void)name;
-        removeProperties(*entry);
-        entry->view->hide();
-    }
-}
+PanelSurfaceHost::~PanelSurfaceHost() { clear(); }
 
 Result<std::unique_ptr<PanelSurfaceHost::WindowEntry>>
 PanelSurfaceHost::createWindow(const outputs::SurfacePlacement &placement, QScreen &screen) {
@@ -171,6 +165,16 @@ Result<void> PanelSurfaceHost::apply(const outputs::SurfaceRegistrySnapshot &sna
     }
     topology_generation_ = snapshot.surfaceGeneration();
     return Result<void>::success();
+}
+
+void PanelSurfaceHost::clear() noexcept {
+    for (auto &[name, entry] : windows_) {
+        (void)name;
+        removeProperties(*entry);
+        entry->view->hide();
+    }
+    windows_.clear();
+    topology_generation_ = 0U;
 }
 
 Result<void> PanelSurfaceHost::republish(WindowEntry &entry, bool acceptsFocus) {

@@ -23,6 +23,7 @@ Control {
     signal focusExitForward
     signal focusExitBackward
     signal actionMenuOpening
+    signal actionMenuClosed
     signal clicked
 
     function openActionMenu() {
@@ -237,6 +238,7 @@ Control {
         modal: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         padding: root.tokens.menuItemPadding
+        onClosed: root.actionMenuClosed()
 
         background: Rectangle {
             color: root.tokens.surfaceColor

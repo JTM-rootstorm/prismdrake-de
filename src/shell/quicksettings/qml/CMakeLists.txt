@@ -9,6 +9,7 @@ qt_add_qml_module(prismdrake-shell-quick-settings-qml
     RESOURCE_PREFIX /qt/qml
     NO_PLUGIN
     QML_FILES
+        LogoutConfirmationSurface.qml
         QuickSettingsSurface.qml)
 add_library(Prismdrake::shell-quick-settings-qml ALIAS
     prismdrake-shell-quick-settings-qml)
