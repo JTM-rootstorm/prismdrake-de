@@ -49,6 +49,31 @@ using foundation::Result;
 
 } // namespace
 
+void SettingsWallpaperEpochGate::ownerLost() noexcept { candidate_.reset(); }
+
+bool SettingsWallpaperEpochGate::publish(
+    std::uint64_t candidateOwnerEpoch, std::uint64_t activeOwnerEpoch,
+    std::uint64_t activeSettingsGeneration,
+    std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> wallpaper) noexcept {
+    if (candidateOwnerEpoch == 0U || candidateOwnerEpoch != activeOwnerEpoch ||
+        activeSettingsGeneration == 0U || !wallpaper ||
+        wallpaper->generation != activeSettingsGeneration) {
+        return false;
+    }
+    candidate_ = Candidate{candidateOwnerEpoch, std::move(wallpaper)};
+    return true;
+}
+
+std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot>
+SettingsWallpaperEpochGate::current(std::uint64_t activeOwnerEpoch,
+                                    std::uint64_t activeSettingsGeneration) const noexcept {
+    if (!candidate_ || candidate_->ownerEpoch != activeOwnerEpoch || !candidate_->wallpaper ||
+        candidate_->wallpaper->generation != activeSettingsGeneration) {
+        return {};
+    }
+    return candidate_->wallpaper;
+}
+
 struct Pd2ShellRuntime::PendingSettingsPublication final {
     std::unique_ptr<theme::ShellThemeSnapshotAdapter> theme;
     std::shared_ptr<const prismdrake::settings::SettingsSnapshot> settings;
@@ -405,6 +430,7 @@ void Pd2ShellRuntime::loseSettings() {
     pending_settings_publication_.reset();
     pending_surface_snapshot_.reset();
     desktop_controller_.settingsOwnerLost();
+    wallpaper_candidate_.ownerLost();
     wallpaper_loader_.beginSettingsOwnerEpoch();
     auto authority = composition_.observeSettingsOwner(std::nullopt);
     outputs_->beginSettingsOwnerEpoch();
@@ -513,15 +539,17 @@ Result<void> Pd2ShellRuntime::finishSettingsPublication(
     if (!grouped) {
         return grouped;
     }
+    const auto wallpaperOwnerEpoch = settings_owner_epoch_;
     return wallpaper_loader_.load(
-        std::move(pending->wallpaperRequest), this, [this](auto wallpaper) {
+        std::move(pending->wallpaperRequest), this, [this, wallpaperOwnerEpoch](auto wallpaper) {
             // A later settings publication may complete before this asynchronous decode. Never
-            // project an older wallpaper into the newer desktop/settings generation.
+            // project an older wallpaper or prior-owner candidate into the current desktop.
             if (!settings_snapshot_ ||
-                wallpaper->generation != settings_snapshot_->generation.value()) {
+                !wallpaper_candidate_.publish(wallpaperOwnerEpoch, settings_owner_epoch_,
+                                              settings_snapshot_->generation.value(),
+                                              std::move(wallpaper))) {
                 return;
             }
-            wallpaper_ = std::move(wallpaper);
             auto applied = applyWallpaper();
             if (!applied) {
                 shutdown("desktop wallpaper", applied.error());
@@ -587,13 +615,18 @@ void Pd2ShellRuntime::handlePanelPublication(const outputs::SurfaceRegistrySnaps
         return;
     }
     auto wallpaper = applyWallpaper();
-    if (!wallpaper && wallpaper_) {
+    if (!wallpaper) {
         shutdown("desktop wallpaper", wallpaper.error());
     }
 }
 
 Result<void> Pd2ShellRuntime::applyWallpaper() {
-    if (!surface_snapshot_ || !wallpaper_ || !desktops_) {
+    if (!surface_snapshot_ || !settings_snapshot_ || !desktops_) {
+        return Result<void>::success();
+    }
+    const auto wallpaper =
+        wallpaper_candidate_.current(settings_owner_epoch_, settings_snapshot_->generation.value());
+    if (!wallpaper) {
         return Result<void>::success();
     }
     std::vector<desktop::OutputScaleObservation> scales;
@@ -605,7 +638,7 @@ Result<void> Pd2ShellRuntime::applyWallpaper() {
         }
         scales.push_back({placement.outputName, outputScreen->devicePixelRatio()});
     }
-    auto update = desktop_controller_.prepare(*surface_snapshot_, scales, wallpaper_);
+    auto update = desktop_controller_.prepare(*surface_snapshot_, scales, wallpaper);
     if (!update) {
         return Result<void>::failure(update.error());
     }

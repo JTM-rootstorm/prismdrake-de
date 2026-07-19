@@ -14,6 +14,7 @@ if(GTest_FOUND)
     add_executable(prismdrake-shell-runtime-tests
         tests/DevelopmentNotificationOwnerTests.cpp
         tests/FatalDisplayShutdownTests.cpp
+        tests/Pd2ShellRuntimeTests.cpp
         tests/ShellControlBusOwnerTests.cpp
         tests/ShellOutputMonitorTests.cpp
         tests/ShellRuntimeOptionsTests.cpp

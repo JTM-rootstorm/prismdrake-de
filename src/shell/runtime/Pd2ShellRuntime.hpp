@@ -24,6 +24,7 @@
 
 #include <QObject>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
@@ -32,6 +33,31 @@ class QQuickView;
 class QScreen;
 
 namespace prismdrake::shell::runtime {
+
+/// Owner-epoch gate for the decoded wallpaper candidate used by runtime surface updates.
+/// The desktop host retains its last complete mapped snapshot independently while this gate is
+/// empty during a settings-owner gap or replacement decode.
+class SettingsWallpaperEpochGate final {
+  public:
+    void ownerLost() noexcept;
+
+    /// Publishes only a candidate belonging to the active owner and settings generation.
+    [[nodiscard]] bool
+    publish(std::uint64_t candidateOwnerEpoch, std::uint64_t activeOwnerEpoch,
+            std::uint64_t activeSettingsGeneration,
+            std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> wallpaper) noexcept;
+
+    /// Returns a candidate only when both active authority coordinates still match.
+    [[nodiscard]] std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot>
+    current(std::uint64_t activeOwnerEpoch, std::uint64_t activeSettingsGeneration) const noexcept;
+
+  private:
+    struct Candidate final {
+        std::uint64_t ownerEpoch;
+        std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> wallpaper;
+    };
+    std::optional<Candidate> candidate_;
+};
 
 /// Production PD2 shell composition root. All authority identities remain in C++; QML receives
 /// only presentation models, output names, translated text, and categorical state.
@@ -132,7 +158,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     std::unique_ptr<QQuickView> transient_view_;
     std::unique_ptr<QQuickView> logout_view_;
     std::optional<outputs::SurfaceRegistrySnapshot> surface_snapshot_;
-    std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> wallpaper_;
+    SettingsWallpaperEpochGate wallpaper_candidate_;
     std::shared_ptr<const prismdrake::settings::SettingsSnapshot> settings_snapshot_;
     const theme::ShellThemeSnapshotAdapter *panel_theme_candidate_{nullptr};
     std::optional<outputs::SurfaceRegistrySnapshot> pending_surface_snapshot_;
