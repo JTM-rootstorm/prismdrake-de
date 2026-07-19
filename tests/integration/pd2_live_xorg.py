@@ -10,6 +10,7 @@ steps fail closed and therefore cannot produce PD2 completion evidence.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -772,7 +773,12 @@ class LiveXorgHarnessPort:
         ("failure_replay", "restart_notifyd"),
         ("failure_replay", "restart_shell"),
         ("failure_replay", "replace_or_restart_window_manager"),
+        ("failure_replay", "run_without_compositor"),
+        ("failure_replay", "run_with_missing_blur_capability"),
+        ("failure_replay", "start_with_invalid_wallpaper"),
+        ("failure_replay", "start_with_malformed_pin_state"),
         ("failure_replay", "lose_x_server"),
+        ("failure_replay", "enter_and_exit_safe_mode"),
     }
 
     def __init__(
@@ -995,9 +1001,48 @@ class LiveXorgHarnessPort:
             self._require_panel_surfaces()
             if self._component_identities() != components:
                 raise HarnessError("prismdrake_child_changed_during_window_manager_restart")
-        elif identifier == "lose_x_server":
+        elif identifier == "run_without_compositor":
+            self._prepare_restart_state()
+            self._require_uncomposited_fallback_surfaces()
+        elif identifier == "run_with_missing_blur_capability":
+            self._prepare_restart_state()
+            self._require_uncomposited_fallback_surfaces()
+            self._require_configuration_value(
+                b'blur_quality = "balanced"\n', "blur_preference_observation_invalid"
+            )
+        elif identifier == "start_with_invalid_wallpaper":
+            configuration = _session_config().replace(
+                'wallpaper_source = ""',
+                'wallpaper_source = "wallpapers/missing-controlled-image.png"',
+            )
             self._start_environment(two_outputs=True)
-            self._require_topology(two_outputs=True)
+            self._start_session(configuration)
+            self._wait_for_session_readiness()
+            self._require_configuration_value(
+                b'wallpaper_source = "wallpapers/missing-controlled-image.png"\n',
+                "invalid_wallpaper_preference_observation_invalid",
+            )
+            self._require_desktop_wallpaper_surfaces()
+            self._require_panel_surfaces()
+            self._component_identities()
+        elif identifier == "start_with_malformed_pin_state":
+            self._start_environment(two_outputs=True)
+            malformed = self._write_malformed_pin_state()
+            self._start_session()
+            self._wait_for_session_readiness()
+            self._require_desktop_wallpaper_surfaces()
+            self._require_panel_surfaces()
+            if self._read_private_regular(malformed, 1024) != b"{ malformed\n":
+                raise HarnessError("malformed_pin_state_not_retained")
+            for step in (
+                "invoke_launcher_through_shellctl",
+                "search_controlled_application",
+                "pin_controlled_application",
+            ):
+                self.run_step("installed_workflow", step)
+            self._require_recovered_pin_state(malformed)
+        elif identifier == "lose_x_server":
+            self._prepare_restart_state()
             if self._xorg is None or not self._operations.stop(
                 self._xorg, self._config.stop_timeout
             ):
@@ -1006,6 +1051,21 @@ class LiveXorgHarnessPort:
             result = self._run_x11((str(self._config.xrandr), "--query"))
             if result.returncode == 0:
                 raise HarnessError("x_server_loss_unobserved")
+            self.cleanup("x_server_loss_fatal_cleanup")
+        elif identifier == "enter_and_exit_safe_mode":
+            self._start_environment(two_outputs=True)
+            self._start_session()
+            self._wait_for_session_readiness()
+            self._exhaust_shell_restart_budget()
+            self._wait_for_safe_mode()
+            self._require_desktop_wallpaper_surfaces(allow_safe_mode=True)
+            self.cleanup("safe_mode_epoch")
+            self._start_environment(two_outputs=True)
+            self._start_session()
+            self._wait_for_session_readiness()
+            if self._session_marker_state() != "ready":
+                raise HarnessError("fresh_normal_session_not_ready")
+            self._require_desktop_wallpaper_surfaces()
         return Observation(True, True)
 
     def capture_process_ownership(self) -> Mapping[str, object]:
@@ -1239,6 +1299,154 @@ class LiveXorgHarnessPort:
                 "prismdrake-shell",
             )
         }
+
+    def _configuration_path(self) -> Path:
+        if self._runtime is None:
+            raise HarnessError("live_environment_not_started")
+        return self._runtime / "config" / "prismdrake" / "config.toml"
+
+    @staticmethod
+    def _read_private_regular(path: Path, maximum_bytes: int) -> bytes:
+        if maximum_bytes <= 0:
+            raise HarnessError("private_state_file_invalid")
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(path, flags)
+        except OSError as error:
+            raise HarnessError("private_state_file_invalid") from error
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+                or metadata.st_size < 0
+                or metadata.st_size > maximum_bytes
+            ):
+                raise HarnessError("private_state_file_invalid")
+            blocks: list[bytes] = []
+            remaining = maximum_bytes + 1
+            while remaining > 0:
+                block = os.read(descriptor, remaining)
+                if not block:
+                    break
+                blocks.append(block)
+                remaining -= len(block)
+            payload = b"".join(blocks)
+            if len(payload) != metadata.st_size:
+                raise HarnessError("private_state_file_invalid")
+            return payload
+        except OSError as error:
+            raise HarnessError("private_state_file_invalid") from error
+        finally:
+            os.close(descriptor)
+
+    def _require_configuration_value(self, value: bytes, error_name: str) -> None:
+        payload = self._read_private_regular(self._configuration_path(), 64 * 1024)
+        if payload.count(value) != 1:
+            raise HarnessError(error_name)
+
+    def _write_malformed_pin_state(self) -> Path:
+        if self._runtime is None:
+            raise HarnessError("live_environment_not_started")
+        directory = self._runtime / "state" / "prismdrake"
+        path = directory / "pins.json"
+        try:
+            directory.mkdir(mode=0o700)
+            path.write_bytes(b"{ malformed\n")
+            path.chmod(0o600)
+        except OSError as error:
+            raise HarnessError("malformed_pin_state_setup_failed") from error
+        return path
+
+    def _require_recovered_pin_state(self, path: Path) -> None:
+        payload = self._read_private_regular(path, 64 * 1024)
+        try:
+            document = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise HarnessError("malformed_pin_state_recovery_invalid") from error
+        if document != {
+            "schema_version": 1,
+            "pins": [CONTROLLED_DESKTOP_FILE],
+        }:
+            raise HarnessError("malformed_pin_state_recovery_invalid")
+
+    def _require_uncomposited_fallback_surfaces(self) -> None:
+        compositor = self._run_x11(
+            (str(self._config.xprop), "-root", "_NET_WM_CM_S0")
+        )
+        if compositor.returncode != 0 or re.fullmatch(
+            rb"_NET_WM_CM_S0:  (?:no such atom on any window\.|not found\.)\n?",
+            compositor.stdout,
+        ) is None:
+            raise HarnessError("unexpected_compositor_selection_owner")
+        ownership = self.capture_process_ownership()
+        if set(ownership) != {
+            "xorg_dummy_server",
+            "openbox_window_manager",
+            "isolated_session_bus",
+            "prismdrake_session",
+        }:
+            raise HarnessError("uncomposited_process_ownership_invalid")
+        self._component_identities()
+        self._require_desktop_wallpaper_surfaces()
+        self._require_panel_surfaces()
+        self._require_controlled_windows_unchanged(self._controlled_windows)
+
+    def _exhaust_shell_restart_budget(self) -> None:
+        executable = self._config.installed_executables.get("prismdrake-shell")
+        if executable is None:
+            raise HarnessError("component_identity_unavailable")
+        original_siblings = self._component_identities()
+        previous = original_siblings["prismdrake-shell"]
+        for crash in range(4):
+            if not self._operations.stop_identity(
+                previous, executable, self._config.stop_timeout
+            ):
+                raise HarnessError("safe_mode_crash_signal_failed")
+            deadline = self._operations.monotonic() + self._config.readiness_timeout
+            replacement: ProcessIdentity | None = None
+            while self._operations.monotonic() < deadline:
+                try:
+                    candidate = self._component_identity("prismdrake-shell")
+                except HarnessError as error:
+                    if str(error) != "component_identity_invalid":
+                        raise
+                else:
+                    if candidate != previous:
+                        replacement = candidate
+                        break
+                self._operations.pause(0.05)
+            if replacement is None:
+                raise HarnessError("safe_mode_shell_restart_timeout")
+            previous = replacement
+            if crash < 3:
+                current = self._component_identities()
+                for sibling in ("prismdrake-settingsd", "prismdrake-notifyd"):
+                    if current[sibling] != original_siblings[sibling]:
+                        raise HarnessError("safe_mode_sibling_replaced_early")
+                if self._session_marker_state() != "ready":
+                    raise HarnessError("safe_mode_entered_before_budget")
+        safe_components = self._component_identities()
+        for sibling in ("prismdrake-settingsd", "prismdrake-notifyd"):
+            if safe_components[sibling] == original_siblings[sibling]:
+                raise HarnessError("safe_mode_component_epoch_not_replaced")
+        self._surface_shell_identity = None
+
+    def _wait_for_safe_mode(self) -> None:
+        if self._session is None:
+            raise HarnessError("prismdrake_session_not_started")
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            self._attest_private_bus()
+            if self._session.poll() is not None:
+                raise HarnessError("prismdrake_session_exited_before_safe_mode")
+            if self._session_marker_state() == "safe_mode":
+                self._component_identities()
+                return
+            self._operations.pause(0.05)
+        raise HarnessError("prismdrake_session_safe_mode_timeout")
 
     def _prepare_restart_state(self) -> None:
         for identifier in (
@@ -1480,7 +1688,7 @@ class LiveXorgHarnessPort:
     def _run_x11(self, argv: Sequence[str]) -> CommandResult:
         return self._operations.run(argv, self._x11_environment(), 3.0)
 
-    def _start_session(self) -> None:
+    def _start_session(self, configuration_document: str | None = None) -> None:
         if self._runtime is None or self._xorg is None or self._openbox is None:
             raise HarnessError("live_environment_not_started")
         if self._session is not None or self._bus is not None:
@@ -1492,7 +1700,9 @@ class LiveXorgHarnessPort:
         try:
             configuration_directory.mkdir(mode=0o700)
             configuration = configuration_directory / "config.toml"
-            configuration.write_text(_session_config(), encoding="ascii")
+            configuration.write_text(
+                configuration_document or _session_config(), encoding="ascii"
+            )
             configuration.chmod(0o600)
         except OSError as error:
             raise HarnessError("private_session_configuration_failed") from error
@@ -1675,9 +1885,11 @@ class LiveXorgHarnessPort:
             raise HarnessError("prismdrake_session_runtime_invalid")
         return True
 
-    def _require_desktop_wallpaper_surfaces(self) -> None:
+    def _require_desktop_wallpaper_surfaces(
+        self, *, allow_safe_mode: bool = False
+    ) -> None:
         self._require_topology(two_outputs=True)
-        shell = self._require_surface_shell()
+        shell = self._require_surface_shell(allow_safe_mode=allow_safe_mode)
         desktops = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DESKTOP", shell)
         expected = {
             WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
@@ -1733,10 +1945,13 @@ class LiveXorgHarnessPort:
             ):
                 raise HarnessError("panel_strut_invalid")
 
-    def _require_surface_shell(self) -> ProcessIdentity:
+    def _require_surface_shell(
+        self, *, allow_safe_mode: bool = False
+    ) -> ProcessIdentity:
         if self._session is None or self._session.poll() is not None:
             raise HarnessError("prismdrake_session_not_started")
-        if self._session_marker_state() != "ready":
+        expected_state = "safe_mode" if allow_safe_mode else "ready"
+        if self._session_marker_state() != expected_state:
             raise HarnessError("prismdrake_session_readiness_lost")
         executable = self._config.installed_executables.get("prismdrake-shell")
         if executable is None:

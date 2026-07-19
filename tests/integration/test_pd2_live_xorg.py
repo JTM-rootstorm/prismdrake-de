@@ -171,11 +171,18 @@ class FakeOperations:
         self.component_stop_succeeds = True
         self.component_replacement_published = True
         self.unrelated_replacement: str | None = None
+        self.xorg_stopped = False
+        self.xorg_query_survives_stop = False
+        self.shell_crashes = 0
+        self.safe_mode_published = True
+        self.compositor_owned = False
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
         child = FakeChild(1000 + len(self.children))
         self.children.append(child)
         self.spawn_calls.append((tuple(argv), dict(env)))
+        if argv and Path(argv[0]).name == "Xorg":
+            self.xorg_stopped = False
         if argv and Path(argv[0]).name == "dbus-daemon":
             if self.bus_exits_early:
                 child.returncode = 1
@@ -190,6 +197,7 @@ class FakeOperations:
                 )
                 self.bus_socket_identity = (1, 100)
         if argv and Path(argv[0]).name == "prismdrake-session":
+            self.shell_crashes = 0
             root = Path(env["XDG_RUNTIME_DIR"]) / "prismdrake"
             root.mkdir(mode=0o700)
             instance = root / f"session-{child.pid}-0"
@@ -207,6 +215,8 @@ class FakeOperations:
         command = tuple(argv)
         self.run_calls.append((command, dict(env)))
         if command[-1] == "--query":
+            if self.xorg_stopped and not self.xorg_query_survives_stop:
+                return CommandResult(1, b"", b"cannot open display")
             if self.query_results:
                 return self.query_results.pop(0)
             if self.query_payloads:
@@ -237,6 +247,14 @@ class FakeOperations:
         if "_NET_SUPPORTING_WM_CHECK" in command:
             return CommandResult(
                 0, b"_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0x400001\n"
+            )
+        if command[-1] == "_NET_WM_CM_S0":
+            if self.compositor_owned:
+                return CommandResult(
+                    0, b"_NET_WM_CM_S0(WINDOW): window id # 0x700001\n"
+                )
+            return CommandResult(
+                0, b"_NET_WM_CM_S0:  no such atom on any window.\n"
             )
         if command[-1] == "_NET_CLIENT_LIST_STACKING":
             values = b", ".join(f"0x{window:x}".encode("ascii") for window in self.surface_list)
@@ -308,9 +326,12 @@ class FakeOperations:
         del timeout
         self.stop_calls.append(child)
         if self.stop_succeeds:
-            if Path(self.spawn_calls[child.pid - 1000][0][0]).name == "dbus-daemon":
+            executable = Path(self.spawn_calls[child.pid - 1000][0][0]).name
+            if executable == "dbus-daemon":
                 self.bus_socket_path = None
                 self.bus_socket_identity = None
+            elif executable == "Xorg":
+                self.xorg_stopped = True
             child.returncode = 0
         return self.stop_succeeds
 
@@ -363,6 +384,13 @@ class FakeOperations:
                 return False
             if self.component_replacement_published:
                 self.component_start_times[executable.name] += 1
+                if executable.name == "prismdrake-shell":
+                    self.shell_crashes += 1
+                    if self.shell_crashes == 4:
+                        self.component_start_times["prismdrake-settingsd"] += 1
+                        self.component_start_times["prismdrake-notifyd"] += 1
+                        if self.safe_mode_published:
+                            self._publish_safe_mode_marker()
             if self.unrelated_replacement is not None:
                 self.component_start_times[self.unrelated_replacement] += 1
             return True
@@ -387,6 +415,27 @@ class FakeOperations:
             raise AssertionError("private bus socket is not ready")
         self.bus_socket_identity = (1, 101)
 
+    def _publish_safe_mode_marker(self) -> None:
+        sessions = [
+            (child, environment)
+            for child, (argv, environment) in zip(
+                self.children, self.spawn_calls, strict=True
+            )
+            if Path(argv[0]).name == "prismdrake-session"
+            and child.poll() is None
+        ]
+        if len(sessions) != 1:
+            raise AssertionError("expected one live Prismdrake session")
+        child, environment = sessions[0]
+        marker = (
+            Path(environment["XDG_RUNTIME_DIR"])
+            / "prismdrake"
+            / f"session-{child.pid}-0"
+            / "safe-mode"
+        )
+        marker.touch(mode=0o600)
+        marker.chmod(0o600)
+
 
 class FakeAccessibility:
     def __init__(self, operations: FakeOperations) -> None:
@@ -394,6 +443,7 @@ class FakeAccessibility:
         self.pinned = False
         self.observed: list[str] = []
         self.invoked: list[str] = []
+        self.persist_pin = True
 
     def observe(
         self, shell_pid: int, selector: object, environment: Mapping[str, str]
@@ -421,6 +471,14 @@ class FakeAccessibility:
         self.invoked.append(selector.name)
         if selector.name == "Pin to panel":
             self.pinned = True
+            if self.persist_pin:
+                directory = Path(environment["XDG_STATE_HOME"]) / "prismdrake"
+                directory.mkdir(mode=0o700, exist_ok=True)
+                pins = directory / "pins.json"
+                pins.write_bytes(
+                    b'{"schema_version":1,"pins":["prismdrake-controlled.desktop"]}\n'
+                )
+                pins.chmod(0o600)
         elif selector.name == CONTROLLED_APPLICATION_NAME:
             if CONTROLLED_WINDOW_ONE not in self.operations.controlled_windows:
                 self.operations.controlled_windows[CONTROLLED_WINDOW_ONE] = CONTROLLED_ONE_ID
@@ -1043,31 +1101,115 @@ class LivePortTests(unittest.TestCase):
                     port.cleanup("failure_replay"), Observation(True, True)
                 )
 
-    def test_x_server_loss_requires_the_post_stop_query_to_fail(self) -> None:
-        operations = FakeOperations(
-            query_results=(
-                CommandResult(0, TWO_OUTPUTS),
-                CommandResult(0, TWO_OUTPUTS),
-                CommandResult(1, b"", b"cannot open display"),
-            )
+    def test_uncomposited_blur_and_corrupt_file_fallbacks_use_private_live_state(self) -> None:
+        for identifier in (
+            "run_without_compositor",
+            "run_with_missing_blur_capability",
+            "start_with_invalid_wallpaper",
+            "start_with_malformed_pin_state",
+        ):
+            with self.subTest(identifier=identifier):
+                operations = FakeOperations()
+                accessibility = FakeAccessibility(operations)
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()), operations, accessibility
+                )
+
+                self.assertEqual(
+                    port.run_step("failure_replay", identifier),
+                    Observation(True, True),
+                )
+                self.assertEqual(
+                    port.cleanup("failure_replay"), Observation(True, True)
+                )
+
+    def test_invalid_wallpaper_fallback_requires_mapped_desktop_surfaces(self) -> None:
+        operations = FakeOperations()
+        operations.surface_types[DESKTOP_LEFT] = b"_NET_WM_WINDOW_TYPE_NORMAL"
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+
+        with self.assertRaisesRegex(HarnessError, "^desktop_wallpaper_surface_invalid$"):
+            port.run_step("failure_replay", "start_with_invalid_wallpaper")
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_uncomposited_fallback_rejects_a_live_compositor_selection_owner(self) -> None:
+        operations = FakeOperations()
+        operations.compositor_owned = True
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
         )
-        port = LiveXorgHarnessPort(config(), operations)
+
+        with self.assertRaisesRegex(
+            HarnessError, "^unexpected_compositor_selection_owner$"
+        ):
+            port.run_step("failure_replay", "run_without_compositor")
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_malformed_pin_recovery_requires_a_valid_private_replacement(self) -> None:
+        operations = FakeOperations()
+        accessibility = FakeAccessibility(operations)
+        accessibility.persist_pin = False
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+
+        with self.assertRaisesRegex(
+            HarnessError, "^malformed_pin_state_recovery_invalid$"
+        ):
+            port.run_step("failure_replay", "start_with_malformed_pin_state")
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_safe_mode_consumes_crash_budget_then_starts_a_fresh_normal_epoch(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+
+        self.assertEqual(
+            port.run_step("failure_replay", "enter_and_exit_safe_mode"),
+            Observation(True, True),
+        )
+        session_spawns = [
+            child
+            for child, (argv, _environment) in zip(
+                operations.children, operations.spawn_calls, strict=True
+            )
+            if Path(argv[0]).name == "prismdrake-session"
+        ]
+        self.assertEqual(len(session_spawns), 2)
+        self.assertEqual(session_spawns[0].returncode, 0)
+        self.assertIsNone(session_spawns[1].returncode)
+        self.assertEqual(operations.shell_crashes, 0)
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_safe_mode_fails_closed_when_the_marker_is_not_published(self) -> None:
+        operations = FakeOperations()
+        operations.safe_mode_published = False
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+
+        with self.assertRaisesRegex(
+            HarnessError, "^prismdrake_session_safe_mode_timeout$"
+        ):
+            port.run_step("failure_replay", "enter_and_exit_safe_mode")
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_x_server_loss_requires_the_post_stop_query_to_fail(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
 
         self.assertEqual(
             port.run_step("failure_replay", "lose_x_server"),
             Observation(True, True),
         )
+        self.assertTrue(all(child.returncode == 0 for child in operations.children))
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
 
     def test_x_server_loss_rejects_a_query_that_still_reaches_a_server(self) -> None:
-        operations = FakeOperations(
-            query_results=(
-                CommandResult(0, TWO_OUTPUTS),
-                CommandResult(0, TWO_OUTPUTS),
-                CommandResult(0, TWO_OUTPUTS),
-            )
+        operations = FakeOperations()
+        operations.xorg_query_survives_stop = True
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
         )
-        port = LiveXorgHarnessPort(config(), operations)
 
         with self.assertRaisesRegex(HarnessError, "^x_server_loss_unobserved$"):
             port.run_step("failure_replay", "lose_x_server")
