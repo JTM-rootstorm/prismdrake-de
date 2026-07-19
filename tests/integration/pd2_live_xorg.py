@@ -2892,6 +2892,22 @@ class LiveXorgHarnessPort:
             complete = isinstance(document, dict) and document.get("generation") == generation
         finally:
             probe.close()
+
+        panel_selector = ControlSelector(
+            "Open applications", "push_button", require_focused=True
+        )
+        self._invoke_shellctl("panel", "focus")
+        self._wait_accessible(
+            panel_selector, "lifecycle_settings_panel_accessibility_timeout"
+        )
+        panel_accessible = self._accessibility.observe(
+            components.shell.pid, panel_selector, self.probe_environment()
+        )
+
+        # Quick Settings owns the active accessibility scope while open. Attest
+        # the panels first, then restore and attest the reviewed active surface;
+        # do not infer that background panels remain operable in that scope.
+        self._restore_lifecycle_quick_settings()
         surfaces: list[LifecycleReviewedSurfaceObservation] = []
         adapter = LiveSettingsSurfaceAdapter(
             SETTINGS_WORKFLOW_CONFIG,
@@ -2903,14 +2919,13 @@ class LiveXorgHarnessPort:
             first, second = adapter.capture_settled_fingerprints(
                 surface, SETTINGS_WORKFLOW_CONFIG.points_for(surface)
             )
-            selector = (
-                ControlSelector("Quick settings", "pane")
-                if surface == "quick_settings"
-                else ControlSelector("Open applications", "push_button")
-            )
-            accessible = self._accessibility.observe(
-                components.shell.pid, selector, self.probe_environment()
-            )
+            accessible = panel_accessible
+            if surface == "quick_settings":
+                accessible = self._accessibility.observe(
+                    components.shell.pid,
+                    ControlSelector("Quick settings", "pane"),
+                    self.probe_environment(),
+                )
             surfaces.append(
                 LifecycleReviewedSurfaceObservation(surface, first, second, accessible)
             )

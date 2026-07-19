@@ -1576,6 +1576,78 @@ class LivePortTests(unittest.TestCase):
         self.assertEqual(timeout_error, "lifecycle_quick_settings_restore_timeout")
         placements.assert_called_once_with()
 
+    def test_settings_epoch_restores_surface_after_replacement_snapshot(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+        events: list[str] = []
+
+        class Snapshot:
+            payload = (7, {"generation": 7})
+
+        class Probe:
+            def call(self, operation, version):
+                self.request = (operation, version)
+                events.append("snapshot")
+                return Snapshot()
+
+            def close(self):
+                events.append("snapshot_closed")
+
+        def capture(_adapter, surface, _points):
+            events.append(f"capture:{surface}")
+            fingerprint = bytes([len(events)]) * 32
+            return fingerprint, fingerprint
+
+        with patch.object(port, "_private_probe", return_value=Probe()), patch.object(
+            port,
+            "_invoke_shellctl",
+            side_effect=lambda *arguments: events.append(
+                "shellctl:" + ":".join(arguments)
+            ),
+        ), patch.object(
+            port,
+            "_wait_accessible",
+            side_effect=lambda *_arguments: events.append("panel_accessible"),
+        ), patch.object(
+            port,
+            "_restore_lifecycle_quick_settings",
+            side_effect=lambda: events.append("restore"),
+        ), patch.object(
+            LiveSettingsSurfaceAdapter,
+            "capture_settled_fingerprints",
+            autospec=True,
+            side_effect=capture,
+        ):
+            epoch = port.settings_epoch()
+
+        self.assertTrue(epoch.complete_typed_snapshot)
+        self.assertEqual(epoch.generation, 7)
+        self.assertEqual(
+            events,
+            [
+                "snapshot",
+                "snapshot_closed",
+                "shellctl:panel:focus",
+                "panel_accessible",
+                "restore",
+                "capture:panel_primary",
+                "capture:panel_secondary",
+                "capture:quick_settings",
+            ],
+        )
+        self.assertTrue(all(item.accessible for item in epoch.reviewed_surfaces))
+        self.assertEqual(
+            port.cleanup("installed_workflow"), Observation(True, True)
+        )
+
     def test_output_migration_retains_quick_settings_focus_and_navigation(self) -> None:
         operations = FakeOperations()
         accessibility = FakeAccessibility(operations)
