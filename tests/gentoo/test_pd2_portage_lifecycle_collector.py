@@ -356,6 +356,28 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             test_command.write_bytes(b"test")
             ordinary = "ContractTest.Ordinary"
             all_names = (ordinary, OPTIONAL_PACKAGE_SKIP_TEST, *EXCLUDED_TESTS)
+            all_inventory = [
+                {
+                    "name": name,
+                    "command": [str(test_command), f"--case={name}"],
+                    "properties": [
+                        {"name": "WORKING_DIRECTORY", "value": str(build)},
+                        {
+                            "name": "ENVIRONMENT",
+                            "value": [f"PRISMDRAKE_TEST_SOURCE={source}"],
+                        },
+                        {"name": "SKIP_REGULAR_EXPRESSION", "value": ["skip"]},
+                        {"name": "TIMEOUT", "value": 30.0},
+                        {"name": "RUN_SERIAL", "value": True},
+                        {"name": "FUTURE_BEHAVIOR", "value": "reviewed"},
+                        {
+                            "name": "DEF_SOURCE_LINE",
+                            "value": f"{source}/tests/example.cpp:10",
+                        },
+                    ],
+                }
+                for name in all_names
+            ]
             contract = source / collector.CTEST_INVENTORY_RELATIVE_PATH
             contract.parent.mkdir(parents=True)
             contract.write_text(json.dumps({
@@ -365,6 +387,10 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 "ordered_test_names_sha256": hashlib.sha256(json.dumps(
                     list(all_names), ensure_ascii=True, separators=(",", ":"),
                 ).encode("utf-8")).hexdigest(),
+                "canonical_inventory_sha256":
+                    collector._canonical_ctest_inventory_sha256(
+                        all_inventory, build, source,
+                    ),
                 "excluded_tests": list(EXCLUDED_TESTS),
             }), encoding="utf-8")
             calls: list[list[str]] = []
@@ -378,12 +404,12 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 if command[:3] == ["/usr/bin/git", "status", "--porcelain=v1"]:
                     return ""
                 if "--show-only=json-v1" in command:
-                    selected = ((ordinary, OPTIONAL_PACKAGE_SKIP_TEST)
-                                if "--exclude-regex" in command else all_names)
-                    return json.dumps({"tests": [
-                        {"name": name, "command": [str(test_command)]}
-                        for name in selected
-                    ]})
+                    selected = ({ordinary, OPTIONAL_PACKAGE_SKIP_TEST}
+                                if "--exclude-regex" in command else set(all_names))
+                    return json.dumps({
+                        "tests": [item for item in all_inventory
+                                  if item["name"] in selected],
+                    })
                 if "--output-junit" in command:
                     if "--exclude-regex" in command:
                         selected = (ordinary, OPTIONAL_PACKAGE_SKIP_TEST)
@@ -517,6 +543,119 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 collector._test_manifest_sha256(
                     inventory, build, source, fixture, hash_file,
                 )
+
+    def test_ctest_contract_rejects_command_and_behavior_property_tampering(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            build = root / "build"
+            source.mkdir()
+            build.mkdir()
+            contract = source / collector.CTEST_INVENTORY_RELATIVE_PATH
+            contract.parent.mkdir(parents=True)
+            inventory = [{
+                "name": "ContractTest.Ordinary",
+                "command": [str(build / "test-command"), f"--source={source}"],
+                "properties": [
+                    {"name": "WORKING_DIRECTORY", "value": str(build / "tests")},
+                    {"name": "ENVIRONMENT", "value": [f"SOURCE={source}"]},
+                    {"name": "SKIP_REGULAR_EXPRESSION", "value": ["skip"]},
+                    {"name": "TIMEOUT", "value": 30.0},
+                    {"name": "RUN_SERIAL", "value": True},
+                    {"name": "FUTURE_BEHAVIOR", "value": "reviewed"},
+                    {
+                        "name": "DEF_SOURCE_LINE",
+                        "value": f"{source}/tests/example.cpp:10",
+                    },
+                ],
+            }]
+            names_hash = hashlib.sha256(json.dumps(
+                ["ContractTest.Ordinary"], ensure_ascii=True, separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()
+            contract.write_text(json.dumps({
+                "schema_version": 1,
+                "inventory_kind": "pd2_exact_ctest_inventory",
+                "exact_test_count": 1,
+                "ordered_test_names_sha256": names_hash,
+                "canonical_inventory_sha256":
+                    collector._canonical_ctest_inventory_sha256(
+                        inventory, build, source,
+                    ),
+                "excluded_tests": list(EXCLUDED_TESTS),
+            }), encoding="utf-8")
+
+            self.assertRegex(
+                collector._inventory_contract_sha256(
+                    source, build, inventory, lambda _path: "1" * 64,
+                ),
+                r"^[0-9a-f]{64}$",
+            )
+            mutations = (
+                ("command", lambda item: item["command"].append("--tampered")),
+                ("working_directory", lambda item: item["properties"][0].update(
+                    value=str(source))),
+                ("environment", lambda item: item["properties"][1]["value"].append(
+                    "EXTRA=1")),
+                ("skip_regular_expression", lambda item: item["properties"][2].update(
+                    value=[".*"])),
+                ("timeout", lambda item: item["properties"][3].update(value=1.0)),
+                ("run_serial", lambda item: item["properties"][4].update(value=False)),
+                ("unknown_property", lambda item: item["properties"][5].update(
+                    value="tampered")),
+            )
+            for label, mutate in mutations:
+                with self.subTest(label=label):
+                    changed = copy.deepcopy(inventory)
+                    mutate(changed[0])
+                    with self.assertRaisesRegex(
+                            Pd2CollectorError, "^ctest_inventory_contract_mismatch$"):
+                        collector._inventory_contract_sha256(
+                            source, build, changed, lambda _path: "1" * 64,
+                        )
+
+            diagnostic_only = copy.deepcopy(inventory)
+            diagnostic_only[0]["properties"][-1]["value"] = \
+                f"{source}/tests/example.cpp:999"
+            collector._inventory_contract_sha256(
+                source, build, diagnostic_only, lambda _path: "1" * 64,
+            )
+
+    def test_ctest_contract_normalizes_exact_source_and_build_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_a = root / "a/source"
+            build_a = root / "a/build"
+            source_b = root / "b/source"
+            build_b = root / "b/build"
+            for path in (source_a, build_a, source_b, build_b):
+                path.mkdir(parents=True)
+
+            def inventory(source: Path, build: Path) -> list[dict]:
+                return [{
+                    "name": "ContractTest.Ordinary",
+                    "command": [str(build / "test-command"), f"--source={source}"],
+                    "properties": [
+                        {"name": "WORKING_DIRECTORY", "value": str(build / "tests")},
+                        {"name": "ENVIRONMENT", "value": [f"SOURCE={source}"]},
+                        {
+                            "name": "UNKNOWN_NESTED_PROPERTY",
+                            "value": {"source": str(source), "build": [str(build)]},
+                        },
+                        {
+                            "name": "DEF_SOURCE_LINE",
+                            "value": f"{source}/tests/example.cpp:10",
+                        },
+                    ],
+                }]
+
+            self.assertEqual(
+                collector._canonical_ctest_inventory_sha256(
+                    inventory(source_a, build_a), build_a, source_a,
+                ),
+                collector._canonical_ctest_inventory_sha256(
+                    inventory(source_b, build_b), build_b, source_b,
+                ),
+            )
 
     def test_command_output_is_bounded_while_child_runs(self) -> None:
         with mock.patch.object(collector, "MAX_COMMAND_OUTPUT_BYTES", 1024):

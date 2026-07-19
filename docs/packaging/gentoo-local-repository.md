@@ -238,10 +238,15 @@ preflight artifact.
 
 The CTest collectors require the retained build's exact clean source directory
 and configured revision, compare the complete ordered inventory to
-`tests/gentoo/pd2-ctest-inventory-v1.json`, hash actual CTest commands,
-project-owned command files, and the controlled fixture, then parse CTest JUnit
-output. A disabled, failed, missing, additional, or unreviewed skipped selected
-test fails the stage. The only reviewed package-selection skip is
+`tests/gentoo/pd2-ctest-inventory-v1.json`, and bind the source-owned contract
+to every ordered test name, command, and CTest behavior property. Exact source
+and build roots are normalized before hashing so disposable paths do not change
+the contract; diagnostic source-line and backtrace metadata is excluded.
+Unknown or newly introduced behavior properties therefore require an explicit
+contract review. The collectors additionally hash project-owned command files
+and the controlled fixture, then parse CTest JUnit output. A disabled, failed,
+missing, additional, or unreviewed skipped selected test fails the stage. The
+only reviewed package-selection skip is
 `AtomicFileTest.RejectsDestinationOwnedByAnotherUser`, recorded with reason
 `requires_root_ownership_transition` and CTest's `status=notrun` plus
 `<skipped>` encoding when it actually skips. Exactly the four reviewed tests

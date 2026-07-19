@@ -698,23 +698,76 @@ def _ctest_inventory(
                  "ctest_inventory_invalid")
         properties = item.get("properties", [])
         _require(isinstance(properties, list) and all(
-            isinstance(prop, dict) and isinstance(prop.get("name"), str)
+            isinstance(prop, dict) and set(prop) == {"name", "value"} and
+            isinstance(prop["name"], str) and prop["name"]
             for prop in properties
         ), "ctest_inventory_invalid")
+        _require(len({prop["name"] for prop in properties}) == len(properties),
+                 "ctest_inventory_invalid")
     _require(len({item["name"] for item in tests}) == len(tests),
              "ctest_inventory_invalid")
     return tests
 
 
+def _canonical_ctest_inventory_sha256(
+        inventory: list[dict[str, Any]], build_directory: Path,
+        source_checkout: Path,
+) -> str:
+    """Hash ordered CTest commands and behavior properties independent of roots."""
+
+    try:
+        build_root = str(build_directory.resolve(strict=True))
+        source_root = str(source_checkout.resolve(strict=True))
+    except (OSError, RuntimeError) as error:
+        raise Pd2CollectorError("ctest_inventory_root_invalid") from error
+    replacements = sorted(
+        ((build_root, "${BUILD}"), (source_root, "${SOURCE}")),
+        key=lambda item: len(item[0]), reverse=True,
+    )
+
+    def normalize(value: Any) -> Any:
+        if isinstance(value, str):
+            for root, token in replacements:
+                value = value.replace(root, token)
+            return value
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        if isinstance(value, dict):
+            return {key: normalize(item) for key, item in value.items()}
+        return value
+
+    normalized = []
+    for item in inventory:
+        properties = sorted(
+            (
+                {"name": prop["name"], "value": normalize(prop["value"])}
+                for prop in item.get("properties", [])
+                if prop["name"] != "DEF_SOURCE_LINE"
+            ),
+            key=lambda prop: prop["name"],
+        )
+        normalized.append({
+            "name": item["name"],
+            "command": normalize(item["command"]),
+            "properties": properties,
+        })
+    return hashlib.sha256(json.dumps(
+        normalized, allow_nan=False, ensure_ascii=True,
+        separators=(",", ":"), sort_keys=True,
+    ).encode("utf-8")).hexdigest()
+
+
 def _inventory_contract_sha256(
-        source_checkout: Path, inventory: list[dict[str, Any]],
+        source_checkout: Path, build_directory: Path,
+        inventory: list[dict[str, Any]],
         hash_file: Callable[[Path], str],
 ) -> str:
     contract_path = source_checkout / CTEST_INVENTORY_RELATIVE_PATH
     contract = load_capture_json(contract_path)
     _require(isinstance(contract, dict) and set(contract) == {
         "schema_version", "inventory_kind", "exact_test_count",
-        "ordered_test_names_sha256", "excluded_tests",
+        "ordered_test_names_sha256", "canonical_inventory_sha256",
+        "excluded_tests",
     }, "ctest_inventory_contract_invalid")
     _require(contract["schema_version"] == 1 and
              contract["inventory_kind"] == "pd2_exact_ctest_inventory" and
@@ -723,12 +776,16 @@ def _inventory_contract_sha256(
              tuple(contract["excluded_tests"]) == EXCLUDED_TESTS,
              "ctest_inventory_contract_invalid")
     expected_hash = _require_sha256(contract["ordered_test_names_sha256"])
+    expected_inventory_hash = _require_sha256(contract["canonical_inventory_sha256"])
     names = [item["name"] for item in inventory]
     observed_hash = hashlib.sha256(json.dumps(
         names, ensure_ascii=True, separators=(",", ":"),
     ).encode("utf-8")).hexdigest()
     _require(len(names) == contract["exact_test_count"] and
              observed_hash == expected_hash, "ctest_inventory_contract_mismatch")
+    _require(_canonical_ctest_inventory_sha256(
+        inventory, build_directory, source_checkout,
+    ) == expected_inventory_hash, "ctest_inventory_contract_mismatch")
     return _require_sha256(hash_file(contract_path))
 
 
@@ -873,7 +930,7 @@ def capture_package_test(
     _require(excluded == EXCLUDED_TESTS, "package_test_exclusions_mismatch")
     _require(len(included_names) > 0, "package_test_empty")
     inventory_contract_hash = _inventory_contract_sha256(
-        source_checkout, all_inventory, hash_file,
+        source_checkout, build_directory, all_inventory, hash_file,
     )
     manifest_hash = _test_manifest_sha256(
         all_inventory, build_directory, source_checkout, controlled_fixture, hash_file,
@@ -921,7 +978,7 @@ def capture_sandbox_exclusions(
     all_names = {item["name"] for item in all_inventory}
     _require(set(EXCLUDED_TESTS) <= all_names, "sandbox_exclusion_test_missing")
     inventory_contract_hash = _inventory_contract_sha256(
-        source_checkout, all_inventory, hash_file,
+        source_checkout, build_directory, all_inventory, hash_file,
     )
     manifest_hash = _test_manifest_sha256(
         all_inventory, build_directory, source_checkout, controlled_fixture, hash_file,
