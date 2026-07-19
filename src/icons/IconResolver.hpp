@@ -11,6 +11,9 @@
 
 namespace prismdrake::icons {
 
+inline constexpr std::size_t maximumIconThemeSearchRoots = 128U;
+inline constexpr std::size_t maximumIconThemeSearchPathBytes = 64U * 1024U;
+
 /// Qt-bound asynchronous icon adapter. Qt theme availability is captured on the context thread;
 /// bounded theme-file discovery and all image decoding run on worker threads.
 class IconResolver final {

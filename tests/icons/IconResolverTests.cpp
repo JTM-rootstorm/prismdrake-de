@@ -289,6 +289,62 @@ Type=Fixed
     EXPECT_EQ(result.resolution.image.pixelColor(16, 16), QColor{Qt::red});
 }
 
+TEST(IconResolverTest, ExcessiveThemeSearchRootsFailSoftToGenericFallback) {
+    TemporaryIcons icons;
+    ThemeStateGuard themeState;
+    constexpr auto index = R"([Icon Theme]
+Name=BoundedRoots
+Directories=32x32/apps
+
+[32x32/apps]
+Size=32
+Type=Fixed
+)";
+    icons.writeText("BoundedRoots/index.theme", index);
+    QImage image{32, 32, QImage::Format_ARGB32};
+    image.fill(Qt::green);
+    icons.writeImage("BoundedRoots/32x32/apps/prismdrake-root-bound-fixture.png", image);
+    QStringList roots{icons.path("")};
+    while (static_cast<std::size_t>(roots.size()) <= maximumIconThemeSearchRoots) {
+        roots.push_back(QStringLiteral("/tmp/prismdrake-unused-icon-root-%1").arg(roots.size()));
+    }
+    QIcon::setThemeSearchPaths(roots);
+    QIcon::setThemeName("BoundedRoots");
+    IconResolver resolver;
+
+    const auto result = resolveAndWait(resolver, request("prismdrake-root-bound-fixture"));
+
+    EXPECT_EQ(result.resolution.source, IconResolutionSource::genericFallback);
+    EXPECT_FALSE(result.resolution.image.isNull());
+}
+
+TEST(IconResolverTest, ExcessiveThemeSearchPathBytesFailSoftToGenericFallback) {
+    TemporaryIcons icons;
+    ThemeStateGuard themeState;
+    constexpr auto index = R"([Icon Theme]
+Name=BoundedBytes
+Directories=32x32/apps
+
+[32x32/apps]
+Size=32
+Type=Fixed
+)";
+    icons.writeText("BoundedBytes/index.theme", index);
+    QImage image{32, 32, QImage::Format_ARGB32};
+    image.fill(Qt::green);
+    icons.writeImage("BoundedBytes/32x32/apps/prismdrake-byte-bound-fixture.png", image);
+    const QString oversizedRoot =
+        QStringLiteral("/") + QString(maximumIconThemeSearchPathBytes, QLatin1Char('a'));
+    QIcon::setThemeSearchPaths({icons.path(""), oversizedRoot});
+    QIcon::setThemeName("BoundedBytes");
+    IconResolver resolver;
+
+    const auto result = resolveAndWait(resolver, request("prismdrake-byte-bound-fixture"));
+
+    EXPECT_EQ(result.resolution.source, IconResolutionSource::genericFallback);
+    EXPECT_FALSE(result.resolution.image.isNull());
+}
+
 TEST(IconResolverTest, RejectsLeafSymlinkAndFifoWithoutBlockingWorker) {
     TemporaryIcons icons;
     QImage safe{16, 16, QImage::Format_ARGB32};

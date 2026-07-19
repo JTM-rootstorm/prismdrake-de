@@ -77,6 +77,27 @@ template <typename Value>
     return true;
 }
 
+[[nodiscard]] bool validThemeSearchPaths(const QStringList &paths) {
+    if (paths.size() < 0 || static_cast<std::size_t>(paths.size()) > maximumIconThemeSearchRoots) {
+        return false;
+    }
+    std::size_t aggregateBytes = 0U;
+    for (const QString &path : paths) {
+        if (path.size() < 0 ||
+            static_cast<std::size_t>(path.size()) > maximumIconThemeSearchPathBytes) {
+            return false;
+        }
+        const QByteArray encoded = path.toUtf8();
+        const auto pathBytes = static_cast<std::size_t>(encoded.size());
+        if (encoded.contains('\0') ||
+            pathBytes > maximumIconThemeSearchPathBytes - aggregateBytes) {
+            return false;
+        }
+        aggregateBytes += pathBytes;
+    }
+    return true;
+}
+
 [[nodiscard]] bool validImageBounds(const QSize &size) noexcept {
     return size.isValid() && size.width() > 0 && size.height() > 0 &&
            size.width() <= maximumIconSourceDimension &&
@@ -512,9 +533,14 @@ Result<void> IconResolver::resolve(IconRequest request, QObject *context,
                              "Submit icon requests from the receiving QObject thread.");
     }
 
-    ThemeLookupSnapshot theme{false, QIcon::themeName(), QIcon::fallbackThemeName(),
-                              QIcon::themeSearchPaths()};
-    if (safeThemeName(request.iconField) && !QDir::isAbsolutePath(request.iconField)) {
+    ThemeLookupSnapshot theme{false, QIcon::themeName(), QIcon::fallbackThemeName(), {}};
+    const QStringList searchPaths = QIcon::themeSearchPaths();
+    const bool searchPathsValid = validThemeSearchPaths(searchPaths);
+    if (searchPathsValid) {
+        theme.searchPaths = searchPaths;
+    }
+    if (searchPathsValid && safeThemeName(request.iconField) &&
+        !QDir::isAbsolutePath(request.iconField)) {
         theme.qtThemeHasIcon = !QIcon::fromTheme(request.iconField).isNull();
     }
 
