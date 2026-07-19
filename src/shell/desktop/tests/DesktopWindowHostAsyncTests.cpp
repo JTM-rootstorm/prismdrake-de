@@ -51,6 +51,13 @@ class TransactionGate final {
   public:
     [[nodiscard]] Result<void> run(std::stop_token stopToken,
                                    std::span<const window::X11PropertyOperation> operations) {
+        {
+            std::scoped_lock lock{mutex_};
+            transactions_.emplace_back();
+            for (const auto &operation : operations) {
+                transactions_.back().push_back(operation.kind);
+            }
+        }
         if (std::ranges::all_of(operations, [](const auto &operation) {
                 return operation.kind == window::X11PropertyOperationKind::removeDesktop;
             })) {
@@ -81,10 +88,18 @@ class TransactionGate final {
         return started_ >= count;
     }
 
+    [[nodiscard]] std::vector<window::X11PropertyOperationKind>
+    transaction(std::size_t index) const {
+        std::scoped_lock lock{mutex_};
+        return index < transactions_.size() ? transactions_[index]
+                                            : std::vector<window::X11PropertyOperationKind>{};
+    }
+
   private:
     mutable std::mutex mutex_;
     std::condition_variable_any changed_;
     std::deque<Result<void>> outcomes_;
+    std::vector<std::vector<window::X11PropertyOperationKind>> transactions_;
     std::size_t started_{0U};
 };
 
@@ -187,6 +202,14 @@ TEST(DesktopWindowHostAsyncTest, CoalescesBlockedSameTopologyWallpapersToNewest)
     EXPECT_EQ(log.wallpapers, (std::vector<std::uint64_t>{3U}));
     EXPECT_TRUE(log.failures.empty());
     ASSERT_EQ(host->current()->wallpaper()->generation, 3U);
+    for (std::size_t index = 0U; index < 2U; ++index) {
+        const auto operations = gate->transaction(index);
+        ASSERT_EQ(operations.size(), 2U);
+        EXPECT_TRUE(std::ranges::all_of(operations, [](const auto kind) {
+            return kind == window::X11PropertyOperationKind::publishDesktop;
+        }));
+    }
+    EXPECT_TRUE(gate->transaction(2U).empty());
 }
 
 TEST(DesktopWindowHostAsyncTest, RejectsOlderTopologyWhileNewerPublicationIsPending) {

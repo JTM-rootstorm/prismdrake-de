@@ -65,7 +65,6 @@ class PanelSurfaceHost final {
     beginApply(const outputs::SurfaceRegistrySnapshot &snapshot);
     void completeApply(std::uint64_t token, foundation::Result<void> result);
     void handleCompletion(std::uint64_t token, foundation::Result<void> result);
-    void submitCleanup(x11::WindowId window, X11PropertyOperationKind kind) noexcept;
     [[nodiscard]] foundation::Result<std::uint64_t> allocateToken();
 
     ScreenResolver screen_resolver_;

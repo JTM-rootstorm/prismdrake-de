@@ -59,7 +59,6 @@ class DesktopWindowHost final {
                  const std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> &wallpaper);
     [[nodiscard]] foundation::Result<void> beginApply(const DesktopSurfaceUpdate &update);
     void completeApply(std::uint64_t token, foundation::Result<void> result);
-    void submitCleanup(x11::WindowId window) noexcept;
     [[nodiscard]] foundation::Result<std::uint64_t> allocateToken();
 
     ScreenResolver screen_resolver_;

@@ -150,6 +150,35 @@ class RegistryFixture final {
         return registry_.observe(reconciled, {outputs::PanelOutputPolicy::primary, {}}, 1U).value();
     }
 
+    [[nodiscard]] outputs::SurfaceRegistrySnapshot many(std::uint64_t generation,
+                                                        std::uint32_t outputWidth) {
+        constexpr std::uint32_t outputCount = 48U;
+        constexpr std::uint32_t outputHeight = 768U;
+        const auto root =
+            x11::RootGeometry::create(outputCount * outputWidth, outputHeight).value();
+        std::vector<x11::OutputCandidate> candidates;
+        std::vector<outputs::QtScreenObservation> screens;
+        candidates.reserve(outputCount);
+        screens.reserve(outputCount);
+        for (std::uint32_t index = 0U; index < outputCount; ++index) {
+            const auto name = "TEST-" + std::to_string(index + 1U);
+            candidates.push_back({x11::OutputId::fromProtocol(index + 1U).value(),
+                                  x11::CrtcId::fromProtocol(index + 101U).value(),
+                                  static_cast<std::int32_t>(index * outputWidth), 0, outputWidth,
+                                  outputHeight, name});
+            screens.push_back(
+                {name,
+                 {static_cast<std::int32_t>(index * outputWidth), 0, outputWidth, outputHeight},
+                 1.0});
+        }
+        const auto topology =
+            x11::buildOutputTopology({true, root, outputCount, outputCount, outputCount, candidates,
+                                      candidates.front().outputId})
+                .value();
+        const auto reconciled = outputs::reconcileScreens(generation, topology, screens).value();
+        return registry_.observe(reconciled, {outputs::PanelOutputPolicy::all, {}}, 1U).value();
+    }
+
   private:
     outputs::OutputSurfaceRegistry registry_;
 };
@@ -234,6 +263,39 @@ TEST(PanelSurfaceHostTest, CoalescesQueuedSnapshotsAndPublishesOnlyLatestGenerat
     EXPECT_EQ(log.successful, (std::vector<std::uint64_t>{3U}));
     EXPECT_TRUE(log.failed.empty());
     EXPECT_EQ(host->currentGeneration(), 3U);
+}
+
+TEST(PanelSurfaceHostTest, MaximumOutputReplacementDoesNotQueueStaleXidCleanup) {
+    RegistryFixture registry;
+    auto gate = std::make_shared<TransactionGate>();
+    PublicationLog log;
+    auto host = makeHost(gate, log);
+    ASSERT_NE(host, nullptr);
+
+    ASSERT_TRUE(host->apply(registry.many(1U, 100U)));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(1U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 1U; }));
+
+    ASSERT_TRUE(host->apply(registry.many(2U, 96U)));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
+    ASSERT_TRUE(host->apply(registry.many(3U, 92U)));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return gate->started(3U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 2U; }));
+
+    EXPECT_EQ(log.successful, (std::vector<std::uint64_t>{1U, 3U}));
+    EXPECT_TRUE(log.failed.empty());
+    EXPECT_EQ(host->currentGeneration(), 3U);
+    for (std::size_t index = 0U; index < 3U; ++index) {
+        const auto operations = gate->transaction(index);
+        ASSERT_EQ(operations.size(), 48U);
+        EXPECT_TRUE(std::ranges::all_of(operations, [](const auto kind) {
+            return kind == X11PropertyOperationKind::publishDock;
+        }));
+    }
+    EXPECT_TRUE(gate->transaction(3U).empty());
 }
 
 TEST(PanelSurfaceHostTest, FailedPublicationRetainsPriorGenerationAndDropsQueuedWork) {
@@ -352,6 +414,63 @@ TEST(PanelSurfaceHostTest, ClearCancelsInFlightFocusCompletion) {
     EXPECT_EQ(log.successful, (std::vector<std::uint64_t>{1U}));
     EXPECT_TRUE(log.failed.empty());
     EXPECT_FALSE(ready);
+}
+
+TEST(PanelSurfaceHostTest, ClearThenApplyIgnoresStaleFocusFailureAndPublishesNewSnapshot) {
+    RegistryFixture registry;
+    auto gate = std::make_shared<TransactionGate>();
+    PublicationLog log;
+    auto host = makeHost(gate, log);
+    ASSERT_NE(host, nullptr);
+
+    ASSERT_TRUE(host->apply(registry.one(1U)));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(1U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 1U; }));
+    bool staleReady = false;
+    ASSERT_TRUE(host->requestKeyboardAccess("TEST-1", [&](QQuickView &) { staleReady = true; }));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
+
+    host->clear();
+    ASSERT_TRUE(host->apply(registry.one(2U, 960U, 720U)));
+    gate->release(injectedFailure());
+    ASSERT_TRUE(waitUntil([&] { return gate->started(3U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 2U; }));
+
+    EXPECT_EQ(log.successful, (std::vector<std::uint64_t>{1U, 2U}));
+    EXPECT_TRUE(log.failed.empty());
+    EXPECT_FALSE(staleReady);
+    EXPECT_EQ(host->currentGeneration(), 2U);
+    ASSERT_NE(host->view("TEST-1"), nullptr);
+    for (int iteration = 0; iteration < 20; ++iteration) {
+        QCoreApplication::processEvents();
+        std::this_thread::sleep_for(5ms);
+    }
+    EXPECT_FALSE(gate->started(4U));
+}
+
+TEST(PanelSurfaceHostTest, ClearThenApplyIgnoresStaleApplyFailureAndPublishesNewSnapshot) {
+    RegistryFixture registry;
+    auto gate = std::make_shared<TransactionGate>();
+    PublicationLog log;
+    auto host = makeHost(gate, log);
+    ASSERT_NE(host, nullptr);
+
+    ASSERT_TRUE(host->apply(registry.one(1U)));
+    ASSERT_TRUE(waitUntil([&] { return gate->started(1U); }));
+    host->clear();
+    ASSERT_TRUE(host->apply(registry.one(2U, 960U, 720U)));
+
+    gate->release(injectedFailure());
+    ASSERT_TRUE(waitUntil([&] { return gate->started(2U); }));
+    gate->release(Result<void>::success());
+    ASSERT_TRUE(waitUntil([&] { return log.successful.size() == 1U; }));
+
+    EXPECT_EQ(log.successful, (std::vector<std::uint64_t>{2U}));
+    EXPECT_TRUE(log.failed.empty());
+    EXPECT_EQ(host->currentGeneration(), 2U);
+    ASSERT_NE(host->view("TEST-1"), nullptr);
 }
 
 TEST(PanelSurfaceHostTest, RapidFocusReleaseCoalescesToUnfocusedMappedPanel) {

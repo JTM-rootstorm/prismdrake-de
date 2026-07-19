@@ -209,12 +209,9 @@ void DesktopWindowHost::completeApply(std::uint64_t token, Result<void> result) 
     }
     auto pending = std::move(pending_apply_);
     if (!result || queued_update_) {
-        if (result) {
-            for (const auto &[name, entry] : pending->staged) {
-                (void)name;
-                submitCleanup(entry->publishedWindow);
-            }
-        } else {
+        // QWindow destruction removes every property with the X11 window. Do not enqueue a
+        // delayed deletion for a numeric XID which the server may reuse before it is processed.
+        if (!result) {
             queued_update_.reset();
             if (publication_callback_) {
                 publication_callback_(pending->update, result);
@@ -237,7 +234,6 @@ void DesktopWindowHost::completeApply(std::uint64_t token, Result<void> result) 
                 ++iterator;
                 continue;
             }
-            submitCleanup(iterator->second->publishedWindow);
             iterator->second->view->hide();
             iterator = windows_.erase(iterator);
         }
@@ -259,16 +255,6 @@ void DesktopWindowHost::completeApply(std::uint64_t token, Result<void> result) 
             publication_callback_(queued, started);
         }
     }
-}
-
-void DesktopWindowHost::submitCleanup(x11::WindowId windowId) noexcept {
-    auto token = allocateToken();
-    if (!token) {
-        return;
-    }
-    const auto submitted = property_worker_->submit(
-        token.value(), {{window::X11PropertyOperationKind::removeDesktop, windowId, std::nullopt}});
-    (void)submitted;
 }
 
 Result<std::uint64_t> DesktopWindowHost::allocateToken() {

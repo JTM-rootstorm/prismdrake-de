@@ -62,6 +62,7 @@ struct PanelSurfaceHost::PendingApply final {
     outputs::SurfaceRegistrySnapshot snapshot;
     std::set<std::string> desired;
     std::map<std::string, std::unique_ptr<WindowEntry>, std::less<>> staged;
+    bool invalidatedByClear{false};
 };
 
 struct PanelSurfaceHost::PendingFocus final {
@@ -72,6 +73,7 @@ struct PanelSurfaceHost::PendingFocus final {
     bool acceptsFocus;
     FocusReadyCallback focusReady;
     std::unique_ptr<WindowEntry> replacement;
+    bool invalidatedByClear{false};
 };
 
 Result<std::unique_ptr<PanelSurfaceHost>>
@@ -151,7 +153,7 @@ Result<void> PanelSurfaceHost::apply(const outputs::SurfaceRegistrySnapshot &sna
     clear_requested_ = false;
     if (pending_apply_ || pending_focus_) {
         queued_snapshot_ = snapshot;
-        if (pending_focus_ && !focus_request_queued_) {
+        if (pending_focus_ && !pending_focus_->invalidatedByClear && !focus_request_queued_) {
             queued_focus_output_ = pending_focus_->outputName;
             queued_focus_callback_ = pending_focus_->focusReady;
             focus_request_queued_ = true;
@@ -226,13 +228,10 @@ void PanelSurfaceHost::completeApply(std::uint64_t token, Result<void> result) {
     }
     auto pending = std::move(pending_apply_);
     if (!result || clear_requested_ || queued_snapshot_) {
-        if (result) {
-            for (const auto &[name, entry] : pending->staged) {
-                (void)name;
-                submitCleanup(entry->publishedWindow, X11PropertyOperationKind::removeDock);
-            }
-        }
-        if (!result) {
+        // Destroying each staged QWindow destroys its X11 window and therefore its properties.
+        // Never queue a later property deletion for that numeric XID: X11 may already have reused
+        // it by the time an asynchronous cleanup transaction runs.
+        if (!result && !pending->invalidatedByClear) {
             queued_snapshot_.reset();
             queued_focus_output_.reset();
             queued_focus_callback_ = {};
@@ -248,7 +247,6 @@ void PanelSurfaceHost::completeApply(std::uint64_t token, Result<void> result) {
                 ++iterator;
                 continue;
             }
-            submitCleanup(iterator->second->publishedWindow, X11PropertyOperationKind::removeDock);
             iterator->second->view->hide();
             iterator = windows_.erase(iterator);
         }
@@ -263,18 +261,9 @@ void PanelSurfaceHost::completeApply(std::uint64_t token, Result<void> result) {
             publication_callback_(pending->snapshot, result);
         }
     }
-    if (result) {
+    if (result || pending->invalidatedByClear) {
         continueQueuedWork();
     }
-}
-
-void PanelSurfaceHost::submitCleanup(x11::WindowId window, X11PropertyOperationKind kind) noexcept {
-    auto token = allocateToken();
-    if (!token) {
-        return;
-    }
-    const auto submitted = property_worker_->submit(token.value(), {{kind, window, std::nullopt}});
-    (void)submitted;
 }
 
 Result<std::uint64_t> PanelSurfaceHost::allocateToken() {
@@ -290,10 +279,16 @@ void PanelSurfaceHost::clear() noexcept {
     queued_focus_output_.reset();
     queued_focus_callback_ = {};
     focus_request_queued_ = false;
-    pending_focus_.reset();
+    if (pending_apply_) {
+        pending_apply_->invalidatedByClear = true;
+    }
+    if (pending_focus_) {
+        pending_focus_->invalidatedByClear = true;
+    }
+    // Keep an in-flight replacement alive until its worker transaction completes. Destroying it
+    // here would allow its numeric XID to be reused while the worker can still publish to it.
     for (auto &[name, entry] : windows_) {
         (void)name;
-        submitCleanup(entry->publishedWindow, X11PropertyOperationKind::removeDock);
         entry->view->hide();
     }
     windows_.clear();
@@ -327,7 +322,7 @@ Result<void> PanelSurfaceHost::beginFocus(std::string outputName, bool acceptsFo
         {X11PropertyOperationKind::publishDock, newWindow, replacement.value()->reservation}};
     pending_focus_ = std::make_unique<PendingFocus>(
         PendingFocus{token.value(), std::move(outputName), *current_snapshot_, oldWindow,
-                     acceptsFocus, std::move(focusReady), std::move(replacement).value()});
+                     acceptsFocus, std::move(focusReady), std::move(replacement).value(), false});
     auto submitted = property_worker_->submit(token.value(), std::move(operations));
     if (!submitted) {
         pending_focus_.reset();
@@ -340,34 +335,29 @@ void PanelSurfaceHost::completeFocus(std::uint64_t token, Result<void> result) {
         return;
     }
     auto pending = std::move(pending_focus_);
-    if (!result) {
-        queued_snapshot_.reset();
-        queued_focus_output_.reset();
-        queued_focus_callback_ = {};
-        focus_request_queued_ = false;
-        if (!clear_requested_ && publication_callback_) {
-            publication_callback_(pending->snapshot, result);
-        }
-        return;
-    }
     const auto current = windows_.find(pending->outputName);
     const bool superseded =
-        clear_requested_ || queued_snapshot_ || focus_request_queued_ || !current_snapshot_ ||
+        pending->invalidatedByClear || clear_requested_ || queued_snapshot_ ||
+        focus_request_queued_ || !current_snapshot_ ||
         current_snapshot_->surfaceGeneration() != pending->snapshot.surfaceGeneration() ||
         current == windows_.end() || current->second->publishedWindow != pending->oldWindow;
-    if (superseded) {
-        if (current == windows_.end() ||
-            current->second->publishedWindow != pending->replacement->publishedWindow) {
-            submitCleanup(pending->replacement->publishedWindow,
-                          X11PropertyOperationKind::removeDock);
+    if (!result) {
+        if (!superseded) {
+            queued_focus_output_.reset();
+            queued_focus_callback_ = {};
+            focus_request_queued_ = false;
+            if (publication_callback_) {
+                publication_callback_(pending->snapshot, result);
+            }
+            return;
         }
+    } else if (superseded) {
+        // The unmapped replacement is rolled back by QWindow destruction. A delayed remove
+        // against its numeric XID could instead mutate a newly created client window.
     } else {
         current->second->view->hide();
         pending->replacement->view->show();
         current->second = std::move(pending->replacement);
-        if (current->second->publishedWindow != pending->oldWindow) {
-            submitCleanup(pending->oldWindow, X11PropertyOperationKind::removeDock);
-        }
         if (pending->acceptsFocus) {
             current->second->view->requestActivate();
         }
