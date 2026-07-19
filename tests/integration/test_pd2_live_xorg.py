@@ -33,6 +33,31 @@ DUMMY1 connected 1600x900+1600+0 (normal left inverted right x axis y axis) 0mm 
 DUMMY2 disconnected (normal left inverted right x axis y axis)
 """
 
+ONE_OUTPUT = b"""Screen 0: minimum 64 x 64, current 1600 x 900, maximum 32767 x 32767
+DUMMY0 connected primary 1600x900+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+   1600x900      60.00*+
+DUMMY1 disconnected (normal left inverted right x axis y axis)
+DUMMY2 disconnected (normal left inverted right x axis y axis)
+"""
+
+ONLY_SECONDARY = b"""Screen 0: minimum 64 x 64, current 3200 x 900, maximum 32767 x 32767
+DUMMY0 connected primary (normal left inverted right x axis y axis) 0mm x 0mm
+DUMMY1 connected 1600x900+1600+0 (normal left inverted right x axis y axis) 0mm x 0mm
+DUMMY2 disconnected (normal left inverted right x axis y axis)
+"""
+
+SECONDARY_PRIMARY = b"""Screen 0: minimum 64 x 64, current 3200 x 900, maximum 32767 x 32767
+DUMMY0 connected 1600x900+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+DUMMY1 connected primary 1600x900+1600+0 (normal left inverted right x axis y axis) 0mm x 0mm
+DUMMY2 disconnected (normal left inverted right x axis y axis)
+"""
+
+SECONDARY_BELOW = b"""Screen 0: minimum 64 x 64, current 1600 x 1800, maximum 32767 x 32767
+DUMMY0 connected primary 1600x900+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+DUMMY1 connected 1600x900+0+900 (normal left inverted right x axis y axis) 0mm x 0mm
+DUMMY2 disconnected (normal left inverted right x axis y axis)
+"""
+
 
 class FakeChild:
     def __init__(self, pid: int) -> None:
@@ -50,8 +75,15 @@ class FakeChild:
 
 
 class FakeOperations:
-    def __init__(self, query_payload: bytes = TWO_OUTPUTS) -> None:
+    def __init__(
+        self,
+        query_payload: bytes = TWO_OUTPUTS,
+        query_payloads: Sequence[bytes] = (),
+        query_results: Sequence[CommandResult] = (),
+    ) -> None:
         self.query_payload = query_payload
+        self.query_payloads = list(query_payloads)
+        self.query_results = list(query_results)
         self.spawn_calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
         self.run_calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
         self.stop_calls: list[FakeChild] = []
@@ -72,6 +104,10 @@ class FakeOperations:
         command = tuple(argv)
         self.run_calls.append((command, dict(env)))
         if command[-1] == "--query":
+            if self.query_results:
+                return self.query_results.pop(0)
+            if self.query_payloads:
+                return CommandResult(0, self.query_payloads.pop(0))
             return CommandResult(0, self.query_payload)
         if "_NET_SUPPORTING_WM_CHECK" in command:
             return CommandResult(
@@ -187,6 +223,22 @@ class LivePortTests(unittest.TestCase):
             port.capture_process_ownership()
         self.assertEqual(operations.spawn_calls, [])
 
+    def test_consecutive_failure_scenarios_start_fresh_topology_epochs(self) -> None:
+        operations = FakeOperations(
+            query_payloads=(TWO_OUTPUTS, TWO_OUTPUTS, ONE_OUTPUT, ONE_OUTPUT, TWO_OUTPUTS)
+        )
+        port = LiveXorgHarnessPort(config(), operations)
+
+        first = port.run_step("failure_replay", "two_same_scale_outputs_at_startup")
+        second = port.run_step("failure_replay", "add_second_output_after_startup")
+
+        self.assertEqual(first, Observation(True, True))
+        self.assertEqual(second, Observation(True, True))
+        self.assertEqual(len(operations.spawn_calls), 4)
+        self.assertEqual(len(operations.stop_calls), 2)
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+        self.assertEqual(len(operations.stop_calls), 4)
+
     def test_cleanup_fails_when_an_owned_exact_child_cannot_be_stopped(self) -> None:
         operations = FakeOperations()
         port = LiveXorgHarnessPort(config(), operations)
@@ -196,6 +248,58 @@ class LivePortTests(unittest.TestCase):
         with self.assertRaisesRegex(HarnessError, "^live_cleanup_failed$"):
             port.cleanup("installed_workflow")
         self.assertEqual(len(operations.stop_calls), 2)
+
+    def test_output_and_process_failure_scenarios_use_live_observations(self) -> None:
+        cases = (
+            ("remove_primary_output", (TWO_OUTPUTS, TWO_OUTPUTS, ONLY_SECONDARY)),
+            ("select_new_primary_output", (TWO_OUTPUTS, SECONDARY_PRIMARY)),
+            ("change_output_geometry", (TWO_OUTPUTS, SECONDARY_BELOW)),
+            ("replace_or_restart_window_manager", (TWO_OUTPUTS,)),
+        )
+        for identifier, payloads in cases:
+            with self.subTest(identifier=identifier):
+                operations = FakeOperations(query_payloads=payloads)
+                port = LiveXorgHarnessPort(config(), operations)
+                self.assertEqual(
+                    port.run_step("failure_replay", identifier),
+                    Observation(True, True),
+                )
+                if identifier == "replace_or_restart_window_manager":
+                    self.assertEqual(len(operations.spawn_calls), 3)
+                    self.assertEqual(len(operations.stop_calls), 1)
+                self.assertEqual(
+                    port.cleanup("failure_replay"), Observation(True, True)
+                )
+
+    def test_x_server_loss_requires_the_post_stop_query_to_fail(self) -> None:
+        operations = FakeOperations(
+            query_results=(
+                CommandResult(0, TWO_OUTPUTS),
+                CommandResult(0, TWO_OUTPUTS),
+                CommandResult(1, b"", b"cannot open display"),
+            )
+        )
+        port = LiveXorgHarnessPort(config(), operations)
+
+        self.assertEqual(
+            port.run_step("failure_replay", "lose_x_server"),
+            Observation(True, True),
+        )
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_x_server_loss_rejects_a_query_that_still_reaches_a_server(self) -> None:
+        operations = FakeOperations(
+            query_results=(
+                CommandResult(0, TWO_OUTPUTS),
+                CommandResult(0, TWO_OUTPUTS),
+                CommandResult(0, TWO_OUTPUTS),
+            )
+        )
+        port = LiveXorgHarnessPort(config(), operations)
+
+        with self.assertRaisesRegex(HarnessError, "^x_server_loss_unobserved$"):
+            port.run_step("failure_replay", "lose_x_server")
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
 
     def test_installed_hashes_require_exact_absolute_regular_executables(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

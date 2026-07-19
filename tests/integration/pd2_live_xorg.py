@@ -306,15 +306,23 @@ class LiveXorgHarnessPort:
     def run_step(self, phase: str, identifier: str) -> Observation:
         if (phase, identifier) not in self._SUPPORTED_STEPS:
             raise HarnessError("live_step_not_implemented")
+        if phase == "failure_replay":
+            # Each replay scenario begins from a fresh isolated X11 epoch.  The
+            # contract invokes scenarios consecutively and cleans only once at
+            # the phase boundary, so carrying one scenario's topology into the
+            # next would make the observation ambiguous.
+            self.cleanup("failure_scenario_reset")
         if phase == "installed_workflow" or identifier == "two_same_scale_outputs_at_startup":
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
         elif identifier == "add_second_output_after_startup":
             self._start_environment(two_outputs=False)
+            self._require_topology(two_outputs=False)
             self._enable_secondary()
             self._require_topology(two_outputs=True)
         elif identifier == "remove_primary_output":
             self._start_environment(two_outputs=True)
+            self._require_topology(two_outputs=True)
             self._xrandr("--output", PRIMARY_OUTPUT, "--off")
             self._require_only_secondary()
         elif identifier == "select_new_primary_output":
@@ -338,6 +346,7 @@ class LiveXorgHarnessPort:
                 raise HarnessError("window_manager_replacement_invalid")
         elif identifier == "lose_x_server":
             self._start_environment(two_outputs=True)
+            self._require_topology(two_outputs=True)
             if self._xorg is None or not self._operations.stop(
                 self._xorg, self._config.stop_timeout
             ):
