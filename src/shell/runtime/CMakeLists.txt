@@ -21,6 +21,8 @@ add_library(prismdrake-shell-runtime STATIC
     DevelopmentNotificationOwner.hpp
     FatalDisplayShutdown.cpp
     FatalDisplayShutdown.hpp
+    NotificationRuntimeAdapter.cpp
+    NotificationRuntimeAdapter.hpp
     ShellControlBusOwner.cpp
     ShellControlBusOwner.hpp
     ShellRuntime.cpp
@@ -40,6 +42,8 @@ target_link_libraries(prismdrake-shell-runtime
         Prismdrake::shell-runtime-state
         Prismdrake::shell-launcher-controller
         Prismdrake::shell-notification-presentation
+        Prismdrake::notification-center-client
+        Prismdrake::notification-center-presentation
         Prismdrake::shell-control
         Prismdrake::shell-panel-window
         Prismdrake::shell-settings-client
