@@ -337,6 +337,7 @@ struct ThemeCandidate final {
     double distance;
     double scaleDistance;
     std::size_t themeOrder;
+    std::size_t rootOrder;
     std::size_t directoryOrder;
     std::size_t extensionOrder;
     QString path;
@@ -392,7 +393,9 @@ struct ThemeCandidate final {
         if (!safeThemeName(themeName) || !visited.insert(themeName.toStdString()).second) {
             continue;
         }
-        for (const QString &root : theme.searchPaths) {
+        for (std::size_t rootOrder = 0U;
+             rootOrder < static_cast<std::size_t>(theme.searchPaths.size()); ++rootOrder) {
+            const QString &root = theme.searchPaths[static_cast<qsizetype>(rootOrder)];
             if (!QDir::isAbsolutePath(root) || root.startsWith(':')) {
                 continue;
             }
@@ -407,7 +410,7 @@ struct ThemeCandidate final {
                      {QStringLiteral(".png"), QStringLiteral(".svg"), QStringLiteral(".xpm")}) {
                     candidates.push_back(
                         {exact, distance, std::abs(static_cast<double>(directory.scale) - dpr),
-                         themeOrder, directoryOrder, extensionOrder++,
+                         themeOrder, rootOrder, directoryOrder, extensionOrder++,
                          themeRoot + '/' + directory.name + '/' + iconName + extension});
                 }
             }
@@ -422,10 +425,12 @@ struct ThemeCandidate final {
         ++themeOrder;
     }
     std::ranges::sort(candidates, [](const ThemeCandidate &left, const ThemeCandidate &right) {
-        return std::tuple{!left.exact,     left.distance,       left.scaleDistance,
-                          left.themeOrder, left.directoryOrder, left.extensionOrder} <
-               std::tuple{!right.exact,     right.distance,       right.scaleDistance,
-                          right.themeOrder, right.directoryOrder, right.extensionOrder};
+        return std::tuple{left.themeOrder,    left.rootOrder,     !left.exact,
+                          left.distance,      left.scaleDistance, left.directoryOrder,
+                          left.extensionOrder} <
+               std::tuple{right.themeOrder,    right.rootOrder,     !right.exact,
+                          right.distance,      right.scaleDistance, right.directoryOrder,
+                          right.extensionOrder};
     });
     for (const auto &candidate : candidates) {
         QImage image = decodeAbsolutePath(candidate.path, pixelSize);

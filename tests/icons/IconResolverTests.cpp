@@ -46,7 +46,7 @@ class TemporaryIcons final {
         return QString::fromStdString((root_ / relative.toStdString()).string());
     }
 
-    [[nodiscard]] QString writeImage(const QString &relative, const QImage &image) const {
+    QString writeImage(const QString &relative, const QImage &image) const {
         const QString destination = path(relative);
         QDir{}.mkpath(QFileInfo{destination}.absolutePath());
         if (!image.save(destination)) {
@@ -55,7 +55,7 @@ class TemporaryIcons final {
         return destination;
     }
 
-    [[nodiscard]] QString writeText(const QString &relative, const QByteArray &contents) const {
+    QString writeText(const QString &relative, const QByteArray &contents) const {
         const QString destination = path(relative);
         QDir{}.mkpath(QFileInfo{destination}.absolutePath());
         QFile file(destination);
@@ -210,6 +210,83 @@ Type=Scalable
     EXPECT_EQ(size32.resolution.image.pixelColor(16, 16), QColor{Qt::green});
     EXPECT_EQ(scalable.resolution.image.pixelColor(24, 24), QColor{Qt::blue});
     EXPECT_EQ(highDpi.resolution.image.pixelColor(32, 32), QColor{Qt::yellow});
+}
+
+TEST(IconResolverTest, CurrentThemeClosestPrecedesInheritedExact) {
+    TemporaryIcons icons;
+    ThemeStateGuard themeState;
+    constexpr auto currentIndex = R"([Icon Theme]
+Name=Current
+Directories=16x16/apps
+Inherits=Parent
+
+[16x16/apps]
+Size=16
+Type=Fixed
+)";
+    constexpr auto parentIndex = R"([Icon Theme]
+Name=Parent
+Directories=32x32/apps
+
+[32x32/apps]
+Size=32
+Type=Fixed
+)";
+    icons.writeText("Current/index.theme", currentIndex);
+    icons.writeText("Parent/index.theme", parentIndex);
+    QImage current{16, 16, QImage::Format_ARGB32};
+    current.fill(Qt::green);
+    QImage inherited{32, 32, QImage::Format_ARGB32};
+    inherited.fill(Qt::red);
+    icons.writeImage("Current/16x16/apps/prismdrake-inheritance-fixture.png", current);
+    icons.writeImage("Parent/32x32/apps/prismdrake-inheritance-fixture.png", inherited);
+    QIcon::setThemeSearchPaths({icons.path("")});
+    QIcon::setThemeName("Current");
+    IconResolver resolver;
+
+    const auto result =
+        resolveAndWait(resolver, request("prismdrake-inheritance-fixture", 32, 1.0));
+
+    EXPECT_EQ(result.resolution.source, IconResolutionSource::theme);
+    EXPECT_EQ(result.resolution.image.pixelColor(16, 16), QColor{Qt::green});
+}
+
+TEST(IconResolverTest, EarlierSearchRootPrecedesLaterExactAsset) {
+    TemporaryIcons firstRoot;
+    TemporaryIcons secondRoot;
+    ThemeStateGuard themeState;
+    constexpr auto smallIndex = R"([Icon Theme]
+Name=RootOrder
+Directories=16x16/apps
+
+[16x16/apps]
+Size=16
+Type=Fixed
+)";
+    constexpr auto exactIndex = R"([Icon Theme]
+Name=RootOrder
+Directories=32x32/apps
+
+[32x32/apps]
+Size=32
+Type=Fixed
+)";
+    firstRoot.writeText("RootOrder/index.theme", smallIndex);
+    secondRoot.writeText("RootOrder/index.theme", exactIndex);
+    QImage first{16, 16, QImage::Format_ARGB32};
+    first.fill(Qt::red);
+    QImage second{32, 32, QImage::Format_ARGB32};
+    second.fill(Qt::blue);
+    firstRoot.writeImage("RootOrder/16x16/apps/prismdrake-root-order-fixture.png", first);
+    secondRoot.writeImage("RootOrder/32x32/apps/prismdrake-root-order-fixture.png", second);
+    QIcon::setThemeSearchPaths({firstRoot.path(""), secondRoot.path("")});
+    QIcon::setThemeName("RootOrder");
+    IconResolver resolver;
+
+    const auto result = resolveAndWait(resolver, request("prismdrake-root-order-fixture", 32, 1.0));
+
+    EXPECT_EQ(result.resolution.source, IconResolutionSource::theme);
+    EXPECT_EQ(result.resolution.image.pixelColor(16, 16), QColor{Qt::red});
 }
 
 TEST(IconResolverTest, RejectsLeafSymlinkAndFifoWithoutBlockingWorker) {
