@@ -365,6 +365,14 @@ class PersistentNotificationProbeTests(unittest.TestCase):
         self.probe.wait_for_action(first, 0.1)
         self.probe.wait_for_close(second, 0.1)
 
+    def test_accepts_later_signal_generation_for_still_live_token(self) -> None:
+        first, _result = self.probe.create_normal()
+        self.probe.create_critical()
+        self.transport.queued_signal_specs = [("closed", 1, 2)]
+        self.probe.create_critical()
+
+        self.probe.wait_for_close(first, 0.1)
+
     def test_rejects_foreign_stale_capacity_and_duplicate_identities(self) -> None:
         foreign_transport = FakeTransport()
         foreign = PersistentNotificationProbe(foreign_transport)

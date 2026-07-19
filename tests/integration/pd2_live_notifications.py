@@ -584,7 +584,7 @@ class PersistentNotificationProbe:
                 if (
                     signal.kind == kind
                     and signal.notification_id == notification_id
-                    and signal.generation == signal_generation
+                    and signal.generation >= signal_generation
                 ):
                     del self._pending_signals[index]
                     return signal
@@ -619,13 +619,13 @@ class PersistentNotificationProbe:
 
     def _prune_pending_signals(self) -> None:
         current_identities = {
-            (token._live_id, token._signal_generation)
-            for token in self._tokens.values()
+            token._live_id: token._signal_generation for token in self._tokens.values()
         }
         self._pending_signals = deque(
             signal
             for signal in self._pending_signals
-            if (signal.notification_id, signal.generation) in current_identities
+            if signal.notification_id in current_identities
+            and signal.generation >= current_identities[signal.notification_id]
         )
 
     def _current_token(self, token: NotificationToken) -> NotificationToken:
