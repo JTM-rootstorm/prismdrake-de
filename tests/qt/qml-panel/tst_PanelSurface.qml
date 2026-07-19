@@ -146,6 +146,34 @@ TestCase {
         compare(quickSettingsRequest.signalArguments[0][0], "DP-1")
     }
 
+    function test_singleWindowGroupedTaskExposesAccessibleCloseAction() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const editor = panel.taskAt(0)
+        const terminal = panel.taskAt(1)
+        compare(editor.presentation.windowCount, 2)
+        compare(terminal.presentation.windowCount, 1)
+
+        verify(editor.openActionMenu())
+        const editorClose = findChild(editor, "panelGroupedTaskClose")
+        compare(editorClose.visible, false)
+        editor.closeActionMenu(false)
+
+        verify(terminal.openActionMenu())
+        const terminalClose = findChild(terminal, "panelGroupedTaskClose")
+        compare(terminalClose.visible, true)
+        compare(terminalClose.enabled, true)
+        compare(terminalClose.Accessible.role, Accessible.MenuItem)
+        compare(terminalClose.Accessible.name, "Close Terminal")
+        terminalClose.Accessible.pressAction()
+
+        tryCompare(panelFixture, "closeCount", 1)
+        compare(panelFixture.lastCloseTitle, "Terminal")
+        compare(panelFixture.lastCloseGeneration, panelFixture.taskGeneration)
+    }
+
     function test_groupPopupKeyboardActionsAndAccessibilityAreDeterministic() {
         groupedTasks = true
         verify(panelFixture.publishRepresentativeGroups())

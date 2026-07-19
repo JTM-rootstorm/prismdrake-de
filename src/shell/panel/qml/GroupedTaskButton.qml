@@ -289,6 +289,24 @@ Control {
                         root.closeActionMenu(true)
                 }
             }
+
+            Button {
+                id: closeAction
+                objectName: "panelGroupedTaskClose"
+                text: qsTr("Close")
+                visible: root.presentation !== null && root.presentation.windowCount === 1
+                enabled: visible
+                implicitWidth: root.tokens.minimumTargetSize
+                implicitHeight: root.tokens.minimumTargetSize
+                Accessible.role: Accessible.MenuItem
+                Accessible.name: qsTr("Close %1").arg(root.title)
+                Accessible.description: qsTr("Request that the only application window close")
+                Accessible.onPressAction: closeAction.clicked()
+                onClicked: {
+                    if (root.presentation.requestOnlyWindowClose())
+                        root.closeActionMenu(true)
+                }
+            }
         }
     }
 

@@ -173,6 +173,13 @@ bool GroupedTaskPresentation::requestOpenNew() { return owner_->requestOpenNew(*
 
 bool GroupedTaskPresentation::requestPinToggle() { return owner_->requestPinToggle(*this); }
 
+bool GroupedTaskPresentation::requestOnlyWindowClose() {
+    if (members_.size() != 1U) {
+        return false;
+    }
+    return owner_->requestClose(*members_.front());
+}
+
 GroupedTaskPresentationModel::GroupedTaskPresentationModel(QObject *parent)
     : QAbstractListModel(parent) {
     groups_.reserve(x11::maximumTaskWindows + maximumPinCount);
