@@ -54,7 +54,7 @@ environment cannot guarantee them; they do not replace display-free checks.
 
 ## Component manifests
 
-PD1 component boundaries use strict machine-readable manifests under
+Component boundaries use strict machine-readable manifests under
 [`manifests/dependencies/`](../../manifests/dependencies/), validated against
 the [dependency-manifest schema](../../schemas/prismdrake-dependency-manifest.schema.json).
 The [dependency-manifest guide](../build/dependencies.md) defines version
@@ -65,9 +65,12 @@ The implemented foundation manifest records current repository and build/test
 tools. Settings records its implemented service slice, session is Experimental
 for its init-neutral exact-PID supervisor, and shell is Experimental for its Qt
 composition root, presentation modules, and standards-only panel window host.
-The exact Gentoo package lifecycle measures all three installed executable
-boundaries and binds them to Portage ownership, runtime linkage, installed
-AT-SPI and complete-demonstration evidence, unmerge, and ordinary reinstall.
+The exact PD1 Gentoo package lifecycle measures those original three installed
+executable boundaries and binds them to Portage ownership, runtime linkage,
+installed AT-SPI and complete-demonstration evidence, unmerge, and ordinary
+reinstall. PD2 adds Experimental notifyd and shellctl manifests. Their installed
+runtime closures remain explicitly unmeasured until the five-executable PD2
+Portage lifecycle is complete.
 Observed Gentoo VM versions remain reference evidence rather than supported
 minima or a production-support claim. Declared constraints remain distinct from
 tested lower bounds.

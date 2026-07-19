@@ -89,14 +89,15 @@ carry a verified or observed version.
   owner loss and recovery. Supported minimum versions and the complete
   installed closure were separate concerns; the exact PD1 package lifecycle now
   measures the installed session boundary. Supported provider and broker minima
-  remain open. A standard X11 session entry and all three
-  Experimental process targets now share one CMake install contract.
-  `prismdrake-shell` is Experimental. Its immutable settings/theme projection
+  remain open. A standard X11 session entry and the original three PD1
+  Experimental process targets share one CMake install contract.
+- `prismdrake-shell` is Experimental. Its immutable settings/theme projection
   directly uses Qt Core and GUI; its asynchronous launcher controller, passive
   launcher and notification adapters, and actionable task adapter use Qt Core;
   and its
   compiled panel, launcher, and notification modules use QML, Quick, and Quick
-  Controls.
+  Controls. Its icon resolver directly uses system Qt SVG for bounded raster
+  and SVG icon loading; the product dependency retains the Qt 6.11 floor.
   The panel window host and event-driven task controller use Qt GUI/Core and the
   internal standards-only X11 adapter; Quick Test is test-only. The live
   snapshot client directly uses the selected sd-bus provider and session D-Bus,
@@ -110,6 +111,16 @@ carry a verified or observed version.
   ordinary reinstall are measured on Gentoo. Exact host and VM coverage is
   recorded in the [panel-shell evidence](../research/pd1-panel-shell-evidence.md)
   and [package lifecycle evidence](../research/pd1-portage-lifecycle-evidence.md).
+- `prismdrake-notifyd` is an Experimental toolkit-neutral core service. Its
+  bounded history and settings payload handling includes the system nlohmann
+  JSON header, and its freedesktop Notifications and Experimental
+  NotificationCenter1 services directly use the selected sd-bus provider and
+  user session D-Bus. It does not require libnotify. Its final installed PD2
+  runtime closure remains unmeasured.
+- `prismdrake-shellctl` is an Experimental non-resident toolkit-neutral client.
+  Its closed Shell1 and Session1 command grammar directly uses the selected
+  sd-bus provider and user session D-Bus without a GUI toolkit. Its final
+  installed PD2 runtime closure remains unmeasured.
 - The settings service uses a mutex-protected immutable snapshot pointer and a
   single bounded worker; it introduced no atomic-storage dependency. Its
   installed Gentoo boundary is measured, while supported lower provider and

@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "component": "prismdrake-notifyd",
+  "component_kind": "core_service",
+  "implementation_status": "experimental",
+  "mandatory_core_startup": false,
+  "runtime_dependency_state": "planned_unmeasured",
+  "dependencies": [
+    {
+      "name": "nlohmann-json",
+      "gentoo_atom": "dev-cpp/nlohmann_json",
+      "scope": "build",
+      "relationship": "direct",
+      "feature": "notification_state_validation",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": "3.11",
+        "verified_minimum": null,
+        "observed": "3.12.0-r1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The notification history and settings-boundary implementations include the system nlohmann JSON header for bounded parsing and serialization; it is compiled into the executable rather than installed as a runtime library."
+    },
+    {
+      "name": "basu",
+      "gentoo_atom": "sys-libs/basu",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "notification_dbus_service",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "0.2.1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "Another supported host may use the selected API-compatible libsystemd sd-bus provider; one build links exactly one provider.",
+      "reason": "The Experimental freedesktop Notifications and NotificationCenter1 service directly uses Prismdrake's selected system sd-bus provider. Gentoo selects basu."
+    },
+    {
+      "name": "dbus",
+      "gentoo_atom": "sys-apps/dbus",
+      "scope": "mandatory_runtime",
+      "relationship": "tool",
+      "feature": "notification_session_bus",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.16.2",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The Experimental service owns standard and Prismdrake names on the user session bus; project code links the selected sd-bus provider rather than libdbus."
+    }
+  ],
+  "unresolved": [
+    {
+      "area": "installed_runtime_closure",
+      "reason": "The final PD2 Portage lifecycle must measure the installed notifyd linkage and package ownership before this manifest can claim measured runtime dependency evidence."
+    },
+    {
+      "area": "minimum_versions",
+      "reason": "Supported minimum sd-bus provider and D-Bus broker versions remain unmeasured."
+    }
+  ]
+}

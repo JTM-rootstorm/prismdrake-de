@@ -178,10 +178,21 @@ DBUS_CONTRACTS = {
 LICENSE_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
 DEPENDENCY_MANIFEST_COMPONENTS = {
     "prismdrake-foundation": "internal_library",
+    "prismdrake-notifyd": "core_service",
     "prismdrake-session": "core_service",
     "prismdrake-settingsd": "core_service",
     "prismdrake-shell": "visible_shell",
+    "prismdrake-shellctl": "optional_adapter",
     "prismdrake-x11": "internal_library",
+}
+DEPENDENCY_MANIFEST_CORE_STARTUP = {
+    "prismdrake-foundation": False,
+    "prismdrake-notifyd": False,
+    "prismdrake-session": True,
+    "prismdrake-settingsd": True,
+    "prismdrake-shell": True,
+    "prismdrake-shellctl": False,
+    "prismdrake-x11": True,
 }
 FORBIDDEN_CORE_RUNTIME_DEPENDENCIES = {
     "gnome-shell",
@@ -258,9 +269,11 @@ REQUIRED_FILES = (
     "schemas/prismdrake-capabilities.schema.json",
     "schemas/prismdrake-dependency-manifest.schema.json",
     "manifests/dependencies/prismdrake-foundation.json",
+    "manifests/dependencies/prismdrake-notifyd.json",
     "manifests/dependencies/prismdrake-session.json",
     "manifests/dependencies/prismdrake-settingsd.json",
     "manifests/dependencies/prismdrake-shell.json",
+    "manifests/dependencies/prismdrake-shellctl.json",
     "manifests/dependencies/prismdrake-x11.json",
     "docs/build/dependencies.md",
     "docs/research/pd1-x11-connection-evidence.md",
@@ -525,11 +538,15 @@ def dependency_manifest_policy_errors(document: dict[str, Any], location: str) -
     if not isinstance(dependencies, list):
         return errors
 
-    if document.get("component_kind") in {"core_service", "visible_shell"}:
-        if document.get("mandatory_core_startup") is not True:
-            errors.append(
-                f"{location}.mandatory_core_startup: core services and the visible shell must enforce the core runtime boundary"
-            )
+    component = document.get("component")
+    expected_core_startup = DEPENDENCY_MANIFEST_CORE_STARTUP.get(component)
+    if (
+        expected_core_startup is not None
+        and document.get("mandatory_core_startup") is not expected_core_startup
+    ):
+        errors.append(
+            f"{location}.mandatory_core_startup: value must match the reviewed component startup boundary"
+        )
 
     seen_names: set[str] = set()
     for index, dependency in enumerate(dependencies):
@@ -859,7 +876,7 @@ def validate_contracts(validation: Validation) -> dict[str, Any]:
         validation.require(
             {path.stem for path in manifest_paths} == set(DEPENDENCY_MANIFEST_COMPONENTS),
             "manifests/dependencies",
-            "dependency manifests must match the required PD1 component set",
+            "dependency manifests must match the required implemented component set",
         )
         for path in manifest_paths:
             document = load_json(path, validation)
@@ -882,7 +899,7 @@ def validate_contracts(validation: Validation) -> dict[str, Any]:
             validation.require(
                 document.get("component_kind") == DEPENDENCY_MANIFEST_COMPONENTS.get(path.stem),
                 f"{location}.component_kind",
-                "component kind must match the reviewed PD1 boundary",
+                "component kind must match the reviewed component boundary",
             )
             validation.errors.extend(dependency_manifest_policy_errors(document, location))
 

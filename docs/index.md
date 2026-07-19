@@ -73,6 +73,11 @@ release or stable public interfaces.
 - [Experimental runtime snapshot schema](../schemas/prismdrake-runtime-snapshot.schema.json)
 - [Dependency-manifest schema](../schemas/prismdrake-dependency-manifest.schema.json)
 - [Foundation dependency manifest](../manifests/dependencies/prismdrake-foundation.json)
+- [Settings service dependency manifest](../manifests/dependencies/prismdrake-settingsd.json)
+- [Session dependency manifest](../manifests/dependencies/prismdrake-session.json)
+- [Shell dependency manifest](../manifests/dependencies/prismdrake-shell.json)
+- [Notification service dependency manifest](../manifests/dependencies/prismdrake-notifyd.json)
+- [Shell control dependency manifest](../manifests/dependencies/prismdrake-shellctl.json)
 - [X11 dependency manifest](../manifests/dependencies/prismdrake-x11.json)
 - [Theme token documents](../themes/base.tokens.json)
 

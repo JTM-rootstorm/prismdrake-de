@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "component": "prismdrake-shellctl",
+  "component_kind": "optional_adapter",
+  "implementation_status": "experimental",
+  "mandatory_core_startup": false,
+  "runtime_dependency_state": "planned_unmeasured",
+  "dependencies": [
+    {
+      "name": "basu",
+      "gentoo_atom": "sys-libs/basu",
+      "scope": "mandatory_runtime",
+      "relationship": "direct",
+      "feature": "typed_control_client",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "0.2.1",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": "Another supported host may use the selected API-compatible libsystemd sd-bus provider; one build links exactly one provider.",
+      "reason": "The toolkit-neutral command client directly uses Prismdrake's selected system sd-bus provider for its closed Shell1 and Session1 command grammar. Gentoo selects basu."
+    },
+    {
+      "name": "dbus",
+      "gentoo_atom": "sys-apps/dbus",
+      "scope": "mandatory_runtime",
+      "relationship": "tool",
+      "feature": "typed_control_session_bus",
+      "requirement_status": "implemented",
+      "version": {
+        "declared_minimum": null,
+        "verified_minimum": null,
+        "observed": "1.16.2",
+        "evidence": "observed_reference"
+      },
+      "packaging_status": "observed_gentoo",
+      "license_review": "reviewed",
+      "fallback": null,
+      "reason": "The non-resident client sends one bounded typed request over the user session bus; project code links the selected sd-bus provider rather than libdbus."
+    }
+  ],
+  "unresolved": [
+    {
+      "area": "installed_runtime_closure",
+      "reason": "The final PD2 Portage lifecycle must measure the installed shellctl linkage and package ownership before this manifest can claim measured runtime dependency evidence."
+    },
+    {
+      "area": "minimum_versions",
+      "reason": "Supported minimum sd-bus provider and D-Bus broker versions remain unmeasured."
+    }
+  ]
+}

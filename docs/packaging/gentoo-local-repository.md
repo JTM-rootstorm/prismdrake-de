@@ -1,16 +1,18 @@
 # Gentoo local repository
 
 Prismdrake tracks an EAPI 8 local Portage repository named
-`prismdrake-local` under `packaging/gentoo/repository`. It supports PD1
-dependency evidence and VM reproducibility; it is not an official Gentoo
-overlay and has no synchronization or signing claim.
+`prismdrake-local` under `packaging/gentoo/repository`. It supports historical
+PD1 dependency evidence, the active PD2 package lifecycle, and VM
+reproducibility; it is not an official Gentoo overlay and has no
+synchronization or signing claim.
 
 The repository contains `dev-util/prismdrake-dev-env`, a development
 metapackage, and the live Experimental `x11-misc/prismdrake-9999` product
 ebuild. The product ebuild consumes the project CMake install contract and keeps
 development-only tools out of runtime metadata (`PD-DEP-002`, `PD-PKG-006`,
-`PD-PKG-008`, and `PD-PKG-009`). It installs a bounded PD1 X11 development
-session, not a stable or production desktop package.
+`PD-PKG-008`, and `PD-PKG-009`). It installs the bounded Experimental PD2
+session, settings service, notification service, shell, and control client, not
+a stable or production desktop package.
 
 ## Repository contract
 
@@ -247,8 +249,10 @@ or execute an actual automated depclean to force resolution.
 
 `x11-misc/prismdrake-9999` uses `git-r3` with the canonical repository URI and
 enables the upstream install-path contract. Its runtime dependency set contains
-only the libraries and broker required by the three installed Experimental
-processes. GoogleTest, Python, Xvfb, Openbox, X11 inspection/input tools,
+only the libraries and broker required by the five installed Experimental
+executables. Qt SVG is a direct shell dependency at the project-wide Qt 6.11
+floor; unused Qt image-format plugins and libnotify are not declared.
+GoogleTest, Python, Xvfb, Openbox, X11 inspection/input tools,
 AT-SPI/PyGObject inspection support, fontconfig, and the fixed test font remain
 conditional `USE=test` build dependencies. This complete gate prevents a clean
 reference-VM package test from silently registering the live startup or AT-SPI
@@ -291,5 +295,6 @@ run the settings and X11 session behavior from installed paths, unmerge it, and
 confirm that user configuration and state remain byte-identical. Reinstall once
 without `USE=test` to exercise the ordinary package path. Use a disposable VM
 checkpoint and preserve the documented Stage 0 baseline. Current exact results
-belong in the PD1 Gentoo package evidence report rather than this normative
-workflow document.
+from the original three-executable lifecycle belong in the PD1 Gentoo package
+evidence report; the expanded five-executable results belong in the PD2 exit
+evidence rather than this normative workflow document.
