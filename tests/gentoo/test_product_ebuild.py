@@ -282,8 +282,11 @@ class PackagingGuideContractTests(unittest.TestCase):
             '"$PRISMDRAKE_PORTAGE_WORKDIR/prismdrake-9999_test_build"',
             '--source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT"',
             '--controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE"',
+            '--controlled-window-fixture "$PRISMDRAKE_DURABLE_FIXTURE"',
             'emerge --ask --unmerge =x11-misc/prismdrake-9999',
             'USE="-test" FEATURES="-test -keepwork"',
+            'PRISMDRAKE_DURABLE_FIXTURE=',
+            'install -m 0700 "$PRISMDRAKE_CONTROLLED_FIXTURE"',
             'pinned-applications-v1.json',
             'notifications/history-v1.json',
         ):
@@ -313,6 +316,50 @@ class PackagingGuideContractTests(unittest.TestCase):
             self.source,
         )
         self.assertIn('USE="test" FEATURES="test keepwork"', self.source)
+
+    def test_reinstall_demo_uses_durable_fixture_and_exact_input_checkout(self) -> None:
+        durable_copy = self.source.index(
+            'install -m 0700 "$PRISMDRAKE_CONTROLLED_FIXTURE"'
+        )
+        unmerge = self.source.index(
+            "emerge --ask --unmerge =x11-misc/prismdrake-9999"
+        )
+        reinstall = self.source.index('USE="-test" FEATURES="-test -keepwork"')
+        input_checkout = self.source.index(
+            'cd "$PRISMDRAKE_INPUT_CHECKOUT"', reinstall
+        )
+        revision_check = self.source.index(
+            '/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" rev-parse --verify HEAD',
+            input_checkout,
+        )
+        status_check = self.source.index(
+            '/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT"', revision_check + 1
+        )
+        second_demo = self.source.index(
+            '"$PRISMDRAKE_EVIDENCE_ROOT/pd2-reinstalled-demonstration.json"',
+            status_check,
+        )
+
+        self.assertLess(durable_copy, unmerge)
+        self.assertLess(unmerge, reinstall)
+        self.assertLess(reinstall, input_checkout)
+        self.assertLess(input_checkout, revision_check)
+        self.assertLess(revision_check, status_check)
+        self.assertLess(status_check, second_demo)
+        self.assertEqual(
+            self.source.count(
+                '--controlled-window-fixture "$PRISMDRAKE_DURABLE_FIXTURE"'
+            ),
+            3,
+        )
+        self.assertEqual(
+            self.source.count("python3 tests/integration/pd2_demo.py"), 2
+        )
+        reinstall_boundary = self.source[input_checkout:second_demo]
+        self.assertIn(
+            "status --porcelain=v1 --untracked-files=all", reinstall_boundary
+        )
+        self.assertNotIn("$PRISMDRAKE_SOURCE_CHECKOUT", reinstall_boundary)
 
     def test_unpublished_source_bundle_is_private_at_creation(self) -> None:
         self.assertIn(

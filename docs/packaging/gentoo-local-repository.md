@@ -198,6 +198,8 @@ export PRISMDRAKE_TEST_BUILD=\
 "$PRISMDRAKE_PORTAGE_WORKDIR/prismdrake-9999_test_build"
 export PRISMDRAKE_CONTROLLED_FIXTURE=\
 "$PRISMDRAKE_TEST_BUILD/tests/integration/prismdrake-controlled-window-fixture"
+export PRISMDRAKE_DURABLE_FIXTURE=\
+"$PRISMDRAKE_EVIDENCE_ROOT/harness/prismdrake-controlled-window-fixture"
 
 test -d "$PRISMDRAKE_SOURCE_CHECKOUT/.git"
 test -f "$PRISMDRAKE_TEST_BUILD/CMakeCache.txt"
@@ -208,13 +210,21 @@ test -z "$(/usr/bin/git -C "$PRISMDRAKE_SOURCE_CHECKOUT" \
   status --porcelain=v1 --untracked-files=all)"
 test "$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' \
   "$PRISMDRAKE_TEST_BUILD/CMakeCache.txt")" = "$PRISMDRAKE_SOURCE_CHECKOUT"
+
+install -d -m 0700 "$PRISMDRAKE_EVIDENCE_ROOT/harness"
+install -m 0700 "$PRISMDRAKE_CONTROLLED_FIXTURE" \
+  "$PRISMDRAKE_DURABLE_FIXTURE"
+test -x "$PRISMDRAKE_DURABLE_FIXTURE"
 cd "$PRISMDRAKE_SOURCE_CHECKOUT"
 ```
 
 Complete every source- and retained-build-dependent stage before the ordinary
 reinstall, because a later Portage clean may remove the retained work tree. The
 `runuser` package-test command intentionally inherits this directory after the
-retained trees are assigned to the ordinary test user.
+retained trees are assigned to the ordinary test user. The private durable
+fixture copy is created before that handoff and before unmerge. Preflight and
+both installed demonstrations use this copy, while the package-test collector
+continues to require the original fixture inside its exact retained build.
 
 The installed demonstration uses a staged evidence flow so it never depends on
 a result that it is itself expected to produce. After the `USE=test` install,
@@ -229,7 +239,7 @@ install -m 0600 "$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle" \
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py preflight \
   --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
   --source-bundle "$PRISMDRAKE_EVIDENCE_ROOT/source-attestation.bundle" \
-  --controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE" \
+  --controlled-window-fixture "$PRISMDRAKE_DURABLE_FIXTURE" \
   --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json"
 ```
 
@@ -294,6 +304,11 @@ test -z "$(/usr/bin/git -C "$PRISMDRAKE_SOURCE_CHECKOUT" \
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py linkage \
   --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
   --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-linkage.json"
+
+python3 tests/integration/pd2_demo.py \
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --controlled-window-fixture "$PRISMDRAKE_DURABLE_FIXTURE" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-demonstration.json"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
   --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
@@ -426,9 +441,21 @@ USE="-test" FEATURES="-test -keepwork" \
   emerge --ask --verbose --oneshot --newuse \
   =x11-misc/prismdrake-9999::prismdrake-local
 
+cd "$PRISMDRAKE_INPUT_CHECKOUT"
+test "$(/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" rev-parse --verify HEAD)" \
+  = "$PRISMDRAKE_REVISION"
+test -z "$(/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" \
+  status --porcelain=v1 --untracked-files=all)"
+test -x "$PRISMDRAKE_DURABLE_FIXTURE"
+
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py reinstall \
   --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
   --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-ordinary-reinstall.json"
+
+python3 tests/integration/pd2_demo.py \
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --controlled-window-fixture "$PRISMDRAKE_DURABLE_FIXTURE" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-reinstalled-demonstration.json"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
   --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
@@ -436,6 +463,12 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
   --evidence "$PRISMDRAKE_EVIDENCE_ROOT/pd2-reinstalled-demonstration.json" \
   --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-reinstalled-demonstration-record.json"
 ```
+
+The second demonstration deliberately runs from the original clean exact input
+checkout, not a retained Portage work directory. Rechecking its revision and
+complete tracked/untracked status after reinstall binds every recomputed harness
+file to the same source while the durable fixture preserves the exact tested
+binary after Portage is free to remove its build tree.
 
 After every phase has actually completed, assemble only the strict collector
 stage artifacts into the tracked lifecycle schema:

@@ -49,6 +49,13 @@ ebuild bytes, complete harness manifest, controlled fixture, executable set,
 installed build-provenance file, ownership set, and packaged data that the
 demonstration uses.
 
+For the complete Portage lifecycle, copy the controlled fixture into the
+private evidence root before unmerge and use that durable copy for both runs.
+After the ordinary reinstall, run the second demonstration from the original
+clean exact input checkout after re-verifying its revision and status. Do not
+depend on the retained Portage work tree: the ordinary reinstall is permitted
+to remove it.
+
 The required installed observer boundary includes Xorg dummy, Openbox,
 `dbus-daemon`, `xrandr`, `xprop`, `xwininfo`, `xdotool`, `xwd`, AT-SPI with
 Python introspection, and Gentoo `/usr/bin/x11trace`. The driver fails closed
