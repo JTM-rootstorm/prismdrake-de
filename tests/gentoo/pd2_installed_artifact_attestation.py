@@ -327,7 +327,7 @@ def example_attestation_document() -> dict[str, Any]:
                 "repository": "prismdrake-local",
                 "ebuild_sha256": ebuild_hash,
                 "use_test": True,
-                "contents_sha256": "5" * 64,
+                "ownership_sha256": canonical_ownership_sha256(ownership_records),
             },
             "executables": executables,
             "ownership": {

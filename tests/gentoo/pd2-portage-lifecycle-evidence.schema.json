@@ -300,25 +300,25 @@
     "vdb_install": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["atom", "repository", "ebuild_sha256", "use_test", "contents_sha256"],
+      "required": ["atom", "repository", "ebuild_sha256", "use_test", "ownership_sha256"],
       "properties": {
         "atom": { "const": "x11-misc/prismdrake-9999" },
         "repository": { "const": "prismdrake-local" },
         "ebuild_sha256": { "$ref": "#/$defs/sha256" },
         "use_test": { "const": true },
-        "contents_sha256": { "$ref": "#/$defs/sha256" }
+        "ownership_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "vdb_reinstall": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["atom", "repository", "ebuild_sha256", "use_test", "contents_sha256"],
+      "required": ["atom", "repository", "ebuild_sha256", "use_test", "ownership_sha256"],
       "properties": {
         "atom": { "const": "x11-misc/prismdrake-9999" },
         "repository": { "const": "prismdrake-local" },
         "ebuild_sha256": { "$ref": "#/$defs/sha256" },
         "use_test": { "const": false },
-        "contents_sha256": { "$ref": "#/$defs/sha256" }
+        "ownership_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "excluded_test_id": {

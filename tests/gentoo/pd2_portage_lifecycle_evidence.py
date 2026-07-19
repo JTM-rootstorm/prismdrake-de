@@ -237,6 +237,8 @@ def validate_evidence_document(document: Any) -> None:
     _require(ownership["regular_path_count"] == len(regular_records),
              "ownership_regular_path_count_mismatch")
     _require(ownership["path_set_sha256"] == ownership_hash, "ownership_hash_mismatch")
+    _require(initial["vdb"]["ownership_sha256"] == ownership_hash,
+             "initial_vdb_ownership_mismatch")
     _require(ownership["regular_path_set_sha256"] == regular_hash,
              "ownership_regular_hash_mismatch")
     _require(set(INSTALLED_EXECUTABLE_PATHS) <=
@@ -311,8 +313,8 @@ def validate_evidence_document(document: Any) -> None:
     _require(reinstall["vdb"]["ebuild_sha256"] == ebuild_hash and
              reinstall["vdb"]["use_test"] is False,
              "ordinary_reinstall_vdb_binding_mismatch")
-    _require(reinstall["vdb"]["contents_sha256"] == initial["vdb"]["contents_sha256"],
-             "ordinary_reinstall_vdb_contents_mismatch")
+    _require(reinstall["vdb"]["ownership_sha256"] == initial["vdb"]["ownership_sha256"],
+             "ordinary_reinstall_vdb_ownership_mismatch")
     _require(reinstall["executables"] == initial["executables"],
              "ordinary_reinstall_executable_mismatch")
     reinstall_ownership = reinstall["ownership"]

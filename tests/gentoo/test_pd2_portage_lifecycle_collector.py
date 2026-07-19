@@ -87,9 +87,8 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             bundle.touch()
             controlled_fixture = root / "fixture"
             vdb, contents = self.create_vdb(root, fixture, True)
-            fixture["installed"]["vdb"]["contents_sha256"] = hashlib.sha256(
-                contents
-            ).hexdigest()
+            fixture["installed"]["vdb"]["ownership_sha256"] = \
+                fixture["installed"]["ownership"]["path_set_sha256"]
             hashes = {item["path"]: item["sha256"]
                       for item in fixture["installed"]["executables"]}
             hashes.update({str(checkout / relative): "7" * 64
@@ -108,6 +107,10 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 if "status" in command or "verify" in command:
                     return ""
                 if command[0] == "/usr/bin/equery":
+                    self.assertEqual(command, [
+                        "/usr/bin/equery", "-C", "-q", "files",
+                        "=x11-misc/prismdrake-9999",
+                    ])
                     return self.equery_output(fixture)
                 return f"{revision} HEAD\n"
 
@@ -262,6 +265,8 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             symlink.symlink_to(regular)
             with self.assertRaisesRegex(Pd2CollectorError, "^capture_file_invalid$"):
                 sha256_regular_file(symlink)
+            with self.assertRaisesRegex(Pd2CollectorError, "^vdb_file_invalid$"):
+                collector._read_bounded_regular(symlink)
 
     def test_atomic_writer_publishes_mode_0600_and_rejects_symlink_target(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -580,8 +585,8 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             vdb, contents = self.create_vdb(Path(temporary), attestation, False)
-            contents_hash = hashlib.sha256(contents).hexdigest()
-            attestation["installed"]["vdb"]["contents_sha256"] = contents_hash
+            attestation["installed"]["vdb"]["ownership_sha256"] = \
+                attestation["installed"]["ownership"]["path_set_sha256"]
             hashes[str(vdb / "prismdrake-9999.ebuild")] = \
                 attestation["source"]["ebuild_sha256"]
             reinstall = capture_ordinary_reinstall(
@@ -597,6 +602,22 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
         self.assertEqual(reinstall["executables"],
                          attestation["installed"]["executables"])
         self.assertEqual(reinstall["ownership"], attestation["installed"]["ownership"])
+
+        with tempfile.TemporaryDirectory() as temporary:
+            vdb, _contents = self.create_vdb(Path(temporary), attestation, False)
+            contents_path = vdb / "CONTENTS"
+            contents_path.write_text(
+                contents_path.read_text(encoding="utf-8").replace(" 1\n", " 999999\n"),
+                encoding="utf-8",
+            )
+            vdb_record, _records = collector.capture_portage_install_metadata(
+                attestation["source"], False, vdb_directory=vdb,
+                hash_file=lambda path: attestation["source"]["ebuild_sha256"],
+                command_runner=lambda command, cwd: self.equery_output(attestation),
+                kind_matches=lambda record: True,
+            )
+        self.assertEqual(vdb_record["ownership_sha256"],
+                         attestation["installed"]["vdb"]["ownership_sha256"])
 
     def test_normalizes_demo_output_from_attested_executable_hashes(self) -> None:
         integration_path = str(Path(__file__).resolve().parents[1] / "integration")

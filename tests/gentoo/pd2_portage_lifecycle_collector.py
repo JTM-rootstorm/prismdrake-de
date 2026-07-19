@@ -498,14 +498,28 @@ def load_build_provenance(path: Path, revision: str) -> dict[str, Any]:
 
 def _read_bounded_regular(path: Path, maximum: int = MAX_CAPTURE_JSON_BYTES) -> bytes:
     _require(path.is_absolute() and not path.is_symlink(), "vdb_file_invalid")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        metadata = path.stat()
-        payload = path.read_bytes()
+        descriptor = os.open(path, flags)
     except OSError as error:
         raise Pd2CollectorError("vdb_file_unavailable") from error
-    _require(stat.S_ISREG(metadata.st_mode) and 0 < len(payload) <= maximum,
-             "vdb_file_invalid")
-    return payload
+    try:
+        metadata = os.fstat(descriptor)
+        _require(stat.S_ISREG(metadata.st_mode) and 0 < metadata.st_size <= maximum,
+                 "vdb_file_invalid")
+        chunks = bytearray()
+        while len(chunks) <= metadata.st_size:
+            block = os.read(descriptor, min(64 * 1024, metadata.st_size + 1 - len(chunks)))
+            if not block:
+                break
+            chunks.extend(block)
+        after = os.fstat(descriptor)
+        _require(len(chunks) == metadata.st_size and after.st_size == metadata.st_size and
+                 after.st_mtime_ns == metadata.st_mtime_ns,
+                 "vdb_file_changed")
+        return bytes(chunks)
+    finally:
+        os.close(descriptor)
 
 
 def _parse_vdb_contents(payload: bytes) -> list[dict[str, str]]:
@@ -586,7 +600,7 @@ def capture_portage_install_metadata(
     contents_payload = _read_bounded_regular(contents_file, MAX_CAPTURE_FILE_BYTES)
     ownership_records = _parse_vdb_contents(contents_payload)
     equery_paths = _parse_equery_paths(command_runner(
-        [str(EQUERY_PATH), "-q", "files", f"={PACKAGE_VERSIONED_ATOM}"], None,
+        [str(EQUERY_PATH), "-C", "-q", "files", f"={PACKAGE_VERSIONED_ATOM}"], None,
     ))
     _require(equery_paths == tuple(record["path"] for record in ownership_records),
              "equery_vdb_ownership_mismatch")
@@ -597,7 +611,7 @@ def capture_portage_install_metadata(
         "repository": repository,
         "ebuild_sha256": source["ebuild_sha256"],
         "use_test": use_test,
-        "contents_sha256": hashlib.sha256(contents_payload).hexdigest(),
+        "ownership_sha256": canonical_ownership_sha256(ownership_records),
     }, ownership_records)
 
 
@@ -941,8 +955,9 @@ def capture_ordinary_reinstall(
         attestation["source"], False, vdb_directory, hash_file, command_runner,
         kind_matches,
     )
-    _require(vdb["contents_sha256"] == attestation["installed"]["vdb"]["contents_sha256"],
-             "ordinary_reinstall_vdb_contents_mismatch")
+    _require(vdb["ownership_sha256"] ==
+             attestation["installed"]["vdb"]["ownership_sha256"],
+             "ordinary_reinstall_vdb_ownership_mismatch")
     regular_records = regular_ownership_records(ownership_records)
     ownership = {
         "tool": "equery",
