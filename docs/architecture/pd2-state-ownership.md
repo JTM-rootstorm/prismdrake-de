@@ -117,6 +117,13 @@ retains none. Transient records and image pixels are never persisted. A history
 write failure does not reject a live notification and produces only one
 redacted diagnostic. Clearing history is a complete atomic mutation.
 
+Durable restoration is gated by the first accepted settings observation in a
+notifyd owner epoch. Persistent mode restores one valid startup file only when
+the live record set is still empty, and performs that restoration before any
+empty persistence write. Missing or malformed input is not rewritten. Live
+records take precedence, restored action targets are disabled, and a later mode
+change cannot reuse stale startup state.
+
 These rules address `PD-NOTIFY-001` through `PD-NOTIFY-007`, `PD-SEC-007`,
 `PD-SEC-008`, `PD-REL-006`, and `PD-REL-008`.
 

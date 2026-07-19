@@ -79,7 +79,7 @@ about the future Prismdrake runtime package.
 
 The generic ebuild defaults keep `clang` and `implementation-deps` disabled.
 The implementation-authorized reference VM policy enables both for the
-accepted compiler matrix and PD1 parser, D-Bus, and test dependencies.
+accepted compiler matrix and current parser, D-Bus, and test dependencies.
 
 ## Project-specific USE policy
 
@@ -87,7 +87,7 @@ The reference policy belongs in `/etc/portage/package.use/prismdrake-dev`, not
 in global `make.conf`:
 
 ```text
-# Prismdrake PD1 reference-VM policy; keep changes package-local.
+# Prismdrake reference-VM policy; keep changes package-local.
 dev-util/prismdrake-dev-env portage-qa debug-tools x11 qt6 clang implementation-deps -visual-tests
 x11-base/xorg-server xephyr xvfb
 x11-wm/openbox session xdg
@@ -117,7 +117,7 @@ Do not globally enable `~amd64`, `X`, `qt6`, `systemd`, or `elogind`. Follow the
 guest profile for init integration. Add `xorg` to `x11-base/xorg-server` only
 when a real interactive Xorg seat is required in addition to Xvfb and Xephyr.
 Do not add Wayland, WebEngine, multimedia, printing, SQL backends, or unrelated
-Qt modules without a demonstrated PD1 use.
+Qt modules without a demonstrated current Prismdrake use.
 
 The project-owned metapackage is testing-only and therefore uses `~amd64`.
 The live product ebuild deliberately has no architecture keyword while it

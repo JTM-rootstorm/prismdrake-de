@@ -9,8 +9,10 @@ where it applies, but does not invent endpoint-specific numeric budgets.
 
 The PD1 runners, schemas, collectors, and reference observations remain
 unchanged. PD2 measurements are injected into a separate strict document after
-collection on the maintained Gentoo reference VM. The repository provides only
-a validate-only command and skip-only synthetic contract data for unit tests.
+collection on the maintained Gentoo reference VM. The repository provides
+source-bound live collectors and runtime observers, validate-only commands, and
+skip-only synthetic contract data for unit tests. The collectors become
+evidence only when run against the reviewed clean revision in that environment.
 
 ## Versioned artifact
 

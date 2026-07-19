@@ -155,8 +155,9 @@ milestone exit contract.
 
 Feature options, warnings, sanitizer flags, installation destinations, and
 version generation require focused CMake helpers rather than directory-global
-flags. Package and CI evidence must establish tested minimum tool versions; this
-ADR intentionally does not invent unmeasured compatibility claims.
+flags. Package and validation evidence must establish tested minimum tool
+versions; this ADR intentionally does not invent unmeasured compatibility
+claims.
 
 This ADR does not by itself select a visible-shell toolkit, make Qt a dependency
 of toolkit-neutral components, or stabilize a public C++ ABI. ADR 0003 governs
@@ -176,9 +177,9 @@ as supported-toolkit evidence. On 2026-07-19, the maintainer also retired a
 GitHub-specific validation requirement. Historical hosted results remain
 evidence for the revisions they actually exercised, but current changes and
 milestone exits use the canonical local and Gentoo reference procedures.
-The following remain the continuing PD1 exit contract for every applicable
-production target and for packaging rather than claims about the isolated
-spike:
+The following validation contract, established during PD1, remains required
+for every applicable production target and for packaging rather than claims
+about the isolated spike:
 
 - configuring and compiling a representative C++20 target with GCC and Clang;
 - running GoogleTest through CTest from the system package;

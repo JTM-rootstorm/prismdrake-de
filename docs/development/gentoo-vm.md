@@ -1,9 +1,11 @@
 # Gentoo reference VM
 
-The Gentoo VM is Prismdrake's PD1 reference environment for dependency
-resolution, toolkit evidence, X11 integration, and local Portage QA. It is a
-development and system-test environment, not a supported Prismdrake runtime or
-evidence that the PD1 prototype is production-ready.
+The Gentoo VM is Prismdrake's maintained reference environment for dependency
+resolution, toolkit evidence, X11 integration, installed PD2 validation, and
+local Portage QA. It is a development and system-test environment, not a
+supported Prismdrake runtime or evidence that the Experimental desktop is
+production-ready. Dated PD1 observations below remain historical baseline
+evidence rather than current milestone claims.
 
 This document implements the environment-facing parts of `PD-DOC-001`,
 `PD-DOC-008`, `PD-OBS-004`, and `PD-SEC-008`. The bootstrap helper changes only

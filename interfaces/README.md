@@ -120,7 +120,7 @@ Domain failures use these fixed names under
 | `InvalidProfile` | Profile is not exactly `lustre` or `forge` |
 | `ValidationFailed` | Reload or publication candidate is invalid |
 | `TooLarge` | A bounded input or output exceeds its fixed limit |
-| `UnsupportedSnapshotVersion` | Requested snapshot schema is not version 1 |
+| `UnsupportedSnapshotVersion` | Requested snapshot schema is not version 2 |
 | `NoSnapshot` | No complete authoritative snapshot is available |
 | `Busy` | The one bounded worker slot is occupied |
 | `TimedOut` | Work ended before publication at its server deadline |

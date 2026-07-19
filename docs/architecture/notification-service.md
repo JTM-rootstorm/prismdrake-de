@@ -142,6 +142,14 @@ supported. It never contains decoded image pixels. Transient notifications are
 not persisted. Clear is an atomic complete-state operation. Persistence failure
 does not reject a live notification and emits one redacted diagnostic.
 
+Notifyd does not read or rewrite durable history before it receives the first
+accepted settings observation for its owner epoch. If that observation selects
+`persistent` mode and no live records already exist, one valid history file is
+restored before any write can replace it. Missing or malformed input leaves the
+live history empty without rewriting the path. Existing live records always win
+over disk state, restored actions remain disabled because their senders are no
+longer live, and later mode changes cannot resurrect a stale startup file.
+
 Each persisted record is closed and contains `record_id`,
 `content_generation`, nullable `application_name`, nullable `desktop_file_id`,
 plain `summary` and `body`, `urgency`, `received_at_unix_ms`, `dismissible`, and
