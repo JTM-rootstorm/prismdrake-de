@@ -109,8 +109,12 @@ class ProductEbuildContractTests(unittest.TestCase):
         for document in (
             "README.md",
             "docs/architecture/component-model.md",
+            "docs/architecture/configuration.md",
+            "docs/architecture/notification-service.md",
+            "docs/architecture/pd2-state-ownership.md",
             "docs/architecture/process-model.md",
             "docs/architecture/shell-control.md",
+            "docs/architecture/surface-placement.md",
             "interfaces/README.md",
         ):
             with self.subTest(document=document):
