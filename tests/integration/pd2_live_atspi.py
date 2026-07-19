@@ -27,6 +27,7 @@ ROLE_ENUM_NAMES = {
     "menu_item": ("MENU_ITEM", "CHECK_MENU_ITEM", "RADIO_MENU_ITEM"),
     "notification": ("NOTIFICATION",),
     "panel": ("FILLER", "PANEL"),
+    "pane": ("FILLER", "PANEL"),
     "push_button": ("PUSH_BUTTON",),
     "toggle_button": ("TOGGLE_BUTTON",),
 }

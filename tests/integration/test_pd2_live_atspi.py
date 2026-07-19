@@ -241,6 +241,22 @@ class LiveAtspiHelperTests(unittest.TestCase):
             ),
         )
 
+    def test_maps_qt_pane_surfaces_to_reviewed_atspi_panel_roles(self) -> None:
+        control = FakeNode(
+            "Quick settings",
+            FakeRole.PANEL,
+            states=set(VISIBLE),
+        )
+        atspi, application = fixture([control])
+
+        result = observe_showing_control(
+            atspi,
+            exact_owner(application),
+            ControlSelector("Quick settings", "pane"),
+        )
+
+        self.assertEqual(result.category, "atspi_control_ready")
+
     def test_proves_control_absence_without_treating_tree_failure_as_absence(self) -> None:
         selector = ControlSelector("Transient notifications", "notification")
         hidden = FakeNode(
