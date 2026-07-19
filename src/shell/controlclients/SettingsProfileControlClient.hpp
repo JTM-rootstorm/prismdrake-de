@@ -18,6 +18,8 @@ namespace prismdrake::shell::controlclients {
 /// The callback always runs on a later Qt event-loop turn for an accepted request. It receives
 /// exactly the CommandRequestId supplied by the caller and either the authoritative generation
 /// returned by the same settings-service owner epoch or a closed failure without a generation.
+/// Construct, start, call, stop, and destroy the client on one Qt event-loop thread. The supplied
+/// callback must remain valid for the client lifetime; destruction suppresses queued callbacks.
 class SettingsProfileControlClient final : public QObject,
                                            public quicksettings::ProfileControlPort {
     Q_OBJECT

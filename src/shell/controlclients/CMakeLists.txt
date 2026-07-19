@@ -1,6 +1,8 @@
 add_library(prismdrake-shell-control-clients STATIC
     QtSessionBusDispatcher.cpp
     QtSessionBusDispatcher.hpp
+    SessionControlClient.cpp
+    SessionControlClient.hpp
     SettingsProfileControlClient.cpp
     SettingsProfileControlClient.hpp)
 add_library(Prismdrake::shell-control-clients ALIAS
