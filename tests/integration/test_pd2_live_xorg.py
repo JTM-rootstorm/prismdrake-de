@@ -217,6 +217,7 @@ class FakeOperations:
         self.safe_mode_published = True
         self.events: list[tuple[str, object]] = []
         self.unavailable_displays: set[int] = set()
+        self.sync_surfaces_from_queries = False
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
         self.events.append(("spawn", Path(argv[0]).name))
@@ -267,10 +268,14 @@ class FakeOperations:
             if self.xorg_stopped and not self.xorg_query_survives_stop:
                 return CommandResult(1, b"", b"cannot open display")
             if self.query_results:
-                return self.query_results.pop(0)
-            if self.query_payloads:
-                return CommandResult(0, self.query_payloads.pop(0))
-            return CommandResult(0, self.query_payload)
+                result = self.query_results.pop(0)
+            elif self.query_payloads:
+                result = CommandResult(0, self.query_payloads.pop(0))
+            else:
+                result = CommandResult(0, self.query_payload)
+            if result.returncode == 0 and self.sync_surfaces_from_queries:
+                self._sync_surfaces_to_query(result.stdout)
+            return result
         if command[0].endswith("xdotool"):
             if len(command) == 5 and command[1:4] == (
                 "search",
@@ -386,6 +391,39 @@ class FakeOperations:
             window = int(command[2], 16)
             return CommandResult(0, self.window_geometry_payloads[window])
         return CommandResult(0)
+
+    def _sync_surfaces_to_query(self, payload: bytes) -> None:
+        outputs = {
+            output.name: output
+            for output in parse_xrandr_outputs(payload)
+            if output.active
+        }
+        identifiers = {
+            "DUMMY0": (DESKTOP_LEFT, PANEL_LEFT),
+            "DUMMY1": (DESKTOP_RIGHT, PANEL_RIGHT),
+        }
+        surfaces: list[int] = []
+        for name, (desktop, panel) in identifiers.items():
+            output = outputs.get(name)
+            if output is None:
+                continue
+            desktop_geometry = WindowGeometry(
+                output.x, output.y, output.width, output.height
+            )
+            panel_geometry = WindowGeometry(
+                output.x,
+                output.y + output.height - live_xorg.PANEL_HEIGHT,
+                output.width,
+                live_xorg.PANEL_HEIGHT,
+            )
+            self.surface_geometries[desktop] = desktop_geometry
+            self.surface_geometries[panel] = panel_geometry
+            self.window_geometry_payloads[desktop] = xwininfo_payload(
+                desktop, desktop_geometry
+            )
+            self.window_geometry_payloads[panel] = xwininfo_payload(panel, panel_geometry)
+            surfaces.extend((desktop, panel))
+        self.surface_list = surfaces
 
     def stop(self, child: FakeChild, timeout: float) -> bool:
         del timeout
@@ -2597,19 +2635,28 @@ class LivePortTests(unittest.TestCase):
 
     def test_consecutive_failure_scenarios_start_fresh_topology_epochs(self) -> None:
         operations = FakeOperations(
-            query_payloads=(TWO_OUTPUTS, TWO_OUTPUTS, ONE_OUTPUT, ONE_OUTPUT, TWO_OUTPUTS)
+            query_payloads=(
+                TWO_OUTPUTS,
+                TWO_OUTPUTS,
+                TWO_OUTPUTS,
+                TWO_OUTPUTS,
+                ONE_OUTPUT,
+                ONE_OUTPUT,
+                TWO_OUTPUTS,
+            )
         )
-        port = LiveXorgHarnessPort(config(), operations)
+        operations.sync_surfaces_from_queries = True
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
 
         first = port.run_step("failure_replay", "two_same_scale_outputs_at_startup")
         second = port.run_step("failure_replay", "add_second_output_after_startup")
 
         self.assertEqual(first, Observation(True, True))
         self.assertEqual(second, Observation(True, True))
-        self.assertEqual(len(operations.spawn_calls), 4)
-        self.assertEqual(len(operations.stop_calls), 2)
-        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+        self.assertEqual(len(operations.spawn_calls), 8)
         self.assertEqual(len(operations.stop_calls), 4)
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+        self.assertEqual(len(operations.stop_calls), 8)
 
     def test_cleanup_fails_when_an_owned_exact_child_cannot_be_stopped(self) -> None:
         operations = FakeOperations()
@@ -2623,14 +2670,24 @@ class LivePortTests(unittest.TestCase):
 
     def test_output_and_process_failure_scenarios_use_live_observations(self) -> None:
         cases = (
-            ("remove_primary_output", (TWO_OUTPUTS, TWO_OUTPUTS, ONLY_SECONDARY)),
-            ("select_new_primary_output", (TWO_OUTPUTS, SECONDARY_PRIMARY)),
-            ("change_output_geometry", (TWO_OUTPUTS, SECONDARY_BELOW)),
+            (
+                "remove_primary_output",
+                (TWO_OUTPUTS, TWO_OUTPUTS, TWO_OUTPUTS, TWO_OUTPUTS, ONLY_SECONDARY),
+            ),
+            (
+                "select_new_primary_output",
+                (TWO_OUTPUTS, TWO_OUTPUTS, TWO_OUTPUTS, TWO_OUTPUTS, SECONDARY_PRIMARY),
+            ),
+            (
+                "change_output_geometry",
+                (TWO_OUTPUTS, TWO_OUTPUTS, TWO_OUTPUTS, TWO_OUTPUTS, SECONDARY_BELOW),
+            ),
         )
         for identifier, payloads in cases:
             with self.subTest(identifier=identifier):
                 operations = FakeOperations(query_payloads=payloads)
-                port = LiveXorgHarnessPort(config(), operations)
+                operations.sync_surfaces_from_queries = True
+                port = LiveXorgHarnessPort(config(installed_paths()), operations)
                 self.assertEqual(
                     port.run_step("failure_replay", identifier),
                     Observation(True, True),

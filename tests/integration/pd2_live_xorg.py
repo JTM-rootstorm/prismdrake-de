@@ -1886,24 +1886,104 @@ class LiveXorgHarnessPort:
         elif identifier == "two_same_scale_outputs_at_startup":
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
+            self._start_session()
+            self._wait_for_session_readiness()
+            self._require_desktop_wallpaper_surfaces()
+            self._require_panel_surfaces()
         elif identifier == "add_second_output_after_startup":
             self._start_environment(two_outputs=False)
             self._require_topology(two_outputs=False)
+            self._start_session()
+            self._wait_for_session_readiness()
+            self._require_failure_replay_surfaces(
+                {WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT)},
+                {WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT)},
+            )
             self._enable_secondary()
             self._require_topology(two_outputs=True)
+            self._require_failure_replay_surfaces(
+                {
+                    WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+                    WindowGeometry(OUTPUT_WIDTH, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+                },
+                {
+                    WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT),
+                    WindowGeometry(
+                        OUTPUT_WIDTH,
+                        OUTPUT_HEIGHT - PANEL_HEIGHT,
+                        OUTPUT_WIDTH,
+                        PANEL_HEIGHT,
+                    ),
+                },
+            )
         elif identifier == "remove_primary_output":
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
+            self._start_session()
+            self._wait_for_session_readiness()
+            self._require_desktop_wallpaper_surfaces()
+            self._require_panel_surfaces()
             self._xrandr("--output", PRIMARY_OUTPUT, "--off")
             self._require_only_secondary()
+            self._require_failure_replay_surfaces(
+                {WindowGeometry(OUTPUT_WIDTH, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT)},
+                {
+                    WindowGeometry(
+                        OUTPUT_WIDTH,
+                        OUTPUT_HEIGHT - PANEL_HEIGHT,
+                        OUTPUT_WIDTH,
+                        PANEL_HEIGHT,
+                    )
+                },
+            )
         elif identifier == "select_new_primary_output":
             self._start_environment(two_outputs=True)
+            self._require_topology(two_outputs=True)
+            self._start_session()
+            self._wait_for_session_readiness()
+            self._require_desktop_wallpaper_surfaces()
+            self._require_panel_surfaces()
             self._xrandr("--output", SECONDARY_OUTPUT, "--primary")
             self._require_topology(two_outputs=True, primary=SECONDARY_OUTPUT)
+            self._require_failure_replay_surfaces(
+                {
+                    WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+                    WindowGeometry(OUTPUT_WIDTH, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+                },
+                {
+                    WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT),
+                    WindowGeometry(
+                        OUTPUT_WIDTH,
+                        OUTPUT_HEIGHT - PANEL_HEIGHT,
+                        OUTPUT_WIDTH,
+                        PANEL_HEIGHT,
+                    ),
+                },
+            )
         elif identifier == "change_output_geometry":
             self._start_environment(two_outputs=True)
+            self._require_topology(two_outputs=True)
+            self._start_session()
+            self._wait_for_session_readiness()
+            self._require_desktop_wallpaper_surfaces()
+            self._require_panel_surfaces()
             self._xrandr("--output", SECONDARY_OUTPUT, "--pos", "0x900")
             self._require_topology(two_outputs=True, secondary_position=(0, 900))
+            self._require_failure_replay_surfaces(
+                {
+                    WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+                    WindowGeometry(0, OUTPUT_HEIGHT, OUTPUT_WIDTH, OUTPUT_HEIGHT),
+                },
+                {
+                    WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT),
+                    WindowGeometry(
+                        0,
+                        2 * OUTPUT_HEIGHT - PANEL_HEIGHT,
+                        OUTPUT_WIDTH,
+                        PANEL_HEIGHT,
+                    ),
+                },
+            )
         elif identifier == "restart_settingsd":
             self._prepare_restart_state()
             self._restart_component("prismdrake-settingsd")
@@ -4626,6 +4706,64 @@ class LiveXorgHarnessPort:
         # settings, output, and desktop generations align. Requiring that
         # marker together with two mapped shell-owned DesktopWallpaper views
         # observes the solid fallback on each output without capturing pixels.
+        self._desktop_surfaces = desktops
+        self._surface_shell_identity = shell
+
+    def _require_failure_replay_surfaces(
+        self,
+        expected_desktops: set[WindowGeometry],
+        expected_panels: set[WindowGeometry],
+    ) -> None:
+        """Require the shell to republish the exact post-mutation output surfaces."""
+
+        if (
+            not expected_desktops
+            or len(expected_desktops) != len(expected_panels)
+            or len(expected_desktops) > 2
+        ):
+            raise HarnessError("failure_surface_contract_invalid")
+        shell = self._require_surface_shell()
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        desktops: dict[int, WindowGeometry] = {}
+        panels: dict[int, WindowGeometry] = {}
+        while self._operations.monotonic() < deadline:
+            try:
+                desktops = self._observe_surface_windows(
+                    b"_NET_WM_WINDOW_TYPE_DESKTOP", shell
+                )
+                panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
+            except HarnessError:
+                desktops = {}
+                panels = {}
+            if (
+                len(desktops) == len(expected_desktops)
+                and set(desktops.values()) == expected_desktops
+                and len(panels) == len(expected_panels)
+                and set(panels.values()) == expected_panels
+            ):
+                break
+            self._operations.pause(0.05)
+        else:
+            raise HarnessError("failure_surface_republication_timeout")
+
+        for window, geometry in panels.items():
+            strut = self._window_cardinals(window, b"_NET_WM_STRUT", 4)
+            partial = self._window_cardinals(window, b"_NET_WM_STRUT_PARTIAL", 12)
+            if strut != (0, 0, 0, PANEL_HEIGHT) or partial != (
+                0,
+                0,
+                0,
+                PANEL_HEIGHT,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                geometry.x,
+                geometry.x + geometry.width - 1,
+            ):
+                raise HarnessError("failure_panel_strut_invalid")
         self._desktop_surfaces = desktops
         self._surface_shell_identity = shell
 
