@@ -23,6 +23,11 @@ from pd2_lifecycle_hashes import (
     normalize_ownership_records,
     regular_ownership_records,
 )
+from pd2_harness_manifest import (
+    HARNESS_RELATIVE_PATHS,
+    canonical_manifest_sha256,
+    capture_harness_manifest,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,6 +44,7 @@ INSTALLED_EXECUTABLE_PATHS = (
     "/usr/bin/prismdrake-shellctl",
 )
 REQUIRED_INSTALLED_RESOURCE_PATHS = (
+    "/usr/share/prismdrake/build-provenance.json",
     "/usr/share/dbus-1/interfaces/org.prismdrake.NotificationCenter1.xml",
     "/usr/share/dbus-1/interfaces/org.prismdrake.Session1.xml",
     "/usr/share/dbus-1/interfaces/org.prismdrake.Settings1.xml",
@@ -199,6 +205,9 @@ def validate_attestation_document(document: Any) -> None:
     revision = source["revision"]
     ebuild_hash = source["ebuild_sha256"]
     _require(source["repository_uri"] == SOURCE_URI, "source_repository_mismatch")
+    build_provenance = installed["build_provenance"]
+    _require(build_provenance["source_revision"] == revision,
+             "build_provenance_revision_mismatch")
     for record in (tested, installed):
         _require(record["source_revision"] == revision, "source_revision_mismatch")
         _require(record["ebuild_sha256"] == ebuild_hash, "ebuild_sha256_mismatch")
@@ -230,13 +239,22 @@ def validate_attestation_document(document: Any) -> None:
     _require(all(any(path in owned_regular_paths for path in alternatives)
                  for alternatives in REQUIRED_INSTALLED_FILE_GROUPS),
              "required_installed_file_missing")
+    _require(build_provenance["path"] in owned_regular_paths,
+             "build_provenance_not_owned")
+
+    harness = document["demo_harness"]
+    _require(tuple(item["path"] for item in harness["files"]) == HARNESS_RELATIVE_PATHS,
+             "installed_demo_harness_paths_mismatch")
+    _require(harness["manifest_sha256"] == canonical_manifest_sha256(
+        harness["files"], harness["controlled_fixture_sha256"]),
+        "installed_demo_harness_manifest_mismatch")
 
 
 def validate_attested_files(
     document: dict[str, Any], executable_paths: tuple[Path, Path, Path, Path, Path],
-    driver: Path, hash_file: Callable[[Path], str],
+    driver: Path, hash_file: Callable[[Path], str], controlled_fixture: Path,
 ) -> None:
-    """Bind a preflight to the exact installed executables and demo driver."""
+    """Bind a preflight to exact installed executables and every harness input."""
 
     validate_attestation_document(document)
     _require(tuple(str(path) for path in executable_paths) == INSTALLED_EXECUTABLE_PATHS,
@@ -245,8 +263,9 @@ def validate_attested_files(
                 for record in document["installed"]["executables"]}
     _require(all(hash_file(path) == expected[str(path)] for path in executable_paths),
              "installed_executable_hash_mismatch")
-    _require(hash_file(driver) == document["demo_driver"]["sha256"],
-             "installed_demo_driver_mismatch")
+    source_root = driver.resolve().parents[2]
+    _require(capture_harness_manifest(source_root, controlled_fixture, hash_file) ==
+             document["demo_harness"], "installed_demo_harness_mismatch")
 
 
 def example_attestation_document() -> dict[str, Any]:
@@ -278,6 +297,7 @@ def example_attestation_document() -> dict[str, Any]:
             "version": "9999",
             "ebuild_path": "x11-misc/prismdrake/prismdrake-9999.ebuild",
             "ebuild_sha256": ebuild_hash,
+            "bundle_sha256": "9" * 64,
         },
         "tested_artifact": {
             "source_revision": revision,
@@ -293,6 +313,11 @@ def example_attestation_document() -> dict[str, Any]:
             "artifact_sha256": artifact_hash,
             "provenance": "portage_installed",
             "data_prefix": "/usr/share/prismdrake",
+            "build_provenance": {
+                "path": "/usr/share/prismdrake/build-provenance.json",
+                "sha256": "6" * 64,
+                "source_revision": revision,
+            },
             "executables": executables,
             "ownership": {
                 "tool": "equery",
@@ -305,9 +330,14 @@ def example_attestation_document() -> dict[str, Any]:
                 "paths": ownership_records,
             },
         },
-        "demo_driver": {
-            "kind": "pd2_installed_demonstration_driver",
-            "sha256": "7" * 64,
+        "demo_harness": {
+            "kind": "pd2_installed_demonstration_harness",
+            "manifest_sha256": canonical_manifest_sha256(
+                [{"path": path, "sha256": "7" * 64}
+                 for path in HARNESS_RELATIVE_PATHS], "8" * 64),
+            "controlled_fixture_sha256": "8" * 64,
+            "files": [{"path": path, "sha256": "7" * 64}
+                      for path in HARNESS_RELATIVE_PATHS],
         },
     }
 

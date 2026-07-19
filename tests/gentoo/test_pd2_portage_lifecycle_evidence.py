@@ -150,7 +150,7 @@ class Pd2LifecycleEvidenceTests(unittest.TestCase):
             lambda value: value["installed_demonstrations"].reverse(),
             lambda value: value["installed_demonstrations"][0].update({"result": "failed"}),
             lambda value: value["installed_demonstrations"][1].update(
-                {"driver_sha256": "0" * 64}),
+                {"harness_manifest_sha256": "0" * 64}),
         )
         for index, mutation in enumerate(mutations):
             with self.subTest(index=index):

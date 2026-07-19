@@ -4,7 +4,7 @@
   "title": "Prismdrake PD2 installed-artifact preflight attestation",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "attestation_kind", "source", "tested_artifact", "installed", "demo_driver"],
+  "required": ["schema_version", "attestation_kind", "source", "tested_artifact", "installed", "demo_harness"],
   "properties": {
     "schema_version": { "const": 1 },
     "attestation_kind": { "const": "pd2_installed_artifact_preflight" },
@@ -13,13 +13,14 @@
     "installed": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source_revision", "ebuild_sha256", "artifact_sha256", "provenance", "data_prefix", "executables", "ownership"],
+      "required": ["source_revision", "ebuild_sha256", "artifact_sha256", "provenance", "data_prefix", "build_provenance", "executables", "ownership"],
       "properties": {
         "source_revision": { "$ref": "#/$defs/revision" },
         "ebuild_sha256": { "$ref": "#/$defs/sha256" },
         "artifact_sha256": { "$ref": "#/$defs/sha256" },
         "provenance": { "const": "portage_installed" },
         "data_prefix": { "const": "/usr/share/prismdrake" },
+        "build_provenance": { "$ref": "#/$defs/build_provenance" },
         "executables": {
           "type": "array",
           "minItems": 5,
@@ -29,23 +30,49 @@
         "ownership": { "$ref": "#/$defs/full_ownership" }
       }
     },
-    "demo_driver": {
+    "demo_harness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "sha256"],
+      "required": ["kind", "manifest_sha256", "controlled_fixture_sha256", "files"],
       "properties": {
-        "kind": { "const": "pd2_installed_demonstration_driver" },
-        "sha256": { "$ref": "#/$defs/sha256" }
+        "kind": { "const": "pd2_installed_demonstration_harness" },
+        "manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "controlled_fixture_sha256": { "$ref": "#/$defs/sha256" },
+        "files": {
+          "type": "array",
+          "minItems": 19,
+          "maxItems": 19,
+          "items": { "$ref": "#/$defs/harness_file" }
+        }
       }
     }
   },
   "$defs": {
     "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "build_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "source_revision"],
+      "properties": {
+        "path": { "const": "/usr/share/prismdrake/build-provenance.json" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "source_revision": { "$ref": "#/$defs/revision" }
+      }
+    },
+    "harness_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 8, "maxLength": 128, "pattern": "^(tests|tools)/[A-Za-z0-9_.+/-]+$" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["revision", "repository_uri", "repository_name", "atom", "version", "ebuild_path", "ebuild_sha256"],
+      "required": ["revision", "repository_uri", "repository_name", "atom", "version", "ebuild_path", "ebuild_sha256", "bundle_sha256"],
       "properties": {
         "revision": { "$ref": "#/$defs/revision" },
         "repository_uri": { "const": "https://github.com/JTM-rootstorm/prismdrake-de.git" },
@@ -53,7 +80,8 @@
         "atom": { "const": "x11-misc/prismdrake" },
         "version": { "const": "9999" },
         "ebuild_path": { "const": "x11-misc/prismdrake/prismdrake-9999.ebuild" },
-        "ebuild_sha256": { "$ref": "#/$defs/sha256" }
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" },
+        "bundle_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "tested_artifact": {

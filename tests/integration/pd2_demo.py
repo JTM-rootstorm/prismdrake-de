@@ -799,6 +799,7 @@ def execute_installed_demonstration(
         INSTALLED_EXECUTABLE_PATHS,
         selected_driver,
         hash_file,
+        controlled_window_fixture,
     )
 
     source = attestation.get("source") if isinstance(attestation, dict) else None
@@ -829,6 +830,7 @@ def execute_installed_demonstration(
         INSTALLED_EXECUTABLE_PATHS,
         selected_driver,
         hash_file,
+        controlled_window_fixture,
     )
     require(
         _controlled_fixture_sha256(controlled_window_fixture) == fixture_hash,

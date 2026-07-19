@@ -260,8 +260,9 @@ def validate_evidence_document(document: Any) -> None:
              "installed_demonstration_phases_mismatch")
     for demonstration in demonstrations:
         _require_binding(demonstration, revision, ebuild_hash, artifact_hash)
-    _require(demonstrations[0]["driver_sha256"] == demonstrations[1]["driver_sha256"],
-             "installed_demonstration_driver_mismatch")
+    _require(demonstrations[0]["harness_manifest_sha256"] ==
+             demonstrations[1]["harness_manifest_sha256"],
+             "installed_demonstration_harness_mismatch")
 
     unmerge = document["unmerge"]
     _require_binding(unmerge, revision, ebuild_hash, artifact_hash)
@@ -296,7 +297,7 @@ def example_evidence_document() -> dict[str, Any]:
     revision = source["revision"]
     ebuild_hash = source["ebuild_sha256"]
     artifact_hash = tested["artifact_sha256"]
-    driver_hash = attestation["demo_driver"]["sha256"]
+    harness_hash = attestation["demo_harness"]["manifest_sha256"]
     executable_hashes = {item["path"]: item["sha256"]
                          for item in initial["executables"]}
     needed = {
@@ -345,7 +346,7 @@ def example_evidence_document() -> dict[str, Any]:
             "evidence_schema_version": 1,
             "evidence_sha256": digest * 64,
             "normalized_results_sha256": normalized * 64,
-            "driver_sha256": driver_hash,
+            "harness_manifest_sha256": harness_hash,
         }
         for phase, digest, normalized in zip(DEMONSTRATION_PHASES, ("8", "9"), ("a", "b"))
     ]

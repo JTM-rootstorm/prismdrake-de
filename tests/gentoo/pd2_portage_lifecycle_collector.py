@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Collect bounded PD2 lifecycle facts without invoking Portage.
 
-Every operation consumes captures made by the VM operator or inspects an exact
-provided file. This module has no Portage execution path and cannot install,
-unmerge, resolve, test, or demonstrate a package.
+The collector directly verifies source, executes bounded CTest and linkage
+observers, and inspects installed files. It has no install, unmerge, or package
+resolution path.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 from typing import Any
@@ -26,7 +27,11 @@ from pd2_installed_artifact_attestation import (
     Pd2AttestationError,
     load_attestation,
     validate_attestation_document,
+    PACKAGE_ATOM,
+    PACKAGE_VERSIONED_ATOM,
+    SOURCE_URI,
 )
+from pd2_harness_manifest import capture_harness_manifest
 from pd2_lifecycle_hashes import (
     Pd2LifecycleHashError,
     canonical_executable_sha256,
@@ -46,6 +51,11 @@ from pd2_portage_lifecycle_evidence import (
 
 MAX_CAPTURE_FILE_BYTES = 256 * 1024 * 1024
 MAX_CAPTURE_JSON_BYTES = 524_288
+MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024
+EBUILD_RELATIVE_PATH = Path(
+    "packaging/gentoo/repository/x11-misc/prismdrake/prismdrake-9999.ebuild"
+)
+BUILD_PROVENANCE_PATH = Path("/usr/share/prismdrake/build-provenance.json")
 
 
 class Pd2CollectorError(RuntimeError):
@@ -183,13 +193,96 @@ def _default_is_executable(path: Path) -> bool:
     return path.is_file() and not path.is_symlink() and os.access(path, os.X_OK)
 
 
+def run_checked(command: list[str], cwd: Path | None = None) -> str:
+    """Run one bounded, shell-free observer command."""
+
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=False,
+            timeout=120,
+            env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise Pd2CollectorError("observer_command_failed") from error
+    _require(len(completed.stdout) <= MAX_COMMAND_OUTPUT_BYTES and
+             len(completed.stderr) <= MAX_COMMAND_OUTPUT_BYTES,
+             "observer_output_oversized")
+    _require(completed.returncode == 0, "observer_command_failed")
+    try:
+        return completed.stdout.decode("utf-8")
+    except UnicodeError as error:
+        raise Pd2CollectorError("observer_output_invalid") from error
+
+
+def verify_exact_source(
+        source_checkout: Path, source_bundle: Path,
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+) -> dict[str, Any]:
+    """Verify one clean checkout and one bundle whose HEAD is the same commit."""
+
+    _require(source_checkout.is_absolute() and source_checkout.is_dir() and
+             not source_checkout.is_symlink(), "source_checkout_invalid")
+    _require(source_bundle.is_absolute(), "source_bundle_invalid")
+    bundle_hash = _require_sha256(hash_file(source_bundle))
+    revision = command_runner(
+        ["/usr/bin/git", "rev-parse", "--verify", "HEAD"], source_checkout,
+    ).strip()
+    _require(re.fullmatch(r"[0-9a-f]{40}", revision) is not None,
+             "source_revision_invalid")
+    status = command_runner(
+        ["/usr/bin/git", "status", "--porcelain=v1", "--untracked-files=all"],
+        source_checkout,
+    )
+    _require(status == "", "source_checkout_not_clean")
+    command_runner(
+        ["/usr/bin/git", "bundle", "verify", str(source_bundle)], source_checkout,
+    )
+    heads = command_runner(
+        ["/usr/bin/git", "bundle", "list-heads", str(source_bundle)], source_checkout,
+    ).splitlines()
+    _require(heads == [f"{revision} HEAD"], "source_bundle_head_mismatch")
+    ebuild = source_checkout / EBUILD_RELATIVE_PATH
+    ebuild_hash = _require_sha256(hash_file(ebuild))
+    return {
+        "revision": revision,
+        "repository_uri": SOURCE_URI,
+        "repository_name": "prismdrake-local",
+        "atom": PACKAGE_ATOM,
+        "version": "9999",
+        "ebuild_path": "x11-misc/prismdrake/prismdrake-9999.ebuild",
+        "ebuild_sha256": ebuild_hash,
+        "bundle_sha256": bundle_hash,
+    }
+
+
+def load_build_provenance(path: Path, revision: str) -> dict[str, Any]:
+    """Read the installed, package-owned build provenance file."""
+
+    _require(path == BUILD_PROVENANCE_PATH, "build_provenance_path_invalid")
+    provenance = load_capture_json(path)
+    _require(provenance == {"schema_version": 1, "source_revision": revision},
+             "build_provenance_mismatch")
+    return provenance
+
+
 def capture_preflight_attestation(
-        source: dict[str, Any], owned_paths: list[dict[str, str]], driver: Path,
+        source_checkout: Path, source_bundle: Path, owned_paths: list[dict[str, str]],
+        controlled_fixture: Path, build_provenance: Path = BUILD_PROVENANCE_PATH,
         hash_file: Callable[[Path], str] = sha256_regular_file,
         is_executable: Callable[[Path], bool] = _default_is_executable,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+        provenance_loader: Callable[[Path, str], dict[str, Any]] = load_build_provenance,
 ) -> dict[str, Any]:
-    """Inspect the five installed binaries and normalize full ownership."""
+    """Verify source and inspect the complete installed and harness boundary."""
 
+    source = verify_exact_source(
+        source_checkout, source_bundle, hash_file=hash_file, command_runner=command_runner,
+    )
     try:
         ownership_records = normalize_ownership_records(owned_paths)
         regular_records = regular_ownership_records(ownership_records)
@@ -203,6 +296,13 @@ def capture_preflight_attestation(
         for path in executable_paths
     ]
     artifact_hash = canonical_executable_sha256(executables)
+    provenance_loader(build_provenance, source["revision"])
+    build_provenance_record = {
+        "path": str(build_provenance),
+        "sha256": _require_sha256(hash_file(build_provenance)),
+        "source_revision": source["revision"],
+    }
+    harness = capture_harness_manifest(source_checkout, controlled_fixture, hash_file)
     document = {
         "schema_version": 1,
         "attestation_kind": "pd2_installed_artifact_preflight",
@@ -221,6 +321,7 @@ def capture_preflight_attestation(
             "artifact_sha256": artifact_hash,
             "provenance": "portage_installed",
             "data_prefix": "/usr/share/prismdrake",
+            "build_provenance": build_provenance_record,
             "executables": executables,
             "ownership": {
                 "tool": "equery",
@@ -233,10 +334,7 @@ def capture_preflight_attestation(
                 "paths": ownership_records,
             },
         },
-        "demo_driver": {
-            "kind": "pd2_installed_demonstration_driver",
-            "sha256": _require_sha256(hash_file(driver)),
-        },
+        "demo_harness": harness,
     }
     try:
         validate_attestation_document(document)
@@ -303,9 +401,10 @@ def finalize_lifecycle(
     demonstrations = draft.get("installed_demonstrations")
     _require(isinstance(demonstrations, list) and len(demonstrations) == 2,
              "final_demonstrations_missing")
-    _require(all(item.get("driver_sha256") == attestation["demo_driver"]["sha256"]
+    _require(all(item.get("harness_manifest_sha256") ==
+                 attestation["demo_harness"]["manifest_sha256"]
                  for item in demonstrations),
-             "final_demo_driver_mismatch")
+             "final_demo_harness_mismatch")
     try:
         validate_evidence_document(draft)
     except Pd2EvidenceError as error:
@@ -317,9 +416,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     preflight = subparsers.add_parser("preflight")
-    preflight.add_argument("--source", type=Path, required=True)
+    preflight.add_argument("--source-checkout", type=Path, required=True)
+    preflight.add_argument("--source-bundle", type=Path, required=True)
     preflight.add_argument("--owned-paths", type=Path, required=True)
-    preflight.add_argument("--driver", type=Path, required=True)
+    preflight.add_argument("--controlled-window-fixture", type=Path, required=True)
+    preflight.add_argument("--build-provenance", type=Path,
+                           default=BUILD_PROVENANCE_PATH)
     preflight.add_argument("--output", type=Path, required=True)
     preservation = subparsers.add_parser("preservation")
     for phase in ("before", "after"):
@@ -337,11 +439,12 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "preflight":
-            source = load_capture_json(arguments.source)
             owned_paths = load_capture_json(arguments.owned_paths)
-            _require(isinstance(source, dict) and isinstance(owned_paths, list),
-                     "capture_json_shape_invalid")
-            document = capture_preflight_attestation(source, owned_paths, arguments.driver)
+            _require(isinstance(owned_paths, list), "capture_json_shape_invalid")
+            document = capture_preflight_attestation(
+                arguments.source_checkout, arguments.source_bundle, owned_paths,
+                arguments.controlled_window_fixture, arguments.build_provenance,
+            )
         elif arguments.command == "preservation":
             before = {kind: getattr(arguments, f"before_{kind}") for kind in USER_DATA_KINDS}
             after = {kind: getattr(arguments, f"after_{kind}") for kind in USER_DATA_KINDS}

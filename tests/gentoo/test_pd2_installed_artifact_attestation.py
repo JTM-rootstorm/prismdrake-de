@@ -20,6 +20,7 @@ from pd2_installed_artifact_attestation import (
     validate_attestation_document,
     validate_attested_files,
 )
+from pd2_harness_manifest import HARNESS_RELATIVE_PATHS
 from pd2_lifecycle_hashes import (
     Pd2LifecycleHashError,
     canonical_ownership_sha256,
@@ -140,27 +141,25 @@ class Pd2InstalledAttestationTests(unittest.TestCase):
                 mutation(document)
                 self.assert_rejected(document)
 
-    def test_binds_exact_files_without_recording_driver_path(self) -> None:
+    def test_binds_exact_files_without_recording_private_paths(self) -> None:
         document = example_attestation_document()
         paths = tuple(Path(path) for path in INSTALLED_EXECUTABLE_PATHS)
         hashes = {record["path"]: record["sha256"]
                   for record in document["installed"]["executables"]}
-        hashes["/source/pd2_demo.py"] = document["demo_driver"]["sha256"]
-        validate_attested_files(
-            document,
-            paths,
-            Path("/source/pd2_demo.py"),
-            lambda path: hashes[str(path)],
-        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            driver = root / "tests/integration/pd2_demo.py"
+            fixture = root / "fixture"
+            hashes.update({str(root / relative): "7" * 64
+                           for relative in HARNESS_RELATIVE_PATHS})
+            hashes[str(fixture)] = "8" * 64
+            validate_attested_files(document, paths, driver,
+                                     lambda path: hashes[str(path)], fixture)
         hashes[INSTALLED_EXECUTABLE_PATHS[2]] = "0" * 64
         with self.assertRaisesRegex(Pd2AttestationError,
                                     "^installed_executable_hash_mismatch$"):
-            validate_attested_files(
-                document,
-                paths,
-                Path("/source/pd2_demo.py"),
-                lambda path: hashes[str(path)],
-            )
+            validate_attested_files(document, paths, driver,
+                                     lambda path: hashes[str(path)], fixture)
 
     def test_hashes_reject_private_duplicate_and_unknown_kinds(self) -> None:
         for records in (

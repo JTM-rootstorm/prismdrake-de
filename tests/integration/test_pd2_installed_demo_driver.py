@@ -84,15 +84,15 @@ class InstalledExecutionTests(unittest.TestCase):
         self.output = self.root / "evidence.json"
         self.hashes = executable_hashes()
         self.document = attestation(self.hashes)
-        self.validation_calls: list[tuple[object, object, object]] = []
+        self.validation_calls: list[tuple[object, object, object, object]] = []
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
     def api(self):
-        def validate_files(document, paths, driver, hash_file) -> None:
+        def validate_files(document, paths, driver, hash_file, fixture) -> None:
             del hash_file
-            self.validation_calls.append((document, paths, driver))
+            self.validation_calls.append((document, paths, driver, fixture))
 
         return (lambda path: self.document, validate_files)
 
@@ -119,6 +119,7 @@ class InstalledExecutionTests(unittest.TestCase):
         self.assertTrue(all(call[1] == pd2_demo.INSTALLED_EXECUTABLE_PATHS
                             for call in self.validation_calls))
         self.assertTrue(all(call[2] == driver for call in self.validation_calls))
+        self.assertTrue(all(call[3] == self.fixture for call in self.validation_calls))
         evidence = pd2_demo.load_evidence(self.output)
         self.assertEqual(evidence["source_revision"], REVISION)
         self.assertEqual(self.output.stat().st_mode & 0o777, 0o600)

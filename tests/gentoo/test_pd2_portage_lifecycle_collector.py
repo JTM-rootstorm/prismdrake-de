@@ -16,7 +16,9 @@ from pd2_installed_artifact_attestation import (
     REQUIRED_INSTALLED_FILE_GROUPS,
     example_attestation_document,
 )
+from pd2_harness_manifest import HARNESS_RELATIVE_PATHS
 from pd2_portage_lifecycle_collector import (
+    BUILD_PROVENANCE_PATH,
     Pd2CollectorError,
     atomic_write_json,
     capture_preflight_attestation,
@@ -25,6 +27,7 @@ from pd2_portage_lifecycle_collector import (
     finalize_lifecycle,
     load_capture_json,
     sha256_regular_file,
+    verify_exact_source,
 )
 from pd2_portage_lifecycle_evidence import (
     USER_DATA_KINDS,
@@ -35,16 +38,41 @@ from pd2_portage_lifecycle_evidence import (
 class Pd2LifecycleCollectorTests(unittest.TestCase):
     def test_captures_five_executables_and_complete_owned_path_set(self) -> None:
         fixture = example_attestation_document()
-        hashes = {item["path"]: item["sha256"]
-                  for item in fixture["installed"]["executables"]}
-        hashes["/source/pd2-demo"] = fixture["demo_driver"]["sha256"]
-        document = capture_preflight_attestation(
-            copy.deepcopy(fixture["source"]),
-            copy.deepcopy(fixture["installed"]["ownership"]["paths"]),
-            Path("/source/pd2-demo"),
-            hash_file=lambda path: hashes[str(path)],
-            is_executable=lambda path: str(path) in INSTALLED_EXECUTABLE_PATHS,
-        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkout = root / "source"
+            checkout.mkdir()
+            bundle = root / "source.bundle"
+            bundle.touch()
+            controlled_fixture = root / "fixture"
+            hashes = {item["path"]: item["sha256"]
+                      for item in fixture["installed"]["executables"]}
+            hashes.update({str(checkout / relative): "7" * 64
+                           for relative in HARNESS_RELATIVE_PATHS})
+            hashes[str(checkout / "packaging/gentoo/repository/x11-misc/prismdrake/prismdrake-9999.ebuild")] = "a" * 64
+            hashes[str(bundle)] = "9" * 64
+            hashes[str(controlled_fixture)] = "8" * 64
+            hashes[str(BUILD_PROVENANCE_PATH)] = "6" * 64
+            revision = fixture["source"]["revision"]
+
+            def runner(command: list[str], cwd: Path | None) -> str:
+                del cwd
+                if "rev-parse" in command:
+                    return revision + "\n"
+                if "status" in command or "verify" in command:
+                    return ""
+                return f"{revision} HEAD\n"
+
+            document = capture_preflight_attestation(
+                checkout, bundle,
+                copy.deepcopy(fixture["installed"]["ownership"]["paths"]),
+                controlled_fixture,
+                hash_file=lambda path: hashes[str(path)],
+                is_executable=lambda path: str(path) in INSTALLED_EXECUTABLE_PATHS,
+                command_runner=runner,
+                provenance_loader=lambda path, value: {
+                    "schema_version": 1, "source_revision": value},
+            )
         self.assertEqual(document, fixture)
         self.assertEqual(document["installed"]["ownership"]["path_count"],
                          len(document["installed"]["ownership"]["paths"]))
@@ -53,7 +81,8 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
         fixture = example_attestation_document()
         hashes = {item["path"]: item["sha256"]
                   for item in fixture["installed"]["executables"]}
-        hashes["/driver"] = fixture["demo_driver"]["sha256"]
+        # Source verification and manifest coverage are exercised independently;
+        # this case isolates installed ownership/executable drift.
         for mutation, executable_check in (
             (lambda paths: paths.pop(0), lambda path: True),
             (lambda paths: paths[0].update({"path": "/home/user/private"}),
@@ -70,9 +99,10 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 owned = copy.deepcopy(fixture["installed"]["ownership"]["paths"])
                 mutation(owned)
                 with self.assertRaises(Pd2CollectorError):
+                    # An ownership failure occurs before source/file observers.
                     capture_preflight_attestation(
-                        copy.deepcopy(fixture["source"]), owned, Path("/driver"),
-                        hash_file=lambda path: hashes[str(path)],
+                        Path("/missing"), Path("/missing.bundle"), owned,
+                        Path("/fixture"), hash_file=lambda path: hashes[str(path)],
                         is_executable=executable_check,
                     )
 
@@ -120,7 +150,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 path_exists=lambda path: str(path) == INSTALLED_EXECUTABLE_PATHS[4],
             )
 
-    def test_finalizer_requires_exact_preflight_and_both_demo_driver_bindings(self) -> None:
+    def test_finalizer_requires_exact_preflight_and_both_demo_harness_bindings(self) -> None:
         attestation = example_attestation_document()
         draft = example_evidence_document()
         self.assertEqual(finalize_lifecycle(attestation, draft), draft)
@@ -130,7 +160,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             lambda value: value["initial_install"]["executables"][0].update(
                 {"sha256": "0" * 64}),
             lambda value: value["installed_demonstrations"][1].update(
-                {"driver_sha256": "0" * 64}),
+                {"harness_manifest_sha256": "0" * 64}),
         )
         for index, mutation in enumerate(mutations):
             with self.subTest(index=index):
@@ -179,10 +209,44 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
     def test_collector_has_no_portage_execution_dependency(self) -> None:
         module = Path(__file__).with_name("pd2_portage_lifecycle_collector.py")
         source = module.read_text(encoding="utf-8")
-        self.assertNotIn("subprocess", source)
         self.assertNotIn("os.system", source)
         self.assertNotIn("execv", source)
         self.assertNotIn("depclean", source)
+
+    def test_source_verifier_rejects_dirty_or_mismatched_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkout = root / "checkout"
+            checkout.mkdir()
+            bundle = root / "source.bundle"
+            bundle.write_bytes(b"bundle")
+            revision = "1" * 40
+
+            def hash_file(path: Path) -> str:
+                return "2" * 64 if path == bundle else "3" * 64
+
+            def runner(command: list[str], cwd: Path | None) -> str:
+                del cwd
+                if "rev-parse" in command:
+                    return revision + "\n"
+                if "status" in command:
+                    return ""
+                if "verify" in command:
+                    return ""
+                return f"{revision} HEAD\n"
+
+            source = verify_exact_source(checkout, bundle, hash_file, runner)
+            self.assertEqual(source["revision"], revision)
+            self.assertEqual(source["bundle_sha256"], "2" * 64)
+
+            def dirty(command: list[str], cwd: Path | None) -> str:
+                if "status" in command:
+                    return "?? untracked\n"
+                return runner(command, cwd)
+
+            with self.assertRaisesRegex(Pd2CollectorError,
+                                        "^source_checkout_not_clean$"):
+                verify_exact_source(checkout, bundle, hash_file, dirty)
 
 
 if __name__ == "__main__":
