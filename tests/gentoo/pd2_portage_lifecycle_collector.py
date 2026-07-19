@@ -1210,14 +1210,30 @@ def capture_preflight_attestation(
     return document
 
 
+def _file_identity(path: Path) -> tuple[int, int]:
+    metadata = path.stat(follow_symlinks=False)
+    return metadata.st_dev, metadata.st_ino
+
+
 def capture_user_state_preservation(
         before: Mapping[str, Path], after: Mapping[str, Path],
         hash_file: Callable[[Path], str] = sha256_regular_file,
+        file_identity: Callable[[Path], tuple[int, int]] = _file_identity,
 ) -> list[dict[str, str]]:
     """Return only normalized kind and byte hashes for three user-state files."""
 
     _require(tuple(before) == USER_DATA_KINDS and tuple(after) == USER_DATA_KINDS,
              "user_data_scope_mismatch")
+    paths = [*(before[kind] for kind in USER_DATA_KINDS),
+             *(after[kind] for kind in USER_DATA_KINDS)]
+    _require(all(path.is_absolute() for path in paths) and
+             len({os.fspath(path) for path in paths}) == len(paths),
+             "user_data_paths_not_distinct")
+    try:
+        identities = [file_identity(path) for path in paths]
+    except OSError as error:
+        raise Pd2CollectorError("user_data_identity_unavailable") from error
+    _require(len(set(identities)) == len(identities), "user_data_inodes_not_distinct")
     records = []
     for kind in USER_DATA_KINDS:
         before_hash = _require_sha256(hash_file(before[kind]))

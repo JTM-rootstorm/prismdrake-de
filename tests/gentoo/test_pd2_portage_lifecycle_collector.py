@@ -157,8 +157,11 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
         hashes = {str(path): str(index + 1) * 64
                   for index, path in enumerate(before.values())}
         hashes.update({str(after[kind]): hashes[str(before[kind])] for kind in USER_DATA_KINDS})
+        paths = [*before.values(), *after.values()]
+        identities = {str(path): (1, index + 1) for index, path in enumerate(paths)}
         records = capture_user_state_preservation(
             before, after, hash_file=lambda path: hashes[str(path)],
+            file_identity=lambda path: identities[str(path)],
         )
         self.assertEqual(tuple(item["kind"] for item in records), USER_DATA_KINDS)
         self.assertTrue(all(set(item) == {"kind", "before_sha256", "after_sha256"}
@@ -168,12 +171,30 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                                     "^user_data_changed_during_unmerge$"):
             capture_user_state_preservation(
                 before, after, hash_file=lambda path: hashes[str(path)],
+                file_identity=lambda path: identities[str(path)],
             )
         hashes[str(after["pins"])] = hashes[str(before["pins"])]
         hashes[str(after["config_toml"])] = "invalid"
         with self.assertRaisesRegex(Pd2CollectorError, "^capture_sha256_invalid$"):
             capture_user_state_preservation(
                 before, after, hash_file=lambda path: hashes[str(path)],
+                file_identity=lambda path: identities[str(path)],
+            )
+
+        repeated = dict(after)
+        repeated["pins"] = before["pins"]
+        with self.assertRaisesRegex(
+                Pd2CollectorError, "^user_data_paths_not_distinct$"):
+            capture_user_state_preservation(
+                before, repeated, hash_file=lambda path: hashes[str(path)],
+                file_identity=lambda path: identities[str(path)],
+            )
+
+        with self.assertRaisesRegex(
+                Pd2CollectorError, "^user_data_inodes_not_distinct$"):
+            capture_user_state_preservation(
+                before, after, hash_file=lambda path: hashes[str(path)],
+                file_identity=lambda path: (1, 1),
             )
 
     def test_unmerge_checks_every_owned_file_and_symlink(self) -> None:
