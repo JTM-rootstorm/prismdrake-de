@@ -132,11 +132,11 @@ python3 tests/performance/test_pd2_reference_observer.py
 
 The collector provides closed command seams for all 15 performance groups,
 including the parameterized search, icon-cache, and output-reconciliation
-endpoints. It requests all 364 ordered surface checks independently, including
-RTL and long-string observations, then separately requests live AT-SPI, a
-screen-reader workflow, and the six internationalization checks. A command
-must emit one bounded JSON envelope and no standard-error diagnostics. No shell
-is involved.
+endpoints. It requests one closed matrix observation containing all 364 ordered
+surface checks, including RTL and long-string observations, then separately
+requests live AT-SPI, a screen-reader workflow, and the six internationalization
+checks. A command must emit one bounded JSON envelope and no standard-error
+diagnostics. No shell is involved.
 
 The reference performance observer has a closed route for every requested
 performance endpoint. With two controlled search sizes it emits 18 observed
@@ -214,6 +214,9 @@ cmake -S . -B build/performance-gcc -G Ninja \
 cmake --build build/performance-gcc --target \
   prismdrake-pd1-performance-evidence prismdrake-pd2-asset-performance \
   prismdrake-controlled-window-fixture
+PRISMDRAKE_PD1_REVISION=$(python3 -c \
+  'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["source_revision"])' \
+  /absolute/private/evidence/pd1-performance.json)
 env \
   PRISMDRAKE_PD2_BUILD_DIRECTORY="$PWD/build/performance-gcc" \
   PRISMDRAKE_PD2_PERFORMANCE_RUNNER="$PWD/build/performance-gcc/tests/performance/prismdrake-pd1-performance-evidence" \
@@ -221,10 +224,12 @@ env \
   PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE="/absolute/private/evidence/pd2-runtime-performance.json" \
   PRISMDRAKE_PD2_IDLE_SERIES="/absolute/private/evidence/pd2-idle-series.json" \
   PRISMDRAKE_PD2_PD1_EVIDENCE="/absolute/private/evidence/pd1-performance.json" \
+  PRISMDRAKE_PD2_INSTALLED_DEMO_EVIDENCE="/absolute/private/evidence/pd2-installed-demonstration.json" \
+  PRISMDRAKE_PD2_PACKAGE_TEST_EVIDENCE="/absolute/private/evidence/non-root/pd2-package-test.json" \
   python3 tests/performance/collect_pd2_live_evidence.py \
     --source-revision "$(git rev-parse HEAD)" \
     --environment-id gentoo-amd64-qemu-system \
-    --pd1-reference-revision PD1_REVISION \
+    --pd1-reference-revision "$PRISMDRAKE_PD1_REVISION" \
     --pd1-evidence-id pd1-reviewed-reference \
     --search-catalog-size 16 --search-catalog-size 64 \
     --limitation "Reference VM measurements do not define release budgets" \
@@ -233,9 +238,13 @@ env \
     --output "/absolute/private/evidence/pd2-performance-accessibility.json"
 ```
 
-`PD1_REVISION` above is a placeholder for the exact lowercase PD1 evidence
-revision. The remaining documented observer dependencies and any reviewed
-accessibility skips must also be supplied for a complete live collection.
+The two PD2 inputs above must be the validated initial installed demonstration
+and the collector-owned package-test stage for the same source revision. This
+makes WP16 preflight, package test, and the initial WP14 demonstration
+prerequisites of WP15 collection; unmerge and ordinary reinstall may follow
+after WP15. The command derives the exact lowercase PD1 revision from the bound
+PD1 artifact instead of relying on a copied placeholder. Any reviewed
+accessibility skip remains an explicit collector argument.
 The dedicated accessibility observer uses the VM's GI `Atspi` binding. Qt
 translation routing, RTL, and expanded-string routes pass only when CTest
 reports their complete exact five-test, five-test, and six-test selections

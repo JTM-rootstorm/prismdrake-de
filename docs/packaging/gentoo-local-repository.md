@@ -141,10 +141,78 @@ dependencies, or unmask unrelated packages.
 
 ## Product lifecycle evidence contract
 
-Run every project-relative command in this section with
-`/absolute/clean/prismdrake-de` as the current working directory. The
-`runuser` package-test command intentionally inherits that directory after the
-disposable checkout and retained build are assigned to the ordinary test user.
+Run this lifecycle only after the final revision has been selected. A later
+rebase, amended commit, or signing pass rewrites the revision and invalidates
+every source-revision-bound attestation, demonstration, performance artifact,
+and lifecycle stage. Rerun all such evidence after any history rewrite.
+
+For a local unpublished revision, keep the tracked ebuild's canonical GitHub
+URI and use `git-r3`'s repository-specific override. Create the bundle outside
+the checkout, bind the exact commit explicitly, and retain both until the
+lifecycle record has validated:
+
+```bash
+export PRISMDRAKE_INPUT_CHECKOUT=/mnt/shared/prismdrake-pd2-source
+export PRISMDRAKE_EVIDENCE_ROOT=/var/tmp/prismdrake-pd2-evidence
+install -d -m 0711 "$PRISMDRAKE_EVIDENCE_ROOT"
+
+PRISMDRAKE_REVISION=$(/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" \
+  rev-parse --verify HEAD)
+test -z "$(/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" \
+  status --porcelain=v1 --untracked-files=all)"
+/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" bundle create \
+  "$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle" HEAD
+
+export EGIT_OVERRIDE_REPO_JTM_ROOTSTORM_PRISMDRAKE_DE=\
+"file://$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle"
+export EGIT_OVERRIDE_COMMIT_JTM_ROOTSTORM_PRISMDRAKE_DE=\
+"$PRISMDRAKE_REVISION"
+
+USE="test" FEATURES="test keepwork" \
+  emerge --ask --verbose --oneshot --newuse \
+  =x11-misc/prismdrake-9999::prismdrake-local
+```
+
+The overrides are command-environment inputs, not package configuration. Keep
+them exported for the later ordinary reinstall and record their variable names,
+bundle digest, and resolved commit; do not record a private host path in the
+public evidence. A pushed canonical revision may omit the repository override,
+but it must still bind the exact commit used by the evidence.
+The evidence root is traversal-only so the ordinary package-test user can reach
+its private mode-0700 subdirectory; root-owned evidence files remain mode 0600.
+
+With `FEATURES="test keepwork"`, derive the retained Portage paths rather than
+copying or guessing them. The separate CTest build stores the absolute source
+directory in `CMakeCache.txt`; moving either tree or substituting an arbitrary
+clone makes the package-test collector fail closed:
+
+```bash
+PRISMDRAKE_PORTAGE_TMPDIR=$(/usr/bin/portageq envvar PORTAGE_TMPDIR)
+PRISMDRAKE_PORTAGE_WORKDIR=\
+"${PRISMDRAKE_PORTAGE_TMPDIR%/}/portage/x11-misc/prismdrake-9999/work"
+export PRISMDRAKE_SOURCE_CHECKOUT=\
+"$PRISMDRAKE_PORTAGE_WORKDIR/prismdrake-9999"
+export PRISMDRAKE_TEST_BUILD=\
+"$PRISMDRAKE_PORTAGE_WORKDIR/prismdrake-9999_test_build"
+export PRISMDRAKE_CONTROLLED_FIXTURE=\
+"$PRISMDRAKE_TEST_BUILD/tests/integration/prismdrake-controlled-window-fixture"
+
+test -d "$PRISMDRAKE_SOURCE_CHECKOUT/.git"
+test -f "$PRISMDRAKE_TEST_BUILD/CMakeCache.txt"
+test -x "$PRISMDRAKE_CONTROLLED_FIXTURE"
+test "$(/usr/bin/git -C "$PRISMDRAKE_SOURCE_CHECKOUT" rev-parse --verify HEAD)" \
+  = "$PRISMDRAKE_REVISION"
+test -z "$(/usr/bin/git -C "$PRISMDRAKE_SOURCE_CHECKOUT" \
+  status --porcelain=v1 --untracked-files=all)"
+test "$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' \
+  "$PRISMDRAKE_TEST_BUILD/CMakeCache.txt")" = "$PRISMDRAKE_SOURCE_CHECKOUT"
+cd "$PRISMDRAKE_SOURCE_CHECKOUT"
+```
+
+Complete every source- and retained-build-dependent stage before the ordinary
+reinstall, because a later Portage clean may remove the retained work tree. The
+`runuser` package-test command intentionally inherits this directory after the
+retained trees are assigned to the ordinary test user.
 
 The installed demonstration uses a staged evidence flow so it never depends on
 a result that it is itself expected to produce. After the `USE=test` install,
@@ -152,15 +220,15 @@ create an exact `git bundle` from the clean source checkout. Capture the
 non-final, mode-0600 preflight attestation from absolute paths:
 
 ```bash
-git -C /absolute/clean/prismdrake-de status --porcelain=v1 --untracked-files=all
-git -C /absolute/clean/prismdrake-de bundle create \
-  /absolute/private/evidence/prismdrake.bundle HEAD
+git -C "$PRISMDRAKE_SOURCE_CHECKOUT" status --porcelain=v1 --untracked-files=all
+install -m 0600 "$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/source-attestation.bundle"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py preflight \
-  --source-checkout /absolute/clean/prismdrake-de \
-  --source-bundle /absolute/private/evidence/prismdrake.bundle \
-  --controlled-window-fixture /absolute/retained-test-build/tests/integration/prismdrake-controlled-window-fixture \
-  --output /absolute/private/evidence/pd2-installed-preflight.json
+  --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
+  --source-bundle "$PRISMDRAKE_EVIDENCE_ROOT/source-attestation.bundle" \
+  --controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json"
 ```
 
 The status command must print nothing. The preflight command requires that
@@ -185,47 +253,47 @@ installed linkage, and each demo through the collector:
 
 ```bash
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py qa \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
-  --source-checkout /absolute/clean/prismdrake-de \
-  --output /absolute/private/evidence/pd2-portage-qa.json
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-portage-qa.json"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py resolutions \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
-  --source-checkout /absolute/clean/prismdrake-de \
-  --output /absolute/private/evidence/pd2-resolutions.json
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-resolutions.json"
 
 install -d -o prismdrake -g prismdrake -m 0700 \
-  /absolute/private/evidence/non-root
+  "$PRISMDRAKE_EVIDENCE_ROOT/non-root"
 install -o prismdrake -g prismdrake -m 0600 \
-  /absolute/private/evidence/pd2-installed-preflight.json \
-  /absolute/private/evidence/non-root/pd2-installed-preflight.json
+  "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/non-root/pd2-installed-preflight.json"
 chown -R prismdrake:prismdrake \
-  /absolute/clean/prismdrake-de /absolute/retained-test-build
+  "$PRISMDRAKE_SOURCE_CHECKOUT" "$PRISMDRAKE_TEST_BUILD"
 
 runuser --user prismdrake -- \
   python3 tests/gentoo/pd2_portage_lifecycle_collector.py package-test \
-  --attestation /absolute/private/evidence/non-root/pd2-installed-preflight.json \
-  --test-build /absolute/retained-test-build \
-  --source-checkout /absolute/clean/prismdrake-de \
-  --controlled-window-fixture /absolute/retained-test-build/tests/integration/prismdrake-controlled-window-fixture \
-  --output /absolute/private/evidence/non-root/pd2-package-test.json
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/non-root/pd2-installed-preflight.json" \
+  --test-build "$PRISMDRAKE_TEST_BUILD" \
+  --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
+  --controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/non-root/pd2-package-test.json"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py sandbox-tests \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
-  --test-build /absolute/retained-test-build \
-  --source-checkout /absolute/clean/prismdrake-de \
-  --controlled-window-fixture /absolute/retained-test-build/tests/integration/prismdrake-controlled-window-fixture \
-  --output /absolute/private/evidence/pd2-sandbox-tests.json
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --test-build "$PRISMDRAKE_TEST_BUILD" \
+  --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
+  --controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-sandbox-tests.json"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py linkage \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
-  --output /absolute/private/evidence/pd2-linkage.json
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-linkage.json"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
   --phase initial_install \
-  --evidence /absolute/private/evidence/pd2-installed-demonstration.json \
-  --output /absolute/private/evidence/pd2-initial-demonstration.json
+  --evidence "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-demonstration.json" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-initial-demonstration.json"
 ```
 
 The QA stage runs canonical `/usr/bin/pkgdev manifest` and `/usr/bin/pkgcheck
@@ -268,39 +336,95 @@ deadline.
 Output is drained with a fixed limit while each child runs. Linkage is measured
 only after the five executable hashes match preflight.
 
-After unmerge, capture absence of every package-owned regular file and symlink,
-plus byte-identical preservation of the three user-owned state files. Shared
-package directories may remain. These commands only inspect supplied paths;
-they do not invoke Portage:
+Seed valid nonempty lifecycle fixtures at the ordinary test user's canonical
+XDG paths. Stop the installed demonstration and all Prismdrake processes before
+the `before` copy so no state owner can race the snapshot. Resolve the account's
+home directory rather than assuming `/home/prismdrake`:
 
 ```bash
+PRISMDRAKE_USER_HOME=$(/usr/bin/getent passwd prismdrake | /usr/bin/cut -d: -f6)
+test -n "$PRISMDRAKE_USER_HOME"
+export PRISMDRAKE_USER_CONFIG=\
+"$PRISMDRAKE_USER_HOME/.config/prismdrake/config.toml"
+export PRISMDRAKE_USER_PINS=\
+"$PRISMDRAKE_USER_HOME/.local/state/prismdrake/shell/pinned-applications-v1.json"
+export PRISMDRAKE_USER_HISTORY=\
+"$PRISMDRAKE_USER_HOME/.local/state/prismdrake/notifications/history-v1.json"
+
+install -d -o prismdrake -g prismdrake -m 0700 \
+  "$(dirname "$PRISMDRAKE_USER_CONFIG")" \
+  "$(dirname "$PRISMDRAKE_USER_PINS")" \
+  "$(dirname "$PRISMDRAKE_USER_HISTORY")" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/before" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/after"
+install -o prismdrake -g prismdrake -m 0600 \
+  /usr/share/prismdrake/defaults/config.toml "$PRISMDRAKE_USER_CONFIG"
+printf '%s\n' '{"schema_version":1,"pins":["org.prismdrake.fixture.desktop"]}' \
+  > "$PRISMDRAKE_USER_PINS"
+printf '%s\n' '{"schema_version":1,"records":[]}' \
+  > "$PRISMDRAKE_USER_HISTORY"
+chown prismdrake:prismdrake "$PRISMDRAKE_USER_PINS" "$PRISMDRAKE_USER_HISTORY"
+chmod 0600 "$PRISMDRAKE_USER_PINS" "$PRISMDRAKE_USER_HISTORY"
+
+install -m 0600 "$PRISMDRAKE_USER_CONFIG" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/before/config.toml"
+install -m 0600 "$PRISMDRAKE_USER_PINS" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/before/pins.json"
+install -m 0600 "$PRISMDRAKE_USER_HISTORY" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/before/notification-history.json"
+```
+
+Actually unmerge the versioned package before asking the collector to observe
+absence. Shared package directories may remain. The collector does not invoke
+Portage:
+
+```bash
+emerge --ask --unmerge =x11-misc/prismdrake-9999
+
+install -m 0600 "$PRISMDRAKE_USER_CONFIG" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/after/config.toml"
+install -m 0600 "$PRISMDRAKE_USER_PINS" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/after/pins.json"
+install -m 0600 "$PRISMDRAKE_USER_HISTORY" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/after/notification-history.json"
+cmp --silent "$PRISMDRAKE_EVIDENCE_ROOT/before/config.toml" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/after/config.toml"
+cmp --silent "$PRISMDRAKE_EVIDENCE_ROOT/before/pins.json" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/after/pins.json"
+cmp --silent "$PRISMDRAKE_EVIDENCE_ROOT/before/notification-history.json" \
+  "$PRISMDRAKE_EVIDENCE_ROOT/after/notification-history.json"
+
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py unmerge \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
-  --output /absolute/private/evidence/pd2-unmerge-absence.json
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-unmerge-absence.json"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py preservation \
-  --before-config-toml /absolute/private/evidence/before/config.toml \
-  --before-pins /absolute/private/evidence/before/pins.json \
-  --before-notification-history /absolute/private/evidence/before/notification-history.json \
-  --after-config-toml /absolute/private/evidence/after/config.toml \
-  --after-pins /absolute/private/evidence/after/pins.json \
-  --after-notification-history /absolute/private/evidence/after/notification-history.json \
-  --output /absolute/private/evidence/pd2-user-state-preservation.json
+  --before-config-toml "$PRISMDRAKE_EVIDENCE_ROOT/before/config.toml" \
+  --before-pins "$PRISMDRAKE_EVIDENCE_ROOT/before/pins.json" \
+  --before-notification-history "$PRISMDRAKE_EVIDENCE_ROOT/before/notification-history.json" \
+  --after-config-toml "$PRISMDRAKE_EVIDENCE_ROOT/after/config.toml" \
+  --after-pins "$PRISMDRAKE_EVIDENCE_ROOT/after/pins.json" \
+  --after-notification-history "$PRISMDRAKE_EVIDENCE_ROOT/after/notification-history.json" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-user-state-preservation.json"
 ```
 
 After the ordinary non-`USE=test` reinstall, recapture complete ownership and
 installed bytes rather than writing reinstall success into a draft:
 
 ```bash
+USE="-test" FEATURES="-test -keepwork" \
+  emerge --ask --verbose --oneshot --newuse \
+  =x11-misc/prismdrake-9999::prismdrake-local
+
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py reinstall \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
-  --output /absolute/private/evidence/pd2-ordinary-reinstall.json
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-ordinary-reinstall.json"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
   --phase ordinary_reinstall \
-  --evidence /absolute/private/evidence/pd2-reinstalled-demonstration.json \
-  --output /absolute/private/evidence/pd2-reinstalled-demonstration-record.json
+  --evidence "$PRISMDRAKE_EVIDENCE_ROOT/pd2-reinstalled-demonstration.json" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-reinstalled-demonstration-record.json"
 ```
 
 After every phase has actually completed, assemble only the strict collector
@@ -308,18 +432,18 @@ stage artifacts into the tracked lifecycle schema:
 
 ```bash
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py finalize \
-  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
-  --qa /absolute/private/evidence/pd2-portage-qa.json \
-  --resolutions /absolute/private/evidence/pd2-resolutions.json \
-  --package-test /absolute/private/evidence/non-root/pd2-package-test.json \
-  --linkage /absolute/private/evidence/pd2-linkage.json \
-  --sandbox-tests /absolute/private/evidence/pd2-sandbox-tests.json \
-  --initial-demonstration /absolute/private/evidence/pd2-initial-demonstration.json \
-  --unmerge /absolute/private/evidence/pd2-unmerge-absence.json \
-  --preservation /absolute/private/evidence/pd2-user-state-preservation.json \
-  --ordinary-reinstall /absolute/private/evidence/pd2-ordinary-reinstall.json \
-  --reinstall-demonstration /absolute/private/evidence/pd2-reinstalled-demonstration-record.json \
-  --output /absolute/private/evidence/pd2-portage-lifecycle.json
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --qa "$PRISMDRAKE_EVIDENCE_ROOT/pd2-portage-qa.json" \
+  --resolutions "$PRISMDRAKE_EVIDENCE_ROOT/pd2-resolutions.json" \
+  --package-test "$PRISMDRAKE_EVIDENCE_ROOT/non-root/pd2-package-test.json" \
+  --linkage "$PRISMDRAKE_EVIDENCE_ROOT/pd2-linkage.json" \
+  --sandbox-tests "$PRISMDRAKE_EVIDENCE_ROOT/pd2-sandbox-tests.json" \
+  --initial-demonstration "$PRISMDRAKE_EVIDENCE_ROOT/pd2-initial-demonstration.json" \
+  --unmerge "$PRISMDRAKE_EVIDENCE_ROOT/pd2-unmerge-absence.json" \
+  --preservation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-user-state-preservation.json" \
+  --ordinary-reinstall "$PRISMDRAKE_EVIDENCE_ROOT/pd2-ordinary-reinstall.json" \
+  --reinstall-demonstration "$PRISMDRAKE_EVIDENCE_ROOT/pd2-reinstalled-demonstration-record.json" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-portage-lifecycle.json"
 ```
 
 Canonical artifact, ownership, linkage, and controlled XDG-tree hashes bind
@@ -330,7 +454,7 @@ schema and semantic validator define the success record for the final
 
 ```bash
 python3 tests/gentoo/pd2_portage_lifecycle_evidence.py \
-  /absolute/private/evidence/pd2-portage-lifecycle.json
+  "$PRISMDRAKE_EVIDENCE_ROOT/pd2-portage-lifecycle.json"
 ```
 
 The validator is read-only. It does not run Portage and a passing synthetic

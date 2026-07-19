@@ -268,9 +268,16 @@ class PackagingGuideContractTests(unittest.TestCase):
             "pd2_portage_lifecycle_collector.py unmerge",
             "pd2_portage_lifecycle_collector.py finalize",
             "pd2_portage_lifecycle_evidence.py",
-            "--source-checkout /absolute/clean/prismdrake-de",
-            "--source-bundle /absolute/private/evidence/prismdrake.bundle",
-            "--controlled-window-fixture /absolute/retained-test-build/",
+            'EGIT_OVERRIDE_REPO_JTM_ROOTSTORM_PRISMDRAKE_DE=',
+            'EGIT_OVERRIDE_COMMIT_JTM_ROOTSTORM_PRISMDRAKE_DE=',
+            'PRISMDRAKE_PORTAGE_TMPDIR=$(/usr/bin/portageq envvar PORTAGE_TMPDIR)',
+            '"$PRISMDRAKE_PORTAGE_WORKDIR/prismdrake-9999_test_build"',
+            '--source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT"',
+            '--controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE"',
+            'emerge --ask --unmerge =x11-misc/prismdrake-9999',
+            'USE="-test" FEATURES="-test -keepwork"',
+            'pinned-applications-v1.json',
+            'notifications/history-v1.json',
         ):
             with self.subTest(command=command):
                 self.assertIn(command, self.source)
