@@ -122,6 +122,12 @@ TestCase {
         compare(editor.presentation.pinned, true)
         compare(editor.presentation.urgent, true)
         compare(editor.presentation.modal, true)
+        compare(editor.iconName, "application-x-executable")
+        compare(editor.usesGenericApplicationIcon, true)
+        verify(editor.Accessible.description.indexOf("Generic application icon.") === 0)
+        compare(terminal.iconName, "utilities-terminal")
+        compare(terminal.usesGenericApplicationIcon, false)
+        verify(terminal.Accessible.description.indexOf("Generic application icon.") < 0)
         verify(editor.width >= panel.themeGeneration.panel.minimumTargetSize)
         verify(terminal.width >= panel.themeGeneration.panel.minimumTargetSize)
 

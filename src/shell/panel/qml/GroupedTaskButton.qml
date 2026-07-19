@@ -11,6 +11,8 @@ Control {
     property bool rightToLeft: false
 
     readonly property string title: presentation !== null ? presentation.displayName : ""
+    readonly property string iconName: presentation !== null ? presentation.iconName : ""
+    readonly property bool usesGenericApplicationIcon: iconName === "application-x-executable"
     readonly property string statusText: presentation !== null ? presentation.statusText : ""
     readonly property bool activeState: presentation !== null && presentation.active
     readonly property bool urgentState: presentation !== null && presentation.urgent
@@ -80,11 +82,16 @@ Control {
 
     Accessible.role: Accessible.Button
     Accessible.name: title
-    Accessible.description: groupPopupOpen
-                            ? qsTr("Application group %1. Status: %2. Window list shown.")
-                                .arg(title).arg(statusText)
-                            : qsTr("Application group %1. Status: %2.")
-                                .arg(title).arg(statusText)
+    Accessible.description: {
+        const groupDescription = groupPopupOpen
+            ? qsTr("Application group %1. Status: %2. Window list shown.")
+                .arg(title).arg(statusText)
+            : qsTr("Application group %1. Status: %2.")
+                .arg(title).arg(statusText)
+        return usesGenericApplicationIcon
+            ? qsTr("Generic application icon. %1").arg(groupDescription)
+            : groupDescription
+    }
     Accessible.focusable: true
     Accessible.focused: activeFocus
     Accessible.checkable: true
