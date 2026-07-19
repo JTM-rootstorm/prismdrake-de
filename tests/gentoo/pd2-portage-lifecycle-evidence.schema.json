@@ -48,7 +48,7 @@
     "package_test": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source_revision", "ebuild_sha256", "artifact_sha256", "features_test", "result", "selected_test_count", "executed_test_count", "passed_test_count", "skipped_test_count", "skipped_tests", "disabled_test_count", "not_run_test_count", "test_manifest_sha256", "excluded_tests"],
+      "required": ["source_revision", "ebuild_sha256", "artifact_sha256", "features_test", "result", "selected_test_count", "executed_test_count", "passed_test_count", "skipped_test_count", "skipped_tests", "disabled_test_count", "not_run_test_count", "test_manifest_sha256", "inventory_contract_sha256", "excluded_tests"],
       "properties": {
         "source_revision": { "$ref": "#/$defs/revision" },
         "ebuild_sha256": { "$ref": "#/$defs/sha256" },
@@ -75,6 +75,7 @@
         "disabled_test_count": { "const": 0 },
         "not_run_test_count": { "const": 0 },
         "test_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "inventory_contract_sha256": { "$ref": "#/$defs/sha256" },
         "excluded_tests": {
           "type": "array",
           "minItems": 4,
@@ -332,7 +333,7 @@
     "sandbox_exclusion": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["test_id", "reason", "source_revision", "ebuild_sha256", "artifact_sha256", "execution_context", "result", "test_manifest_sha256", "attempts", "passes"],
+      "required": ["test_id", "reason", "source_revision", "ebuild_sha256", "artifact_sha256", "execution_context", "result", "test_manifest_sha256", "inventory_contract_sha256", "attempts", "passes"],
       "properties": {
         "test_id": { "$ref": "#/$defs/excluded_test_id" },
         "reason": { "enum": ["exact_child_environment", "openbox_preload_interference"] },
@@ -342,6 +343,7 @@
         "execution_context": { "const": "outside_portage_sandbox" },
         "result": { "const": "passed" },
         "test_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "inventory_contract_sha256": { "$ref": "#/$defs/sha256" },
         "attempts": { "type": "integer", "minimum": 1, "maximum": 100 },
         "passes": { "type": "integer", "minimum": 1, "maximum": 100 }
       }

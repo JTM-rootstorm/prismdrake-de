@@ -278,6 +278,9 @@ def validate_evidence_document(document: Any) -> None:
         _require(exclusion["test_manifest_sha256"] ==
                  package_test["test_manifest_sha256"],
                  "sandbox_exclusion_test_manifest_mismatch")
+        _require(exclusion["inventory_contract_sha256"] ==
+                 package_test["inventory_contract_sha256"],
+                 "sandbox_exclusion_inventory_contract_mismatch")
         _require(exclusion["passes"] == exclusion["attempts"],
                  "sandbox_exclusion_repeat_failure")
         minimum = 1 if index < 2 else 5
@@ -369,6 +372,7 @@ def example_evidence_document() -> dict[str, Any]:
             "execution_context": "outside_portage_sandbox",
             "result": "passed",
             "test_manifest_sha256": "c" * 64,
+            "inventory_contract_sha256": "7" * 64,
             "attempts": attempts,
             "passes": attempts,
         })
@@ -433,6 +437,7 @@ def example_evidence_document() -> dict[str, Any]:
             "disabled_test_count": 0,
             "not_run_test_count": 0,
             "test_manifest_sha256": "c" * 64,
+            "inventory_contract_sha256": "7" * 64,
             "excluded_tests": list(EXCLUDED_TESTS),
         },
         "initial_install": initial,

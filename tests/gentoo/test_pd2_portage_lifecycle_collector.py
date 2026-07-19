@@ -356,6 +356,17 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             test_command.write_bytes(b"test")
             ordinary = "ContractTest.Ordinary"
             all_names = (ordinary, OPTIONAL_PACKAGE_SKIP_TEST, *EXCLUDED_TESTS)
+            contract = source / collector.CTEST_INVENTORY_RELATIVE_PATH
+            contract.parent.mkdir(parents=True)
+            contract.write_text(json.dumps({
+                "schema_version": 1,
+                "inventory_kind": "pd2_exact_ctest_inventory",
+                "exact_test_count": len(all_names),
+                "ordered_test_names_sha256": hashlib.sha256(json.dumps(
+                    list(all_names), ensure_ascii=True, separators=(",", ":"),
+                ).encode("utf-8")).hexdigest(),
+                "excluded_tests": list(EXCLUDED_TESTS),
+            }), encoding="utf-8")
             calls: list[list[str]] = []
             skipped_junit: str | None = None
 
@@ -383,7 +394,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                     junit = Path(command[command.index("--output-junit") + 1])
                     junit.write_text(
                         "<testsuite>" + "".join(
-                            (f'<testcase name="{name}" status="run"><skipped />'
+                            (f'<testcase name="{name}" status="notrun"><skipped />'
                              f'</testcase>' if skipped_junit == name else
                              f'<testcase name="{name}" status="run" />')
                             for name in selected
@@ -403,6 +414,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             )
             self.assertEqual(package["executed_test_count"], 2)
             self.assertEqual(package["skipped_tests"], [])
+            self.assertEqual(package["inventory_contract_sha256"], "1" * 64)
             self.assertEqual(tuple(package["excluded_tests"]), EXCLUDED_TESTS)
             self.assertIn("--exclude-regex", calls[-1])
 
@@ -416,6 +428,19 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                                 package["test_manifest_sha256"] for item in exclusions))
             executions = [call for call in calls if "--tests-regex" in call]
             self.assertEqual(len(executions), 12)
+
+            contract_document = json.loads(contract.read_text(encoding="utf-8"))
+            contract_document["exact_test_count"] += 1
+            contract.write_text(json.dumps(contract_document), encoding="utf-8")
+            with self.assertRaisesRegex(Pd2CollectorError,
+                                        "^ctest_inventory_contract_mismatch$"):
+                capture_package_test(
+                    attestation, build, source, fixture,
+                    hash_file=hash_file, command_runner=runner,
+                )
+            contract_document["exact_test_count"] -= 1
+            contract.write_text(json.dumps(contract_document), encoding="utf-8")
+
             skipped_junit = OPTIONAL_PACKAGE_SKIP_TEST
             package = capture_package_test(
                 attestation, build, source, fixture,

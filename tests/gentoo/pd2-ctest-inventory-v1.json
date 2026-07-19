@@ -1,0 +1,12 @@
+{
+  "exact_test_count": 775,
+  "excluded_tests": [
+    "DetachedApplicationTest.ExecutesExactArgvWorkingDirectoryAndEnvironmentWithoutShell",
+    "LauncherPipelineTest.ExpandsPlansAndLaunchesLiteralArgumentsWithoutAShell",
+    "X11DockOpenboxIntegrationTest",
+    "TaskControllerOpenboxStabilizationIntegrationTest"
+  ],
+  "inventory_kind": "pd2_exact_ctest_inventory",
+  "ordered_test_names_sha256": "7b3afae6929fbc877ff75b7aa1c9cac055e7f2b52e04830b34aa92cac04951f8",
+  "schema_version": 1
+}

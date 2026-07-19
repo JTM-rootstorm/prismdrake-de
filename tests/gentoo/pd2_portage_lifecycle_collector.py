@@ -79,6 +79,7 @@ VDB_DIRECTORY = Path("/var/db/pkg/x11-misc/prismdrake-9999")
 EBUILD_RELATIVE_PATH = Path(
     "packaging/gentoo/repository/x11-misc/prismdrake/prismdrake-9999.ebuild"
 )
+CTEST_INVENTORY_RELATIVE_PATH = Path("tests/gentoo/pd2-ctest-inventory-v1.json")
 BUILD_PROVENANCE_PATH = Path("/usr/share/prismdrake/build-provenance.json")
 EXCLUSION_REGEX = "^(?:" + "|".join(re.escape(name) for name in EXCLUDED_TESTS) + ")$"
 OPTIONAL_PACKAGE_SKIP_TEST = "AtomicFileTest.RejectsDestinationOwnedByAnotherUser"
@@ -705,6 +706,32 @@ def _ctest_inventory(
     return tests
 
 
+def _inventory_contract_sha256(
+        source_checkout: Path, inventory: list[dict[str, Any]],
+        hash_file: Callable[[Path], str],
+) -> str:
+    contract_path = source_checkout / CTEST_INVENTORY_RELATIVE_PATH
+    contract = load_capture_json(contract_path)
+    _require(isinstance(contract, dict) and set(contract) == {
+        "schema_version", "inventory_kind", "exact_test_count",
+        "ordered_test_names_sha256", "excluded_tests",
+    }, "ctest_inventory_contract_invalid")
+    _require(contract["schema_version"] == 1 and
+             contract["inventory_kind"] == "pd2_exact_ctest_inventory" and
+             isinstance(contract["exact_test_count"], int) and
+             1 <= contract["exact_test_count"] <= 10000 and
+             tuple(contract["excluded_tests"]) == EXCLUDED_TESTS,
+             "ctest_inventory_contract_invalid")
+    expected_hash = _require_sha256(contract["ordered_test_names_sha256"])
+    names = [item["name"] for item in inventory]
+    observed_hash = hashlib.sha256(json.dumps(
+        names, ensure_ascii=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    _require(len(names) == contract["exact_test_count"] and
+             observed_hash == expected_hash, "ctest_inventory_contract_mismatch")
+    return _require_sha256(hash_file(contract_path))
+
+
 def _test_manifest_sha256(
         inventory: list[dict[str, Any]], build_directory: Path, source_checkout: Path,
         controlled_fixture: Path, hash_file: Callable[[Path], str],
@@ -785,12 +812,16 @@ def _parse_passing_junit(
     skipped: list[str] = []
     for case in cases:
         name = case.get("name")
-        _require(case.find("failure") is None and case.find("error") is None and
-                 case.get("status", "run") == "run", "ctest_not_all_passed")
-        if case.find("skipped") is not None:
+        skipped_element = case.find("skipped")
+        _require(case.find("failure") is None and case.find("error") is None,
+                 "ctest_not_all_passed")
+        if skipped_element is not None:
             _require(name in allowed_skips and name not in skipped,
                      "ctest_not_all_passed")
+            _require(case.get("status") == "notrun", "ctest_not_all_passed")
             skipped.append(name)
+        else:
+            _require(case.get("status", "run") == "run", "ctest_not_all_passed")
     return tuple(skipped)
 
 
@@ -839,6 +870,9 @@ def capture_package_test(
     excluded = tuple(name for name in all_names if name not in set(included_names))
     _require(excluded == EXCLUDED_TESTS, "package_test_exclusions_mismatch")
     _require(len(included_names) > 0, "package_test_empty")
+    inventory_contract_hash = _inventory_contract_sha256(
+        source_checkout, all_inventory, hash_file,
+    )
     manifest_hash = _test_manifest_sha256(
         all_inventory, build_directory, source_checkout, controlled_fixture, hash_file,
     )
@@ -861,6 +895,7 @@ def capture_package_test(
         "disabled_test_count": 0,
         "not_run_test_count": 0,
         "test_manifest_sha256": manifest_hash,
+        "inventory_contract_sha256": inventory_contract_hash,
         "excluded_tests": list(EXCLUDED_TESTS),
     }
 
@@ -881,6 +916,9 @@ def capture_sandbox_exclusions(
     all_inventory = _ctest_inventory(ctest, build_directory, command_runner, False)
     all_names = {item["name"] for item in all_inventory}
     _require(set(EXCLUDED_TESTS) <= all_names, "sandbox_exclusion_test_missing")
+    inventory_contract_hash = _inventory_contract_sha256(
+        source_checkout, all_inventory, hash_file,
+    )
     manifest_hash = _test_manifest_sha256(
         all_inventory, build_directory, source_checkout, controlled_fixture, hash_file,
     )
@@ -899,6 +937,7 @@ def capture_sandbox_exclusions(
             "execution_context": "outside_portage_sandbox",
             "result": "passed",
             "test_manifest_sha256": manifest_hash,
+            "inventory_contract_sha256": inventory_contract_hash,
             "attempts": attempts,
             "passes": attempts,
         })
