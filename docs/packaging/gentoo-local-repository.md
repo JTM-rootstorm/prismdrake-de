@@ -147,6 +147,10 @@ create an exact `git bundle` from the clean source checkout. Capture the
 non-final, mode-0600 preflight attestation from absolute paths:
 
 ```bash
+git -C /absolute/clean/prismdrake-de status --porcelain=v1 --untracked-files=all
+git -C /absolute/clean/prismdrake-de bundle create \
+  /absolute/private/evidence/prismdrake.bundle HEAD
+
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py preflight \
   --source-checkout /absolute/clean/prismdrake-de \
   --source-bundle /absolute/private/evidence/prismdrake.bundle \
@@ -154,23 +158,37 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py preflight \
   --output /absolute/private/evidence/pd2-installed-preflight.json
 ```
 
-The preflight command requires a clean checkout, verifies that the bundle's
+The status command must print nothing. The preflight command requires that
+same clean checkout, verifies that the bundle's
 sole `HEAD` is the checkout `HEAD`, hashes the ebuild from that checkout, and
 checks `/usr/share/prismdrake/build-provenance.json` against the same revision.
 It hashes the selected VDB ebuild under
 `/var/db/pkg/x11-misc/prismdrake-9999`, requires the `prismdrake-local`
 repository and actual `test` USE state, parses the VDB `CONTENTS` file, and
-cross-checks that complete path set against canonical `/usr/bin/equery` output
-and installed file kinds. It also measures the fixed
+cross-checks that complete path-and-kind set against canonical
+`/usr/bin/equery -C -q files` output and installed file kinds. VDB comparison
+uses the normalized path-and-kind hash, not raw `CONTENTS` bytes whose mtime
+fields may legitimately change across an ordinary reinstall. It also measures the fixed
 `/usr/bin/prismdrake-*` set and rejects ownership that omits required packaged
 data. Its canonical harness manifest covers every imported live helper,
 validator, schema, and the controlled fixture binary. The demonstration
 recomputes that complete manifest before and after each run.
 
-Execute and normalize the retained package-test selection, the exact four
-outside-sandbox tests, installed linkage, and each demo through the collector:
+Execute Portage QA against a disposable copy, both exact pretend resolutions,
+the retained package-test selection, the exact four outside-sandbox tests,
+installed linkage, and each demo through the collector:
 
 ```bash
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py qa \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --source-checkout /absolute/clean/prismdrake-de \
+  --output /absolute/private/evidence/pd2-portage-qa.json
+
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py resolutions \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --source-checkout /absolute/clean/prismdrake-de \
+  --output /absolute/private/evidence/pd2-resolutions.json
+
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py package-test \
   --attestation /absolute/private/evidence/pd2-installed-preflight.json \
   --test-build /absolute/retained-test-build \
@@ -196,16 +214,29 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
   --output /absolute/private/evidence/pd2-initial-demonstration.json
 ```
 
+The QA stage runs canonical `/usr/bin/pkgdev manifest` and `/usr/bin/pkgcheck
+scan --exit error,warning,style,info` against a disposable repository copy;
+any QA report fails the stage. The resolution stage verifies the
+`prismdrake-local` path and ebuild bytes through `/usr/bin/portageq`, then runs
+the fixed `/usr/bin/emerge` pretend command once with `USE=-test` and once with
+`USE=test`.
+
 The CTest collectors require the retained build's exact clean source directory
-and configured revision, hash its actual CTest commands, project-owned command
-files, and controlled fixture, then parse CTest JUnit output. A skipped,
-disabled, failed, missing, or additional selected test fails the stage. Exactly
-the four reviewed tests are excluded from the package selection. The
+and configured revision, compare the complete ordered inventory to
+`tests/gentoo/pd2-ctest-inventory-v1.json`, hash actual CTest commands,
+project-owned command files, and the controlled fixture, then parse CTest JUnit
+output. A disabled, failed, missing, additional, or unreviewed skipped selected
+test fails the stage. The only reviewed package-selection skip is
+`AtomicFileTest.RejectsDestinationOwnedByAnotherUser`, recorded with reason
+`requires_non_root_owner_transition` and CTest's `status=notrun` plus
+`<skipped>` encoding when it actually skips. Exactly the four reviewed tests
+are excluded from the package selection. The
 outside-sandbox collector executes the two exact-environment tests once and
 both Openbox tests five times against the same test manifest. The collector
-uses only `/usr/bin/ctest` and `/usr/bin/scanelf`; there are no public tool-path
+uses only canonical absolute tool paths; there are no public tool-path
 overrides. Source commands have a 30-second deadline, ordinary observers a
-120-second deadline, and complete CTest selections an 1800-second deadline.
+120-second deadline, and Portage and complete CTest selections an 1800-second
+deadline.
 Output is drained with a fixed limit while each child runs. Linkage is measured
 only after the five executable hashes match preflight.
 
@@ -244,13 +275,22 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
   --output /absolute/private/evidence/pd2-reinstalled-demonstration-record.json
 ```
 
-After every phase has actually completed, finalize a draft that already
-matches the tracked lifecycle schema:
+After every phase has actually completed, assemble only the strict collector
+stage artifacts into the tracked lifecycle schema:
 
 ```bash
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py finalize \
   --attestation /absolute/private/evidence/pd2-installed-preflight.json \
-  --draft /absolute/private/evidence/pd2-portage-lifecycle-draft.json \
+  --qa /absolute/private/evidence/pd2-portage-qa.json \
+  --resolutions /absolute/private/evidence/pd2-resolutions.json \
+  --package-test /absolute/private/evidence/pd2-package-test.json \
+  --linkage /absolute/private/evidence/pd2-linkage.json \
+  --sandbox-tests /absolute/private/evidence/pd2-sandbox-tests.json \
+  --initial-demonstration /absolute/private/evidence/pd2-initial-demonstration.json \
+  --unmerge /absolute/private/evidence/pd2-unmerge-absence.json \
+  --preservation /absolute/private/evidence/pd2-user-state-preservation.json \
+  --ordinary-reinstall /absolute/private/evidence/pd2-ordinary-reinstall.json \
+  --reinstall-demonstration /absolute/private/evidence/pd2-reinstalled-demonstration-record.json \
   --output /absolute/private/evidence/pd2-portage-lifecycle.json
 ```
 
@@ -274,10 +314,11 @@ all five executables, all four reviewed outside-sandbox tests, unmerge with
 byte-identical user configuration/state preservation, and an ordinary
 non-`USE=test` reinstall with the complete original ownership manifest.
 The ordinary-reinstall collector repeats the VDB ebuild, repository, non-test
-USE state, `CONTENTS`, `equery`, installed-kind, provenance, executable, and
-ownership measurements directly; it cannot reuse a caller-provided ownership
-list. Unknown, partial, mismatched, private, build-tree, or caller-asserted
-installed data fails closed.
+USE state, normalized `CONTENTS` ownership, color-disabled `equery`,
+installed-kind, provenance, executable, and ownership measurements directly;
+it cannot reuse a caller-provided ownership list. The finalizer likewise has
+no complete-draft input. Unknown, partial, mismatched, private, build-tree, or
+caller-asserted installed data fails closed.
 
 ## Resolution and QA
 
