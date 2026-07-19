@@ -285,8 +285,14 @@ def capture_window_fingerprint(
     private_directory: Path,
     x11_environment: Mapping[str, str],
     runner: XwdCaptureRunner | None = None,
+    sample_points: Sequence[tuple[int, int]] | None = None,
 ) -> bytes:
-    """Capture one exact X11 window and return only its bounded fingerprint."""
+    """Capture one exact X11 window and return only its bounded fingerprint.
+
+    When ``sample_points`` is supplied, only those reviewed pixel coordinates
+    contribute to the returned fingerprint. Raw capture bytes remain confined
+    to the private temporary file in either mode.
+    """
 
     _require_xwd_executable(xwd_executable)
     if type(window_id) is not int or not 1 <= window_id <= 0xFFFFFFFF:
@@ -351,7 +357,10 @@ def capture_window_fingerprint(
             _fail("xwd_capture_failed")
         if type(return_code) is not int or return_code != 0:
             _fail("xwd_capture_failed")
-        return fingerprint_xwd(_read_capture(output, created))
+        payload = _read_capture(output, created)
+        if sample_points is None:
+            return fingerprint_xwd(payload)
+        return fingerprint_xwd_samples(payload, sample_points)
     finally:
         if descriptor is not None:
             try:

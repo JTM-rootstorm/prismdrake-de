@@ -13,8 +13,8 @@ from pd2_live_dbus import METHODS, ProbeResult
 from pd2_xwd import (
     MAX_DIMENSION,
     MAX_SURFACES,
+    FINGERPRINT_BYTES,
     XwdEvidenceError,
-    fingerprint_xwd_samples,
     require_complete_surface_transition,
 )
 
@@ -81,11 +81,15 @@ class SurfaceObservationPort(Protocol):
     come from two consecutive observations after that surface is visible and
     settled; the workflow accepts it only when both reviewed sample hashes
     match. Dynamic pixels outside those coordinates are deliberately ignored.
+    The hashes are temporally correlated with the validated D-Bus generation;
+    X11 does not atomically tag each surface capture with that generation.
     """
 
     def reviewed_surface_sequence(self) -> Sequence[str]: ...
 
-    def capture_settled_xwds(self, surface: str) -> tuple[bytes, bytes]: ...
+    def capture_settled_fingerprints(
+        self, surface: str, points: Sequence[tuple[int, int]]
+    ) -> tuple[bytes, bytes]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,14 +466,22 @@ class InstalledSettingsWorkflow:
         fingerprints: dict[str, bytes] = {}
         for surface in self._config.reviewed_surfaces:
             try:
-                pair = self._surfaces.capture_settled_xwds(surface)
-                if not isinstance(pair, tuple) or len(pair) != 2:
-                    _fail("settings_surface_capture_invalid")
-                points = self._config.points_for(surface)
-                first = fingerprint_xwd_samples(pair[0], points)
-                second = fingerprint_xwd_samples(pair[1], points)
+                pair = self._surfaces.capture_settled_fingerprints(
+                    surface, self._config.points_for(surface)
+                )
             except XwdEvidenceError:
                 _fail("settings_surface_capture_invalid")
+            if (
+                not isinstance(pair, tuple)
+                or len(pair) != 2
+                or any(
+                    not isinstance(fingerprint, bytes)
+                    or len(fingerprint) != FINGERPRINT_BYTES
+                    for fingerprint in pair
+                )
+            ):
+                _fail("settings_surface_capture_invalid")
+            first, second = pair
             if first != second:
                 _fail("settings_surface_not_settled")
             fingerprints[surface] = second

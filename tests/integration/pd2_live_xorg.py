@@ -44,6 +44,14 @@ from pd2_live_notification_workflow import (
     validate_workflow_result,
 )
 from pd2_live_notifications import PersistentNotificationProbe
+from pd2_live_settings_workflow import (
+    AccessibilitySurfacePort,
+    InstalledSettingsWorkflow,
+    SettingsWorkflowConfig,
+    SettingsWorkflowResult,
+    SurfaceObservationPort,
+)
+from pd2_xwd import capture_window_fingerprint
 
 
 MAX_COMMAND_OUTPUT_BYTES = 65_536
@@ -61,6 +69,15 @@ CONTROLLED_APPLICATION_NAME = "Prismdrake Controlled Application"
 CONTROLLED_DESKTOP_FILE = "prismdrake-controlled.desktop"
 CONTROLLED_WINDOW_ONE = "Prismdrake Demo App One"
 CONTROLLED_WINDOW_TWO = "Prismdrake Demo App Two"
+QUICK_SETTINGS_WINDOW_TITLE = "Prismdrake Quick Settings"
+SETTINGS_WORKFLOW_CONFIG = SettingsWorkflowConfig(
+    ("panel_primary", "panel_secondary", "quick_settings"),
+    (
+        ((400, 2), (800, 2), (1200, 2)),
+        ((400, 2), (800, 2), (1200, 2)),
+        ((24, 2), (190, 2), (355, 2)),
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -604,6 +621,82 @@ class LiveNotificationSurfaceAdapter:
         self._wait(predicate, timeout_seconds, category)
 
 
+class LiveSettingsAccessibilityAdapter:
+    """Exact shell-owned AT-SPI observer for the quick-settings surface."""
+
+    _SELECTOR = ControlSelector("Quick settings", "pane")
+
+    def __init__(
+        self,
+        accessibility: AccessibilityOperations,
+        shell_identity: Callable[[], ProcessIdentity],
+        environment: Callable[[], Mapping[str, str]],
+        monotonic: Callable[[], float],
+        pause: Callable[[float], None],
+        timeout_seconds: float,
+    ) -> None:
+        self._accessibility = accessibility
+        self._shell_identity = shell_identity
+        self._environment = environment
+        self._monotonic = monotonic
+        self._pause = pause
+        self._timeout_seconds = timeout_seconds
+
+    def observe_surface(self, name: str, role: str) -> bool:
+        if (name, role) != (self._SELECTOR.name, self._SELECTOR.role):
+            return False
+        deadline = self._monotonic() + self._timeout_seconds
+        while self._monotonic() < deadline:
+            shell = self._shell_identity()
+            if self._accessibility.observe(
+                shell.pid, self._SELECTOR, self._environment()
+            ):
+                return True
+            remaining = deadline - self._monotonic()
+            if remaining > 0:
+                self._pause(min(0.05, remaining))
+        return False
+
+
+SettingsWindowResolver = Callable[[str], int]
+SettingsFingerprintCapture = Callable[
+    [int, Sequence[tuple[int, int]]], bytes
+]
+
+
+class LiveSettingsSurfaceAdapter:
+    """Sequential reviewed-surface capture through the private XWD boundary."""
+
+    def __init__(
+        self,
+        config: SettingsWorkflowConfig,
+        resolve_window: SettingsWindowResolver,
+        capture_fingerprint: SettingsFingerprintCapture,
+        pause: Callable[[float], None],
+    ) -> None:
+        self._config = config
+        self._resolve_window = resolve_window
+        self._capture_fingerprint = capture_fingerprint
+        self._pause = pause
+
+    def reviewed_surface_sequence(self) -> Sequence[str]:
+        return self._config.reviewed_surfaces
+
+    def capture_settled_fingerprints(
+        self, surface: str, points: Sequence[tuple[int, int]]
+    ) -> tuple[bytes, bytes]:
+        if (
+            surface not in self._config.reviewed_surfaces
+            or tuple(points) != self._config.points_for(surface)
+        ):
+            raise HarnessError("settings_surface_capture_not_reviewed")
+        window = self._resolve_window(surface)
+        first = self._capture_fingerprint(window, points)
+        self._pause(0.05)
+        second = self._capture_fingerprint(window, points)
+        return first, second
+
+
 class _Closable(Protocol):
     def close(self) -> None: ...
 
@@ -624,9 +717,31 @@ class _NotificationEpoch:
         return clean
 
 
+@dataclass
+class _SettingsEpoch:
+    workflow: InstalledSettingsWorkflow
+    dbus_probe: _Closable
+
+    def close(self) -> bool:
+        try:
+            self.dbus_probe.close()
+        except Exception:
+            return False
+        return True
+
+
 NotificationEpochFactory = Callable[
     [Mapping[str, str], PrivateBusEndpoint, NotificationSurfacePort],
     _NotificationEpoch,
+]
+SettingsEpochFactory = Callable[
+    [
+        Mapping[str, str],
+        PrivateBusEndpoint,
+        AccessibilitySurfacePort,
+        SurfaceObservationPort,
+    ],
+    _SettingsEpoch,
 ]
 
 
@@ -658,6 +773,28 @@ def _create_notification_epoch(
                 except Exception:
                     pass
         raise HarnessError("live_notification_epoch_initialization_failed") from None
+
+
+def _create_settings_epoch(
+    environment: Mapping[str, str],
+    endpoint: PrivateBusEndpoint,
+    accessibility: AccessibilitySurfacePort,
+    surfaces: SurfaceObservationPort,
+) -> _SettingsEpoch:
+    dbus_probe: LiveDbusProbe | None = None
+    try:
+        dbus_probe = LiveDbusProbe(environment, endpoint=endpoint)
+        workflow = InstalledSettingsWorkflow(
+            SETTINGS_WORKFLOW_CONFIG, dbus_probe, accessibility, surfaces
+        )
+        return _SettingsEpoch(workflow, dbus_probe)
+    except Exception:
+        if dbus_probe is not None:
+            try:
+                dbus_probe.close()
+            except Exception:
+                pass
+        raise HarnessError("live_settings_epoch_initialization_failed") from None
 
 
 @dataclass(frozen=True)
@@ -899,6 +1036,7 @@ class LiveXorgConfig:
     dbus_daemon: Path
     installed_executables: Mapping[str, Path]
     xdotool: Path | None = None
+    xwd: Path | None = None
     controlled_window_fixture: Path | None = None
     first_display: int = 120
     last_display: int = 159
@@ -965,6 +1103,12 @@ class LiveXorgHarnessPort:
         "verify_critical_bypass_policy": "create_critical_bypass",
         "clear_notification_history": "clear_history",
     }
+    _SETTINGS_STEPS = {
+        "open_quick_settings": "open_quick_settings",
+        "switch_lustre_to_forge": "switch_lustre_to_forge",
+        "verify_complete_settings_generation": "verify_complete_settings_generation",
+        "switch_back_preserving_accessibility": "switch_back_preserving_accessibility",
+    }
 
     _SUPPORTED_STEPS = {
         ("installed_workflow", "start_isolated_two_output_x11"),
@@ -991,6 +1135,10 @@ class LiveXorgHarnessPort:
         ("installed_workflow", "verify_history_without_transient"),
         ("installed_workflow", "verify_critical_bypass_policy"),
         ("installed_workflow", "clear_notification_history"),
+        ("installed_workflow", "open_quick_settings"),
+        ("installed_workflow", "switch_lustre_to_forge"),
+        ("installed_workflow", "verify_complete_settings_generation"),
+        ("installed_workflow", "switch_back_preserving_accessibility"),
         ("failure_replay", "two_same_scale_outputs_at_startup"),
         ("failure_replay", "add_second_output_after_startup"),
         ("failure_replay", "remove_primary_output"),
@@ -1014,6 +1162,7 @@ class LiveXorgHarnessPort:
         operations: Operations | None = None,
         accessibility: AccessibilityOperations | None = None,
         notification_epoch_factory: NotificationEpochFactory | None = None,
+        settings_epoch_factory: SettingsEpochFactory | None = None,
     ) -> None:
         self._config = config
         self._operations = operations or SystemOperations()
@@ -1021,6 +1170,7 @@ class LiveXorgHarnessPort:
         self._notification_epoch_factory = (
             notification_epoch_factory or _create_notification_epoch
         )
+        self._settings_epoch_factory = settings_epoch_factory or _create_settings_epoch
         self._runtime: Path | None = None
         self._display: str | None = None
         self._xorg: ChildProcess | None = None
@@ -1034,6 +1184,7 @@ class LiveXorgHarnessPort:
         self._controlled_windows: dict[str, int] = {}
         self._controlled_processes: dict[str, ProcessIdentity] = {}
         self._notification_epoch: _NotificationEpoch | None = None
+        self._settings_epoch: _SettingsEpoch | None = None
 
     def installed_executable_hashes(self) -> Mapping[str, str]:
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
@@ -1175,6 +1326,8 @@ class LiveXorgHarnessPort:
             self._controlled_windows.clear()
         elif identifier in self._NOTIFICATION_STEPS:
             self._run_notification_step(identifier)
+        elif identifier in self._SETTINGS_STEPS:
+            self._run_settings_step(identifier)
         elif identifier == "two_same_scale_outputs_at_startup":
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
@@ -1342,6 +1495,134 @@ class LiveXorgHarnessPort:
         self._notification_epoch = epoch
         return epoch
 
+    def _run_settings_step(self, identifier: str) -> None:
+        if identifier not in self._SETTINGS_STEPS:
+            raise HarnessError("live_settings_step_not_reviewed")
+        workflow = self._settings_workflow_epoch().workflow
+        try:
+            result = workflow.run_step(identifier)
+        except Exception:
+            raise HarnessError("live_settings_workflow_failed") from None
+        if (
+            not isinstance(result, SettingsWorkflowResult)
+            or result.evidence().get("status") != "passed"
+        ):
+            raise HarnessError("live_settings_workflow_failed")
+
+    def _settings_workflow_epoch(self) -> _SettingsEpoch:
+        if self._settings_epoch is not None:
+            return self._settings_epoch
+        environment = dict(self.probe_environment())
+        socket_identity = self._bus_socket_identity
+        if socket_identity is None:
+            raise HarnessError("private_session_bus_not_started")
+        endpoint = PrivateBusEndpoint(
+            self._private_bus_address(), socket_identity[0], socket_identity[1]
+        )
+        accessibility = LiveSettingsAccessibilityAdapter(
+            self._accessibility,
+            self._shell_identity,
+            self.probe_environment,
+            self._operations.monotonic,
+            self._operations.pause,
+            self._config.readiness_timeout,
+        )
+        surfaces = LiveSettingsSurfaceAdapter(
+            SETTINGS_WORKFLOW_CONFIG,
+            self._settings_surface_window,
+            self._capture_settings_fingerprint,
+            self._operations.pause,
+        )
+        try:
+            epoch = self._settings_epoch_factory(
+                environment, endpoint, accessibility, surfaces
+            )
+        except Exception:
+            raise HarnessError("live_settings_epoch_initialization_failed") from None
+        if not isinstance(epoch, _SettingsEpoch):
+            raise HarnessError("live_settings_epoch_initialization_failed")
+        self._settings_epoch = epoch
+        return epoch
+
+    def _capture_settings_fingerprint(
+        self, window: int, points: Sequence[tuple[int, int]]
+    ) -> bytes:
+        if self._config.xwd is None or self._runtime is None or self._display is None:
+            raise HarnessError("live_settings_xwd_unavailable")
+        return capture_window_fingerprint(
+            self._config.xwd,
+            window,
+            self._runtime,
+            {"DISPLAY": self._display},
+            sample_points=points,
+        )
+
+    def _settings_surface_window(self, surface: str) -> int:
+        shell = self._shell_identity()
+        if surface in {"panel_primary", "panel_secondary"}:
+            self._require_panel_surfaces()
+            panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
+            x = 0 if surface == "panel_primary" else OUTPUT_WIDTH
+            expected = WindowGeometry(
+                x, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT
+            )
+            matches = [window for window, geometry in panels.items() if geometry == expected]
+            if len(matches) != 1:
+                raise HarnessError("live_settings_surface_window_invalid")
+            return matches[0]
+        if surface != "quick_settings":
+            raise HarnessError("live_settings_surface_not_reviewed")
+        windows = self._visible_named_window_ids(QUICK_SETTINGS_WINDOW_TITLE)
+        if len(windows) != 1:
+            raise HarnessError("live_settings_surface_window_invalid")
+        window = windows[0]
+        if self._window_cardinals(window, b"_NET_WM_PID", 1) != (shell.pid,):
+            raise HarnessError("live_settings_surface_owner_invalid")
+        geometry_result = self._run_x11(
+            (str(self._config.xwininfo), "-id", f"0x{window:x}", "-stats")
+        )
+        if geometry_result.returncode != 0:
+            raise HarnessError("live_settings_surface_window_invalid")
+        geometry = parse_window_geometry(geometry_result.stdout)
+        if (
+            geometry.width != 380
+            or not 100 <= geometry.height <= OUTPUT_HEIGHT - PANEL_HEIGHT
+            or geometry.x != OUTPUT_WIDTH - geometry.width
+            or geometry.y != OUTPUT_HEIGHT - PANEL_HEIGHT - geometry.height
+        ):
+            raise HarnessError("live_settings_surface_window_invalid")
+        return window
+
+    def _visible_named_window_ids(self, title: str) -> tuple[int, ...]:
+        if title != QUICK_SETTINGS_WINDOW_TITLE or self._config.xdotool is None:
+            raise HarnessError("live_settings_surface_query_invalid")
+        result = self._operations.run(
+            (
+                str(self._config.xdotool),
+                "search",
+                "--onlyvisible",
+                "--name",
+                f"^{title}$",
+            ),
+            self.probe_environment(),
+            3.0,
+        )
+        if result.returncode == 1 and not result.stdout and not result.stderr:
+            return ()
+        if result.returncode != 0 or result.stderr or len(result.stdout) > 1024:
+            raise HarnessError("live_settings_surface_query_invalid")
+        identifiers: list[int] = []
+        for line in result.stdout.splitlines():
+            if re.fullmatch(rb"[1-9][0-9]{0,19}", line) is None:
+                raise HarnessError("live_settings_surface_query_invalid")
+            identifier = int(line)
+            if identifier > 0xFFFFFFFF or identifier in identifiers:
+                raise HarnessError("live_settings_surface_query_invalid")
+            identifiers.append(identifier)
+        if len(identifiers) > 1:
+            raise HarnessError("live_settings_surface_query_invalid")
+        return tuple(identifiers)
+
     def capture_process_ownership(self) -> Mapping[str, object]:
         if (
             self._xorg is None
@@ -1380,6 +1661,9 @@ class LiveXorgHarnessPort:
     def cleanup(self, phase: str) -> Observation:
         del phase
         clean = True
+        if self._settings_epoch is not None:
+            clean = self._settings_epoch.close() and clean
+            self._settings_epoch = None
         if self._notification_epoch is not None:
             clean = self._notification_epoch.close() and clean
             self._notification_epoch = None

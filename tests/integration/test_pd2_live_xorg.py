@@ -17,6 +17,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation  # noqa: E402
 from pd2_live_notification_workflow import WorkflowResult  # noqa: E402
+from pd2_live_settings_workflow import (  # noqa: E402
+    RESULT_CATEGORIES as SETTINGS_RESULT_CATEGORIES,
+    SettingsWorkflowResult,
+)
 from pd2_live_xorg import (  # noqa: E402
     CONTROLLED_APPLICATION_NAME,
     CONTROLLED_WINDOW_ONE,
@@ -25,10 +29,15 @@ from pd2_live_xorg import (  # noqa: E402
     LiveXorgConfig,
     LiveXorgHarnessPort,
     LiveNotificationSurfaceAdapter,
+    LiveSettingsAccessibilityAdapter,
+    LiveSettingsSurfaceAdapter,
     ProcessIdentity,
+    QUICK_SETTINGS_WINDOW_TITLE,
+    SETTINGS_WORKFLOW_CONFIG,
     WindowGeometry,
     XrandrOutput,
     _NotificationEpoch,
+    _SettingsEpoch,
     _session_config,
     _xorg_config,
     parse_cardinals,
@@ -543,6 +552,7 @@ def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
         dbus_daemon=Path("/usr/bin/dbus-daemon"),
         installed_executables=installed or {},
         xdotool=Path("/usr/bin/xdotool"),
+        xwd=Path("/usr/bin/xwd"),
         first_display=140,
         last_display=140,
         readiness_timeout=0.2,
@@ -617,6 +627,28 @@ class FakeNotificationEpochFactory:
         self.calls.append((dict(environment), endpoint, surface))
         return _NotificationEpoch(
             self.workflow, self.sender, self.dbus_probe  # type: ignore[arg-type]
+        )
+
+
+class FakeSettingsWorkflow:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def run_step(self, identifier: str) -> SettingsWorkflowResult:
+        self.calls.append(identifier)
+        return SettingsWorkflowResult(SETTINGS_RESULT_CATEGORIES[identifier])
+
+
+class FakeSettingsEpochFactory:
+    def __init__(self) -> None:
+        self.workflow = FakeSettingsWorkflow()
+        self.dbus_probe = FakeClosable()
+        self.calls: list[tuple[dict[str, str], object, object, object]] = []
+
+    def __call__(self, environment, endpoint, accessibility, surfaces):
+        self.calls.append((dict(environment), endpoint, accessibility, surfaces))
+        return _SettingsEpoch(
+            self.workflow, self.dbus_probe  # type: ignore[arg-type]
         )
 
 
@@ -812,6 +844,100 @@ class NotificationSurfaceAdapterTests(unittest.TestCase):
         self.assertTrue(all(kind == "absent" for kind, _name in accessibility.calls))
 
 
+class SettingsSurfaceAdapterTests(unittest.TestCase):
+    def test_accessibility_reacquires_exact_shell_owner_until_surface_is_visible(
+        self,
+    ) -> None:
+        operations = FakeOperations()
+        calls: list[tuple[int, str, str, str]] = []
+
+        class Accessibility:
+            def observe(self, shell_pid, selector, environment):
+                calls.append(
+                    (shell_pid, selector.name, selector.role, environment["DISPLAY"])
+                )
+                return len(calls) == 2
+
+        identities = iter(
+            (ProcessIdentity(2004, 20_040), ProcessIdentity(2005, 20_050))
+        )
+        adapter = LiveSettingsAccessibilityAdapter(
+            Accessibility(),  # type: ignore[arg-type]
+            lambda: next(identities),
+            lambda: {
+                "DISPLAY": ":140",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/private-bus",
+            },
+            operations.monotonic,
+            operations.pause,
+            0.2,
+        )
+
+        self.assertTrue(adapter.observe_surface("Quick settings", "pane"))
+        self.assertEqual(
+            calls,
+            [
+                (2004, "Quick settings", "pane", ":140"),
+                (2005, "Quick settings", "pane", ":140"),
+            ],
+        )
+        self.assertFalse(adapter.observe_surface("Quick settings", "panel"))
+
+    def test_captures_each_fixed_geometry_surface_twice_in_sequence(self) -> None:
+        operations = FakeOperations()
+        windows = {
+            "panel_primary": PANEL_LEFT,
+            "panel_secondary": PANEL_RIGHT,
+            "quick_settings": 0x500005,
+        }
+        events: list[tuple[str, object]] = []
+
+        def resolve(surface: str) -> int:
+            events.append(("resolve", surface))
+            return windows[surface]
+
+        def capture(window: int, points: Sequence[tuple[int, int]]) -> bytes:
+            events.append(("capture", (window, tuple(points))))
+            return bytes([window & 0xFF]) * 32
+
+        adapter = LiveSettingsSurfaceAdapter(
+            SETTINGS_WORKFLOW_CONFIG, resolve, capture, operations.pause
+        )
+
+        for surface in SETTINGS_WORKFLOW_CONFIG.reviewed_surfaces:
+            points = SETTINGS_WORKFLOW_CONFIG.points_for(surface)
+            self.assertEqual(
+                adapter.capture_settled_fingerprints(surface, points),
+                (bytes([windows[surface] & 0xFF]) * 32,) * 2,
+            )
+
+        expected: list[tuple[str, object]] = []
+        for surface in SETTINGS_WORKFLOW_CONFIG.reviewed_surfaces:
+            window = windows[surface]
+            points = SETTINGS_WORKFLOW_CONFIG.points_for(surface)
+            expected.extend(
+                [
+                    ("resolve", surface),
+                    ("capture", (window, points)),
+                    ("capture", (window, points)),
+                ]
+            )
+        self.assertEqual(events, expected)
+        self.assertAlmostEqual(operations.now, 0.15)
+        self.assertEqual(
+            SETTINGS_WORKFLOW_CONFIG.sample_points,
+            (
+                ((400, 2), (800, 2), (1200, 2)),
+                ((400, 2), (800, 2), (1200, 2)),
+                ((24, 2), (190, 2), (355, 2)),
+            ),
+        )
+        with self.assertRaisesRegex(
+            HarnessError, "^settings_surface_capture_not_reviewed$"
+        ):
+            adapter.capture_settled_fingerprints("private", ((0, 0),))
+
+
 class LivePortTests(unittest.TestCase):
     def test_starts_real_adapter_commands_and_observes_two_output_topology(self) -> None:
         operations = FakeOperations()
@@ -847,7 +973,7 @@ class LivePortTests(unittest.TestCase):
         port = LiveXorgHarnessPort(config(), operations)
 
         with self.assertRaisesRegex(HarnessError, "^live_step_not_implemented$"):
-            port.run_step("installed_workflow", "open_quick_settings")
+            port.run_step("installed_workflow", "private_unreviewed_step")
         with self.assertRaisesRegex(
             HarnessError, "^live_process_ownership_unavailable$"
         ):
@@ -1016,6 +1142,74 @@ class LivePortTests(unittest.TestCase):
             port.run_step("installed_workflow", "create_normal_notification")
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
+    def test_keeps_one_attested_settings_epoch_across_steps_25_to_28(self) -> None:
+        operations = FakeOperations()
+        factory = FakeSettingsEpochFactory()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()),
+            operations,
+            FakeAccessibility(operations),
+            None,
+            factory,
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+        self.assertEqual(factory.calls, [])
+
+        identifiers = tuple(SETTINGS_RESULT_CATEGORIES)
+        for identifier in identifiers:
+            self.assertEqual(
+                port.run_step("installed_workflow", identifier),
+                Observation(True, True),
+            )
+
+        self.assertEqual(len(factory.calls), 1)
+        environment, endpoint, accessibility, surfaces = factory.calls[0]
+        self.assertEqual(environment["DISPLAY"], ":140")
+        self.assertEqual(environment["DBUS_SESSION_BUS_ADDRESS"], endpoint.address)
+        self.assertEqual((endpoint.socket_device, endpoint.socket_inode), (1, 100))
+        self.assertIsInstance(accessibility, LiveSettingsAccessibilityAdapter)
+        self.assertIsInstance(surfaces, LiveSettingsSurfaceAdapter)
+        self.assertEqual(factory.workflow.calls, list(identifiers))
+        self.assertEqual(
+            surfaces.reviewed_surface_sequence(),
+            ("panel_primary", "panel_secondary", "quick_settings"),
+        )
+
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+        self.assertEqual(factory.dbus_probe.close_calls, 1)
+
+    def test_settings_epoch_initialization_failure_is_categorical(self) -> None:
+        operations = FakeOperations()
+
+        def fail_factory(environment, endpoint, accessibility, surfaces):
+            del environment, endpoint, accessibility, surfaces
+            raise RuntimeError("private detail")
+
+        port = LiveXorgHarnessPort(
+            config(installed_paths()),
+            operations,
+            FakeAccessibility(operations),
+            None,
+            fail_factory,
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+
+        with self.assertRaisesRegex(
+            HarnessError, "^live_settings_epoch_initialization_failed$"
+        ):
+            port.run_step("installed_workflow", "open_quick_settings")
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
     def test_observes_two_coherent_wallpaper_desktops_and_bottom_panels(self) -> None:
         operations = FakeOperations()
         port = LiveXorgHarnessPort(config(installed_paths()), operations)
@@ -1049,6 +1243,42 @@ class LivePortTests(unittest.TestCase):
             if argv[0] == "/usr/bin/xwininfo"
         ]
         self.assertEqual(len(geometry_queries), 6)
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_resolves_only_reviewed_settings_windows_at_fixed_geometry(self) -> None:
+        operations = FakeOperations()
+        quick_window = 0x500005
+        quick_geometry = WindowGeometry(1220, 452, 380, 400)
+        operations.controlled_windows[QUICK_SETTINGS_WINDOW_TITLE] = quick_window
+        operations.surface_geometries[quick_window] = quick_geometry
+        operations.window_geometry_payloads[quick_window] = xwininfo_payload(
+            quick_window, quick_geometry
+        )
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+            "verify_desktop_wallpaper_both_outputs",
+            "verify_panel_policy_both_outputs",
+        ):
+            port.run_step("installed_workflow", identifier)
+
+        self.assertEqual(port._settings_surface_window("panel_primary"), PANEL_LEFT)
+        self.assertEqual(
+            port._settings_surface_window("panel_secondary"), PANEL_RIGHT
+        )
+        self.assertEqual(
+            port._settings_surface_window("quick_settings"), quick_window
+        )
+
+        operations.window_geometry_payloads[quick_window] = xwininfo_payload(
+            quick_window, WindowGeometry(1219, 452, 380, 400)
+        )
+        with self.assertRaisesRegex(
+            HarnessError, "^live_settings_surface_window_invalid$"
+        ):
+            port._settings_surface_window("quick_settings")
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_runs_controlled_launcher_pin_and_two_window_panel_lifecycle(self) -> None:

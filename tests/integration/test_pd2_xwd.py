@@ -147,6 +147,18 @@ class CaptureFixture:
             runner,
         )
 
+    def capture_samples(
+        self, runner: FakeCaptureRunner, points: Sequence[tuple[int, int]]
+    ) -> bytes:
+        return capture_window_fingerprint(
+            self.executable,
+            0x1234,
+            self.private,
+            {"DISPLAY": ":140"},
+            runner,
+            points,
+        )
+
 
 class XwdCaptureBoundaryTests(unittest.TestCase):
     def test_runs_exact_executable_and_returns_only_a_fingerprint(self) -> None:
@@ -169,6 +181,19 @@ class XwdCaptureBoundaryTests(unittest.TestCase):
                 ),
             )
             self.assertEqual(runner.calls[0][1], {"DISPLAY": ":140", "LC_ALL": "C"})
+            self.assertIsNotNone(runner.output)
+            self.assertFalse(runner.output.exists())
+
+    def test_sample_capture_returns_only_reviewed_pixel_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = CaptureFixture(Path(temporary).resolve())
+            runner = FakeCaptureRunner()
+            points = ((0, 0),)
+
+            result = fixture.capture_samples(runner, points)
+
+            self.assertEqual(result, fingerprint_xwd_samples(runner.payload, points))
+            self.assertEqual(len(result), FINGERPRINT_BYTES)
             self.assertIsNotNone(runner.output)
             self.assertFalse(runner.output.exists())
 

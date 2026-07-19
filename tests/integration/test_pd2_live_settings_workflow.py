@@ -18,6 +18,7 @@ from pd2_live_settings_workflow import (  # noqa: E402
     SettingsWorkflowConfig,
     SettingsWorkflowError,
 )
+from pd2_xwd import fingerprint_xwd_samples  # noqa: E402
 
 
 SURFACES = ("desktop_primary", "panel_primary", "quick_settings")
@@ -149,14 +150,20 @@ class FakeSurfaces:
     def reviewed_surface_sequence(self) -> tuple[str, ...]:
         return self.visible
 
-    def capture_settled_xwds(self, surface: str) -> tuple[bytes, bytes]:
+    def capture_settled_fingerprints(
+        self, surface: str, points: tuple[tuple[int, int], ...]
+    ) -> tuple[bytes, bytes]:
         self.calls.append(surface)
         epoch = min(self.capture_index // len(SURFACES), len(self.epochs) - 1)
         payload = self.epochs[epoch][surface]
         self.capture_index += 1
         if (epoch, surface) in self.unsettled:
-            return payload, xwd(0x70 + self.capture_index)
-        return payload, payload
+            return (
+                fingerprint_xwd_samples(payload, points),
+                fingerprint_xwd_samples(xwd(0x70 + self.capture_index), points),
+            )
+        fingerprint = fingerprint_xwd_samples(payload, points)
+        return fingerprint, fingerprint
 
 
 def successful_replies() -> list[ProbeResult]:
