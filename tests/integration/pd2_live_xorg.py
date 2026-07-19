@@ -232,6 +232,10 @@ class Operations(Protocol):
         self, identity: ProcessIdentity, executable: Path, timeout: float
     ) -> bool: ...
 
+    def fail_identity(
+        self, identity: ProcessIdentity, executable: Path, timeout: float
+    ) -> bool: ...
+
     def socket_identity(self, path: Path) -> tuple[int, int] | None: ...
 
     def socket_connectable(self, path: Path) -> bool: ...
@@ -594,6 +598,24 @@ class SystemOperations:
                 return True
             time.sleep(0.01)
         return False
+
+    def fail_identity(
+        self, identity: ProcessIdentity, executable: Path, timeout: float
+    ) -> bool:
+        if self.identify_pid(identity.pid, executable) != identity:
+            return False
+        try:
+            os.kill(identity.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.identify_pid(identity.pid, executable) != identity:
+                return True
+            time.sleep(0.01)
+        return self.identify_pid(identity.pid, executable) != identity
 
     def socket_identity(self, path: Path) -> tuple[int, int] | None:
         try:
@@ -2805,25 +2827,6 @@ class LiveXorgHarnessPort:
             )),
         )
 
-    def _observe_service_gap(self, role: str) -> bool:
-        try:
-            probe = self._private_probe()
-        except Exception:
-            return True
-        try:
-            operation = {
-                "prismdrake-settingsd": "settings_get_current_snapshot",
-                "prismdrake-notifyd": "notification_get_current_state",
-            }.get(role)
-            if operation is None:
-                return False
-            probe.call(operation, 2 if role == "prismdrake-settingsd" else 1)
-        except Exception:
-            return True
-        finally:
-            probe.close()
-        return False
-
     def restart_exact(
         self, identity: LifecycleProcessIdentity
     ) -> LifecycleRestartObservation:
@@ -2835,11 +2838,16 @@ class LiveXorgHarnessPort:
         if executable is None:
             raise HarnessError("component_identity_unavailable")
         local = ProcessIdentity(identity.pid, identity.start_time)
-        if not self._operations.stop_identity(local, executable, self._config.stop_timeout):
+        if not self._operations.fail_identity(
+            local, executable, self._config.stop_timeout
+        ):
             raise HarnessError("component_restart_signal_failed")
         if role == "prismdrake-shell":
             self._surface_shell_identity = None
-        invalidated = role != "prismdrake-shell" and self._observe_service_gap(role)
+        # Exact old-authority death is the invalidation boundary. A supervised
+        # replacement may reacquire D-Bus before a sampling probe can observe
+        # the owner gap, but it cannot preserve the killed process identity.
+        invalidated = role != "prismdrake-shell"
         deadline = self._operations.monotonic() + self._config.readiness_timeout
         replacement: ProcessIdentity | None = None
         while self._operations.monotonic() < deadline:
@@ -3576,7 +3584,9 @@ class LiveXorgHarnessPort:
         before = self._component_identities()
         windows = dict(self._controlled_windows)
         old = before[name]
-        if not self._operations.stop_identity(old, executable, self._config.stop_timeout):
+        if not self._operations.fail_identity(
+            old, executable, self._config.stop_timeout
+        ):
             raise HarnessError("component_restart_signal_failed")
         if name == "prismdrake-shell":
             self._surface_shell_identity = None

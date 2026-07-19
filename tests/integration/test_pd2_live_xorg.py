@@ -166,6 +166,7 @@ class FakeOperations:
         self.run_calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
         self.stop_calls: list[FakeChild] = []
         self.stop_identity_calls: list[ProcessIdentity] = []
+        self.fail_identity_calls: list[ProcessIdentity] = []
         self.children: list[FakeChild] = []
         self.now = 0.0
         self.stop_succeeds = True
@@ -430,6 +431,18 @@ class FakeOperations:
     ) -> bool:
         del timeout
         self.stop_identity_calls.append(identity)
+        return self._replace_identity(identity, executable)
+
+    def fail_identity(
+        self, identity: ProcessIdentity, executable: Path, timeout: float
+    ) -> bool:
+        del timeout
+        self.fail_identity_calls.append(identity)
+        return self._replace_identity(identity, executable)
+
+    def _replace_identity(
+        self, identity: ProcessIdentity, executable: Path
+    ) -> bool:
         component_pid = self.component_pids.get(executable.name)
         if component_pid is not None:
             current = ProcessIdentity(
@@ -1217,6 +1230,31 @@ class NotificationFailureReplayAdapterTests(unittest.TestCase):
 
 
 class LivePortTests(unittest.TestCase):
+    def test_failure_signal_requires_exact_pid_start_time_identity(self) -> None:
+        operations = live_xorg.SystemOperations()
+        expected = ProcessIdentity(4312, 98_765)
+        recycled = ProcessIdentity(expected.pid, expected.start_time + 1)
+
+        with patch.object(
+            operations, "identify_pid", return_value=recycled
+        ), patch.object(live_xorg.os, "kill") as kill:
+            self.assertFalse(
+                operations.fail_identity(
+                    expected, Path("/usr/bin/prismdrake-settingsd"), 1.0
+                )
+            )
+        kill.assert_not_called()
+
+        with patch.object(
+            operations, "identify_pid", side_effect=(expected, None)
+        ), patch.object(live_xorg.os, "kill") as kill:
+            self.assertTrue(
+                operations.fail_identity(
+                    expected, Path("/usr/bin/prismdrake-settingsd"), 1.0
+                )
+            )
+        kill.assert_called_once_with(expected.pid, live_xorg.signal.SIGKILL)
+
     def test_performance_endpoints_use_shell_start_and_exact_notify_reply(self) -> None:
         port = LiveXorgHarnessPort(config(), FakeOperations())
         port._component_identity = lambda _name: ProcessIdentity(44, 250)  # type: ignore[method-assign]  # noqa: SLF001
@@ -2337,6 +2375,13 @@ class LivePortTests(unittest.TestCase):
                 if identifier == "replace_or_restart_window_manager":
                     self.assertEqual(len(operations.spawn_calls), 5)
                     self.assertEqual(len(operations.stop_calls), 1)
+                    self.assertEqual(operations.fail_identity_calls, [])
+                else:
+                    old = ProcessIdentity(
+                        operations.component_pids[restarted], before[restarted]
+                    )
+                    self.assertEqual(operations.fail_identity_calls, [old])
+                    self.assertNotIn(old, operations.stop_identity_calls)
                 if identifier == "restart_notifyd":
                     self.assertIn("Notification center", accessibility.observed)
                 if identifier == "restart_shell":
@@ -2345,6 +2390,24 @@ class LivePortTests(unittest.TestCase):
                 self.assertEqual(
                     port.cleanup("failure_replay"), Observation(True, True)
                 )
+
+    def test_lifecycle_restart_uses_exact_failure_invalidation_boundary(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        port.run_step("failure_replay", "restart_settingsd")
+        before = port.components()
+
+        restarted = port.restart_exact(before.settingsd)
+
+        old = ProcessIdentity(before.settingsd.pid, before.settingsd.start_time)
+        self.assertTrue(restarted.dependent_invalidated)
+        self.assertEqual(operations.fail_identity_calls[-1], old)
+        self.assertNotIn(old, operations.stop_identity_calls)
+        self.assertEqual(
+            port.cleanup("failure_replay"), Observation(True, True)
+        )
 
     def test_component_restart_fails_closed_for_signal_timeout_and_sibling_drift(self) -> None:
         cases = (
