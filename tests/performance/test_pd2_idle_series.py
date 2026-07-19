@@ -91,8 +91,10 @@ class IdleSeriesTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "series.json"
-            idle_series.write_series(output, document)
+            with mock.patch.object(os, "fsync", wraps=os.fsync) as sync:
+                idle_series.write_series(output, document)
             self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(sync.call_count, 2)
             with self.assertRaisesRegex(
                 idle_series.IdleSeriesError, "^output_path_invalid$"
             ):

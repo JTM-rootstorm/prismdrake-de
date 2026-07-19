@@ -207,6 +207,17 @@ class RuntimePerformanceTests(unittest.TestCase):
                 runtime.write_evidence(output, {})
             self.assertEqual(output.read_bytes(), b"retained")
 
+    def test_writer_syncs_file_and_publication_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary).resolve() / "runtime.json"
+            with (
+                mock.patch.object(runtime, "validate_runtime_evidence"),
+                mock.patch.object(os, "fsync", wraps=os.fsync) as sync,
+            ):
+                runtime.write_evidence(output, {})
+            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(sync.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -242,6 +242,11 @@ def write_series(path: Path, document: dict[str, Any]) -> None:
         os.link(temporary, path, follow_symlinks=False)
         temporary.unlink()
         temporary = None
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
         require(
             stat.S_IMODE(path.stat().st_mode) == 0o600,
             "output_permissions_invalid",
