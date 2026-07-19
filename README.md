@@ -9,9 +9,11 @@ Prismdrake is in **PD2: Core desktop shell**. The PD0 architecture decisions
 and PD1 scope were approved on 2026-07-16, and the exact Gentoo PD1 reference
 lifecycle passed on 2026-07-18. The maintainer activated PD2 on 2026-07-18 to
 integrate the panel, launcher, desktop, notification service, quick-settings
-framework, multi-output baseline, and logout path. PD2 remains Experimental;
-this repository does not yet contain a usable desktop shell or production-ready
-desktop environment.
+framework, multi-output baseline, and logout path. The source tree now contains
+the integrated Experimental PD2 core-shell implementation for developer
+validation. Its final installed reference-environment exit record is still
+being collected. Prismdrake does not yet contain a usable desktop shell for
+ordinary users or a production-ready desktop environment.
 
 ## Profiles
 

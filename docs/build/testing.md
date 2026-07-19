@@ -1,4 +1,4 @@
-# Testing Prismdrake PD1
+# Testing Prismdrake
 
 Contract validation and compiled tests are separate required layers. Run both
 for production implementation changes:
@@ -37,22 +37,24 @@ cmake --build --preset clang-debug
 ctest --preset clang-debug
 ```
 
-The final Gentoo package lifecycle has separate strict preflight and final
-evidence contracts. `GentooInstalledArtifactAttestationTest`,
+The Gentoo package lifecycles have separate strict preflight and final evidence
+contracts. The `GentooInstalledArtifactAttestationTest`,
 `GentooPortageLifecycleCollectorTest`, and
-`GentooPortageLifecycleEvidenceTest` exercise only synthetic positive and
-negative fixtures; they do not claim that Portage installation ran. The
+`GentooPortageLifecycleEvidenceTest` family retains the historical PD1
+contract. `GentooPd2InstalledArtifactAttestationTest`,
+`GentooPd2PortageLifecycleCollectorTest`, and
+`GentooPd2PortageLifecycleEvidenceTest` exercise only synthetic positive and
+negative PD2 fixtures; they do not claim that Portage installation ran. The
 `GentooProductEbuildTest` additionally pins the exact-revision timestamp
-contract used to make Qt resource metadata deterministic. The
-preflight attestation is captured after the `USE=test` install and binds the
-exact installed executable, Portage ownership, source-driver, revision, and
-ebuild hashes before either installed driver executes. The post-demonstration
-record then binds every remaining phase and is the only final lifecycle result.
-Validate a real private final result with:
+contract used to make Qt resource metadata deterministic. The PD2 preflight
+attestation is captured after the `USE=test` install and binds the exact
+installed executables, Portage ownership, source driver, revision, ebuild, and
+packaged data before an installed driver executes. The final lifecycle record
+then binds every remaining phase. Validate a real private PD2 result with:
 
 ```sh
-python3 tests/gentoo/portage_lifecycle_evidence.py \
-  /absolute/private/evidence/pd1-portage-lifecycle.json
+python3 tests/gentoo/pd2_portage_lifecycle_evidence.py \
+  /absolute/private/evidence/pd2-portage-lifecycle.json
 ```
 
 To exercise sanitizers without changing ordinary build artifacts:
@@ -112,6 +114,10 @@ The command binds the fixed five `/usr/bin/prismdrake-*` executables before and
 after the run, uses only reviewed absolute X11 observer paths, and reports fixed
 failure categories without echoing supplied paths. Revalidate a retained record
 without starting X11 by passing only `--validate-evidence`.
+
+The complete environment, workflow, fallback replay, privacy boundary, and
+limitations are documented in the
+[PD2 installed multi-output demonstration guide](../development/pd2-installed-demonstration.md).
 
 These observers are test-only. They are selected by `USE=test` for the product
 ebuild and by `USE=x11` for `dev-util/prismdrake-dev-env`; neither belongs in

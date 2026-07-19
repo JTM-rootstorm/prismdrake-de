@@ -1,12 +1,18 @@
 # Live accessibility testing
 
-PD1-WP13 includes a bounded live AT-SPI lane around the production
-`prismdrake-settingsd` and `prismdrake-shell` executables. It verifies the
-toolkit-to-platform bridge separately from the display-free QML tests and the
-candidate visual captures. The lane is an assistive-technology smoke test, not
-a claim of complete screen-reader support.
+Prismdrake combines display-free Qt Quick tests, bounded AT-SPI observers, and
+the installed PD2 demonstration. These layers verify the toolkit-to-platform
+bridge separately from candidate visual captures. They are
+assistive-technology smoke and regression tests, not a claim of complete
+screen-reader support or production accessibility qualification.
 
-## Covered behavior
+The original PD1 lane below remains the narrow build-tree entry point. PD2 adds
+exact observers for the integrated panel, launcher, grouped tasks,
+notifications, notification center, quick settings, and logout confirmation.
+The complete installed route is documented in the
+[PD2 multi-output demonstration harness](pd2-installed-demonstration.md).
+
+## PD1 foundation behavior
 
 The harness creates a disposable Xvfb display, Openbox instance, D-Bus session,
 AT-SPI bus, XDG directory set, and one synthetic desktop entry. It then checks:
@@ -14,7 +20,7 @@ AT-SPI bus, XDG directory set, and one synthetic desktop entry. It then checks:
 - the panel launcher and diagnostics controls have non-empty names,
   descriptions, push-button roles, `Press` actions, and enabled/focusable
   states;
-- invoking the panel launcher's AT-SPI action opens the production launcher;
+- invoking the panel launcher's AT-SPI action opens the installed shell launcher;
 - the launcher pane, editable search field, and deterministic fixture result
   expose their expected roles and descriptions;
 - focus starts in search, moves forward to the result, and returns to search
@@ -28,12 +34,43 @@ This covers the platform-bridge portion of `PD-A11Y-001` through
 QML and visual lanes remain responsible for visible focus, minimum targets,
 profile/fallback parity, text scale, reduced motion, and non-color cues.
 
-The integrated PD1 demonstration extends this coverage to the production task
+The integrated PD1 demonstration extends this coverage to the installed task
 presentation. It verifies that the exact shell and AT-SPI owners agree, then
 exercises keyboard minimization and reactivation, pointer secondary-menu entry,
 AT-SPI Close, and keyboard Close against two private fixture windows. Later
 EWMH observations and exact process disappearance confirm the requests; the
 shell never becomes authoritative for window state.
+
+## PD2 integrated behavior
+
+The PD2 source and QML suites add deterministic focus and action coverage for:
+
+- applications, pins, running-task groups, per-window group members, and
+  explicit activate, minimize, close, launch, pin, and unpin routes;
+- launcher search, result traversal, desktop actions, action-menu dismissal,
+  empty/loading/error presentation, and focus recovery after model change;
+- transient notifications, history rows, live and dead action state,
+  dismissal, clear history, do-not-disturb, and invoking-control recovery;
+- quick settings with correlated profile and do-not-disturb mutations,
+  unavailable adapter state, notification-center opening, and logout request;
+- logout confirmation with deterministic Tab and Backtab cycles, directional
+  navigation, Enter and Space activation, cancellation, and right-to-left
+  layout; and
+- per-output panels and desktop surfaces, global-surface migration, primary
+  output replacement, and focus recovery after an invoking output disappears.
+
+The shared surface tests exercise `lustre`, `forge`, high contrast, reduced
+motion, disabled transparency, text scaling, minimum targets, pseudo-long text,
+and right-to-left layout where the component exposes those states. AT-SPI
+observers select exact shell-owned controls by reviewed role, name,
+description, action, visibility, enabled state, focusability, and focused
+state. They return fixed categorical outcomes rather than serializing the live
+tree.
+
+This matrix addresses the implemented PD2 portions of `PD-A11Y-001` through
+`PD-A11Y-012`, `PD-I18N-001` through `PD-I18N-007`, `PD-INPUT-001` through
+`PD-INPUT-004`, and `PD-TEST-005`. Passing source tests does not substitute for
+the required installed Gentoo run.
 
 ## Build-tree command
 
@@ -151,9 +188,10 @@ python3 tests/accessibility/test_live_atspi.py
 
 ## Remaining boundary
 
-This lane does not operate a screen reader, inspect natural-language speech,
-test real user application names or window titles, cover a production
-notification service, or establish multi-output, mixed-scale, alternate-WM,
-or non-English behavior. Those claims require separate evidence. A skipped
-live lane is also not a pass; release or milestone review must cite a completed
-reference-environment run when the platform bridge is in scope.
+These lanes do not operate a screen reader, inspect natural-language speech,
+or ingest real user application names, window titles, notification content, or
+the unrestricted accessibility tree. The PD2 installed harness adds controlled
+notification and same-scale multi-output behavior, but full physical mixed-DPI,
+alternate-WM, real-GPU, natural-language, and production visual qualification
+remain Deferred. A skipped live lane is not a pass; milestone review must cite
+a completed reference-environment run when the platform bridge is in scope.

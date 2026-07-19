@@ -1,6 +1,6 @@
-# Building Prismdrake PD1
+# Building Prismdrake
 
-Prismdrake PD1 uses CMake 3.24 or newer, C++20 without compiler extensions,
+Prismdrake uses CMake 3.24 or newer, C++20 without compiler extensions,
 and system-packaged dependencies. Configure and build operations do not fetch
 or vendor third-party source. GCC and Clang are the supported Linux compiler
 families.
@@ -15,25 +15,20 @@ is `nlohmann-json3-dev`. The dependency is header-only and is compiled into the
 internal theme target. The configured 3.11 constraint is declared but is not a
 verified lower bound.
 
-The PD1 production build contains internal foundation, configuration, theme,
-settings, launcher, notification, X11, shell-presentation, and session targets.
-The Experimental shell presentation now includes immutable Qt projections of
-one complete settings/theme generation, authoritative task snapshots, matching
-launcher catalog/search snapshots, and synthetic notification snapshots. It
-also contains compiled panel, launcher, and notification QML modules plus a
-Qt/X11 panel window host that publishes standard dock and strut state through
-the existing X11 adapter. An event-driven task controller owns a separate X11
-connection, publishes complete EWMH task observations, and sends only checked
-standard WM requests tied to the current task lifetime and generation. The
-presentation adapters emit typed intents; none becomes authoritative for window or
-notification state. The launcher controller schedules replaceable discovery
-and search on one worker and safe single-flight process launch on a separate
-worker, so neither filesystem indexing nor the bounded detached-launch
-handshake blocks the UI thread. These internal libraries are not installed or
-exposed as stable C++ ABIs. The three Experimental process targets and their
-read-only runtime data have a single CMake install contract. The isolated
-toolkit experiment remains a separate CMake project and is not linked into
-production targets.
+The integrated Experimental build contains internal foundation, configuration,
+theme, settings, launcher, notification, X11, shell-presentation, desktop,
+quick-settings, control, and session targets. The shell consumes complete
+settings/theme, task, application-catalog, pin, notification, and output
+snapshots. Its Qt/X11 hosts publish standard desktop and dock roles while the
+event-driven task controller sends only checked standard WM requests tied to a
+current task lifetime and generation. Presentation adapters emit typed intents;
+none becomes authoritative for window, notification, settings, or session
+state. Filesystem discovery, search, application launch, wallpaper decoding,
+D-Bus waits, and X11 observations remain bounded and do not become QML business
+logic. These internal libraries are not installed or exposed as stable C++
+ABIs. The five Experimental executables and their read-only runtime data have
+one CMake install contract. The isolated toolkit experiment remains a separate
+CMake project and is not linked into installed targets.
 
 The shell settings client integrates the selected sd-bus provider with Qt's
 socket and monotonic-timeout event sources. It treats generation signals as
@@ -48,14 +43,12 @@ Shell presentation requires system Qt Core, GUI, QML, Quick, and Quick Controls
 The Gentoo reference environment verifies Qt 6.11.1 and qtdeclarative
 6.11.1-r1. Ubuntu 24.04's Qt 6.4 packages are below the supported floor and do
 not provide product build or compatibility evidence. The Experimental shell
-composition root wires the settings client, panel, launcher, task controller,
-development-only synthetic-notification owner, and session boundary. The fixed
-bounded notification fixture is available from the panel and survives a
-settings-owned QML view rebuild because its model and passive presentation
-mirror remain runtime-owned. Its action and dismissal affordances return focus
-to the panel. This harness performs no notification D-Bus work and never claims
-`org.freedesktop.Notifications`; a production service remains later work. See the
-[panel-shell evidence](../research/pd1-panel-shell-evidence.md).
+composition root wires the settings, output, launcher, panel, task,
+notification-center, desktop, quick-settings, Shell1, and Session1 clients and
+surfaces. Installed mode uses the separate toolkit-neutral
+`prismdrake-notifyd` authority; synthetic notification ownership remains
+explicitly test- or developer-mode only. See the
+[PD2 implementation status](../architecture/pd2-core-shell.md).
 
 ## Installation contract
 
@@ -73,13 +66,15 @@ cmake --build build-package --parallel
 DESTDIR="$PWD/package-root" cmake --install build-package
 ```
 
-The install contract contains `prismdrake-settingsd`, `prismdrake-shell`, and
-`prismdrake-session`; packaged defaults, theme tokens, schemas, and the
-Experimental settings interface; and one validated X11 session entry under
-`share/xsessions`. The session entry starts the init-neutral supervisor. The
-supervisor itself publishes the canonical Prismdrake desktop identity to its
-children and requires an inherited X display, private runtime directory, and
-session bus. Installation never creates or modifies user configuration.
+The install contract contains `prismdrake-session`, `prismdrake-settingsd`,
+`prismdrake-notifyd`, `prismdrake-shell`, and `prismdrake-shellctl`; packaged
+defaults, theme tokens, schemas, Experimental Prismdrake interfaces,
+translations, reviewed architecture documents, and one validated X11 session
+entry under `share/xsessions`. The session entry starts the init-neutral
+supervisor. The supervisor itself publishes the canonical Prismdrake desktop
+identity to its children and requires an inherited X display, private runtime
+directory, and session bus. Installation never creates or modifies user
+configuration.
 
 ## Canonical developer builds
 
@@ -126,7 +121,7 @@ configure error. Use `-DBUILD_TESTING=OFF` for a runtime-only build;
 Prismdrake never downloads dependencies during configuration.
 
 The Gentoo evidence environment has tested CMake 4.3.3-r1, GCC 15.3.0, and
-Clang 22.1.8 against the production foundation target. The configured CMake
+Clang 22.1.8 against the internal foundation target. The configured CMake
 constraint is 3.24, but that exact lower bound and minimum compiler versions
 will not be claimed as verified until lower-bound testing supplies measured
 evidence. See the [toolchain evidence report](../research/pd1-build-toolchain-evidence.md).

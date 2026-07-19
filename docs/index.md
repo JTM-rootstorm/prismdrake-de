@@ -51,9 +51,10 @@ release or stable public interfaces.
 - [PD1 launcher-model evidence](research/pd1-launcher-model-evidence.md)
 - [PD1 synthetic notification-presentation evidence](research/pd1-notification-presentation-evidence.md)
 - [PD1 panel-shell evidence](research/pd1-panel-shell-evidence.md)
-- [PD1 production-shell accessibility evidence](research/pd1-accessibility-evidence.md)
+- [PD1 installed-shell accessibility evidence](research/pd1-accessibility-evidence.md)
 - [PD1 performance-evidence method](research/pd1-performance-evidence-method.md)
 - [PD2 performance and accessibility evidence contract](research/pd2-performance-accessibility-evidence-contract.md)
+- [PD2 core-shell implementation status](architecture/pd2-core-shell.md)
 - [PD1 Gentoo package lifecycle evidence](research/pd1-portage-lifecycle-evidence.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
@@ -61,6 +62,7 @@ release or stable public interfaces.
 ## Testing
 
 - [PD1 X11 development harness](development/pd1-x11-harness.md)
+- [PD2 installed multi-output demonstration harness](development/pd2-installed-demonstration.md)
 - [PD1 diagnostics](development/diagnostics.md)
 - [Live accessibility testing](development/accessibility-testing.md)
 - [Deterministic visual baseline candidates](testing/visual-baselines.md)

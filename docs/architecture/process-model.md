@@ -41,8 +41,8 @@ form an acyclic graph; consumers wait with bounded timeouts and useful errors.
 | `prismdrake-settingsd` | `org.prismdrake.Settings1` | `/org/prismdrake/Settings1`: `org.prismdrake.Settings1`, `org.prismdrake.SettingsSnapshot1` | Implemented Experimental settings boundary; snapshot v2 is the Accepted PD2 target |
 | `prismdrake-notifyd` | `org.freedesktop.Notifications` | standard path and `org.freedesktop.Notifications` 1.3 | Implemented PD2 standards boundary |
 | `prismdrake-notifyd` | `org.prismdrake.NotificationCenter1` | `/org/prismdrake/NotificationCenter1`: `org.prismdrake.NotificationCenter1` | Implemented Experimental PD2 contract |
-| `prismdrake-shell` | `org.prismdrake.Shell1` | `/org/prismdrake/Shell1`: `org.prismdrake.Shell1` | Accepted Experimental PD2 contract; implementation pending |
-| `prismdrake-session` | `org.prismdrake.Session1` | `/org/prismdrake/Session1`: `org.prismdrake.Session1` | Accepted Experimental PD2 contract; implementation pending |
+| `prismdrake-shell` | `org.prismdrake.Shell1` | `/org/prismdrake/Shell1`: `org.prismdrake.Shell1` | Implemented Experimental PD2 contract |
+| `prismdrake-session` | `org.prismdrake.Session1` | `/org/prismdrake/Session1`: `org.prismdrake.Session1` | Implemented Experimental PD2 contract |
 
 Prismdrake-native interfaces allow same-user callers only. They use typed
 redacted errors, bounded timeouts, fixed versioned methods, and no arbitrary-key,
@@ -86,15 +86,17 @@ materials, reduced motion, and optional integrations disabled. A crash loop
 must preserve a basic logout path and must not restart the WM/compositor or
 destroy its authoritative window state.
 
-The Experimental PD1 supervisor gives settingsd one normal restart after 500
-ms and the shell three normal restarts after 250 ms, 500 ms, and 1 second in a
-rolling 30-second window. Thirty seconds of healthy runtime clears that
-component's history. Exhaustion permits one final safe-mode launch of both
-components; any further failure is terminal. Settings and shell readiness each
-have a 5-second bound. SIGINT or SIGTERM interrupts readiness waits and
-backoff, then shutdown sends SIGTERM to the exact shell and settingsd PIDs in
-that order, waits up to 2 seconds per child, and reports a SIGKILL escalation
-with a further 1-second reap bound.
+The Experimental PD2 supervisor gives settingsd one normal restart after 500
+ms, notifyd two normal restarts after 250 ms and 500 ms, and the shell three
+normal restarts after 250 ms, 500 ms, and 1 second in a rolling 30-second
+window. Thirty seconds of healthy runtime clears that component's history.
+Notifyd exhaustion degrades notification functionality; critical-component
+exhaustion permits one final safe-mode launch. Any further critical failure is
+terminal. Settings, notification, and shell readiness are bounded. SIGINT or
+SIGTERM interrupts readiness waits and backoff, then shutdown sends SIGTERM to
+the exact shell, notifyd, and settingsd PIDs in reverse dependency order, waits
+up to 2 seconds per child, and reports a SIGKILL escalation with a further
+1-second reap bound.
 
 The current supervisor consumes a validated inherited session bus rather than
 spawning one. The settings service has an explicit D-Bus readiness probe. For each shell
