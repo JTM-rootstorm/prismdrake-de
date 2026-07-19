@@ -1,14 +1,16 @@
 #include "NotificationHistory.hpp"
 
 #include "AtomicFile.hpp"
-#include "BoundedFile.hpp"
-
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cstdint>
+#include <fcntl.h>
 #include <limits>
+#include <optional>
 #include <set>
 #include <string_view>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 #include <sys/stat.h>
@@ -23,6 +25,79 @@ using foundation::Result;
 using notifications::ServiceAction;
 using notifications::ServiceUrgency;
 using OrderedJson = nlohmann::ordered_json;
+
+constexpr std::size_t maximumJsonDepth = 8U;
+constexpr std::size_t maximumJsonNodes = 16U * 1024U;
+constexpr std::size_t maximumJsonKeyBytes = 64U;
+
+class HistorySaxBoundary final : public nlohmann::json_sax<OrderedJson> {
+  public:
+    bool null() override { return consumeNode(); }
+    bool boolean(bool) override { return consumeNode(); }
+    bool number_integer(number_integer_t) override { return consumeNode(); }
+    bool number_unsigned(number_unsigned_t) override { return consumeNode(); }
+    bool number_float(number_float_t, const string_t &) override { return consumeNode(); }
+    bool string(string_t &value) override {
+        return value.size() <= notifications::maximumServiceBodyBytes && consumeNode();
+    }
+    bool binary(binary_t &) override { return false; }
+
+    bool start_object(std::size_t elements) override {
+        if (elements != nlohmann::detail::unknown_size() && elements > maximumJsonNodes) {
+            return false;
+        }
+        if (!consumeNode() || containers_.size() >= maximumJsonDepth) {
+            return false;
+        }
+        containers_.emplace_back(std::set<std::string>{});
+        return true;
+    }
+    bool key(string_t &value) override {
+        if (value.empty() || value.size() > maximumJsonKeyBytes || containers_.empty() ||
+            !containers_.back()) {
+            return false;
+        }
+        return containers_.back()->insert(value).second && consumeNode();
+    }
+    bool end_object() override { return endContainer(true); }
+
+    bool start_array(std::size_t elements) override {
+        if (elements != nlohmann::detail::unknown_size() && elements > maximumJsonNodes) {
+            return false;
+        }
+        if (!consumeNode() || containers_.size() >= maximumJsonDepth) {
+            return false;
+        }
+        containers_.emplace_back(std::nullopt);
+        return true;
+    }
+    bool end_array() override { return endContainer(false); }
+
+    bool parse_error(std::size_t, const std::string &,
+                     const nlohmann::detail::exception &) override {
+        return false;
+    }
+
+  private:
+    [[nodiscard]] bool consumeNode() noexcept {
+        if (nodes_ >= maximumJsonNodes) {
+            return false;
+        }
+        ++nodes_;
+        return true;
+    }
+
+    [[nodiscard]] bool endContainer(bool object) {
+        if (containers_.empty() || containers_.back().has_value() != object) {
+            return false;
+        }
+        containers_.pop_back();
+        return true;
+    }
+
+    std::size_t nodes_{0U};
+    std::vector<std::optional<std::set<std::string>>> containers_;
+};
 
 [[nodiscard]] Error historyError(ErrorCode code, std::string message) {
     return {code, std::move(message), "Retain the prior private history and recover safely."};
@@ -173,6 +248,87 @@ using OrderedJson = nlohmann::ordered_json;
     return Result<void>::success();
 }
 
+[[nodiscard]] Result<void> validatePrivateDirectory(const std::filesystem::path &path) {
+    struct stat metadata = {};
+    if (::lstat(path.c_str(), &metadata) != 0 || !S_ISDIR(metadata.st_mode) ||
+        S_ISLNK(metadata.st_mode) || metadata.st_uid != ::geteuid() ||
+        (metadata.st_mode & 0777U) != 0700U) {
+        return Result<void>::failure(historyError(ErrorCode::permission_denied,
+                                                  "A private notification directory is unsafe."));
+    }
+    return Result<void>::success();
+}
+
+[[nodiscard]] Result<void> validateHistoryPathShape(const std::filesystem::path &path) {
+    const auto notificationsDirectory = path.parent_path();
+    const auto prismdrakeDirectory = notificationsDirectory.parent_path();
+    const bool containsTraversal = std::ranges::any_of(
+        path, [](const std::filesystem::path &component) { return component == ".."; });
+    if (!path.is_absolute() || containsTraversal || path.filename() != "history-v1.json" ||
+        notificationsDirectory.filename() != "notifications" ||
+        prismdrakeDirectory.filename() != "prismdrake") {
+        return Result<void>::failure(
+            historyError(ErrorCode::invalid_argument,
+                         "The notification history path is outside its XDG layout."));
+    }
+    auto prismdrake = validatePrivateDirectory(prismdrakeDirectory);
+    if (!prismdrake) {
+        return prismdrake;
+    }
+    return validatePrivateDirectory(notificationsDirectory);
+}
+
+[[nodiscard]] Result<std::string> readPrivateHistoryFile(const std::filesystem::path &path) {
+    auto validPath = validateHistoryPathShape(path);
+    if (!validPath) {
+        return Result<std::string>::failure(validPath.error());
+    }
+    const int descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW);
+    if (descriptor < 0) {
+        const auto code = errno == ENOENT
+                              ? ErrorCode::not_found
+                              : (errno == EACCES || errno == EPERM ? ErrorCode::permission_denied
+                                                                   : ErrorCode::io_error);
+        return Result<std::string>::failure(
+            historyError(code, "The private notification history could not be opened."));
+    }
+
+    struct Descriptor final {
+        int value;
+        ~Descriptor() { (void)::close(value); }
+    } owned{descriptor};
+    struct stat metadata = {};
+    if (::fstat(descriptor, &metadata) != 0 || !S_ISREG(metadata.st_mode) ||
+        metadata.st_uid != ::geteuid() || (metadata.st_mode & 0777U) != 0600U ||
+        metadata.st_size < 0 ||
+        static_cast<std::uintmax_t>(metadata.st_size) >
+            notifications::maximumNotificationHistoryBytes) {
+        return Result<std::string>::failure(historyError(
+            ErrorCode::permission_denied, "The private notification history file is unsafe."));
+    }
+
+    std::string bytes(static_cast<std::size_t>(metadata.st_size), '\0');
+    std::size_t completed = 0U;
+    while (completed < bytes.size()) {
+        const auto amount = ::read(descriptor, bytes.data() + completed, bytes.size() - completed);
+        if (amount > 0) {
+            completed += static_cast<std::size_t>(amount);
+            continue;
+        }
+        if (amount < 0 && errno == EINTR) {
+            continue;
+        }
+        return Result<std::string>::failure(historyError(
+            ErrorCode::io_error, "The private notification history could not be read completely."));
+    }
+    std::array<char, 1U> extra{};
+    if (::read(descriptor, extra.data(), extra.size()) != 0) {
+        return Result<std::string>::failure(historyError(
+            ErrorCode::too_large, "The private notification history changed during reading."));
+    }
+    return Result<std::string>::success(std::move(bytes));
+}
+
 [[nodiscard]] Result<void> ensureHistoryParent(const std::filesystem::path &path) {
     const auto notificationsDirectory = path.parent_path();
     const auto prismdrakeDirectory = notificationsDirectory.parent_path();
@@ -257,6 +413,12 @@ Result<std::vector<NotificationRecord>> parseNotificationHistory(std::string_vie
                          "Notification history has an invalid byte length."));
     }
 
+    HistorySaxBoundary boundary;
+    if (!OrderedJson::sax_parse(jsonBytes.begin(), jsonBytes.end(), &boundary)) {
+        return Result<std::vector<NotificationRecord>>::failure(historyError(
+            ErrorCode::validation_error, "Notification history exceeds its parser boundaries."));
+    }
+
     OrderedJson root;
     try {
         root = OrderedJson::parse(jsonBytes.begin(), jsonBytes.end());
@@ -290,7 +452,7 @@ Result<std::vector<NotificationRecord>> parseNotificationHistory(std::string_vie
 }
 
 Result<std::vector<NotificationRecord>> loadNotificationHistory(const std::filesystem::path &path) {
-    auto bytes = foundation::readBoundedFile(path, notifications::maximumNotificationHistoryBytes);
+    auto bytes = readPrivateHistoryFile(path);
     if (!bytes) {
         return Result<std::vector<NotificationRecord>>::failure(bytes.error());
     }

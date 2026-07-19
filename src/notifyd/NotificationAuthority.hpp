@@ -132,6 +132,9 @@ class NotificationAuthority final {
     /// Flushes persistent closed history. Other modes are a successful no-op.
     [[nodiscard]] foundation::Result<void> flushHistory() const;
 
+    /// Returns and clears one redacted persistence-degradation latch.
+    [[nodiscard]] bool takePersistenceDegradation() noexcept;
+
   private:
     NotificationAuthority(std::shared_ptr<const foundation::MonotonicClock> clock,
                           AuthorityOptions options, std::vector<NotificationRecord> records,
@@ -139,8 +142,11 @@ class NotificationAuthority final {
 
     [[nodiscard]] foundation::Result<std::uint32_t> allocateNotificationId();
     [[nodiscard]] foundation::Result<std::uint64_t> allocateRecordId();
+    [[nodiscard]] foundation::Result<void> ensurePublishable() const;
     [[nodiscard]] foundation::Result<void> publish();
     [[nodiscard]] foundation::Result<void> persistIfNeeded() const;
+    [[nodiscard]] foundation::Result<void>
+    persistCandidate(const std::vector<NotificationRecord> &records) const;
     void makeCapacityForOne();
     void refreshTransientPresentation(NotificationRecord &record) const noexcept;
     [[nodiscard]] std::vector<NotificationRecord>::iterator findRecord(std::uint64_t recordId);
@@ -158,6 +164,7 @@ class NotificationAuthority final {
     std::uint32_t next_notification_id_{1U};
     std::uint64_t next_record_id_{1U};
     std::uint64_t generation_{1U};
+    bool persistence_degraded_{false};
 };
 
 } // namespace prismdrake::notifyd

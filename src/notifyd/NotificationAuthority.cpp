@@ -132,10 +132,18 @@ Result<std::uint64_t> NotificationAuthority::allocateRecordId() {
     return Result<std::uint64_t>::success(allocated);
 }
 
-Result<void> NotificationAuthority::publish() {
+Result<void> NotificationAuthority::ensurePublishable() const {
     if (generation_ == std::numeric_limits<std::uint64_t>::max()) {
         return Result<void>::failure(authorityError(
             ErrorCode::too_large, "The notification state generation is exhausted."));
+    }
+    return Result<void>::success();
+}
+
+Result<void> NotificationAuthority::publish() {
+    auto publishable = ensurePublishable();
+    if (!publishable) {
+        return publishable;
     }
     ++generation_;
     return Result<void>::success();
@@ -182,6 +190,10 @@ Result<NotifyOutcome> NotificationAuthority::notify(ServiceNotificationInput inp
     if (!expiry) {
         return Result<NotifyOutcome>::failure(expiry.error());
     }
+    auto publishable = ensurePublishable();
+    if (!publishable) {
+        return Result<NotifyOutcome>::failure(publishable.error());
+    }
 
     if (input.replacesId != 0U) {
         const auto existing =
@@ -219,6 +231,10 @@ Result<NotifyOutcome> NotificationAuthority::notify(ServiceNotificationInput inp
         }
     }
 
+    if (next_notification_id_ == 0U || next_record_id_ == 0U) {
+        return Result<NotifyOutcome>::failure(authorityError(
+            ErrorCode::too_large, "The notification identifier space is exhausted."));
+    }
     makeCapacityForOne();
     if (records_.size() >= notifications::maximumServiceRecords) {
         return Result<NotifyOutcome>::failure(
@@ -271,6 +287,14 @@ Result<void> NotificationAuthority::persistIfNeeded() const {
     return writeNotificationHistory(*persistent_history_path_, records_);
 }
 
+Result<void>
+NotificationAuthority::persistCandidate(const std::vector<NotificationRecord> &records) const {
+    if (history_mode_ != HistoryMode::persistent || !persistent_history_path_) {
+        return Result<void>::success();
+    }
+    return writeNotificationHistory(*persistent_history_path_, records);
+}
+
 Result<CloseOutcome> NotificationAuthority::close(std::uint32_t notificationId,
                                                   CloseReason reason) {
     const auto record =
@@ -280,6 +304,10 @@ Result<CloseOutcome> NotificationAuthority::close(std::uint32_t notificationId,
     if (record == records_.end()) {
         return Result<CloseOutcome>::failure(
             authorityError(ErrorCode::not_found, "The live notification does not exist."));
+    }
+    auto publishable = ensurePublishable();
+    if (!publishable) {
+        return Result<CloseOutcome>::failure(publishable.error());
     }
     CloseEvent event{notificationId, reason, record->sender};
 
@@ -297,32 +325,53 @@ Result<CloseOutcome> NotificationAuthority::close(std::uint32_t notificationId,
     if (!published) {
         return Result<CloseOutcome>::failure(published.error());
     }
-    (void)persistIfNeeded();
+    if (!persistIfNeeded()) {
+        persistence_degraded_ = true;
+    }
     return Result<CloseOutcome>::success({generation_, std::move(event)});
 }
 
 Result<MutationOutcome> NotificationAuthority::advanceTimeouts() {
-    std::vector<std::uint32_t> expiredIds;
+    std::vector<std::size_t> expiredIndices;
     const auto now = clock_->now();
-    for (const auto &record : records_) {
+    for (std::size_t index = 0U; index < records_.size(); ++index) {
+        const auto &record = records_[index];
         if (record.notificationId && record.expiresAt && *record.expiresAt <= now) {
-            expiredIds.push_back(*record.notificationId);
+            expiredIndices.push_back(index);
         }
     }
-    if (expiredIds.empty()) {
+    if (expiredIndices.empty()) {
         return Result<MutationOutcome>::success({generation_, false, {}});
+    }
+    auto publishable = ensurePublishable();
+    if (!publishable) {
+        return Result<MutationOutcome>::failure(publishable.error());
     }
 
     MutationOutcome outcome{generation_, false, {}};
-    outcome.closeEvents.reserve(expiredIds.size());
-    for (const auto id : expiredIds) {
-        auto closed = close(id, CloseReason::expired);
-        if (!closed) {
-            return Result<MutationOutcome>::failure(closed.error());
+    outcome.closeEvents.reserve(expiredIndices.size());
+    for (const auto index : expiredIndices) {
+        auto &record = records_[index];
+        outcome.closeEvents.push_back(
+            {*record.notificationId, CloseReason::expired, record.sender});
+        record.notificationId.reset();
+        record.sender.reset();
+        record.expiresAt.reset();
+        record.transientPresentation = false;
+        for (auto &action : record.actions) {
+            action.enabled = false;
         }
-        if (closed.value().event) {
-            outcome.closeEvents.push_back(std::move(*closed.value().event));
-        }
+    }
+    std::erase_if(records_, [this](const NotificationRecord &record) {
+        return !record.notificationId &&
+               (history_mode_ == HistoryMode::disabled || record.transientHint);
+    });
+    auto published = publish();
+    if (!published) {
+        return Result<MutationOutcome>::failure(published.error());
+    }
+    if (!persistIfNeeded()) {
+        persistence_degraded_ = true;
     }
     outcome.stateGeneration = generation_;
     outcome.published = true;
@@ -330,14 +379,23 @@ Result<MutationOutcome> NotificationAuthority::advanceTimeouts() {
 }
 
 Result<MutationOutcome> NotificationAuthority::senderDisappeared(std::string_view sender) {
-    bool visibleChange = false;
+    const bool visibleChange =
+        std::ranges::any_of(records_, [sender](const NotificationRecord &record) {
+            return record.sender && *record.sender == sender &&
+                   std::ranges::any_of(record.actions, &notifications::ServiceAction::enabled);
+        });
+    if (visibleChange) {
+        auto publishable = ensurePublishable();
+        if (!publishable) {
+            return Result<MutationOutcome>::failure(publishable.error());
+        }
+    }
     for (auto &record : records_) {
         if (!record.sender || *record.sender != sender) {
             continue;
         }
         record.sender.reset();
         for (auto &action : record.actions) {
-            visibleChange = visibleChange || action.enabled;
             action.enabled = false;
         }
     }
@@ -358,17 +416,27 @@ Result<MutationOutcome> NotificationAuthority::dismiss(std::uint64_t recordId,
         return Result<MutationOutcome>::failure(
             authorityError(ErrorCode::cancelled, "The notification record is stale."));
     }
+    auto publishable = ensurePublishable();
+    if (!publishable) {
+        return Result<MutationOutcome>::failure(publishable.error());
+    }
     MutationOutcome outcome{generation_, false, {}};
     if (record->notificationId) {
         outcome.closeEvents.push_back(
             {*record->notificationId, CloseReason::dismissed, record->sender});
     }
-    records_.erase(record);
+    const auto offset = static_cast<std::size_t>(std::distance(records_.begin(), record));
+    auto candidate = records_;
+    candidate.erase(candidate.begin() + static_cast<std::ptrdiff_t>(offset));
+    auto persisted = persistCandidate(candidate);
+    if (!persisted) {
+        return Result<MutationOutcome>::failure(persisted.error());
+    }
+    records_ = std::move(candidate);
     auto published = publish();
     if (!published) {
         return Result<MutationOutcome>::failure(published.error());
     }
-    (void)persistIfNeeded();
     outcome.stateGeneration = generation_;
     outcome.published = true;
     return Result<MutationOutcome>::success(std::move(outcome));
@@ -404,6 +472,10 @@ Result<std::uint64_t> NotificationAuthority::setDoNotDisturb(bool enabled) {
     if (effectiveDoNotDisturb() == enabled) {
         return Result<std::uint64_t>::success(generation_);
     }
+    auto publishable = ensurePublishable();
+    if (!publishable) {
+        return Result<std::uint64_t>::failure(publishable.error());
+    }
     runtime_do_not_disturb_override_ = enabled;
     for (auto &record : records_) {
         refreshTransientPresentation(record);
@@ -416,17 +488,25 @@ Result<std::uint64_t> NotificationAuthority::setDoNotDisturb(bool enabled) {
 }
 
 Result<std::uint64_t> NotificationAuthority::clearHistory() {
-    const auto oldSize = records_.size();
-    std::erase_if(records_,
+    auto candidate = records_;
+    std::erase_if(candidate,
                   [](const NotificationRecord &record) { return !record.notificationId; });
-    if (records_.size() == oldSize) {
+    if (candidate.size() == records_.size()) {
         return Result<std::uint64_t>::success(generation_);
     }
+    auto publishable = ensurePublishable();
+    if (!publishable) {
+        return Result<std::uint64_t>::failure(publishable.error());
+    }
+    auto persisted = persistCandidate(candidate);
+    if (!persisted) {
+        return Result<std::uint64_t>::failure(persisted.error());
+    }
+    records_ = std::move(candidate);
     auto published = publish();
     if (!published) {
         return Result<std::uint64_t>::failure(published.error());
     }
-    (void)persistIfNeeded();
     return Result<std::uint64_t>::success(generation_);
 }
 
@@ -446,15 +526,31 @@ Result<std::uint64_t> NotificationAuthority::applySettings(SettingsInput setting
         return Result<std::uint64_t>::success(generation_);
     }
 
+    auto publishable = ensurePublishable();
+    if (!publishable) {
+        return Result<std::uint64_t>::failure(publishable.error());
+    }
+
+    auto candidate = records_;
+    if (settings.historyMode == HistoryMode::disabled) {
+        std::erase_if(candidate,
+                      [](const NotificationRecord &record) { return !record.notificationId; });
+    }
+    if ((history_mode_ == HistoryMode::persistent ||
+         settings.historyMode == HistoryMode::persistent) &&
+        persistent_history_path_) {
+        auto persisted = writeNotificationHistory(*persistent_history_path_, candidate);
+        if (!persisted) {
+            persistence_degraded_ = true;
+        }
+    }
+
     history_mode_ = settings.historyMode;
     default_timeout_ = settings.defaultTimeout;
     configured_do_not_disturb_ = settings.configuredDoNotDisturb;
     notifications_enabled_ = settings.notificationsEnabled;
     runtime_do_not_disturb_override_.reset();
-    if (history_mode_ == HistoryMode::disabled) {
-        std::erase_if(records_,
-                      [](const NotificationRecord &record) { return !record.notificationId; });
-    }
+    records_ = std::move(candidate);
     for (auto &record : records_) {
         refreshTransientPresentation(record);
     }
@@ -462,7 +558,6 @@ Result<std::uint64_t> NotificationAuthority::applySettings(SettingsInput setting
     if (!published) {
         return Result<std::uint64_t>::failure(published.error());
     }
-    (void)persistIfNeeded();
     return Result<std::uint64_t>::success(generation_);
 }
 
@@ -478,5 +573,9 @@ std::optional<MonotonicClock::TimePoint> NotificationAuthority::nextExpiry() con
 }
 
 Result<void> NotificationAuthority::flushHistory() const { return persistIfNeeded(); }
+
+bool NotificationAuthority::takePersistenceDegradation() noexcept {
+    return std::exchange(persistence_degraded_, false);
+}
 
 } // namespace prismdrake::notifyd

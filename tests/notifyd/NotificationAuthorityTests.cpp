@@ -290,6 +290,46 @@ TEST(NotificationHistoryTest, RejectsUnknownDuplicateMalformedAndOversizedDocume
     EXPECT_FALSE(parseNotificationHistory(duplicate));
     EXPECT_FALSE(parseNotificationHistory(
         std::string(notifications::maximumNotificationHistoryBytes + 1U, 'x')));
+    EXPECT_FALSE(
+        parseNotificationHistory(R"({"schema_version":1,"schema_version":1,"records":[]})"));
+    EXPECT_FALSE(
+        parseNotificationHistory(R"({"schema_version":1,"records":[[[[[[[[[[]]]]]]]]]]})"));
+    std::string excessiveNodes = R"({"schema_version":1,"records":[)";
+    for (std::size_t index = 0U; index < 17000U; ++index) {
+        excessiveNodes += "null,";
+    }
+    excessiveNodes += "null]}";
+    EXPECT_FALSE(parseNotificationHistory(excessiveNodes));
+}
+
+TEST(NotificationHistoryTest, RejectsSymlinkWorldReadableAndNonXdgHistoryFiles) {
+    TemporaryDirectory temporary;
+    const auto stateHome = temporary.path() / "state";
+    const auto prismdrake = stateHome / "prismdrake";
+    const auto notificationsDirectory = prismdrake / "notifications";
+    ASSERT_TRUE(std::filesystem::create_directories(notificationsDirectory));
+    ASSERT_EQ(::chmod(prismdrake.c_str(), 0700), 0);
+    ASSERT_EQ(::chmod(notificationsDirectory.c_str(), 0700), 0);
+    const auto history = notificationsDirectory / "history-v1.json";
+    {
+        std::ofstream stream(history);
+        stream << R"({"schema_version":1,"records":[]})";
+    }
+    ASSERT_EQ(::chmod(history.c_str(), 0644), 0);
+    EXPECT_FALSE(loadNotificationHistory(history));
+
+    ASSERT_TRUE(std::filesystem::remove(history));
+    const auto target = temporary.path() / "target.json";
+    {
+        std::ofstream stream(target);
+        stream << R"({"schema_version":1,"records":[]})";
+    }
+    ASSERT_EQ(::chmod(target.c_str(), 0600), 0);
+    std::error_code symlinkError;
+    std::filesystem::create_symlink(target, history, symlinkError);
+    ASSERT_FALSE(symlinkError);
+    EXPECT_FALSE(loadNotificationHistory(history));
+    EXPECT_FALSE(loadNotificationHistory(target));
 }
 
 TEST(NotificationStateTest, SerializesExactCompleteSchemaShape) {
