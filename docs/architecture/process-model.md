@@ -98,6 +98,16 @@ the exact shell, notifyd, and settingsd PIDs in reverse dependency order, waits
 up to 2 seconds per child, and reports a SIGKILL escalation with a further
 1-second reap bound.
 
+After readiness, steady-state supervision is event driven. The supervisor
+blocks on the Session1 bus descriptor and its monotonic bus deadline together
+with a signal-safe activity channel written by `SIGCHLD`, `SIGINT`, and
+`SIGTERM`. Every wake dispatches bounded Session1 work and performs nonblocking
+checks only for the exact owned children. A signal delivered just before the
+blocking wait remains queued in the activity channel, so it cannot strand child
+reaping or shutdown behind a fixed monitor cadence. Readiness retries, recovery
+backoff, and exact-child termination retain their separate bounded deadline
+waits.
+
 The current supervisor consumes a validated inherited session bus rather than
 spawning one. The settings service has an explicit D-Bus readiness probe. For each shell
 launch, the supervisor creates a new private Linux event descriptor, passes it

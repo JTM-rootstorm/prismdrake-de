@@ -33,8 +33,21 @@ using foundation::MonotonicClock;
 using foundation::Result;
 
 volatile std::sig_atomic_t sessionShutdownRequested = 0;
+volatile std::sig_atomic_t sessionActivityWriteDescriptor = -1;
+int sessionActivityReadDescriptor = -1;
 
-extern "C" void requestSessionShutdown(int) { sessionShutdownRequested = 1; }
+extern "C" void wakeSessionSupervisor(int signal) {
+    const int savedError = errno;
+    if (signal == SIGINT || signal == SIGTERM) {
+        sessionShutdownRequested = 1;
+    }
+    const int descriptor = sessionActivityWriteDescriptor;
+    if (descriptor >= 0) {
+        constexpr std::uint8_t wake = 1U;
+        static_cast<void>(::write(descriptor, &wake, sizeof(wake)));
+    }
+    errno = savedError;
+}
 
 [[nodiscard]] constexpr DiagnosticComponent diagnosticComponent(ComponentRole component) noexcept {
     switch (component) {
@@ -81,6 +94,11 @@ extern "C" void requestSessionShutdown(int) { sessionShutdownRequested = 1; }
             "Stop the conflicting owner or reconnect to the user session bus."};
 }
 
+[[nodiscard]] Error activityWaitFailure() {
+    return {ErrorCode::io_error, "The session activity wait could not be maintained.",
+            "Stop the development session and inspect its session bus and signal channel."};
+}
+
 void closeDescriptor(int &descriptor) noexcept {
     if (descriptor >= 0) {
         static_cast<void>(::close(descriptor));
@@ -112,7 +130,7 @@ void closeDescriptor(int &descriptor) noexcept {
 
 [[nodiscard]] std::chrono::milliseconds
 waitSliceUntil(MonotonicClock::TimePoint deadline, MonotonicClock::TimePoint now,
-               std::chrono::milliseconds maximumSlice = sessionMonitorInterval) noexcept {
+               std::chrono::milliseconds maximumSlice = sessionInterruptibleWaitSlice) noexcept {
     if (now >= deadline) {
         return std::chrono::milliseconds::zero();
     }
@@ -338,6 +356,72 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
             }
             if (processed == 0) {
                 break;
+            }
+        }
+        return Result<void>::success();
+    }
+
+    Result<void> waitForActivity() override {
+        if (!session_bus_ || !session_control_ || sessionActivityReadDescriptor < 0) {
+            return Result<void>::failure(activityWaitFailure());
+        }
+
+        const int busDescriptor = sd_bus_get_fd(session_bus_.get());
+        const int busEvents = sd_bus_get_events(session_bus_.get());
+        std::uint64_t busDeadline = UINT64_MAX;
+        if (busDescriptor < 0 || busEvents < 0 ||
+            sd_bus_get_timeout(session_bus_.get(), &busDeadline) < 0) {
+            return Result<void>::failure(activityWaitFailure());
+        }
+
+        timespec timeout{};
+        const timespec *timeoutPointer = nullptr;
+        if (busDeadline != UINT64_MAX) {
+            const auto monotonicNow = std::chrono::duration_cast<std::chrono::microseconds>(
+                                          MonotonicClock::Clock::now().time_since_epoch())
+                                          .count();
+            const auto nowMicroseconds = monotonicNow > 0
+                                             ? static_cast<std::uint64_t>(monotonicNow)
+                                             : std::uint64_t{0U};
+            const auto remainingMicroseconds =
+                busDeadline > nowMicroseconds ? busDeadline - nowMicroseconds : 0U;
+            timeout.tv_sec = static_cast<time_t>(remainingMicroseconds / 1'000'000U);
+            timeout.tv_nsec =
+                static_cast<long>((remainingMicroseconds % 1'000'000U) * 1'000U);
+            timeoutPointer = &timeout;
+        }
+
+        std::array descriptors{
+            pollfd{busDescriptor, static_cast<short>(busEvents), 0},
+            pollfd{sessionActivityReadDescriptor, POLLIN, 0},
+        };
+        const int result = ::ppoll(descriptors.data(), descriptors.size(), timeoutPointer, nullptr);
+        if (result < 0) {
+            // Signal delivery is itself activity. The controller immediately checks shutdown and
+            // every exact child, so a spurious EINTR is safe and simply returns to this wait.
+            return errno == EINTR ? Result<void>::success()
+                                  : Result<void>::failure(activityWaitFailure());
+        }
+        if ((descriptors[0].revents & POLLNVAL) != 0 ||
+            (descriptors[1].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+            return Result<void>::failure(activityWaitFailure());
+        }
+
+        if ((descriptors[1].revents & POLLIN) != 0) {
+            std::array<std::uint8_t, 64U> pending{};
+            for (;;) {
+                const ssize_t received =
+                    ::read(sessionActivityReadDescriptor, pending.data(), pending.size());
+                if (received > 0) {
+                    continue;
+                }
+                if (received < 0 && errno == EINTR) {
+                    continue;
+                }
+                if (received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    break;
+                }
+                return Result<void>::failure(activityWaitFailure());
             }
         }
         return Result<void>::success();
@@ -590,7 +674,12 @@ Result<SessionTermination> SessionSupervisor::run() {
                 break;
             }
         }
-        platform_->waitFor(sessionMonitorInterval);
+        auto activity = platform_->waitForActivity();
+        if (!activity) {
+            platform_->beginSessionControlStop();
+            static_cast<void>(shutdownAll());
+            return Result<SessionTermination>::failure(activityWaitFailure());
+        }
     }
 }
 
@@ -928,7 +1017,7 @@ bool SessionSupervisor::waitInterruptibly(std::chrono::milliseconds duration) {
         if (platform_->shutdownRequested()) {
             return false;
         }
-        const auto slice = std::min(sessionMonitorInterval, remaining);
+        const auto slice = std::min(sessionInterruptibleWaitSlice, remaining);
         platform_->waitFor(slice);
         remaining -= slice;
     }
@@ -971,10 +1060,22 @@ makeProductionSessionSupervisorPlatform(SessionRuntimeOptions options,
 
 Result<void> installSessionSignalHandlers() {
     sessionShutdownRequested = 0;
+    if (sessionActivityReadDescriptor < 0 || sessionActivityWriteDescriptor < 0) {
+        std::array<int, 2U> descriptors{-1, -1};
+        if (::pipe2(descriptors.data(), O_CLOEXEC | O_NONBLOCK) != 0) {
+            return Result<void>::failure(
+                {ErrorCode::io_error, "The session activity channel could not be created.",
+                 "Retry the session after checking process descriptor limits."});
+        }
+        sessionActivityReadDescriptor = descriptors[0];
+        sessionActivityWriteDescriptor = descriptors[1];
+    }
     struct sigaction action = {};
-    action.sa_handler = requestSessionShutdown;
+    action.sa_handler = wakeSessionSupervisor;
+    action.sa_flags = SA_NOCLDSTOP;
     if (::sigemptyset(&action.sa_mask) != 0 || ::sigaction(SIGINT, &action, nullptr) != 0 ||
-        ::sigaction(SIGTERM, &action, nullptr) != 0) {
+        ::sigaction(SIGTERM, &action, nullptr) != 0 ||
+        ::sigaction(SIGCHLD, &action, nullptr) != 0) {
         return Result<void>::failure(
             {ErrorCode::io_error, "Session shutdown handlers could not be installed.",
              "Retry the development session in a valid POSIX process environment."});

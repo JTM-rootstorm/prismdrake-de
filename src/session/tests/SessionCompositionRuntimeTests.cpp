@@ -7,9 +7,11 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <csignal>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include <unistd.h>
 
@@ -95,6 +97,93 @@ TEST(SessionCompositionRuntimeTest, ProductionPlatformOwnsOneSessionControlEpoch
     EXPECT_FALSE(first->dispatchSessionControl(0U));
     EXPECT_TRUE(first->dispatchSessionControl(maximumSessionControlMessagesPerTick));
     first->beginSessionControlStop();
+    EXPECT_TRUE(runtime.value().cleanup());
+}
+
+TEST(SessionCompositionRuntimeTest, ProductionActivityWaitWakesForSessionBusWork) {
+    RuntimeFixture fixture;
+    auto runtime = SessionRuntime::prepare(fixture.paths());
+    ASSERT_TRUE(runtime);
+    ASSERT_TRUE(installSessionSignalHandlers());
+    const SessionRuntimeOptions options{"/bin/true", "/bin/true", "/bin/true"};
+    const PreparedSessionEnvironment environment{
+        {"DISPLAY=:77", "XDG_RUNTIME_DIR=/tmp", "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/bus"},
+        ":77",
+        "/tmp",
+        "unix:path=/tmp/bus"};
+    ShutdownPort shutdownPort;
+    auto platform =
+        makeProductionSessionSupervisorPlatform(options, environment, runtime.value());
+    ASSERT_TRUE(platform->ownSessionControl(shutdownPort));
+
+    ipc::sdbus::Bus client;
+    ASSERT_GE(sd_bus_open_user(client.put()), 0);
+    ipc::sdbus::Message request;
+    ASSERT_GE(sd_bus_message_new_method_call(
+                  client.get(), request.put(), "org.prismdrake.Session1",
+                  "/org/prismdrake/Session1", "org.prismdrake.Session1", "GetSessionState"),
+              0);
+    ASSERT_GE(sd_bus_send(client.get(), request.get(), nullptr), 0);
+    ASSERT_GE(sd_bus_flush(client.get()), 0);
+
+    const auto activity = platform->waitForActivity();
+    const auto dispatched = platform->dispatchSessionControl(maximumSessionControlMessagesPerTick);
+
+    EXPECT_TRUE(activity);
+    EXPECT_TRUE(dispatched);
+    platform->beginSessionControlStop();
+    EXPECT_TRUE(runtime.value().cleanup());
+}
+
+TEST(SessionCompositionRuntimeTest, ProductionActivityWaitRetainsChildExitDeliveredBeforeWait) {
+    RuntimeFixture fixture;
+    auto runtime = SessionRuntime::prepare(fixture.paths());
+    ASSERT_TRUE(runtime);
+    ASSERT_TRUE(installSessionSignalHandlers());
+    const SessionRuntimeOptions options{"/bin/true", "/bin/true", "/bin/true"};
+    const PreparedSessionEnvironment environment{
+        {"DISPLAY=:77", "XDG_RUNTIME_DIR=/tmp", "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/bus"},
+        ":77",
+        "/tmp",
+        "unix:path=/tmp/bus"};
+    ShutdownPort shutdownPort;
+    auto platform =
+        makeProductionSessionSupervisorPlatform(options, environment, runtime.value());
+    ASSERT_TRUE(platform->ownSessionControl(shutdownPort));
+    ASSERT_TRUE(platform->launch(ComponentRole::settingsd, false));
+
+    std::this_thread::sleep_for(10ms);
+    ASSERT_TRUE(platform->waitForActivity());
+    const auto status = platform->poll(ComponentRole::settingsd);
+
+    ASSERT_TRUE(status);
+    ASSERT_TRUE(status.value());
+    EXPECT_EQ(status.value()->kind, ChildExitKind::exited);
+    EXPECT_EQ(status.value()->value, 0);
+    platform->beginSessionControlStop();
+    EXPECT_TRUE(runtime.value().cleanup());
+}
+
+TEST(SessionCompositionRuntimeTest, ProductionActivityWaitWakesForShutdownSignal) {
+    RuntimeFixture fixture;
+    auto runtime = SessionRuntime::prepare(fixture.paths());
+    ASSERT_TRUE(runtime);
+    ASSERT_TRUE(installSessionSignalHandlers());
+    const SessionRuntimeOptions options{"/bin/true", "/bin/true", "/bin/true"};
+    ShutdownPort shutdownPort;
+    auto platform = makeProductionSessionSupervisorPlatform(options, {}, runtime.value());
+    ASSERT_TRUE(platform->ownSessionControl(shutdownPort));
+
+    std::thread signaler([] {
+        std::this_thread::sleep_for(10ms);
+        static_cast<void>(::kill(::getpid(), SIGTERM));
+    });
+    const auto activity = platform->waitForActivity();
+    signaler.join();
+
+    EXPECT_TRUE(activity);
+    EXPECT_TRUE(platform->shutdownRequested());
+    platform->beginSessionControlStop();
     EXPECT_TRUE(runtime.value().cleanup());
 }
 

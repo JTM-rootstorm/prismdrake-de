@@ -280,6 +280,27 @@ class FakePlatform final : public SessionSupervisorPlatform {
         return Result<void>::success();
     }
 
+    Result<void> waitForActivity() override {
+        ++activityWaits;
+        if (activityWaitFailures > 0U) {
+            --activityWaitFailures;
+            return Result<void>::failure(
+                {ErrorCode::io_error, "private-activity-failure", "private-activity-recovery"});
+        }
+        if (shellExitOnActivityWait) {
+            shellExits.push_back(*shellExitOnActivityWait);
+            shellExitOnActivityWait.reset();
+        }
+        if (logoutOnActivityWait) {
+            logoutOnActivityWait = false;
+            logoutOnNextDispatch = true;
+        }
+        if (shutdownAfterActivityWaits && activityWaits >= *shutdownAfterActivityWaits) {
+            requestShutdown = true;
+        }
+        return Result<void>::success();
+    }
+
     void observeLogoutShutdown(std::uint64_t transactionId,
                                ExactChildShutdownEvent event) noexcept override {
         logoutEvents.emplace_back(transactionId, event);
@@ -342,6 +363,8 @@ class FakePlatform final : public SessionSupervisorPlatform {
     std::optional<std::size_t> shutdownAfterReadinessCalls;
     std::optional<std::size_t> shutdownAfterShellReadinessCalls;
     std::optional<std::size_t> shutdownAfterWaits;
+    std::optional<std::size_t> shutdownAfterActivityWaits;
+    std::optional<ChildExitStatus> shellExitOnActivityWait;
     std::deque<ChildExitStatus> settingsExits;
     std::deque<ChildExitStatus> shellExits;
     std::deque<ChildExitStatus> notifyExits;
@@ -359,10 +382,13 @@ class FakePlatform final : public SessionSupervisorPlatform {
     std::size_t safeModeMarks{0U};
     std::size_t sessionControlOwners{0U};
     std::size_t sessionControlDispatches{0U};
+    std::size_t activityWaits{0U};
+    std::size_t activityWaitFailures{0U};
     std::vector<std::size_t> sessionControlDispatchLimits;
     std::size_t sessionControlStops{0U};
     bool sessionControlOwnerFailure{false};
     bool logoutOnNextDispatch{false};
+    bool logoutOnActivityWait{false};
     std::uint64_t logoutTransactionId{17U};
     std::vector<std::pair<std::uint64_t, ExactChildShutdownEvent>> logoutEvents;
 
@@ -704,6 +730,89 @@ TEST(SessionSupervisorTest, ConfirmedLogoutStopsExactChildrenInCoordinatedRevers
               }));
 }
 
+TEST(SessionSupervisorTest, StableSupervisionBlocksOnceForActivityWithoutCadencePolling) {
+    FakePlatform platform;
+    platform.shutdownAfterActivityWaits = 1U;
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_TRUE(outcome);
+    EXPECT_EQ(outcome.value(), SessionTermination::shutdown_requested);
+    EXPECT_EQ(platform.activityWaits, 1U);
+    EXPECT_TRUE(platform.waits.empty());
+    EXPECT_EQ(platform.stopOrder,
+              (std::vector<ComponentRole>{ComponentRole::shell, ComponentRole::notifyd,
+                                          ComponentRole::settingsd}));
+}
+
+TEST(SessionSupervisorTest, ExactChildExitWakesActivityWaitAndIsReapedOnTheNextObservation) {
+    FakePlatform platform;
+    platform.shellExitOnActivityWait = ChildExitStatus{ChildExitKind::exited, 0, false};
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_TRUE(outcome);
+    EXPECT_EQ(outcome.value(), SessionTermination::clean);
+    EXPECT_EQ(platform.activityWaits, 1U);
+    EXPECT_FALSE(platform.shellRunning);
+    EXPECT_EQ(platform.stopOrder,
+              (std::vector<ComponentRole>{ComponentRole::notifyd, ComponentRole::settingsd}));
+}
+
+TEST(SessionSupervisorTest, SessionBusWorkWakesActivityWaitAndPreservesLogoutOrdering) {
+    FakePlatform platform;
+    platform.logoutOnActivityWait = true;
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_TRUE(outcome);
+    EXPECT_EQ(outcome.value(), SessionTermination::clean);
+    EXPECT_EQ(platform.activityWaits, 1U);
+    EXPECT_GE(platform.sessionControlDispatches, 2U);
+    EXPECT_EQ(platform.stopOrder,
+              (std::vector<ComponentRole>{ComponentRole::shell, ComponentRole::notifyd,
+                                          ComponentRole::settingsd}));
+    EXPECT_EQ(platform.logoutEvents,
+              (std::vector<std::pair<std::uint64_t, ExactChildShutdownEvent>>{
+                  {platform.logoutTransactionId, ExactChildShutdownEvent::shell_stopped},
+                  {platform.logoutTransactionId, ExactChildShutdownEvent::notifyd_stopped},
+                  {platform.logoutTransactionId, ExactChildShutdownEvent::settingsd_stopped},
+              }));
+}
+
+TEST(SessionSupervisorTest, SpuriousActivityWakeReturnsSafelyToOneMoreBlockingWait) {
+    FakePlatform platform;
+    platform.shutdownAfterActivityWaits = 2U;
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_TRUE(outcome);
+    EXPECT_EQ(outcome.value(), SessionTermination::shutdown_requested);
+    EXPECT_EQ(platform.activityWaits, 2U);
+    EXPECT_TRUE(platform.waits.empty());
+}
+
+TEST(SessionSupervisorTest, ActivityWaitFailureStopsExactChildrenAndRedactsPlatformDetails) {
+    FakePlatform platform;
+    platform.activityWaitFailures = 1U;
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_FALSE(outcome);
+    EXPECT_EQ(outcome.error().code, ErrorCode::io_error);
+    EXPECT_EQ(outcome.error().message.find("private-activity"), std::string::npos);
+    EXPECT_EQ(outcome.error().recovery.find("private-activity"), std::string::npos);
+    EXPECT_EQ(platform.activityWaits, 1U);
+    EXPECT_EQ(platform.stopOrder,
+              (std::vector<ComponentRole>{ComponentRole::shell, ComponentRole::notifyd,
+                                          ComponentRole::settingsd}));
+}
+
 TEST(SessionSupervisorTest, SessionControlNameConflictStopsEveryExactChild) {
     FakePlatform platform;
     platform.sessionControlOwnerFailure = true;
@@ -734,9 +843,9 @@ TEST(SessionSupervisorTest, TransientReadinessFailureRetriesWithoutRestartingSet
     EXPECT_EQ(platform.launches[2].component, ComponentRole::shell);
     EXPECT_EQ(platform.readinessTimeouts.size(), 2U);
     EXPECT_EQ(platform.readinessTimeouts[0], sessionSettingsReadinessAttemptTimeout);
-    EXPECT_EQ(platform.waits.front(), sessionMonitorInterval);
+    EXPECT_EQ(platform.waits.front(), sessionInterruptibleWaitSlice);
     EXPECT_EQ(std::accumulate(platform.waits.begin(), platform.waits.end(), 0ms),
-              sessionMonitorInterval);
+              sessionInterruptibleWaitSlice);
 }
 
 TEST(SessionSupervisorTest, PermanentReadinessErrorStopsWithoutRetryingTheContract) {
@@ -789,7 +898,8 @@ TEST(SessionSupervisorTest, ShutdownInterruptsReadinessRetryAndStopsSettingsWith
     ASSERT_EQ(platform.launches.size(), 1U);
     EXPECT_EQ(platform.launches[0].component, ComponentRole::settingsd);
     EXPECT_EQ(platform.readinessTimeouts.size(), 1U);
-    EXPECT_EQ(platform.waits, (std::vector<std::chrono::milliseconds>{sessionMonitorInterval}));
+    EXPECT_EQ(platform.waits,
+              (std::vector<std::chrono::milliseconds>{sessionInterruptibleWaitSlice}));
     EXPECT_EQ(platform.stopOrder, (std::vector<ComponentRole>{ComponentRole::settingsd}));
 }
 
@@ -853,7 +963,8 @@ TEST(SessionSupervisorTest, UnresponsiveChildrenAreKilledAndReportedInReverseOrd
                          DiagnosticEventId::operation_cancelled),
               3);
     EXPECT_LE(platform.currentTime.time_since_epoch(),
-              3U * (sessionTerminateGrace + sessionKillReapGrace) + sessionMonitorInterval);
+              3U * (sessionTerminateGrace + sessionKillReapGrace) +
+                  sessionInterruptibleWaitSlice);
 }
 
 TEST(SessionSupervisorTest, PollFailureStillStopsEveryOwnedChildInReverseOrder) {

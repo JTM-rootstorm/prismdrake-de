@@ -17,7 +17,7 @@
 
 namespace prismdrake::session {
 
-inline constexpr auto sessionMonitorInterval = std::chrono::milliseconds{25};
+inline constexpr auto sessionInterruptibleWaitSlice = std::chrono::milliseconds{25};
 inline constexpr auto sessionSettingsReadinessTimeout = std::chrono::seconds{5};
 inline constexpr auto sessionSettingsReadinessAttemptTimeout = std::chrono::milliseconds{100};
 inline constexpr auto sessionNotificationReadinessTimeout = std::chrono::seconds{3};
@@ -59,6 +59,11 @@ class SessionSupervisorPlatform {
     ownSessionControl(ExactChildShutdownPort &shutdownPort) = 0;
     [[nodiscard]] virtual foundation::Result<void>
     dispatchSessionControl(std::size_t maximumMessages) = 0;
+    /// Blocks until session-bus work, exact-child state, or shutdown activity can be observed.
+    ///
+    /// The production implementation must close the signal-before-wait race. Recovery backoff,
+    /// readiness, and bounded termination waits use waitFor() separately.
+    [[nodiscard]] virtual foundation::Result<void> waitForActivity() = 0;
     virtual void observeLogoutShutdown(std::uint64_t transactionId,
                                        ExactChildShutdownEvent event) noexcept = 0;
     virtual void beginSessionControlStop() noexcept = 0;
@@ -124,7 +129,7 @@ class SessionSupervisor final : public ExactChildShutdownPort {
 [[nodiscard]] std::unique_ptr<SessionSupervisorPlatform> makeProductionSessionSupervisorPlatform(
     SessionRuntimeOptions options, PreparedSessionEnvironment environment, SessionRuntime &runtime);
 
-/// Installs SIGINT and SIGTERM handlers that only set the supervisor's shutdown flag.
+/// Installs the signal-safe activity channel used by SIGCHLD, SIGINT, and SIGTERM.
 [[nodiscard]] foundation::Result<void> installSessionSignalHandlers();
 
 } // namespace prismdrake::session
