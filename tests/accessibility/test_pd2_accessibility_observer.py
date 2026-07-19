@@ -76,11 +76,12 @@ class AccessibilityObserverTests(unittest.TestCase):
         self.assertTrue(
             all(result["status"] in {"passed", "skipped"} for result in results.values())
         )
-        self.assertEqual(results[("running_task", "state_active")]["status"], "skipped")
+        self.assertEqual(results[("running_task", "long_string_layout")]["status"], "skipped")
         self.assertEqual(
-            results[("running_task", "state_active")]["reason_code"],
+            results[("running_task", "long_string_layout")]["reason_code"],
             "live_adapter_unimplemented",
         )
+        self.assertEqual(results[("running_task", "state_active")]["status"], "passed")
         self.assertEqual(
             results[("running_task", "escape_recovery")]["status"], "passed"
         )
@@ -202,6 +203,47 @@ class AccessibilityObserverTests(unittest.TestCase):
             self.assertEqual(
                 self.observed(*key)["reason_code"], "live_adapter_unimplemented"
             )
+
+    def test_new_ctest_cells_name_existing_exact_qml_cases(self) -> None:
+        self.assertEqual(len(observer.CTEST_OBSERVED), 119)
+        self.assertEqual(len(observer.CTEST_CASE_EVIDENCE), 21)
+        self.assertEqual(len(observer.UNIMPLEMENTED), 62)
+        sources = {
+            "PanelSurfaceRealAdapters": (
+                ACCESSIBILITY.parents[1] / "tests/qt/qml-panel/tst_PanelSurface.qml"
+            ),
+            "LauncherSurfaceRealAdapters": (
+                ACCESSIBILITY.parents[1]
+                / "tests/qt/launcherqml/qml/tst_LauncherSurface.qml"
+            ),
+            "NotificationCard": (
+                ACCESSIBILITY.parents[1] / "tests/qt/qml/tst_NotificationCard.qml"
+            ),
+            "NotificationCenterSurface": (
+                ACCESSIBILITY.parents[1]
+                / "src/shell/notificationcenter/tests/qml"
+                / "tst_NotificationCenterSurface.qml"
+            ),
+            "QuickSettingsSurface": (
+                ACCESSIBILITY.parents[1]
+                / "src/shell/quicksettings/tests/qml"
+                / "tst_QuickSettingsSurface.qml"
+            ),
+        }
+        source_text = {
+            suite: path.read_text(encoding="utf-8") for suite, path in sources.items()
+        }
+        for key, cases in observer.CTEST_CASE_EVIDENCE.items():
+            with self.subTest(key=key):
+                self.assertIn(key, observer.CTEST_OBSERVED)
+                result = observer.accessibility_result(
+                    *key, package_test={}, installed_document=self.document
+                )
+                self.assertEqual(result["status"], "passed")
+                for case in cases:
+                    suite, function = case.split("::", maxsplit=1)
+                    self.assertIn(f"function {function}()", source_text[suite])
+                    self.assertIn(case, result["method"])
 
     def test_batch_matrix_validates_shared_inputs_once(self) -> None:
         with (

@@ -224,7 +224,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
     "panel": (
         "PanelSurfaceQmlTest",
         frozenset({
-            "minimum_target_size", "high_contrast", "reduced_motion",
+            "arrow_navigation", "minimum_target_size", "high_contrast", "reduced_motion",
             "disabled_transparency", "rtl_smoke",
         }),
     ),
@@ -234,7 +234,8 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "tab_backtab", "arrow_navigation", "enter_activation",
             "space_activation", "escape_recovery", "menu_key", "shift_f10",
             "accessible_name", "accessible_role", "accessible_description",
-            "state_focused", "state_checked", "minimum_target_size",
+            "state_focused", "state_active", "state_minimized", "state_disabled",
+            "state_urgent", "state_checked", "minimum_target_size",
         }),
     ),
     "running_task": (
@@ -242,6 +243,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({
             "tab_backtab", "arrow_navigation", "enter_activation",
             "space_activation", "accessible_description", "state_checked",
+            "state_active", "state_minimized", "state_disabled", "state_urgent",
             "minimum_target_size", "high_contrast", "reduced_motion",
             "disabled_transparency",
             "rtl_smoke",
@@ -251,7 +253,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         "PanelSurfaceQmlTest",
         frozenset({
             "enter_activation", "escape_recovery", "accessible_description",
-            "minimum_target_size",
+            "state_focused", "state_urgent", "minimum_target_size",
         }),
     ),
     "group_popup": (
@@ -259,7 +261,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({
             "arrow_navigation", "enter_activation", "escape_recovery", "menu_key",
             "accessible_name", "accessible_role", "accessible_description",
-            "minimum_target_size", "rtl_smoke",
+            "state_focused", "minimum_target_size", "rtl_smoke",
         }),
     ),
     "launcher": (
@@ -267,14 +269,14 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({
             "tab_backtab", "arrow_navigation", "enter_activation",
             "escape_recovery", "accessible_description", "minimum_target_size",
-            "reduced_motion", "disabled_transparency", "rtl_smoke",
+            "state_unavailable", "reduced_motion", "disabled_transparency", "rtl_smoke",
         }),
     ),
     "launcher_results": (
         "LauncherSurfaceQmlTest",
         frozenset({
             "tab_backtab", "accessible_description", "state_selected",
-            "state_checked", "minimum_target_size", "reduced_motion",
+            "state_checked", "state_focused", "minimum_target_size", "reduced_motion",
             "disabled_transparency", "rtl_smoke", "long_string_layout",
         }),
     ),
@@ -283,9 +285,9 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({
             "tab_backtab", "arrow_navigation", "space_activation",
             "escape_recovery", "accessible_description", "state_focused",
-            "minimum_target_size", "high_contrast",
+            "state_urgent", "state_disabled", "minimum_target_size", "high_contrast",
             "reduced_motion", "disabled_transparency", "rtl_smoke",
-            "long_string_layout",
+            "text_scale", "long_string_layout",
         }),
     ),
     "notification_center": (
@@ -293,14 +295,15 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({
             "tab_backtab", "arrow_navigation", "escape_recovery",
             "accessible_description", "minimum_target_size", "high_contrast",
-            "reduced_motion", "disabled_transparency", "rtl_smoke",
+            "reduced_motion", "disabled_transparency", "state_unavailable",
+            "text_scale", "rtl_smoke",
         }),
     ),
     "quick_settings": (
         "QuickSettingsSurfaceQmlTest",
         frozenset({
             "arrow_navigation", "escape_recovery", "minimum_target_size",
-            "disabled_transparency",
+            "state_disabled", "state_unavailable", "disabled_transparency",
             "text_scale", "rtl_smoke", "long_string_layout",
         }),
     ),
@@ -320,6 +323,78 @@ CTEST_OBSERVED = {
     for check in checks
     if (surface, check) not in OBSERVED
 }
+
+# Cells added after the initial matrix audit name the exact QML case that
+# exercises the behavior.  The package evidence binds these passing suites to
+# the installed source revision; retaining the case identifiers here prevents
+# a broad suite pass from obscuring what was actually observed.
+CTEST_CASE_EVIDENCE: dict[tuple[str, str], tuple[str, ...]] = {
+    ("panel", "arrow_navigation"): (
+        "PanelSurfaceRealAdapters::test_taskArrowTraversalMirrorsForRightToLeft",
+    ),
+    ("pinned_task", "state_active"): (
+        "PanelSurfaceRealAdapters::test_pinnedOnlyTaskKeyboardAccessibilityAndPinStateAreExact",
+    ),
+    ("pinned_task", "state_disabled"): (
+        "PanelSurfaceRealAdapters::test_pinnedOnlyTaskKeyboardAccessibilityAndPinStateAreExact",
+    ),
+    ("pinned_task", "state_minimized"): (
+        "PanelSurfaceRealAdapters::test_pinnedOnlyTaskKeyboardAccessibilityAndPinStateAreExact",
+    ),
+    ("pinned_task", "state_urgent"): (
+        "PanelSurfaceRealAdapters::test_pinnedOnlyTaskKeyboardAccessibilityAndPinStateAreExact",
+    ),
+    ("running_task", "state_active"): (
+        "PanelSurfaceRealAdapters::test_targetsAccessibilityAndNonColorTaskStates",
+    ),
+    ("running_task", "state_disabled"): (
+        "PanelSurfaceRealAdapters::test_minimizedTargetDisablesMinimizeAndStartsOnClose",
+    ),
+    ("running_task", "state_minimized"): (
+        "PanelSurfaceRealAdapters::test_minimizedTargetDisablesMinimizeAndStartsOnClose",
+    ),
+    ("running_task", "state_urgent"): (
+        "PanelSurfaceRealAdapters::test_targetsAccessibilityAndNonColorTaskStates",
+    ),
+    ("grouped_task", "state_focused"): (
+        "PanelSurfaceRealAdapters::test_groupPopupKeyboardActionsAndAccessibilityAreDeterministic",
+    ),
+    ("grouped_task", "state_urgent"): (
+        "PanelSurfaceRealAdapters::test_groupedTasksExposeProductionActionsAndOutputScopedAffordances",
+    ),
+    ("group_popup", "state_focused"): (
+        "PanelSurfaceRealAdapters::test_groupPopupKeyboardActionsAndAccessibilityAreDeterministic",
+    ),
+    ("launcher", "state_unavailable"): (
+        "LauncherSurfaceRealAdapters::test_explicitLoadingEmptyNoResultsErrorAndInvalidRetention",
+    ),
+    ("launcher_results", "state_focused"): (
+        "LauncherSurfaceRealAdapters::test_boundedSearchKeyboardActivationAndFocusExit",
+    ),
+    ("transient_notification", "state_disabled"): (
+        "NotificationCard::test_keyboardOrderSkipsDisabledActionAndActivatesExactAffordance",
+    ),
+    ("transient_notification", "state_urgent"): (
+        "NotificationCard::test_literalTextAndAccessibleNotificationMetadata",
+    ),
+    ("transient_notification", "text_scale"): (
+        "NotificationCard::test_pseudoLocalizedLongTextAndScaledTargetsRemainUsable",
+    ),
+    ("notification_center", "state_unavailable"): (
+        "NotificationCenterSurface::test_unavailableAndLiteralAccessibleContent",
+    ),
+    ("notification_center", "text_scale"): (
+        "NotificationCenterSurface::test_rtlFallbackContrastAndScaledTargetsUsePublishedThemeInputs",
+    ),
+    ("quick_settings", "state_disabled"): (
+        "QuickSettingsSurface::test_pendingAndUnavailableAdaptersRenderDisabled",
+    ),
+    ("quick_settings", "state_unavailable"): (
+        "QuickSettingsSurface::test_oneAdapterFailureDoesNotDisableOthers",
+    ),
+}
+if not set(CTEST_CASE_EVIDENCE) <= set(CTEST_OBSERVED):
+    raise RuntimeError("accessibility_ctest_case_map_invalid")
 
 NOT_APPLICABLE_CHECKS = {
     "panel": frozenset({
@@ -395,50 +470,44 @@ _MATRIX_KEYS = {
 }
 UNIMPLEMENTED_CHECKS = {
     "panel": frozenset({
-        "arrow_navigation", "enter_activation", "long_string_layout",
+        "enter_activation", "long_string_layout",
         "space_activation", "text_scale",
     }),
     "pinned_task": frozenset({
         "disabled_transparency", "high_contrast", "long_string_layout",
-        "reduced_motion", "rtl_smoke", "state_active", "state_disabled",
-        "state_expanded", "state_minimized", "state_urgent", "text_scale",
+        "reduced_motion", "rtl_smoke", "state_expanded", "text_scale",
     }),
     "running_task": frozenset({
-        "long_string_layout", "state_active", "state_disabled", "state_expanded",
-        "state_minimized", "state_urgent", "text_scale",
+        "long_string_layout", "state_expanded", "text_scale",
     }),
     "grouped_task": frozenset({
         "arrow_navigation", "disabled_transparency", "high_contrast",
         "long_string_layout", "menu_key", "reduced_motion", "rtl_smoke",
         "shift_f10", "space_activation", "state_active", "state_checked",
-        "state_disabled", "state_expanded", "state_focused", "state_minimized",
-        "state_urgent", "tab_backtab", "text_scale",
+        "state_disabled", "state_expanded", "state_minimized", "tab_backtab",
+        "text_scale",
     }),
     "group_popup": frozenset({
         "disabled_transparency", "high_contrast", "long_string_layout",
         "reduced_motion", "shift_f10", "space_activation", "state_active",
-        "state_disabled", "state_focused", "state_minimized", "state_selected",
+        "state_disabled", "state_minimized", "state_selected",
         "state_urgent", "tab_backtab", "text_scale",
     }),
     "launcher": frozenset({
-        "high_contrast", "long_string_layout", "space_activation",
-        "state_unavailable", "text_scale",
+        "high_contrast", "long_string_layout", "space_activation", "text_scale",
     }),
     "launcher_results": frozenset({
         "high_contrast", "menu_key", "space_activation", "state_disabled",
-        "state_expanded", "state_focused", "text_scale",
+        "state_expanded", "text_scale",
     }),
     "desktop_surface_exclusion": frozenset(),
     "transient_notification": frozenset({
-        "state_disabled", "state_urgent", "text_scale",
     }),
     "notification_center": frozenset({
         "long_string_layout", "space_activation", "state_disabled",
-        "state_unavailable", "text_scale",
     }),
     "quick_settings": frozenset({
-        "enter_activation", "high_contrast", "reduced_motion", "state_disabled",
-        "state_unavailable",
+        "enter_activation", "high_contrast", "reduced_motion",
     }),
     "logout_confirmation": frozenset({
         "disabled_transparency", "high_contrast", "reduced_motion",
@@ -789,8 +858,10 @@ def accessibility_result(
             ctest_name in {value[0] for value in CTEST_CHECKS.values()},
             "accessibility_ctest_contract_invalid",
         )
+        cases = CTEST_CASE_EVIDENCE.get(key, ())
+        case_note = f" ({', '.join(cases)})" if cases else ""
         return passed(
-            f"Exact source inventory and passing JUnit include {ctest_name}"
+            f"Exact source inventory and passing JUnit include {ctest_name}{case_note}"
         )
     if key in NOT_APPLICABLE:
         return reviewed_skip("not_applicable", NOT_APPLICABLE[key])
