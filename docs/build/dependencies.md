@@ -112,7 +112,8 @@ carry a verified or observed version.
   launcher and notification adapters, and actionable task adapter use Qt Core.
   A dedicated launcher-monitor worker owns recursive application discovery and
   Qt filesystem-watch registration, replacement, and removal under hard work
-  and watch-capacity bounds; this adds no library dependency. Its
+  and watch-capacity bounds. It keeps one active collection plus at most one
+  latest successor dispatch; this adds no library dependency. Its
   compiled panel, launcher, and notification modules use QML, Quick, and Quick
   Controls. Its icon resolver captures only reentrant Qt theme metadata on its
   worker, performs bounded manual icon-theme discovery, and uses system Qt
@@ -134,10 +135,15 @@ carry a verified or observed version.
   The panel and desktop window hosts and event-driven task controller use Qt
   GUI/Core and the internal standards-only X11 adapter. Each host owns a bounded
   surface-property worker with a separate X11 connection, atom discovery, and
-  checked dock or desktop property transactions; Qt retains view staging and
-  commits only current queued completions. The task worker separately owns
-  blocking task replies, event drain, and checked actions. These workers add no
-  library dependency. Quick Test is test-only. The live
+  checked dock or desktop property transactions; Qt retains view staging,
+  destroys superseded `QWindow` instances instead of scheduling stale-XID
+  cleanup, and commits only current queued completions. The task worker
+  separately owns blocking task replies, event drain, checked actions, and
+  bounded coalescing of invalidation delivery. The output worker coalesces
+  complete topology delivery to the latest observation and interrupts its X11
+  connection during teardown so a reply-bearing RandR query cannot extend the
+  join indefinitely. These workers add no library dependency. Quick Test is
+  test-only. The live
   snapshot client directly uses the selected sd-bus provider and session D-Bus,
   while its canonical inverse parser includes the
   system nlohmann JSON header. Qt 6.11 is the maintainer-selected declared

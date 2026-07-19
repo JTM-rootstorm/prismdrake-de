@@ -166,8 +166,14 @@ wake. Shell surface staging remains GUI-thread work, while each host's bounded
 worker owns checked dock or desktop X11 property transactions and reports
 queued token-bound completions. Settings, composition, desktop-controller, and
 child-focus publication therefore do not wait synchronously for X11 replies on
-the GUI thread. Their remaining timed waits are bounded readiness, recovery, and
-termination policy rather than idle polling. Until a matching validated
+the GUI thread. Launcher recovery keeps one active collection and one latest
+successor dispatch. Task event delivery deduplicates invalidated windows within
+the task-model bound and degrades overflow to one full client-cache invalidation
+before the next authoritative refresh. Output delivery similarly keeps the
+latest complete topology rather than an owner-thread callback per observation,
+and output-monitor teardown interrupts a reply-bearing RandR wait before
+joining its worker. Their remaining timed waits are bounded readiness, recovery,
+and termination policy rather than idle polling. Until a matching validated
 multi-sample PD1 idle baseline exists, the final record must identify that
 comparison as unavailable instead of labeling the observed total a regression
 pass. PD2-specific shell work must not add an unbounded repeating timer.

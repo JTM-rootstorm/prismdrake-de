@@ -22,10 +22,10 @@ storage, C++, QML, and evidence formats remain Experimental.
 
 | Area | Current source behavior | Requirements |
 |---|---|---|
-| Outputs and surfaces | One registry reconciles bounded RandR and Qt screen observations, creates one desktop per active output, applies the configured panel-output policy, and transfers or dismisses global transient surfaces after topology changes. Dedicated bounded workers own checked desktop and dock EWMH property transactions; Qt view staging and generation-checked publication remain GUI-thread work. | `PD-OUTPUT-001` through `PD-OUTPUT-004`, `PD-PANEL-001`, `PD-DESKTOP-001`, `PD-PERF-001`, `PD-PERF-004` |
-| Panel and tasks | Shared panel QML presents ordered pins and running tasks, deterministic `always`, `never`, and `when_full` grouping, explicit active/minimized/urgent/modal state, group navigation, launch, activate, minimize, close, and pin actions. A dedicated task worker owns reply-bearing X11 refreshes, events, and checked EWMH requests to the active WM. | `PD-PANEL-001` through `PD-PANEL-005`, `PD-PANEL-008`, `PD-WIN-001` through `PD-WIN-007`, `PD-PERF-001`, `PD-PERF-004` |
-| Launcher | The local XDG application catalog is monitored without polling. Dedicated workers own bounded recursive discovery, watch replacement, catalog refresh, search, launch, and icon lookup; owner-thread publication remains generation-checked. The launcher supports desktop actions, typed D-Bus activation, direct execution without an implicit shell where allowed, icons with fallback, pins, and Prismdrake destinations. | `PD-LAUNCH-001` through `PD-LAUNCH-005`, `PD-LAUNCH-007`, `PD-LAUNCH-008`, `PD-INT-007`, `PD-SEC-002`, `PD-PERF-001`, `PD-PERF-004`, `PD-PERF-006` |
-| Desktop and wallpaper | A non-focusable standard X11 desktop surface is hosted per active output. One bounded decoded wallpaper snapshot is laid out in the configured mode on every output; invalid or missing images use the configured solid color. | `PD-DESKTOP-001` through `PD-DESKTOP-003`, `PD-DESKTOP-005`, `PD-DESKTOP-006` |
+| Outputs and surfaces | One registry reconciles bounded RandR and Qt screen observations, creates one desktop per active output, applies the configured panel-output policy, and transfers or dismisses global transient surfaces after topology changes. A dedicated output worker coalesces owner-thread delivery to the latest complete topology and interrupts reply-bearing RandR work during teardown. Dedicated bounded host workers own checked desktop and dock EWMH property transactions; Qt view staging and generation-checked publication remain GUI-thread work. | `PD-OUTPUT-001` through `PD-OUTPUT-004`, `PD-PANEL-001`, `PD-DESKTOP-001`, `PD-PERF-001`, `PD-PERF-004` |
+| Panel and tasks | Shared panel QML presents ordered pins and running tasks, deterministic `always`, `never`, and `when_full` grouping, explicit active/minimized/urgent/modal state, group navigation, launch, activate, minimize, close, and pin actions. A dedicated task worker owns reply-bearing X11 refreshes, events, and checked EWMH requests to the active WM; event delivery and client invalidations coalesce within fixed bounds. | `PD-PANEL-001` through `PD-PANEL-005`, `PD-PANEL-008`, `PD-WIN-001` through `PD-WIN-007`, `PD-PERF-001`, `PD-PERF-004` |
+| Launcher | The local XDG application catalog is monitored without polling. Dedicated workers own bounded recursive discovery, watch replacement, catalog refresh, search, launch, and icon lookup; owner-thread publication remains generation-checked. Active collection and at most one latest successor replace an unbounded recovery backlog. The launcher supports desktop actions, typed D-Bus activation, direct execution without an implicit shell where allowed, icons with fallback, pins, and Prismdrake destinations. | `PD-LAUNCH-001` through `PD-LAUNCH-005`, `PD-LAUNCH-007`, `PD-LAUNCH-008`, `PD-INT-007`, `PD-SEC-002`, `PD-PERF-001`, `PD-PERF-004`, `PD-PERF-006` |
+| Desktop and wallpaper | A non-focusable standard X11 desktop surface is hosted per active output. One bounded decoded wallpaper snapshot is laid out in the configured mode on every output; candidates are scoped to the active settings-owner epoch and generation, while the last complete mapped desktop remains visible during an owner gap or replacement decode. Invalid or missing images use the configured solid color. | `PD-DESKTOP-001` through `PD-DESKTOP-003`, `PD-DESKTOP-005`, `PD-DESKTOP-006` |
 | Notifications | Toolkit-neutral notifyd owns freedesktop Notifications 1.3, replacement, timeout, sender/action lifecycle, disabled/session/private persistent history, effective do-not-disturb state, and complete Experimental notification-center snapshots. The shell mirrors those snapshots into transient and history surfaces. | `PD-NOTIFY-001` through `PD-NOTIFY-007`, `PD-SEC-007`, `PD-SEC-011`, `PD-SEC-012` |
 | Quick settings | The installed surface exposes only Prismdrake-owned operations: active profile and runtime profile switch, effective do-not-disturb, notification-center opening, logout request, and bounded status text. Unavailable adapters remain visibly disabled. | `PD-QUICK-001` through `PD-QUICK-006` |
 | Control and session | Experimental Shell1 exposes fixed presentation commands; Session1 owns one same-user logout transaction. The init-neutral supervisor starts settingsd, notifyd, and shell in dependency order and stops only those exact children in reverse order after confirmation. | `PD-SESSION-001` through `PD-SESSION-006`, logout-only `PD-POWER-001`, `PD-API-001` through `PD-API-005` |
@@ -52,12 +52,15 @@ typed presentation identities and never make the shell authoritative for
 focus, stacking, minimization, or lifecycle.
 
 The task-controller owner thread keeps presentation policy and immutable
-generation publication. One dedicated `TaskIoWorker` owns its X11
-connection, blocks on the X11 event descriptor and a private wake descriptor,
-drains task events, performs reply-bearing refreshes, and sends checked
-activate, minimize, and close requests. Refresh hints are replaceable and
-coalesced; action work has a fixed queue bound and is rejected when its applied
-refresh token or window incarnation is stale. Completions return through queued
+generation publication. One dedicated `TaskIoWorker` owns its X11 connection,
+blocks on the X11 event descriptor and a private wake descriptor, drains task
+events, performs reply-bearing refreshes, and sends checked activate, minimize,
+and close requests. Refresh hints and worker-to-owner event delivery are
+replaceable and coalesced. Per-window invalidations are deduplicated up to the
+task-model bound; overflow degrades to invalidating every cached client before
+the next complete authoritative refresh instead of growing an unbounded list.
+Action work has a fixed queue bound and is rejected when its applied refresh
+token or window incarnation is stale. Completions return through queued
 owner-thread callbacks, and teardown cancels descriptor waits before joining
 the worker. This keeps the path event-driven without transferring window-state
 authority from the active WM.
@@ -80,7 +83,9 @@ One dedicated collection worker owns recursive application-root traversal and
 filesystem-watch creation, registration, replacement, and removal. Its hard
 work budget counts every visited node, including irrelevant files, while a
 separate watch-capacity bound limits retained paths. Replacement generations
-discard stale collection results; discovery and batched watch changes observe
+discard stale collection results. While one collection is active, recovery
+requests replace one latest successor generation rather than enqueueing one
+dispatch per event burst. Discovery and batched watch changes observe
 cooperative stop requests, and teardown stops and joins the worker. The owner
 thread receives only coalesced change notifications, generation-checked
 results, and a bounded fail-soft recovery schedule.
@@ -98,13 +103,20 @@ operations. The active WM remains responsible for stacking and ordinary root
 behavior. PD2 uses the same wallpaper source, mode, and background fallback on
 every active output. The loader bounds the source file, image dimensions,
 decoded allocation, and stale completion before publishing one immutable
-generation.
+generation. The runtime accepts a decoded candidate only when both its captured
+settings-owner epoch and settings generation remain active. Owner loss clears
+the candidate gate, but does not unmap the host's last complete desktop while a
+new owner and replacement decode are pending.
 
 Panel and desktop hosts stage their `QQuickView` objects on the GUI thread, but
 each host's dedicated bounded X11-property worker owns a separate X11
-connection, atom discovery, checked dock or desktop property transaction, and
-cleanup. Only a queued successful completion makes staged views visible and
-advances the host generation. The runtime then uses the matching publication
+connection, atom discovery, and checked dock or desktop property transaction.
+Only a queued successful completion makes staged views visible and advances the
+host generation. Superseded and removed views are destroyed on the GUI thread;
+destroying their `QWindow` destroys the X11 window and its properties together,
+so no delayed cleanup transaction can target a numeric XID after server reuse.
+An in-flight replacement remains alive until its exact worker transaction
+completes for the same reason. The runtime then uses the matching publication
 callback as the atomic commit point for the complete settings, theme,
 output-composition, or desktop-controller generation. A wallpaper-only update
 may retain the same topology generation; its newer settings and wallpaper
@@ -114,8 +126,9 @@ A failed property transaction never publishes a partial candidate. An existing
 complete surface generation remains visible while the runtime enters its
 bounded fail-closed shutdown path; an initial failure exposes no candidate
 surface. Panel focusability changes use the same transaction boundary: the
-replacement dock is published before the prior dock is cleaned up, and focus
-is routed into a child control only after the exact replacement is accepted.
+replacement dock is published before the prior dock's `QWindow` is destroyed,
+and focus is routed into a child control only after the exact replacement is
+accepted.
 Stale replacement completions are discarded without advancing presentation
 state. These mechanics do not give Prismdrake authority over WM focus,
 stacking, work areas, or window lifecycle, and they make no change to
