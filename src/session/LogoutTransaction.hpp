@@ -67,7 +67,8 @@ class LogoutTransaction final {
   public:
     using TransitionObserver = std::function<void(const LogoutSnapshot &)>;
 
-    LogoutTransaction(ExactChildShutdownPort &shutdownPort, TransitionObserver observer);
+    LogoutTransaction(ExactChildShutdownPort &shutdownPort, TransitionObserver observer,
+                      std::uint64_t firstTransactionId = 1);
 
     [[nodiscard]] LogoutSnapshot snapshot() const noexcept;
     [[nodiscard]] LogoutRequestResult request();

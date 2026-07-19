@@ -118,4 +118,13 @@ TEST(LogoutTransactionTest, ServiceStopRejectsNewOrCancellableWork) {
     EXPECT_EQ(idle.request().failure, LogoutRequestFailure::service_stopping);
 }
 
+TEST(LogoutTransactionTest, OwnerEpochMayBeginAtANonzeroDistinctIdentifier) {
+    ShutdownPort firstPort;
+    ShutdownPort secondPort;
+    LogoutTransaction first{firstPort, {}, 0x1000U};
+    LogoutTransaction second{secondPort, {}, 0x2000U};
+    EXPECT_EQ(first.request().transactionId, 0x1000U);
+    EXPECT_EQ(second.request().transactionId, 0x2000U);
+}
+
 } // namespace

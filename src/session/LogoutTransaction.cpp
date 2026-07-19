@@ -30,8 +30,9 @@ std::string_view logoutStateName(LogoutState state) noexcept {
 }
 
 LogoutTransaction::LogoutTransaction(ExactChildShutdownPort &shutdownPort,
-                                     TransitionObserver observer)
-    : shutdown_port_(&shutdownPort), observer_(std::move(observer)) {}
+                                     TransitionObserver observer, std::uint64_t firstTransactionId)
+    : shutdown_port_(&shutdownPort), observer_(std::move(observer)),
+      next_transaction_id_(firstTransactionId == 0 ? 1 : firstTransactionId) {}
 
 LogoutSnapshot LogoutTransaction::snapshot() const noexcept { return snapshot_; }
 

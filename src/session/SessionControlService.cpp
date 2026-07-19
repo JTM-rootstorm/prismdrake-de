@@ -3,7 +3,13 @@
 #include "PeerCredentials.hpp"
 
 #include <cerrno>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <string>
+
+#include <sys/random.h>
+#include <unistd.h>
 
 namespace prismdrake::session {
 namespace {
@@ -56,6 +62,30 @@ struct ErrorReply final {
     return {foundation::ErrorCode::io_error,
             "Could not register the Experimental session-control interface.",
             "Reconnect to the session bus and begin a fresh owner epoch."};
+}
+
+[[nodiscard]] std::uint64_t firstTransactionIdForOwnerEpoch() noexcept {
+    std::uint64_t value = 0;
+    auto *bytes = reinterpret_cast<unsigned char *>(&value);
+    std::size_t received = 0;
+    while (received < sizeof(value)) {
+        const auto result = ::getrandom(bytes + received, sizeof(value) - received, 0);
+        if (result > 0) {
+            received += static_cast<std::size_t>(result);
+            continue;
+        }
+        if (result < 0 && errno == EINTR) {
+            continue;
+        }
+        break;
+    }
+    if (received == sizeof(value) && value != 0) {
+        return value;
+    }
+
+    const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+    value = static_cast<std::uint64_t>(ticks) ^ (static_cast<std::uint64_t>(::getpid()) << 32U);
+    return value == 0 ? 1 : value;
 }
 
 [[nodiscard]] SessionControlService &fromUserData(void *userData) {
@@ -148,7 +178,9 @@ template <TransactionMutation Operation>
 } // namespace
 
 SessionControlService::SessionControlService(ExactChildShutdownPort &shutdownPort)
-    : transaction_(shutdownPort, [this](const LogoutSnapshot &state) { emitTransition(state); }) {}
+    : transaction_(
+          shutdownPort, [this](const LogoutSnapshot &state) { emitTransition(state); },
+          firstTransactionIdForOwnerEpoch()) {}
 
 foundation::Result<void> SessionControlService::attach(sd_bus *bus) {
     if (bus == nullptr || bus_ != nullptr) {
