@@ -92,7 +92,8 @@ TEST(SessionCompositionRuntimeTest, ProductionPlatformOwnsOneSessionControlEpoch
     const auto conflict = conflicting->ownSessionControl(conflictingPort);
     ASSERT_FALSE(conflict);
     EXPECT_EQ(conflict.error().code, foundation::ErrorCode::invalid_environment);
-    EXPECT_TRUE(first->dispatchSessionControl());
+    EXPECT_FALSE(first->dispatchSessionControl(0U));
+    EXPECT_TRUE(first->dispatchSessionControl(maximumSessionControlMessagesPerTick));
     first->beginSessionControlStop();
     EXPECT_TRUE(runtime.value().cleanup());
 }

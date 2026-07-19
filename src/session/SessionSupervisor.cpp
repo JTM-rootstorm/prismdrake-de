@@ -327,16 +327,20 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
         return Result<void>::success();
     }
 
-    Result<void> dispatchSessionControl() override {
-        if (!session_bus_ || !session_control_) {
+    Result<void> dispatchSessionControl(std::size_t maximumMessages) override {
+        if (!session_bus_ || !session_control_ || maximumMessages == 0U) {
             return Result<void>::failure(sessionControlFailure(ErrorCode::invalid_argument));
         }
-        int processed = 0;
-        do {
-            processed = sd_bus_process(session_bus_.get(), nullptr);
-        } while (processed > 0);
-        return processed < 0 ? Result<void>::failure(sessionControlFailure())
-                             : Result<void>::success();
+        for (std::size_t count = 0U; count < maximumMessages && !shutdownRequested(); ++count) {
+            const int processed = sd_bus_process(session_bus_.get(), nullptr);
+            if (processed < 0) {
+                return Result<void>::failure(sessionControlFailure());
+            }
+            if (processed == 0) {
+                break;
+            }
+        }
+        return Result<void>::success();
     }
 
     void observeLogoutShutdown(std::uint64_t transactionId,
@@ -506,7 +510,8 @@ Result<SessionTermination> SessionSupervisor::run() {
     }
 
     for (;;) {
-        auto controlDispatch = platform_->dispatchSessionControl();
+        auto controlDispatch =
+            platform_->dispatchSessionControl(maximumSessionControlMessagesPerTick);
         if (!controlDispatch) {
             platform_->beginSessionControlStop();
             static_cast<void>(shutdownAll());

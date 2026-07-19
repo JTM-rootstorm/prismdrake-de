@@ -270,7 +270,8 @@ class FakePlatform final : public SessionSupervisorPlatform {
                    : Result<void>::success();
     }
 
-    Result<void> dispatchSessionControl() override {
+    Result<void> dispatchSessionControl(std::size_t maximumMessages) override {
+        sessionControlDispatchLimits.push_back(maximumMessages);
         ++sessionControlDispatches;
         if (logoutOnNextDispatch && shutdownPort_ != nullptr) {
             logoutOnNextDispatch = false;
@@ -358,6 +359,7 @@ class FakePlatform final : public SessionSupervisorPlatform {
     std::size_t safeModeMarks{0U};
     std::size_t sessionControlOwners{0U};
     std::size_t sessionControlDispatches{0U};
+    std::vector<std::size_t> sessionControlDispatchLimits;
     std::size_t sessionControlStops{0U};
     bool sessionControlOwnerFailure{false};
     bool logoutOnNextDispatch{false};
@@ -439,6 +441,10 @@ TEST(SessionSupervisorTest, StartsInDependencyOrderMarksReadyAndTreatsCleanShell
     EXPECT_EQ(platform.shellReadinessTimeouts,
               (std::vector<std::chrono::milliseconds>{sessionShellReadinessAttemptTimeout}));
     EXPECT_EQ(platform.readyMarks, 1U);
+    ASSERT_FALSE(platform.sessionControlDispatchLimits.empty());
+    EXPECT_TRUE(std::ranges::all_of(platform.sessionControlDispatchLimits, [](const auto limit) {
+        return limit == maximumSessionControlMessagesPerTick;
+    }));
     EXPECT_EQ(platform.stopOrder,
               (std::vector<ComponentRole>{ComponentRole::notifyd, ComponentRole::settingsd}));
 }
@@ -617,6 +623,27 @@ TEST(SessionSupervisorTest, MissingNotificationServiceDegradesWithoutBlockingShe
     EXPECT_NE(std::find(platform.diagnostics.begin(), platform.diagnostics.end(),
                         DiagnosticEventId::dependency_unavailable),
               platform.diagnostics.end());
+}
+
+TEST(SessionSupervisorTest, MissingNotificationExecutableDegradesAfterBoundedLaunchAttempts) {
+    FakePlatform platform;
+    platform.notifyLaunchFailures = 3U;
+    platform.shutdownOnReady = true;
+    auto controller = supervisor(platform);
+
+    const auto outcome = controller.run();
+
+    ASSERT_TRUE(outcome);
+    EXPECT_EQ(outcome.value(), SessionTermination::shutdown_requested);
+    EXPECT_EQ(std::count_if(
+                  platform.launches.begin(), platform.launches.end(),
+                  [](const auto &launch) { return launch.component == ComponentRole::notifyd; }),
+              3);
+    EXPECT_EQ(
+        std::count_if(platform.launches.begin(), platform.launches.end(),
+                      [](const auto &launch) { return launch.component == ComponentRole::shell; }),
+        1);
+    EXPECT_EQ(platform.readyMarks, 1U);
 }
 
 TEST(SessionSupervisorTest, NotificationNameConflictDegradesWithoutARestartLoop) {
