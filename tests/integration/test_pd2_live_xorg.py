@@ -12,14 +12,20 @@ import tomllib
 import unittest
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from unittest.mock import patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pd2_live_xorg as live_xorg  # noqa: E402
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation  # noqa: E402
 from pd2_live_notification_workflow import WorkflowResult  # noqa: E402
 from pd2_live_settings_workflow import (  # noqa: E402
     RESULT_CATEGORIES as SETTINGS_RESULT_CATEGORIES,
     SettingsWorkflowResult,
+)
+from pd2_notification_failure_replay import (  # noqa: E402
+    FailureEvidence,
+    MALFORMED_HISTORY_BYTES,
 )
 from pd2_live_xorg import (  # noqa: E402
     CONTROLLED_APPLICATION_NAME,
@@ -34,6 +40,7 @@ from pd2_live_xorg import (  # noqa: E402
     ProcessIdentity,
     QUICK_SETTINGS_WINDOW_TITLE,
     SETTINGS_WORKFLOW_CONFIG,
+    SystemNotificationFailureReplayPort,
     WindowGeometry,
     XrandrOutput,
     _NotificationEpoch,
@@ -652,6 +659,31 @@ class FakeSettingsEpochFactory:
         )
 
 
+class FakeNotificationFailureReplay:
+    def __init__(self) -> None:
+        self.malformed_calls: list[tuple[object, dict[str, str], object]] = []
+        self.conflict_calls: list[
+            tuple[Path, dict[str, str], object, dict[str, tuple[int, int]]]
+        ] = []
+
+    def verify_malformed_history(self, fixture, environment, endpoint):
+        fixture.verify_retained()
+        self.malformed_calls.append((fixture, dict(environment), endpoint))
+        return FailureEvidence("malformed_persistent_history_recovered")
+
+    def verify_conflicting_owner(
+        self, executable, environment, endpoint, sibling_observer
+    ):
+        before = dict(sibling_observer())
+        after = dict(sibling_observer())
+        if after != before:
+            raise RuntimeError("private sibling drift")
+        self.conflict_calls.append(
+            (executable, dict(environment), endpoint, before)
+        )
+        return FailureEvidence("notification_owner_conflict_isolated")
+
+
 class ScriptedNotificationAccessibility:
     def __init__(self) -> None:
         self.visible: dict[str, list[bool]] = {}
@@ -936,6 +968,96 @@ class SettingsSurfaceAdapterTests(unittest.TestCase):
             HarnessError, "^settings_surface_capture_not_reviewed$"
         ):
             adapter.capture_settled_fingerprints("private", ((0, 0),))
+
+
+class NotificationFailureReplayAdapterTests(unittest.TestCase):
+    def test_malformed_history_probe_is_closed_after_categorical_verification(
+        self,
+    ) -> None:
+        calls: list[tuple[str, object]] = []
+
+        class Probe:
+            def __init__(self, environment, *, endpoint):
+                calls.append(("probe", (dict(environment), endpoint)))
+
+            def close(self):
+                calls.append(("close", None))
+
+        evidence = FailureEvidence("malformed_persistent_history_recovered")
+
+        def verify(fixture, probe):
+            calls.append(("verify", (fixture, probe)))
+            return evidence
+
+        fixture = object()
+        endpoint = object()
+        adapter = SystemNotificationFailureReplayPort()
+        with patch.object(live_xorg, "LiveDbusProbe", Probe), patch.object(
+            live_xorg, "verify_malformed_history_recovery", verify
+        ):
+            result = adapter.verify_malformed_history(
+                fixture,  # type: ignore[arg-type]
+                {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/private"},
+                endpoint,  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(result, evidence)
+        self.assertEqual([kind for kind, _value in calls], ["probe", "verify", "close"])
+
+    def test_owner_lease_encloses_exact_candidate_and_sibling_verification(self) -> None:
+        calls: list[tuple[str, object]] = []
+        owner = object()
+
+        class Lease:
+            def __init__(self, environment, endpoint):
+                calls.append(("lease", (dict(environment), endpoint)))
+
+            def __enter__(self):
+                calls.append(("enter", None))
+                return owner
+
+            def __exit__(self, exception_type, exception, traceback):
+                del exception_type, exception, traceback
+                calls.append(("exit", None))
+
+        def verify(executable, environment, endpoint, observed_owner, siblings):
+            calls.append(
+                (
+                    "verify",
+                    (
+                        executable,
+                        dict(environment),
+                        endpoint,
+                        observed_owner,
+                        dict(siblings()),
+                    ),
+                )
+            )
+            return FailureEvidence("notification_owner_conflict_isolated")
+
+        executable = Path("/usr/bin/prismdrake-notifyd")
+        endpoint = object()
+        environment = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/private"}
+        def siblings():
+            return {
+                "prismdrake-settingsd": (101, 1001),
+                "prismdrake-shell": (102, 1002),
+            }
+        adapter = SystemNotificationFailureReplayPort()
+        with patch.object(live_xorg, "GioNotificationOwnerLease", Lease), patch.object(
+            live_xorg, "verify_conflicting_notification_owner", verify
+        ):
+            result = adapter.verify_conflicting_owner(
+                executable,
+                environment,
+                endpoint,  # type: ignore[arg-type]
+                siblings,
+            )
+
+        self.assertEqual(result.category, "notification_owner_conflict_isolated")
+        self.assertEqual(
+            [kind for kind, _value in calls], ["lease", "enter", "verify", "exit"]
+        )
 
 
 class LivePortTests(unittest.TestCase):
@@ -1637,6 +1759,119 @@ class LivePortTests(unittest.TestCase):
             HarnessError, "^malformed_pin_state_recovery_invalid$"
         ):
             port.run_step("failure_replay", "start_with_malformed_pin_state")
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_replays_malformed_persistent_history_in_one_usable_fresh_session(
+        self,
+    ) -> None:
+        operations = FakeOperations()
+        adapter = FakeNotificationFailureReplay()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()),
+            operations,
+            FakeAccessibility(operations),
+            notification_failure_replay=adapter,
+        )
+
+        self.assertEqual(
+            port.run_step(
+                "failure_replay", "start_with_malformed_persistent_history"
+            ),
+            Observation(True, True),
+        )
+
+        self.assertEqual(len(adapter.malformed_calls), 1)
+        fixture, environment, endpoint = adapter.malformed_calls[0]
+        self.assertEqual(fixture.path.read_bytes(), MALFORMED_HISTORY_BYTES)
+        self.assertEqual(environment["DBUS_SESSION_BUS_ADDRESS"], endpoint.address)
+        configuration = (
+            Path(environment["XDG_CONFIG_HOME"]) / "prismdrake" / "config.toml"
+        ).read_text(encoding="ascii")
+        self.assertIn('history = "persistent"', configuration)
+        self.assertNotIn('history = "session"', configuration)
+        self.assertEqual(
+            sum(
+                Path(argv[0]).name == "prismdrake-session"
+                for argv, _environment in operations.spawn_calls
+            ),
+            1,
+        )
+        self.assertTrue(
+            any(
+                argv == ("/usr/bin/prismdrake-shellctl", "notifications", "open")
+                for argv, _environment in operations.run_calls
+            )
+        )
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_replays_owner_conflict_with_direct_exact_unchanged_siblings(self) -> None:
+        operations = FakeOperations()
+        adapter = FakeNotificationFailureReplay()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()),
+            operations,
+            FakeAccessibility(operations),
+            notification_failure_replay=adapter,
+        )
+
+        self.assertEqual(
+            port.run_step(
+                "failure_replay", "start_when_another_notification_owner_exists"
+            ),
+            Observation(True, True),
+        )
+
+        self.assertEqual(len(adapter.conflict_calls), 1)
+        executable, environment, endpoint, siblings = adapter.conflict_calls[0]
+        self.assertEqual(executable, Path("/usr/bin/prismdrake-notifyd"))
+        self.assertEqual(environment["DBUS_SESSION_BUS_ADDRESS"], endpoint.address)
+        self.assertEqual(set(siblings), {"prismdrake-settingsd", "prismdrake-shell"})
+        component_commands = [
+            argv
+            for argv, _environment in operations.spawn_calls
+            if Path(argv[0]).name.startswith("prismdrake-")
+        ]
+        self.assertEqual(
+            component_commands,
+            [
+                ("/usr/bin/prismdrake-settingsd", "--foreground"),
+                ("/usr/bin/prismdrake-shell",),
+            ],
+        )
+        self.assertFalse(
+            any(
+                Path(argv[0]).name == "prismdrake-session"
+                for argv, _environment in operations.spawn_calls
+            )
+        )
+        configuration = (
+            Path(environment["XDG_CONFIG_HOME"]) / "prismdrake" / "config.toml"
+        )
+        self.assertEqual(stat.S_IMODE(configuration.stat().st_mode), 0o600)
+        self.assertEqual(configuration.read_text(encoding="ascii"), _session_config())
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+        self.assertEqual(operations.stop_calls, list(reversed(operations.children)))
+
+    def test_notification_failure_adapter_errors_are_categorical(self) -> None:
+        operations = FakeOperations()
+
+        class FailingReplay(FakeNotificationFailureReplay):
+            def verify_malformed_history(self, fixture, environment, endpoint):
+                del fixture, environment, endpoint
+                raise RuntimeError("private malformed history detail")
+
+        port = LiveXorgHarnessPort(
+            config(installed_paths()),
+            operations,
+            FakeAccessibility(operations),
+            notification_failure_replay=FailingReplay(),
+        )
+        with self.assertRaisesRegex(
+            HarnessError, "^live_malformed_notification_history_failed$"
+        ):
+            port.run_step(
+                "failure_replay", "start_with_malformed_persistent_history"
+            )
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
 
     def test_safe_mode_consumes_crash_budget_then_starts_a_fresh_normal_epoch(self) -> None:
