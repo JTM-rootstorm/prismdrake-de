@@ -53,6 +53,8 @@ using prismdrake::launcher::DiscoveredDesktopEntry;
 [[nodiscard]] std::shared_ptr<const ApplicationCatalogSnapshot> catalog(std::uint64_t generation) {
     std::vector<DiscoveredDesktopEntry> entries{entry("alpha.desktop", "Alpha"),
                                                 entry("beta.desktop", "Beta")};
+    entries[0].entry.actions.push_back(
+        {"NewWindow", "New Window", std::nullopt, "/bin/echo new-window"});
     std::vector<std::size_t> indices{0U, 1U};
     auto discovery = std::make_shared<const DesktopEntryDiscoverySnapshot>(
         DesktopEntryDiscoverySnapshot{std::move(entries), indices, {}, 2U, true, false, false});
@@ -125,16 +127,19 @@ class FakeIndexBackend final : public LauncherIndexBackend {
 
 class FakeLaunchBackend final : public LauncherLaunchBackend {
   public:
-    foundation::Result<void> launch(const DiscoveredDesktopEntry &entry, std::optional<std::string>,
+    foundation::Result<void> launch(const DiscoveredDesktopEntry &entry,
+                                    std::optional<std::string> action,
                                     const prismdrake::launcher::ProcessLaunchContext &,
                                     const foundation::CancellationToken &) override {
         ++calls;
         captured_exec = entry.entry.exec;
+        captured_action = std::move(action);
         return foundation::Result<void>::success();
     }
 
     std::atomic_int calls{0};
     std::optional<std::string> captured_exec;
+    std::optional<std::string> captured_action;
 };
 
 class FakeApplicationActivator final : public LauncherApplicationActivator {
@@ -383,6 +388,52 @@ TEST(LauncherControllerTest, CurrentTypedIntentUsesBackgroundSafeLaunchBackend) 
     EXPECT_EQ(fixture.launch->calls.load(), 1);
     ASSERT_TRUE(fixture.launch->captured_exec);
     EXPECT_EQ(*fixture.launch->captured_exec, "/bin/echo literal");
+}
+
+TEST(LauncherControllerTest, RoutesActionPinDestinationRefreshAndResolvedIconIntents) {
+    auto fixture = makeController();
+    publishInitial(fixture);
+    auto *alpha = fixture.controller->presentationModel()->resultAt(0);
+    ASSERT_NE(alpha, nullptr);
+    QTRY_COMPARE_WITH_TIMEOUT(alpha->iconSource().scheme(), QStringLiteral("data"), 2000);
+
+    const auto actions = alpha->actions();
+    ASSERT_EQ(actions.size(), 1);
+    auto *action = qobject_cast<LauncherActionPresentation *>(actions[0].value<QObject *>());
+    ASSERT_NE(action, nullptr);
+    QSignalSpy launched(fixture.controller.get(), &LauncherController::launchCompleted);
+    ASSERT_TRUE(action->request());
+    QTRY_COMPARE_WITH_TIMEOUT(launched.count(), 1, 2000);
+    ASSERT_TRUE(fixture.launch->captured_action);
+    EXPECT_EQ(*fixture.launch->captured_action, "NewWindow");
+
+    std::optional<ApplicationPinIntent> pin;
+    QObject::connect(fixture.controller.get(), &LauncherController::pinChangeRequested,
+                     fixture.controller.get(), [&](const auto &intent) { pin = intent; });
+    ASSERT_TRUE(alpha->requestPinToggle());
+    ASSERT_TRUE(pin);
+    EXPECT_TRUE(pin->pin);
+    auto identifier = prismdrake::launcher::deriveDesktopFileId("alpha.desktop");
+    ASSERT_TRUE(identifier);
+    ASSERT_TRUE(fixture.controller->applyPinSnapshot(2U, {identifier.value()}));
+    EXPECT_TRUE(alpha->pinned());
+
+    const int refreshCount = fixture.index->refresh_calls.load();
+    ASSERT_TRUE(fixture.controller->presentationModel()->requestRefresh());
+    QTRY_COMPARE_WITH_TIMEOUT(fixture.index->refresh_calls.load(), refreshCount + 1, 2000);
+
+    ASSERT_TRUE(fixture.controller->setSearchQuery(QStringLiteral("notification center")));
+    QTRY_COMPARE_WITH_TIMEOUT(fixture.controller->presentationModel()->rowCount(), 1, 2000);
+    auto *destination = fixture.controller->presentationModel()->resultAt(0);
+    ASSERT_NE(destination, nullptr);
+    EXPECT_EQ(destination->kindId(), QStringLiteral("destination"));
+    std::optional<ShellDestinationIntent> shellDestination;
+    QObject::connect(fixture.controller.get(), &LauncherController::shellDestinationRequested,
+                     fixture.controller.get(),
+                     [&](const auto &intent) { shellDestination = intent; });
+    ASSERT_TRUE(destination->requestLaunch());
+    ASSERT_TRUE(shellDestination);
+    EXPECT_EQ(shellDestination->destination, ShellDestination::notificationCenter);
 }
 
 TEST(LauncherControllerTest, DefaultLaunchBackendBuildsLiteralArgvWithoutImplicitShell) {

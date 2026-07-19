@@ -423,6 +423,16 @@ LauncherController::LauncherController(LauncherControllerOptions options,
       monitor_(std::move(monitor)) {
     connect(&presentation_, &LauncherPresentationModel::launchRequested, this,
             &LauncherController::handleLaunchIntent);
+    connect(&presentation_, &LauncherPresentationModel::actionRequested, this,
+            &LauncherController::handleActionIntent);
+    connect(&presentation_, &LauncherPresentationModel::pinRequested, this,
+            &LauncherController::handlePinIntent);
+    connect(&presentation_, &LauncherPresentationModel::destinationRequested, this,
+            &LauncherController::handleDestinationIntent);
+    connect(&presentation_, &LauncherPresentationModel::iconRequested, this,
+            &LauncherController::handleIconIntent);
+    connect(&presentation_, &LauncherPresentationModel::refreshRequested, this,
+            [this] { static_cast<void>(refresh()); });
     if (monitor_) {
         monitor_->setParent(this);
         connect(monitor_.get(), &ApplicationRootMonitor::refreshRequested, this,
@@ -440,6 +450,9 @@ Result<void> LauncherController::refresh() {
     }
     if (monitor_) {
         monitor_->requestRecovery();
+        if (monitor_->degraded()) {
+            emit applicationMonitorDegraded(true);
+        }
     }
     return beginRefresh();
 }
@@ -451,6 +464,8 @@ Result<void> LauncherController::beginRefresh() {
     }
     ++catalog_generation_;
     catalog_.reset();
+    pending_icons_.clear();
+    queued_icon_requests_.clear();
     implementation_->submitIndex(RefreshJob{catalog_generation_});
     return Result<void>::success();
 }
@@ -474,6 +489,34 @@ Result<void> LauncherController::setSearchQuery(const QString &query) {
     if (catalog_) {
         startCurrentSearch();
     }
+    return Result<void>::success();
+}
+
+Result<void>
+LauncherController::applyPinSnapshot(std::uint64_t generation,
+                                     const std::vector<prismdrake::launcher::DesktopFileId> &pins) {
+    if (QThread::currentThread() != thread()) {
+        return ownerThreadError();
+    }
+    return presentation_.applyPinSnapshot(generation, pins);
+}
+
+Result<void> LauncherController::setIconThemeGeneration(std::uint64_t generation) {
+    if (QThread::currentThread() != thread()) {
+        return ownerThreadError();
+    }
+    if (generation == 0U || generation < icon_theme_generation_) {
+        return Result<void>::failure({ErrorCode::invalid_argument,
+                                      "The launcher icon theme generation is invalid.",
+                                      "Publish a nonzero monotonic immutable theme generation."});
+    }
+    if (generation == icon_theme_generation_) {
+        return Result<void>::success();
+    }
+    icon_theme_generation_ = generation;
+    pending_icons_.clear();
+    queued_icon_requests_.clear();
+    presentation_.requestAllIcons();
     return Result<void>::success();
 }
 
@@ -508,7 +551,7 @@ void LauncherController::handleSearchCompletion(std::uint64_t catalogGeneration,
         !catalog_) {
         return;
     }
-    if (!result || !presentation_.applySnapshot(catalog_, result.value())) {
+    if (!result || !presentation_.applySnapshot(catalog_, result.value(), &query_)) {
         auto error = prismdrake::launcher::makeApplicationSearchErrorSnapshot(catalog_generation_,
                                                                               request_generation_);
         if (error) {
@@ -534,6 +577,104 @@ void LauncherController::handleLaunchIntent(const ApplicationLaunchIntent &inten
         !implementation_->submitLaunch(
             LaunchJob{catalog_->discovery->entries[match->discoveryEntryIndex], std::nullopt})) {
         emit launchRejected();
+    }
+}
+
+void LauncherController::handleActionIntent(const ApplicationActionIntent &intent) {
+    if (!catalog_ || !presentation_.currentSearch() ||
+        intent.catalogGeneration != catalog_generation_ ||
+        intent.requestGeneration != request_generation_) {
+        emit launchRejected();
+        return;
+    }
+    const auto match =
+        std::ranges::find_if(presentation_.currentSearch()->results, [&](const auto &result) {
+            return catalog_->discovery->entries[result.discoveryEntryIndex].id ==
+                   intent.desktopFileId;
+        });
+    if (match == presentation_.currentSearch()->results.end()) {
+        emit launchRejected();
+        return;
+    }
+    const auto &entry = catalog_->discovery->entries[match->discoveryEntryIndex];
+    const bool actionExists = std::ranges::any_of(entry.entry.actions, [&](const auto &action) {
+        return action.identifier == intent.actionId;
+    });
+    if (!actionExists || !implementation_->submitLaunch(LaunchJob{entry, intent.actionId})) {
+        emit launchRejected();
+    }
+}
+
+void LauncherController::handlePinIntent(const ApplicationPinIntent &intent) {
+    const bool currentIdentity =
+        catalog_ && presentation_.currentSearch() &&
+        std::ranges::any_of(presentation_.currentSearch()->results, [&](const auto &result) {
+            return catalog_->discovery->entries[result.discoveryEntryIndex].id ==
+                   intent.desktopFileId;
+        });
+    if (!catalog_ || !presentation_.currentSearch() ||
+        intent.catalogGeneration != catalog_generation_ ||
+        intent.requestGeneration != request_generation_ || !currentIdentity) {
+        emit launchRejected();
+        return;
+    }
+    emit pinChangeRequested(intent);
+}
+
+void LauncherController::handleDestinationIntent(const ShellDestinationIntent &intent) {
+    if (!presentation_.currentSearch() || intent.requestGeneration != request_generation_) {
+        return;
+    }
+    emit shellDestinationRequested(intent);
+}
+
+void LauncherController::handleIconIntent(const LauncherIconIntent &intent) {
+    constexpr std::size_t maximumQueuedIcons =
+        prismdrake::launcher::maximumApplicationSearchResults;
+    const auto requestKey = std::pair{intent.opaqueKey, icon_theme_generation_};
+    if (!catalog_ || intent.catalogGeneration != catalog_generation_ ||
+        intent.opaqueKey.isEmpty() || queued_icon_requests_.contains(requestKey) ||
+        pending_icons_.size() + active_icon_requests_ >= maximumQueuedIcons) {
+        return;
+    }
+    queued_icon_requests_.emplace(requestKey);
+    pending_icons_.push_back(intent);
+    pumpIconQueue();
+}
+
+void LauncherController::pumpIconQueue() {
+    constexpr std::size_t maximumConcurrentIcons = 4U;
+    while (active_icon_requests_ < maximumConcurrentIcons && !pending_icons_.empty()) {
+        auto intent = std::move(pending_icons_.front());
+        pending_icons_.pop_front();
+        const auto themeGeneration = icon_theme_generation_;
+        prismdrake::icons::IconRequest request{intent.desktopFileId, intent.iconField, 32, 1.0,
+                                               themeGeneration};
+        auto submitted = icon_resolver_.resolve(
+            std::move(request), this,
+            [this, opaqueKey = intent.opaqueKey, catalogGeneration = intent.catalogGeneration,
+             themeGeneration](prismdrake::icons::IconResolution resolution) {
+                queued_icon_requests_.erase(std::pair{opaqueKey, themeGeneration});
+                if (active_icon_requests_ > 0U) {
+                    --active_icon_requests_;
+                }
+                const bool currentRequest = catalogGeneration == catalog_generation_ &&
+                                            themeGeneration == icon_theme_generation_;
+                if (currentRequest && resolution.themeGeneration == themeGeneration) {
+                    presentation_.applyResolvedIcon(opaqueKey, resolution.image);
+                } else {
+                    // A replacement publication may have filled the bounded queue while this
+                    // stale request still occupied a concurrency slot. Re-offer current rows;
+                    // the request set suppresses duplicates and fills only the newly free slot.
+                    presentation_.requestAllIcons();
+                }
+                pumpIconQueue();
+            });
+        if (submitted) {
+            ++active_icon_requests_;
+        } else {
+            queued_icon_requests_.erase(std::pair{intent.opaqueKey, themeGeneration});
+        }
     }
 }
 

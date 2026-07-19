@@ -6,9 +6,11 @@
 #include <gtest/gtest.h>
 
 #include <QAbstractItemModelTester>
+#include <QImage>
 #include <QLoggingCategory>
 #include <QMetaObject>
 #include <QPointer>
+#include <QSignalSpy>
 #include <QStringList>
 
 #include <future>
@@ -258,6 +260,7 @@ TEST(LauncherPresentationModelTest, PreservesUnchangedIdentityAcrossFilteringAnd
     LauncherPresentationModel model;
     ASSERT_TRUE(model.applySnapshot(source, complete(allFirst)));
     auto *oneObject = model.resultAt(0);
+    const QString oneIconKey = oneObject->iconKey();
     auto *twoObject = model.resultAt(1);
     QPointer<LauncherResultPresentation> onePointer = oneObject;
     bool aliveWhenRowsRemoved = false;
@@ -277,8 +280,84 @@ TEST(LauncherPresentationModelTest, PreservesUnchangedIdentityAcrossFilteringAnd
     ASSERT_TRUE(model.applySnapshot(source, complete(allAgain)));
     EXPECT_EQ(model.rowCount(), 2);
     EXPECT_EQ(model.resultAt(1), twoObject);
-    EXPECT_NE(model.resultAt(0), oneObject);
+    EXPECT_NE(model.resultAt(0), nullptr);
+    EXPECT_NE(model.resultAt(0)->iconKey(), oneIconKey);
     EXPECT_TRUE(onePointer.isNull());
+}
+
+TEST(LauncherPresentationModelTest, PublishesTypedSearchableShellDestinations) {
+    const auto source = catalog({discovered("editor.desktop", "Editor")});
+    auto query = prismdrake::launcher::parseApplicationSearchQuery("quick settings");
+    ASSERT_TRUE(query);
+    auto operation = prismdrake::launcher::createApplicationSearch(source, 7U, query.value());
+    ASSERT_TRUE(operation);
+    LauncherPresentationModel model;
+    ASSERT_TRUE(model.applySnapshot(source, complete(operation.value()), &query.value()));
+    ASSERT_EQ(model.rowCount(), 1);
+    EXPECT_EQ(model.viewState(), LauncherPresentationModel::ViewState::results);
+    EXPECT_EQ(model.resultAt(0)->kindId(), QStringLiteral("destination"));
+    EXPECT_EQ(model.resultAt(0)->name(), QStringLiteral("Quick Settings"));
+
+    std::optional<ShellDestinationIntent> captured;
+    QObject::connect(&model, &LauncherPresentationModel::destinationRequested, &model,
+                     [&](const auto &intent) { captured = intent; });
+    EXPECT_TRUE(model.resultAt(0)->requestLaunch());
+    ASSERT_TRUE(captured);
+    EXPECT_EQ(captured->destination, ShellDestination::quickSettings);
+    EXPECT_EQ(captured->requestGeneration, 7U);
+}
+
+TEST(LauncherPresentationModelTest, EmitsTypedActionPinRefreshAndOpaqueIconIntents) {
+    auto application =
+        discovered("org.example.Editor.desktop", "Editor", {}, {}, "/private/icon/path.png");
+    application.entry.actions.push_back(
+        {"NewWindow", "New Window", std::nullopt, "editor --new-window"});
+    const auto source = catalog({std::move(application)}, 31U);
+    auto operation = searchOperation(source, "editor", 37U);
+    LauncherPresentationModel model;
+    std::optional<LauncherIconIntent> iconIntent;
+    QObject::connect(&model, &LauncherPresentationModel::iconRequested, &model,
+                     [&](const auto &intent) { iconIntent = intent; });
+    ASSERT_TRUE(model.applySnapshot(source, complete(operation)));
+    ASSERT_TRUE(iconIntent);
+    EXPECT_FALSE(iconIntent->opaqueKey.contains(QStringLiteral("Editor")));
+    EXPECT_FALSE(iconIntent->opaqueKey.contains(QStringLiteral("example")));
+    EXPECT_FALSE(iconIntent->opaqueKey.contains(QStringLiteral("private")));
+    auto *result = model.resultAt(0);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->metaObject()->indexOfProperty("icon"), -1);
+    EXPECT_EQ(result->iconKey(), iconIntent->opaqueKey);
+
+    auto identifier = prismdrake::launcher::deriveDesktopFileId("org.example.Editor.desktop");
+    ASSERT_TRUE(identifier);
+    ASSERT_TRUE(model.applyPinSnapshot(4U, {identifier.value()}));
+    EXPECT_TRUE(result->pinned());
+    std::optional<ApplicationPinIntent> pinIntent;
+    QObject::connect(&model, &LauncherPresentationModel::pinRequested, &model,
+                     [&](const auto &intent) { pinIntent = intent; });
+    EXPECT_TRUE(result->requestPinToggle());
+    ASSERT_TRUE(pinIntent);
+    EXPECT_FALSE(pinIntent->pin);
+
+    const auto actions = result->actions();
+    ASSERT_EQ(actions.size(), 1);
+    auto *action = qobject_cast<LauncherActionPresentation *>(actions[0].value<QObject *>());
+    ASSERT_NE(action, nullptr);
+    std::optional<ApplicationActionIntent> actionIntent;
+    QObject::connect(&model, &LauncherPresentationModel::actionRequested, &model,
+                     [&](const auto &intent) { actionIntent = intent; });
+    EXPECT_TRUE(action->request());
+    ASSERT_TRUE(actionIntent);
+    EXPECT_EQ(actionIntent->actionId, "NewWindow");
+
+    QSignalSpy refresh(&model, &LauncherPresentationModel::refreshRequested);
+    EXPECT_TRUE(model.requestRefresh());
+    EXPECT_EQ(refresh.count(), 1);
+
+    QImage icon{16, 16, QImage::Format_ARGB32_Premultiplied};
+    icon.fill(Qt::red);
+    model.applyResolvedIcon(result->iconKey(), icon);
+    EXPECT_EQ(result->iconSource().scheme(), QStringLiteral("data"));
 }
 
 TEST(LauncherPresentationModelTest, ReordersRetainedIdentitiesWithValidModelSignals) {

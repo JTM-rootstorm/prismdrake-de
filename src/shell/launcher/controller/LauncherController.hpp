@@ -6,6 +6,7 @@
 #include "DbusApplicationActivator.hpp"
 #include "DesktopEntryParser.hpp"
 #include "DesktopEntryVisibility.hpp"
+#include "IconResolver.hpp"
 #include "LauncherPresentationModel.hpp"
 #include "ProcessLaunch.hpp"
 #include "Result.hpp"
@@ -13,8 +14,11 @@
 #include <QObject>
 #include <QString>
 
+#include <deque>
 #include <memory>
 #include <optional>
+#include <set>
+#include <utility>
 
 namespace prismdrake::shell::launcher::controller {
 
@@ -89,6 +93,10 @@ class LauncherController final : public QObject {
     [[nodiscard]] LauncherPresentationModel *presentationModel() noexcept { return &presentation_; }
     [[nodiscard]] foundation::Result<void> refresh();
     [[nodiscard]] foundation::Result<void> setSearchQuery(const QString &query);
+    [[nodiscard]] foundation::Result<void>
+    applyPinSnapshot(std::uint64_t generation,
+                     const std::vector<prismdrake::launcher::DesktopFileId> &pins);
+    [[nodiscard]] foundation::Result<void> setIconThemeGeneration(std::uint64_t generation);
 
   signals:
     void catalogRefreshFailed();
@@ -97,6 +105,9 @@ class LauncherController final : public QObject {
     void launchCompleted();
     void launchFailed();
     void applicationMonitorDegraded(bool degraded);
+    void pinChangeRequested(const prismdrake::shell::launcher::ApplicationPinIntent &intent);
+    void
+    shellDestinationRequested(const prismdrake::shell::launcher::ShellDestinationIntent &intent);
 
   private:
     class Impl;
@@ -107,6 +118,11 @@ class LauncherController final : public QObject {
                        std::unique_ptr<ApplicationRootMonitor> monitor);
 
     void handleLaunchIntent(const ApplicationLaunchIntent &intent);
+    void handleActionIntent(const ApplicationActionIntent &intent);
+    void handlePinIntent(const ApplicationPinIntent &intent);
+    void handleDestinationIntent(const ShellDestinationIntent &intent);
+    void handleIconIntent(const LauncherIconIntent &intent);
+    void pumpIconQueue();
     void handleRefreshCompletion(
         std::uint64_t generation,
         foundation::Result<std::shared_ptr<const prismdrake::launcher::ApplicationCatalogSnapshot>>
@@ -127,6 +143,11 @@ class LauncherController final : public QObject {
     std::unique_ptr<ApplicationRootMonitor> monitor_;
     std::uint64_t catalog_generation_{0U};
     std::uint64_t request_generation_{1U};
+    prismdrake::icons::IconResolver icon_resolver_{8U};
+    std::deque<LauncherIconIntent> pending_icons_;
+    std::set<std::pair<QString, std::uint64_t>> queued_icon_requests_;
+    std::uint64_t icon_theme_generation_{1U};
+    std::size_t active_icon_requests_{0U};
 };
 
 } // namespace prismdrake::shell::launcher::controller

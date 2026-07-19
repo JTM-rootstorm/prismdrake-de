@@ -14,6 +14,7 @@ target_include_directories(prismdrake-shell-launcher-controller
 target_link_libraries(prismdrake-shell-launcher-controller
     PUBLIC
         Prismdrake::shell-launcher-presentation
+        Prismdrake::icon-resolver
         Prismdrake::sd-bus
         Qt6::Core)
 

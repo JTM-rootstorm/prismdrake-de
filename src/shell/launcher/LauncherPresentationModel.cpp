@@ -2,6 +2,8 @@
 
 #include "DesktopEntryParser.hpp"
 
+#include <QBuffer>
+#include <QByteArray>
 #include <QModelIndex>
 #include <QStringDecoder>
 #include <QThread>
@@ -82,6 +84,24 @@ class ApplyingSnapshotGuard final {
     return QString::fromUtf8(value->data(), static_cast<qsizetype>(value->size()));
 }
 
+[[nodiscard]] QString literalString(std::string_view value) {
+    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+}
+
+[[nodiscard]] QUrl genericIconSource() {
+    return QUrl{QStringLiteral("qrc:/org/prismdrake/icons/prismdrake-generic.svg")};
+}
+
+[[nodiscard]] bool destinationMatches(const prismdrake::launcher::ApplicationSearchQuery *query,
+                                      std::string_view haystack) {
+    if (query == nullptr || query->empty()) {
+        return false;
+    }
+    return std::ranges::all_of(query->normalizedTokens(), [&](const auto &token) {
+        return haystack.find(token) != std::string_view::npos;
+    });
+}
+
 [[nodiscard]] Result<void>
 validateCatalog(const std::shared_ptr<const ApplicationCatalogSnapshot> &catalog,
                 std::uint64_t requestGeneration) {
@@ -100,11 +120,20 @@ validateCatalog(const std::shared_ptr<const ApplicationCatalogSnapshot> &catalog
     }
     for (const auto index : catalog->eligibleEntryIndices) {
         const auto &entry = catalog->discovery->entries[index].entry;
-        if (!entry.name || !entry.exec || !validLiteral(*entry.name, true) ||
+        if (!entry.name || (!entry.exec && !entry.dbusActivatable) ||
+            !validLiteral(*entry.name, true) ||
             !validLiteral(entry.genericName.value_or(""), false) ||
             !validLiteral(entry.comment.value_or(""), false) ||
             !validLiteral(entry.icon.value_or(""), false)) {
             return invalid("launcher presentation entry has invalid literal fields");
+        }
+        for (const auto &action : entry.actions) {
+            if (action.identifier.empty() ||
+                action.identifier.size() > prismdrake::launcher::maximumDesktopActionIdBytes ||
+                !validLiteral(action.name, true) || !validLiteral(action.exec, true) ||
+                !validLiteral(action.icon.value_or(""), false)) {
+                return invalid("launcher presentation action has invalid bounded fields");
+            }
         }
     }
     return Result<void>::success();
@@ -179,20 +208,91 @@ mappedViewState(ApplicationSearchViewState state) noexcept {
 
 } // namespace
 
+LauncherActionPresentation::LauncherActionPresentation(std::string identifier, QString name,
+                                                       LauncherResultPresentation *owner)
+    : QObject(owner), identifier_(std::move(identifier)), name_(std::move(name)), owner_(owner) {}
+
+bool LauncherActionPresentation::request() { return owner_->requestAction(*this); }
+
 LauncherResultPresentation::LauncherResultPresentation(const DiscoveredDesktopEntry &entry,
+                                                       QString opaqueIconKey, bool pinned,
                                                        LauncherPresentationModel *owner)
     : QObject(owner), desktop_file_id_(entry.id), owner_(owner), name_(literal(entry.entry.name)),
       generic_name_(literal(entry.entry.genericName)), comment_(literal(entry.entry.comment)),
-      icon_(literal(entry.entry.icon)), terminal_required_(entry.entry.terminal) {}
+      icon_(literal(entry.entry.icon)), kind_id_(QStringLiteral("application")),
+      icon_key_(std::move(opaqueIconKey)), terminal_required_(entry.entry.terminal),
+      icon_source_(genericIconSource()), pinned_(pinned) {
+    actions_.reserve(entry.entry.actions.size());
+    for (const auto &action : entry.entry.actions) {
+        actions_.push_back(std::unique_ptr<LauncherActionPresentation>(
+            new LauncherActionPresentation(action.identifier, literalString(action.name), this)));
+    }
+}
+
+LauncherResultPresentation::LauncherResultPresentation(ShellDestination destination, QString name,
+                                                       QString comment, QString opaqueIconKey,
+                                                       LauncherPresentationModel *owner)
+    : QObject(owner), destination_(destination), owner_(owner), name_(std::move(name)),
+      comment_(std::move(comment)), kind_id_(QStringLiteral("destination")),
+      icon_key_(std::move(opaqueIconKey)), terminal_required_(false),
+      icon_source_(genericIconSource()) {}
 
 bool LauncherResultPresentation::matches(const DiscoveredDesktopEntry &entry) const noexcept {
-    return desktop_file_id_ == entry.id && name_ == literal(entry.entry.name) &&
+    return desktop_file_id_ && *desktop_file_id_ == entry.id &&
+           name_ == literal(entry.entry.name) &&
            generic_name_ == literal(entry.entry.genericName) &&
            comment_ == literal(entry.entry.comment) && icon_ == literal(entry.entry.icon) &&
-           terminal_required_ == entry.entry.terminal;
+           terminal_required_ == entry.entry.terminal &&
+           actions_.size() == entry.entry.actions.size() &&
+           std::ranges::equal(actions_, entry.entry.actions,
+                              [](const auto &presentation, const auto &action) {
+                                  return presentation->identifier_ == action.identifier &&
+                                         presentation->name_ == literalString(action.name);
+                              });
 }
 
 bool LauncherResultPresentation::requestLaunch() { return owner_->requestLaunch(*this); }
+
+bool LauncherResultPresentation::requestAction(const LauncherActionPresentation &action) {
+    return owner_->requestAction(*this, action);
+}
+
+bool LauncherResultPresentation::requestPinToggle() { return owner_->requestPinToggle(*this); }
+
+QVariantList LauncherResultPresentation::actions() const {
+    QVariantList values;
+    values.reserve(static_cast<qsizetype>(actions_.size()));
+    for (const auto &action : actions_) {
+        values.push_back(QVariant::fromValue(static_cast<QObject *>(action.get())));
+    }
+    return values;
+}
+
+void LauncherResultPresentation::setPinned(bool pinned) {
+    if (pinned_ == pinned) {
+        return;
+    }
+    pinned_ = pinned;
+    emit pinnedChanged();
+}
+
+void LauncherResultPresentation::setResolvedIcon(const QImage &image) {
+    if (image.isNull()) {
+        return;
+    }
+    QByteArray encoded;
+    QBuffer buffer{&encoded};
+    if (!buffer.open(QIODevice::WriteOnly) || !image.save(&buffer, "PNG")) {
+        return;
+    }
+    const QUrl source{QStringLiteral("data:image/png;base64,") +
+                      QString::fromLatin1(encoded.toBase64())};
+    if (source == icon_source_) {
+        return;
+    }
+    icon_source_ = source;
+    emit iconSourceChanged();
+}
 
 LauncherPresentationModel::LauncherPresentationModel(QObject *parent) : QAbstractListModel(parent) {
     results_.reserve(prismdrake::launcher::maximumApplicationSearchResults);
@@ -214,9 +314,10 @@ QHash<int, QByteArray> LauncherPresentationModel::roleNames() const {
     return {{Role::resultObject, QByteArrayLiteral("result")}};
 }
 
-foundation::Result<void>
-LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalogSnapshot> catalog,
-                                         std::shared_ptr<const ApplicationSearchSnapshot> search) {
+foundation::Result<void> LauncherPresentationModel::applySnapshot(
+    std::shared_ptr<const ApplicationCatalogSnapshot> catalog,
+    std::shared_ptr<const ApplicationSearchSnapshot> search,
+    const prismdrake::launcher::ApplicationSearchQuery *query) {
     if (QThread::currentThread() != thread()) {
         return Result<void>::failure(
             {ErrorCode::cancelled, "launcher presentation was called from a non-owner thread",
@@ -266,10 +367,13 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
     }
 
     std::vector<std::unique_ptr<LauncherResultPresentation>> replacements;
+    std::vector<std::unique_ptr<LauncherResultPresentation>> destinations;
     std::vector<std::unique_ptr<LauncherResultPresentation>> retiredPresentations;
+    std::vector<QString> newIconKeys;
     try {
         replacements.resize(search->results.size());
         retiredPresentations.reserve(results_.size());
+        newIconKeys.reserve(search->results.size());
         for (std::size_t index = 0U; index < search->results.size(); ++index) {
             const auto entryIndex = search->results[index].discoveryEntryIndex;
             const auto &entry = catalog->discovery->entries[entryIndex];
@@ -279,8 +383,25 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
             if (prior != results_.end() && (*prior)->matches(entry)) {
                 continue;
             }
-            replacements[index] = std::unique_ptr<LauncherResultPresentation>(
-                new LauncherResultPresentation(entry, this));
+            const QString opaqueKey = QStringLiteral("launcher-icon-%1").arg(next_icon_key_++);
+            newIconKeys.push_back(opaqueKey);
+            replacements[index] =
+                std::unique_ptr<LauncherResultPresentation>(new LauncherResultPresentation(
+                    entry, opaqueKey, pinned_ids_.contains(entry.id.value()), this));
+        }
+        if (destinationMatches(query, "quick settings controls")) {
+            destinations.push_back(std::unique_ptr<LauncherResultPresentation>(
+                new LauncherResultPresentation(ShellDestination::quickSettings,
+                                               tr("Quick Settings"), tr("Open shell controls"),
+                                               QStringLiteral("shell-destination-quick-settings"),
+                                               this)));
+        }
+        if (destinationMatches(query, "notification notifications center history do not disturb")) {
+            destinations.push_back(
+                std::unique_ptr<LauncherResultPresentation>(new LauncherResultPresentation(
+                    ShellDestination::notificationCenter, tr("Notification Center"),
+                    tr("Open notification history"),
+                    QStringLiteral("shell-destination-notifications"), this)));
         }
     } catch (const std::exception &) {
         return Result<void>::failure({ErrorCode::too_large,
@@ -290,6 +411,17 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
 
     ApplyingSnapshotGuard applyingGuard{applying_snapshot_};
     emit publicationReconciliationStarted();
+
+    for (std::size_t index = results_.size(); index > 0U; --index) {
+        const auto row = index - 1U;
+        if (results_[row]->destination_) {
+            beginRemoveRows({}, static_cast<int>(row), static_cast<int>(row));
+            auto retired = std::move(results_[row]);
+            results_.erase(results_.begin() + static_cast<std::ptrdiff_t>(row));
+            endRemoveRows();
+            retiredPresentations.push_back(std::move(retired));
+        }
+    }
 
     // Prefer an in-place row substitution when neither the old identity nor the new identity is
     // retained elsewhere. This is a data change, not a remove-plus-insert pair, and lets views
@@ -361,9 +493,20 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
         }
     }
 
+    const bool hasDestinations = !destinations.empty();
+    for (auto &destination : destinations) {
+        const auto row = static_cast<int>(results_.size());
+        beginInsertRows({}, row, row);
+        results_.push_back(std::move(destination));
+        endInsertRows();
+    }
+
     catalog_ = std::move(catalog);
     search_ = std::move(search);
     view_state_ = *mappedViewState(search_->state);
+    if (hasDestinations && view_state_ != ViewState::error) {
+        view_state_ = ViewState::results;
+    }
     truncated_ = search_->truncated;
     const bool refreshObjectRoles = !retiredPresentations.empty() && !results_.empty();
     // QObject-backed roles remain valid through every standard begin/end model notification.
@@ -376,6 +519,14 @@ LauncherPresentationModel::applySnapshot(std::shared_ptr<const ApplicationCatalo
     }
     applyingGuard.finish();
     emit publicationApplied();
+    for (const auto &opaqueKey : newIconKeys) {
+        const auto found = std::ranges::find_if(
+            results_, [&](const auto &result) { return result->icon_key_ == opaqueKey; });
+        if (found != results_.end() && (*found)->desktop_file_id_) {
+            emit iconRequested(LauncherIconIntent{opaqueKey, *(*found)->desktop_file_id_,
+                                                  (*found)->icon_, catalog_->generation});
+        }
+    }
     return Result<void>::success();
 }
 
@@ -418,6 +569,71 @@ LauncherResultPresentation *LauncherPresentationModel::resultAt(int row) const n
     return results_[static_cast<std::size_t>(row)].get();
 }
 
+Result<void> LauncherPresentationModel::applyPinSnapshot(std::uint64_t generation,
+                                                         const std::vector<DesktopFileId> &pins) {
+    if (QThread::currentThread() != thread() || generation == 0U || pins.size() > 256U) {
+        return Result<void>::failure(
+            {ErrorCode::invalid_argument, "The launcher pin snapshot is invalid.",
+             "Publish a bounded nonzero generation on the model owner thread."});
+    }
+    std::set<std::string> next;
+    for (const auto &pin : pins) {
+        auto checked = prismdrake::launcher::deriveDesktopFileId(pin.value());
+        if (!checked || checked.value().value() != pin.value() ||
+            !next.emplace(pin.value()).second) {
+            return invalid("launcher pin snapshot contains an invalid identity");
+        }
+    }
+    if (generation < pin_generation_ || (generation == pin_generation_ && next != pinned_ids_)) {
+        return Result<void>::failure(
+            {generation < pin_generation_ ? ErrorCode::cancelled : ErrorCode::validation_error,
+             "The launcher pin snapshot is stale or conflicts with its generation.",
+             "Retain the current immutable pin generation."});
+    }
+    if (generation == pin_generation_) {
+        return Result<void>::success();
+    }
+    pin_generation_ = generation;
+    pinned_ids_ = std::move(next);
+    for (const auto &result : results_) {
+        if (result->desktop_file_id_) {
+            result->setPinned(pinned_ids_.contains(result->desktop_file_id_->value()));
+        }
+    }
+    return Result<void>::success();
+}
+
+void LauncherPresentationModel::applyResolvedIcon(const QString &opaqueKey, const QImage &image) {
+    if (QThread::currentThread() != thread() || opaqueKey.isEmpty() || image.isNull()) {
+        return;
+    }
+    const auto found = std::ranges::find_if(
+        results_, [&](const auto &result) { return result->icon_key_ == opaqueKey; });
+    if (found != results_.end() && (*found)->desktop_file_id_) {
+        (*found)->setResolvedIcon(image);
+    }
+}
+
+void LauncherPresentationModel::requestAllIcons() {
+    if (QThread::currentThread() != thread() || !catalog_) {
+        return;
+    }
+    for (const auto &result : results_) {
+        if (result->desktop_file_id_) {
+            emit iconRequested(LauncherIconIntent{result->icon_key_, *result->desktop_file_id_,
+                                                  result->icon_, catalog_->generation});
+        }
+    }
+}
+
+bool LauncherPresentationModel::requestRefresh() {
+    if (QThread::currentThread() != thread() || applying_snapshot_) {
+        return false;
+    }
+    emit refreshRequested();
+    return true;
+}
+
 bool LauncherPresentationModel::containsCurrentIdentity(
     const DesktopFileId &desktopFileId) const noexcept {
     if (!catalog_ || !search_) {
@@ -431,12 +647,47 @@ bool LauncherPresentationModel::containsCurrentIdentity(
 bool LauncherPresentationModel::requestLaunch(const LauncherResultPresentation &result) {
     const bool isActivePresentation = std::ranges::any_of(
         results_, [&result](const auto &candidate) { return candidate.get() == &result; });
-    if (QThread::currentThread() != thread() || applying_snapshot_ || !isActivePresentation ||
-        !containsCurrentIdentity(result.desktop_file_id_)) {
+    if (QThread::currentThread() != thread() || applying_snapshot_ || !isActivePresentation) {
         return false;
     }
-    emit launchRequested(ApplicationLaunchIntent{result.desktop_file_id_, catalog_->generation,
+    if (result.destination_) {
+        emit destinationRequested(ShellDestinationIntent{
+            *result.destination_, search_ ? search_->requestGeneration : 0U});
+        return search_ != nullptr;
+    }
+    if (!result.desktop_file_id_ || !containsCurrentIdentity(*result.desktop_file_id_)) {
+        return false;
+    }
+    emit launchRequested(ApplicationLaunchIntent{*result.desktop_file_id_, catalog_->generation,
                                                  search_->requestGeneration});
+    return true;
+}
+
+bool LauncherPresentationModel::requestAction(const LauncherResultPresentation &result,
+                                              const LauncherActionPresentation &action) {
+    const bool activeResult = std::ranges::any_of(
+        results_, [&result](const auto &candidate) { return candidate.get() == &result; });
+    const bool activeAction = std::ranges::any_of(
+        result.actions_, [&action](const auto &candidate) { return candidate.get() == &action; });
+    if (QThread::currentThread() != thread() || applying_snapshot_ || !activeResult ||
+        !activeAction || !result.desktop_file_id_ ||
+        !containsCurrentIdentity(*result.desktop_file_id_)) {
+        return false;
+    }
+    emit actionRequested(ApplicationActionIntent{*result.desktop_file_id_, action.identifier_,
+                                                 catalog_->generation, search_->requestGeneration});
+    return true;
+}
+
+bool LauncherPresentationModel::requestPinToggle(LauncherResultPresentation &result) {
+    const bool activeResult = std::ranges::any_of(
+        results_, [&result](const auto &candidate) { return candidate.get() == &result; });
+    if (QThread::currentThread() != thread() || applying_snapshot_ || !activeResult ||
+        !result.desktop_file_id_ || !containsCurrentIdentity(*result.desktop_file_id_)) {
+        return false;
+    }
+    emit pinRequested(ApplicationPinIntent{*result.desktop_file_id_, !result.pinned_,
+                                           catalog_->generation, search_->requestGeneration});
     return true;
 }
 

@@ -10,7 +10,8 @@ target_include_directories(prismdrake-shell-launcher-presentation
 target_link_libraries(prismdrake-shell-launcher-presentation
     PUBLIC
         Prismdrake::launcher-model
-        Qt6::Core)
+        Qt6::Core
+        Qt6::Gui)
 
 prismdrake_configure_cpp_target(prismdrake-shell-launcher-presentation)
 prismdrake_enable_warnings(prismdrake-shell-launcher-presentation)

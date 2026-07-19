@@ -227,6 +227,19 @@ Exec=editor --valid
     EXPECT_EQ(result.value().actions[0].identifier, "Valid");
 }
 
+TEST(DesktopEntryParserTest, EnforcesDesktopActionCountBoundBeforeModelPublication) {
+    std::string document = "[Desktop Entry]\nType=Application\nName=Editor\nExec=editor\nActions=";
+    for (std::size_t index = 0U; index <= maximumDesktopActions; ++index) {
+        document += "Action" + std::to_string(index) + ";";
+    }
+    document.push_back('\n');
+
+    const auto result = parseDesktopEntry(document, locale());
+
+    ASSERT_FALSE(result);
+    EXPECT_EQ(result.error().code, ErrorCode::too_large);
+}
+
 TEST(DesktopEntryParserTest, AcceptsKnownIgnoredKeysAndExtensionSyntax) {
     constexpr std::string_view document = R"([Desktop Entry]
 Type=Application
