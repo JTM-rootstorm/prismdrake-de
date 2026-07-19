@@ -11,6 +11,7 @@
 namespace prismdrake::x11 {
 
 class X11Connection;
+class DesktopProperties;
 class DockProperties;
 class EwmhWindowRequests;
 class PropertyReader;
@@ -83,6 +84,7 @@ class AtomCache final {
     [[nodiscard]] std::optional<AtomId> atom(AtomName name) const noexcept;
 
   private:
+    friend class DesktopProperties;
     friend class DockProperties;
     friend class EwmhWindowRequests;
     friend class PropertyReader;
