@@ -151,22 +151,33 @@ class ProductEbuildContractTests(unittest.TestCase):
         install = phase_body(self.source, "src_install")
         for document in (
             "README.md",
+            "docs/index.md",
             "docs/architecture/component-model.md",
             "docs/architecture/configuration.md",
             "docs/architecture/dependency-policy.md",
             "docs/architecture/notification-service.md",
+            "docs/architecture/pd2-core-shell.md",
             "docs/architecture/pd2-state-ownership.md",
             "docs/architecture/process-model.md",
             "docs/architecture/shell-control.md",
             "docs/architecture/surface-placement.md",
+            "docs/build/building.md",
             "docs/build/dependencies.md",
             "docs/build/testing.md",
+            "docs/development/accessibility-testing.md",
+            "docs/development/pd2-installed-demonstration.md",
             "docs/packaging/gentoo-local-repository.md",
             "interfaces/README.md",
         ):
             with self.subTest(document=document):
                 self.assertIn(document, install)
-        for destination in ("architecture", "build", "packaging", "interfaces"):
+        for destination in (
+            "architecture",
+            "build",
+            "development",
+            "packaging",
+            "interfaces",
+        ):
             with self.subTest(destination=destination):
                 self.assertEqual(install.count(f"docinto {destination}"), 1)
 

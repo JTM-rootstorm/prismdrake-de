@@ -123,21 +123,27 @@ src_test() {
 
 src_install() {
 	cmake_src_install
-	dodoc README.md
+	dodoc README.md docs/index.md
 	docinto architecture
 	dodoc \
 		docs/architecture/component-model.md \
 		docs/architecture/configuration.md \
 		docs/architecture/dependency-policy.md \
 		docs/architecture/notification-service.md \
+		docs/architecture/pd2-core-shell.md \
 		docs/architecture/pd2-state-ownership.md \
 		docs/architecture/process-model.md \
 		docs/architecture/shell-control.md \
 		docs/architecture/surface-placement.md
 	docinto build
 	dodoc \
+		docs/build/building.md \
 		docs/build/dependencies.md \
 		docs/build/testing.md
+	docinto development
+	dodoc \
+		docs/development/accessibility-testing.md \
+		docs/development/pd2-installed-demonstration.md
 	docinto packaging
 	dodoc docs/packaging/gentoo-local-repository.md
 	docinto interfaces
