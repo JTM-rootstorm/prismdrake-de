@@ -9,6 +9,7 @@
 #include <QScreen>
 #include <QUrl>
 #include <QWindow>
+#include <QtQml/qqml.h>
 
 #include <limits>
 #include <set>
@@ -51,6 +52,11 @@ struct DesktopWindowHost::WindowEntry final {
 Result<std::unique_ptr<DesktopWindowHost>>
 DesktopWindowHost::create(std::string_view display, ScreenResolver screenResolver) {
     if (QGuiApplication::instance() == nullptr || !screenResolver) {
+        return invalidHost<std::unique_ptr<DesktopWindowHost>>();
+    }
+    static const int wallpaperType = qmlRegisterType<DesktopWallpaperItem>(
+        "org.prismdrake.shell.desktop", 0, 1, "DesktopWallpaper");
+    if (wallpaperType < 0) {
         return invalidHost<std::unique_ptr<DesktopWindowHost>>();
     }
     auto connection = x11::X11Connection::connect(display);
