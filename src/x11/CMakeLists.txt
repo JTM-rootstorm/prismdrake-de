@@ -8,6 +8,8 @@ add_library(prismdrake-x11 STATIC
     DockProperties.cpp
     DockProperties.hpp
     DockPropertiesInternal.hpp
+    DesktopProperties.cpp
+    DesktopProperties.hpp
     EwmhCapabilities.cpp
     EwmhCapabilities.hpp
     EwmhCapabilitiesInternal.hpp
