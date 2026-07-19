@@ -196,6 +196,7 @@ class FakeOperations:
         }
         self.controlled_windows: dict[str, int] = {}
         self.controlled_hidden: set[int] = set()
+        self.window_state_payloads: dict[int, bytes] = {}
         self.active_window: int | None = None
         self.visible_named_windows: dict[str, int] = {
             live_xorg.LAUNCHER_WINDOW_TITLE: 0x510001,
@@ -333,6 +334,8 @@ class FakeOperations:
                     ).encode("ascii"),
                 )
             if property_name == "_NET_WM_STATE":
+                if window in self.window_state_payloads:
+                    return CommandResult(0, self.window_state_payloads[window])
                 if window in self.controlled_hidden:
                     return CommandResult(
                         0,
@@ -1938,6 +1941,43 @@ class LivePortTests(unittest.TestCase):
             ],
         )
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_window_state_parser_accepts_only_exact_empty_or_known_atoms(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(config(), operations)
+        port._display = ":140"  # noqa: SLF001
+        window = CONTROLLED_ONE_ID
+
+        operations.window_state_payloads[window] = b"_NET_WM_STATE(ATOM) = \n"
+        self.assertEqual(port._window_state_atoms(window), frozenset())  # noqa: SLF001
+        operations.window_state_payloads[window] = (
+            b"_NET_WM_STATE(ATOM) = _NET_WM_STATE_MAXIMIZED_VERT, "
+            b"_NET_WM_STATE_MAXIMIZED_HORZ\n"
+        )
+        self.assertEqual(
+            port._window_state_atoms(window),  # noqa: SLF001
+            frozenset(
+                {
+                    b"_NET_WM_STATE_MAXIMIZED_VERT",
+                    b"_NET_WM_STATE_MAXIMIZED_HORZ",
+                }
+            ),
+        )
+
+        malformed = (
+            b"_NET_WM_STATE(ATOM) =  \n",
+            b"_NET_WM_STATE(ATOM) = WM_STATE_HIDDEN\n",
+            b"_NET_WM_STATE(ATOM) = _NET_WM_STATE_PRIVATE\n",
+            b"_NET_WM_STATE(ATOM) = _NET_WM_STATE_HIDDEN, \n",
+            b"_NET_WM_STATE(ATOM) = _NET_WM_STATE_HIDDEN, _NET_WM_STATE_HIDDEN\n",
+        )
+        for payload in malformed:
+            with self.subTest(payload=payload):
+                operations.window_state_payloads[window] = payload
+                with self.assertRaisesRegex(
+                    HarnessError, "^controlled_window_state_invalid$"
+                ):
+                    port._window_state_atoms(window)  # noqa: SLF001
 
     def test_surface_observation_fails_closed_for_owner_focus_geometry_and_strut(self) -> None:
         cases = (

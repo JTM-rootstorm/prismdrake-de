@@ -117,6 +117,23 @@ CONTROLLED_APPLICATION_NAME = "Prismdrake Controlled Application"
 CONTROLLED_DESKTOP_FILE = "prismdrake-controlled.desktop"
 CONTROLLED_WINDOW_ONE = "Prismdrake Demo App One"
 CONTROLLED_WINDOW_TWO = "Prismdrake Demo App Two"
+KNOWN_NET_WM_STATES = frozenset(
+    {
+        b"_NET_WM_STATE_MODAL",
+        b"_NET_WM_STATE_STICKY",
+        b"_NET_WM_STATE_MAXIMIZED_VERT",
+        b"_NET_WM_STATE_MAXIMIZED_HORZ",
+        b"_NET_WM_STATE_SHADED",
+        b"_NET_WM_STATE_SKIP_TASKBAR",
+        b"_NET_WM_STATE_SKIP_PAGER",
+        b"_NET_WM_STATE_HIDDEN",
+        b"_NET_WM_STATE_FULLSCREEN",
+        b"_NET_WM_STATE_ABOVE",
+        b"_NET_WM_STATE_BELOW",
+        b"_NET_WM_STATE_DEMANDS_ATTENTION",
+        b"_NET_WM_STATE_FOCUSED",
+    }
+)
 QUICK_SETTINGS_WINDOW_TITLE = "Prismdrake Quick Settings"
 LAUNCHER_WINDOW_TITLE = "Prismdrake Launcher"
 NOTIFICATION_WINDOW_TITLE = "Prismdrake Notifications"
@@ -3751,7 +3768,10 @@ class LiveXorgHarnessPort:
 
     def _window_state_atoms(self, window: int) -> frozenset[bytes]:
         payload = self._window_property(window, b"_NET_WM_STATE")
-        if payload == b"_NET_WM_STATE:  not found.\n":
+        if payload in {
+            b"_NET_WM_STATE:  not found.\n",
+            b"_NET_WM_STATE(ATOM) = \n",
+        }:
             return frozenset()
         match = re.fullmatch(
             rb"_NET_WM_STATE\(ATOM\) = ([A-Z0-9_, ]{1,1024})\n", payload
@@ -3759,7 +3779,11 @@ class LiveXorgHarnessPort:
         if match is None:
             raise HarnessError("controlled_window_state_invalid")
         atoms = tuple(part.strip() for part in match.group(1).split(b","))
-        if not atoms or any(not atom.startswith(b"_NET_WM_STATE_") for atom in atoms):
+        if (
+            not atoms
+            or len(set(atoms)) != len(atoms)
+            or any(atom not in KNOWN_NET_WM_STATES for atom in atoms)
+        ):
             raise HarnessError("controlled_window_state_invalid")
         return frozenset(atoms)
 
