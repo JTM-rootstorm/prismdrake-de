@@ -473,6 +473,7 @@ class FakeAccessibility:
         self.observed: list[str] = []
         self.invoked: list[str] = []
         self.persist_pin = True
+        self.references: list[object] = []
 
     def observe(
         self, shell_pid: int, selector: object, environment: Mapping[str, str]
@@ -568,6 +569,23 @@ class FakeAccessibility:
             and selector.name == f"Close {CONTROLLED_APPLICATION_NAME}"
             and not self.operations.controlled_windows
         )
+
+    def capture_reference(self, shell_pid, selector, environment) -> object | None:
+        if not self.observe(shell_pid, selector, environment):
+            return None
+        reference = object()
+        self.references.append(reference)
+        return reference
+
+    def observe_reference(self, shell_pid, reference, environment) -> bool:
+        return (
+            reference in self.references
+            and shell_pid == self.operations.surface_owner
+            and "DBUS_SESSION_BUS_ADDRESS" in environment
+        )
+
+    def reject_stale_reference(self, reference, environment) -> bool:
+        return reference in self.references and "DBUS_SESSION_BUS_ADDRESS" in environment
 
 
 def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
@@ -782,6 +800,18 @@ class ScriptedNotificationAccessibility:
 
     def reject_stale_action(self, shell_pid, selector, environment) -> bool:
         del shell_pid, selector, environment
+        return False
+
+    def capture_reference(self, shell_pid, selector, environment):
+        del shell_pid, selector, environment
+        return None
+
+    def observe_reference(self, shell_pid, reference, environment) -> bool:
+        del shell_pid, reference, environment
+        return False
+
+    def reject_stale_reference(self, reference, environment) -> bool:
+        del reference, environment
         return False
 
 
@@ -1355,11 +1385,12 @@ class LivePortTests(unittest.TestCase):
         port._lifecycle_workflow = workflow  # noqa: SLF001 - injected hermetic port
 
         identifiers = tuple(LIFECYCLE_STEP_CATEGORIES)[:-1]
-        for identifier in identifiers:
-            self.assertEqual(
-                port.run_step("installed_workflow", identifier),
-                Observation(True, True),
-            )
+        with patch.object(port, "_focus_and_capture_reference"):
+            for identifier in identifiers:
+                self.assertEqual(
+                    port.run_step("installed_workflow", identifier),
+                    Observation(True, True),
+                )
         self.assertEqual(workflow.calls, list(identifiers))
         with self.assertRaisesRegex(
             HarnessError, "^lifecycle_cleanup_step_is_adapter_owned$"

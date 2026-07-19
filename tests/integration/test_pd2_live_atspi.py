@@ -15,14 +15,17 @@ from pd2_live_atspi import (  # noqa: E402
     APPLICATION_NAME,
     CategoricalResult,
     ControlSelector,
+    capture_control_reference,
     LiveAtspiError,
     MAX_ACTIONS,
     MAX_CHILDREN,
     MAX_NAME_LENGTH,
     invoke_reviewed_action,
     observe_control_absence,
+    observe_control_reference,
     observe_control_state,
     observe_showing_control,
+    reject_stale_control_reference,
     validate_categorical_result,
 )
 
@@ -47,6 +50,7 @@ class FakeRole:
 
 class FakeStateType:
     CHECKED = "checked"
+    DEFUNCT = "defunct"
     ENABLED = "enabled"
     FOCUSABLE = "focusable"
     FOCUSED = "focused"
@@ -201,6 +205,30 @@ class LiveAtspiHelperTests(unittest.TestCase):
         self.assertEqual(result.as_dict(), {"category": "atspi_control_ready", "status": "passed"})
         self.assertEqual(calls, [self.application])
         validate_categorical_result(result)
+
+    def test_retains_exact_focused_reference_and_rejects_defunct_node(self) -> None:
+        reference = capture_control_reference(
+            self.atspi, exact_owner(self.application), self.selector
+        )
+        current = observe_control_reference(
+            self.atspi, exact_owner(self.application), reference
+        )
+        self.assertEqual(current.category, "atspi_control_reference_ready")
+
+        self.control.states.add(FakeStateType.DEFUNCT)
+        stale = reject_stale_control_reference(self.atspi, reference)
+        self.assertEqual(stale.category, "atspi_stale_control_rejected")
+        validate_categorical_result(current)
+        validate_categorical_result(stale)
+
+    def test_rejects_reference_that_remains_live_after_replacement_boundary(self) -> None:
+        reference = capture_control_reference(
+            self.atspi, exact_owner(self.application), self.selector
+        )
+        self.assert_category(
+            "atspi_stale_control_live",
+            lambda: reject_stale_control_reference(self.atspi, reference),
+        )
 
     def test_observes_reviewed_radio_button_role(self) -> None:
         radio = FakeNode(

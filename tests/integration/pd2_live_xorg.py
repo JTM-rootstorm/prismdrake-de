@@ -29,12 +29,16 @@ from typing import Protocol
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation
 from pd2_live_atspi import (
     CategoricalResult as AtspiCategoricalResult,
+    ControlReference,
     ControlSelector,
     LiveAtspiError,
+    capture_control_reference,
     invoke_reviewed_action,
     observe_control_absence,
+    observe_control_reference,
     observe_control_state,
     observe_showing_control,
+    reject_stale_control_reference,
 )
 from pd2_live_dbus import LiveDbusProbe, PrivateBusEndpoint
 from pd2_live_notification_workflow import (
@@ -246,6 +250,18 @@ class AccessibilityOperations(Protocol):
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> bool: ...
 
+    def capture_reference(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> object | None: ...
+
+    def observe_reference(
+        self, shell_pid: int, reference: object, environment: Mapping[str, str]
+    ) -> bool: ...
+
+    def reject_stale_reference(
+        self, reference: object, environment: Mapping[str, str]
+    ) -> bool: ...
+
 
 class SystemAccessibilityOperations:
     """Real AT-SPI adapter that returns only fixed categorical outcomes."""
@@ -365,6 +381,43 @@ class SystemAccessibilityOperations:
         except LiveAtspiError as error:
             return str(error) == "atspi_control_identity"
         return False
+
+    def capture_reference(
+        self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
+    ) -> object | None:
+        try:
+            with self._environment(environment):
+                return capture_control_reference(
+                    self._binding(), self._owner(shell_pid), selector
+                )
+        except LiveAtspiError:
+            return None
+
+    def observe_reference(
+        self, shell_pid: int, reference: object, environment: Mapping[str, str]
+    ) -> bool:
+        if not isinstance(reference, ControlReference):
+            return False
+        try:
+            with self._environment(environment):
+                observe_control_reference(
+                    self._binding(), self._owner(shell_pid), reference
+                )
+        except LiveAtspiError:
+            return False
+        return True
+
+    def reject_stale_reference(
+        self, reference: object, environment: Mapping[str, str]
+    ) -> bool:
+        if not isinstance(reference, ControlReference):
+            return False
+        try:
+            with self._environment(environment):
+                reject_stale_control_reference(self._binding(), reference)
+        except LiveAtspiError:
+            return False
+        return True
 
 
 class SystemOperations:
@@ -1267,6 +1320,10 @@ class LiveXorgHarnessPort:
         ("installed_workflow", "switch_lustre_to_forge"),
         ("installed_workflow", "verify_complete_settings_generation"),
         ("installed_workflow", "switch_back_preserving_accessibility"),
+        ("installed_workflow", "verify_output_migration_accessibility"),
+        ("installed_workflow", "verify_settingsd_focus_recovery"),
+        ("installed_workflow", "verify_notifyd_focus_recovery"),
+        ("installed_workflow", "verify_shell_focus_recovery"),
         *(("installed_workflow", identifier) for identifier in LIFECYCLE_STEP_CATEGORIES),
         *(("tier_c_replay", identifier) for identifier in TIER_C_STEPS),
         ("failure_replay", "two_same_scale_outputs_at_startup"),
@@ -1344,6 +1401,8 @@ class LiveXorgHarnessPort:
         self._tier_c_surface: tuple[int, WindowGeometry] | None = None
         self._tier_c_identifier: str | None = None
         self._tier_c_logout_components: dict[str, ProcessIdentity] | None = None
+        self._accessibility_references: dict[str, object] = {}
+        self._accessibility_reference_shells: dict[str, ProcessIdentity] = {}
 
     def installed_executable_hashes(self) -> Mapping[str, str]:
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
@@ -1491,9 +1550,32 @@ class LiveXorgHarnessPort:
             self._run_notification_step(identifier)
         elif identifier in self._SETTINGS_STEPS:
             self._run_settings_step(identifier)
+        elif identifier == "verify_output_migration_accessibility":
+            self._verify_accessibility_reference(
+                "output_migration", stale=True, replacement_shell=False, reacquire=False
+            )
+        elif identifier == "verify_settingsd_focus_recovery":
+            self._verify_accessibility_reference(
+                "settingsd", stale=True, replacement_shell=False, reacquire=True
+            )
+        elif identifier == "verify_notifyd_focus_recovery":
+            self._verify_accessibility_reference(
+                "notifyd", stale=False, replacement_shell=False, reacquire=False
+            )
+        elif identifier == "verify_shell_focus_recovery":
+            self._verify_accessibility_reference(
+                "shell", stale=True, replacement_shell=True, reacquire=True
+            )
         elif phase == "installed_workflow" and identifier in LIFECYCLE_STEP_CATEGORIES:
             if identifier == "verify_clean_test_environment_cleanup":
                 raise HarnessError("lifecycle_cleanup_step_is_adapter_owned")
+            restart_key = {
+                "restart_settingsd": "settingsd",
+                "restart_notifyd": "notifyd",
+                "restart_shell": "shell",
+            }.get(identifier)
+            if restart_key is not None:
+                self._focus_and_capture_reference(restart_key)
             result = self._installed_lifecycle().run_step(identifier)
             validate_lifecycle_workflow_result(result)
             if identifier == "verify_unrelated_processes_survive":
@@ -2284,6 +2366,8 @@ class LiveXorgHarnessPort:
         self._desktop_surfaces = None
         self._controlled_windows.clear()
         self._controlled_processes.clear()
+        self._accessibility_references.clear()
+        self._accessibility_reference_shells.clear()
         self._tier_c_identifier = None
         self._tier_c_surface = None
         self._tier_c_logout_components = None
@@ -2462,6 +2546,7 @@ class LiveXorgHarnessPort:
         if current.generation != topology_generation or current.primary != output:
             raise HarnessError("lifecycle_stale_topology_mutation")
         survivor = next(item for item in current.outputs if item.active and item != output)
+        self._focus_and_capture_reference("output_migration")
         self._xrandr("--output", survivor.name, "--primary")
         self._xrandr("--output", output.name, "--off")
         self._lifecycle_topology_generation += 1
@@ -2950,6 +3035,8 @@ class LiveXorgHarnessPort:
         self._surface_shell_identity = None
         self._controlled_windows.clear()
         self._controlled_processes.clear()
+        self._accessibility_references.clear()
+        self._accessibility_reference_shells.clear()
         if self._runtime is not None:
             try:
                 shutil.rmtree(self._runtime)
@@ -3387,6 +3474,65 @@ class LiveXorgHarnessPort:
                 return
             self._operations.pause(0.05)
         raise HarnessError(timeout_error)
+
+    def _focus_and_capture_reference(self, key: str) -> None:
+        if key in self._accessibility_references:
+            raise HarnessError("accessibility_reference_reused")
+        self._invoke_shellctl("panel", "focus")
+        selector = ControlSelector(
+            "Open applications", "push_button", require_focused=True
+        )
+        self._wait_accessible(selector, "accessibility_focus_precondition_timeout")
+        shell = self._shell_identity()
+        reference = self._accessibility.capture_reference(
+            shell.pid, selector, self.probe_environment()
+        )
+        if reference is None:
+            raise HarnessError("accessibility_reference_capture_failed")
+        self._accessibility_references[key] = reference
+        self._accessibility_reference_shells[key] = shell
+
+    def _verify_accessibility_reference(
+        self,
+        key: str,
+        *,
+        stale: bool,
+        replacement_shell: bool,
+        reacquire: bool,
+    ) -> None:
+        reference = self._accessibility_references.get(key)
+        previous_shell = self._accessibility_reference_shells.get(key)
+        if reference is None or previous_shell is None:
+            raise HarnessError("accessibility_reference_missing")
+        shell = self._shell_identity()
+        if (shell != previous_shell) is not replacement_shell:
+            raise HarnessError("accessibility_focus_owner_invalid")
+        environment = self.probe_environment()
+        if stale:
+            if not self._accessibility.reject_stale_reference(reference, environment):
+                raise HarnessError("accessibility_stale_node_live")
+        elif not self._accessibility.observe_reference(
+            shell.pid, reference, environment
+        ):
+            raise HarnessError("accessibility_focus_not_retained")
+
+        selector = ControlSelector(
+            "Open applications", "push_button", require_focused=True
+        )
+        if reacquire:
+            self._invoke_shellctl("panel", "focus")
+        self._wait_accessible(selector, "accessibility_focus_recovery_timeout")
+        self._xdotool("key", "--clearmodifiers", "Tab")
+        self._wait_accessible(
+            ControlSelector(
+                CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
+            ),
+            "accessibility_keyboard_continuation_timeout",
+        )
+        self._xdotool("key", "--clearmodifiers", "shift+Tab")
+        self._wait_accessible(selector, "accessibility_backtab_recovery_timeout")
+        del self._accessibility_references[key]
+        del self._accessibility_reference_shells[key]
 
     def _invoke_accessible(self, selector: ControlSelector) -> None:
         self._wait_accessible(selector, "controlled_accessible_action_timeout")

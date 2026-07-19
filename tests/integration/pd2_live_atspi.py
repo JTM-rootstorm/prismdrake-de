@@ -36,8 +36,10 @@ RESULT_CATEGORIES = frozenset(
     {
         "atspi_action_invoked",
         "atspi_control_absent",
+        "atspi_control_reference_ready",
         "atspi_control_ready",
         "atspi_control_state_observed",
+        "atspi_stale_control_rejected",
     }
 )
 
@@ -65,6 +67,15 @@ class CategoricalResult:
 
     def as_dict(self) -> dict[str, str]:
         return {"category": self.category, "status": self.status}
+
+
+@dataclass(frozen=True, repr=False)
+class ControlReference:
+    """One live AT-SPI node retained only across a bounded lifecycle mutation."""
+
+    application: Any
+    control: Any
+    selector: ControlSelector
 
 
 OwnerProbe = Callable[[Any], bool]
@@ -237,17 +248,22 @@ def _select_control(atspi: Any, application: Any, selector: ControlSelector) -> 
         ):
             continue
         matches.append(node)
+    if selector.require_focused:
+        focused = [
+            node
+            for node in matches
+            if _has_state(atspi, node, "FOCUSABLE")
+            and _has_state(atspi, node, "FOCUSED")
+        ]
+        if len(matches) == 1 and not focused:
+            _fail("atspi_focus_state")
+        matches = focused
     if len(matches) != 1:
         _fail("atspi_control_identity")
 
     control = matches[0]
     if not _has_state(atspi, control, "ENABLED"):
         _fail("atspi_control_state")
-    if selector.require_focused and (
-        not _has_state(atspi, control, "FOCUSABLE")
-        or not _has_state(atspi, control, "FOCUSED")
-    ):
-        _fail("atspi_focus_state")
     if selector.action is not None and selector.action not in _action_names(control):
         _fail("atspi_action_missing")
     return control
@@ -272,6 +288,54 @@ def observe_showing_control(
 
     _resolve_control(atspi, owner_probe, selector, require_action=False)
     return CategoricalResult("atspi_control_ready")
+
+
+def capture_control_reference(
+    atspi: Any, owner_probe: OwnerProbe, selector: ControlSelector
+) -> ControlReference:
+    """Retain one exact focused control for a subsequent lifecycle check."""
+
+    application, control = _resolve_control(
+        atspi, owner_probe, selector, require_action=False
+    )
+    return ControlReference(application, control, selector)
+
+
+def observe_control_reference(
+    atspi: Any, owner_probe: OwnerProbe, reference: ControlReference
+) -> CategoricalResult:
+    """Prove a retained node is still owned, visible, enabled, and focused."""
+
+    if not isinstance(reference, ControlReference):
+        _fail("atspi_reference_invalid")
+    _validate_selector(reference.selector, require_action=False)
+    _verify_owner(reference.application, owner_probe)
+    control = reference.control
+    if (
+        not _has_state(atspi, control, "SHOWING")
+        or not _has_state(atspi, control, "VISIBLE")
+        or not _has_state(atspi, control, "ENABLED")
+        or not _has_state(atspi, control, "FOCUSABLE")
+        or not _has_state(atspi, control, "FOCUSED")
+    ):
+        _fail("atspi_reference_state")
+    return CategoricalResult("atspi_control_reference_ready")
+
+
+def reject_stale_control_reference(
+    atspi: Any, reference: ControlReference
+) -> CategoricalResult:
+    """Prove a retained control became defunct or inaccessible after replacement."""
+
+    if not isinstance(reference, ControlReference):
+        _fail("atspi_reference_invalid")
+    try:
+        if _has_state(atspi, reference.control, "DEFUNCT"):
+            return CategoricalResult("atspi_stale_control_rejected")
+        _node_name(reference.control)
+    except LiveAtspiError:
+        return CategoricalResult("atspi_stale_control_rejected")
+    _fail("atspi_stale_control_live")
 
 
 def observe_control_absence(
