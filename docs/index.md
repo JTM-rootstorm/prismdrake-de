@@ -53,6 +53,7 @@ release or stable public interfaces.
 - [PD1 panel-shell evidence](research/pd1-panel-shell-evidence.md)
 - [PD1 production-shell accessibility evidence](research/pd1-accessibility-evidence.md)
 - [PD1 performance-evidence method](research/pd1-performance-evidence-method.md)
+- [PD2 performance and accessibility evidence contract](research/pd2-performance-accessibility-evidence-contract.md)
 - [PD1 Gentoo package lifecycle evidence](research/pd1-portage-lifecycle-evidence.md)
 - [Gentoo reference VM](development/gentoo-vm.md)
 - [Gentoo local repository](packaging/gentoo-local-repository.md)
