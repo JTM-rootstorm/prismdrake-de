@@ -259,6 +259,26 @@ TEST(ApplicationRootMonitorTest, BoundsWatchCapacityAndExplicitlyRecoversExhaust
     EXPECT_EQ(monitor.value()->watchedPathCount(), 1);
 }
 
+TEST(ApplicationRootMonitorTest, PrioritizesEveryRootBeforeRecursiveDescendants) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const QString firstRoot = temporary.filePath(QStringLiteral("first/applications"));
+    const QString secondRoot = temporary.filePath(QStringLiteral("second/applications"));
+    ASSERT_TRUE(QDir{}.mkpath(firstRoot + QStringLiteral("/nested")));
+    ASSERT_TRUE(QDir{}.mkpath(secondRoot + QStringLiteral("/nested")));
+
+    auto monitor = ApplicationRootMonitor::create(
+        {{{firstRoot.toStdString(), secondRoot.toStdString()}}},
+        {2U, std::chrono::milliseconds{20}, std::chrono::milliseconds{20}});
+    ASSERT_TRUE(monitor);
+    EXPECT_TRUE(monitor.value()->degraded());
+    EXPECT_EQ(monitor.value()->watchedPathCount(), 2);
+    QSignalSpy refresh(monitor.value().get(), &ApplicationRootMonitor::refreshRequested);
+
+    ASSERT_TRUE(QDir{secondRoot}.removeRecursively());
+    QTRY_COMPARE_WITH_TIMEOUT(refresh.count(), 1, 1000);
+}
+
 TEST(LauncherControllerTest, MonitorMutationStartsAReplacementCatalogGeneration) {
     QTemporaryDir temporary;
     ASSERT_TRUE(temporary.isValid());

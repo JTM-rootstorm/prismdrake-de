@@ -77,9 +77,13 @@ struct WatchCandidates final {
         std::error_code statusError;
         if (!std::filesystem::is_directory(root, statusError) || statusError) {
             static_cast<void>(append(nearestExistingDirectory(root.parent_path())));
-            continue;
+        } else {
+            static_cast<void>(append(root));
         }
-        if (!append(root)) {
+    }
+    for (const auto &root : paths.applicationDirectories) {
+        std::error_code statusError;
+        if (!std::filesystem::is_directory(root, statusError) || statusError) {
             continue;
         }
         std::error_code iterationError;
