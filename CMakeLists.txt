@@ -19,9 +19,9 @@ project(
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(CTest)
-if(BUILD_TESTING)
-    set(PRISMDRAKE_SOURCE_REVISION "" CACHE STRING
-        "Exact source revision for test builds made outside a Git checkout")
+set(PRISMDRAKE_SOURCE_REVISION "" CACHE STRING
+    "Exact source revision for packaged or evidence-producing builds")
+if(BUILD_TESTING OR NOT PRISMDRAKE_SOURCE_REVISION STREQUAL "")
     if(PRISMDRAKE_SOURCE_REVISION STREQUAL "")
         find_package(Git QUIET)
         if(NOT Git_FOUND)
@@ -55,7 +55,7 @@ if(BUILD_TESTING)
     endif()
     set(PRISMDRAKE_CONFIGURED_SOURCE_REVISION
         "${prismdrake_resolved_source_revision}" CACHE INTERNAL
-        "Exact source revision embedded in evidence-producing targets" FORCE)
+        "Exact source revision embedded in packaged and evidence-producing targets" FORCE)
 endif()
 include(GNUInstallDirs)
 include(PrismdrakeOptions)
@@ -66,6 +66,20 @@ include(PrismdrakeFormatting)
 include(PrismdrakeSdBus)
 
 prismdrake_validate_toolchain()
+
+if(PRISMDRAKE_SOURCE_REVISION STREQUAL "")
+    set(PRISMDRAKE_BUILD_PROVENANCE_SOURCE_REVISION "unknown")
+else()
+    set(PRISMDRAKE_BUILD_PROVENANCE_SOURCE_REVISION
+        "${PRISMDRAKE_CONFIGURED_SOURCE_REVISION}")
+endif()
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/data/build-provenance.json.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/build-provenance.json"
+    @ONLY)
+install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/build-provenance.json"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake")
 
 add_library(prismdrake-cpp-policy INTERFACE)
 add_library(Prismdrake::cpp-policy ALIAS prismdrake-cpp-policy)

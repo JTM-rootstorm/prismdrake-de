@@ -79,10 +79,20 @@ prismdrake_set_source_date_epoch() {
 	export SOURCE_DATE_EPOCH=${source_date_epoch}
 }
 
+prismdrake_source_revision() {
+	local source_revision
+	source_revision=$(git -C "${S}" rev-parse --verify HEAD) ||
+		die "could not determine the exact source revision"
+	[[ ${source_revision} =~ ^[0-9a-f]{40}$ ]] ||
+		die "source revision is not an exact lowercase 40-character hash"
+	printf '%s\n' "${source_revision}"
+}
+
 src_configure() {
 	prismdrake_set_source_date_epoch
 	local mycmakeargs=(
 		-DBUILD_TESTING=OFF
+		-DPRISMDRAKE_SOURCE_REVISION="$(prismdrake_source_revision)"
 		-DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=OFF
 		-DPRISMDRAKE_USE_INSTALL_PATHS=ON
 	)
@@ -102,6 +112,7 @@ src_test() {
 	local BUILD_DIR="${WORKDIR}/${P}_test_build"
 	local mycmakeargs=(
 		-DBUILD_TESTING=ON
+		-DPRISMDRAKE_SOURCE_REVISION="$(prismdrake_source_revision)"
 		-DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=ON
 		-DPRISMDRAKE_USE_INSTALL_PATHS=OFF
 	)

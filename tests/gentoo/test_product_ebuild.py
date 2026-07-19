@@ -71,6 +71,17 @@ class ProductEbuildContractTests(unittest.TestCase):
                 body = phase_body(self.source, phase)
                 self.assertIn("prismdrake_set_source_date_epoch", body)
 
+    def test_product_and_test_builds_embed_the_exact_source_revision(self) -> None:
+        helper = phase_body(self.source, "prismdrake_source_revision")
+        self.assertIn('git -C "${S}" rev-parse --verify HEAD', helper)
+        self.assertIn("=~ ^[0-9a-f]{40}$", helper)
+        for phase in ("src_configure", "src_test"):
+            with self.subTest(phase=phase):
+                self.assertIn(
+                    '-DPRISMDRAKE_SOURCE_REVISION="$(prismdrake_source_revision)"',
+                    phase_body(self.source, phase),
+                )
+
     def test_qt_product_dependencies_keep_the_6_11_floor(self) -> None:
         expected = {
             ">=dev-qt/qtbase-6.11:6",
