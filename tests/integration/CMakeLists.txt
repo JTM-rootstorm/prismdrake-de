@@ -161,6 +161,15 @@ set_tests_properties(Pd2LiveNotificationWorkflowContractTest PROPERTIES
     TIMEOUT 10)
 
 add_test(
+    NAME Pd2LiveSettingsWorkflowContractTest
+    COMMAND
+        "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_live_settings_workflow.py")
+set_tests_properties(Pd2LiveSettingsWorkflowContractTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    TIMEOUT 10)
+
+add_test(
     NAME Pd2LiveAtspiHelperContractTest
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_live_atspi.py")
 set_tests_properties(Pd2LiveAtspiHelperContractTest PROPERTIES
