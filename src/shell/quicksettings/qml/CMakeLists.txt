@@ -22,4 +22,3 @@ target_link_libraries(prismdrake-shell-quick-settings-qml
 prismdrake_configure_cpp_target(prismdrake-shell-quick-settings-qml)
 prismdrake_enable_warnings(prismdrake-shell-quick-settings-qml)
 prismdrake_enable_sanitizers(prismdrake-shell-quick-settings-qml)
-
