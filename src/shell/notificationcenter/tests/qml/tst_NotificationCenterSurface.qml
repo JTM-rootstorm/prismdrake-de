@@ -62,6 +62,11 @@ TestCase {
 
     SignalSpy { id: closeSpy; target: center; signalName: "closeRequested" }
     SignalSpy { id: returnSpy; target: center; signalName: "focusReturnRequested" }
+    SignalSpy {
+        id: dndRequestSpy
+        target: notificationCenterFixture.presentation
+        signalName: "doNotDisturbRequested"
+    }
 
     function init() {
         notificationCenterFixture.reset()
@@ -74,13 +79,18 @@ TestCase {
         themeGeneration.notification.fallbackActive = true
         closeSpy.clear()
         returnSpy.clear()
+        dndRequestSpy.clear()
         tryCompare(transients, "count", 0)
     }
 
     function test_unavailableAndLiteralAccessibleContent() {
         const status = findChild(center, "notificationCenterStatus")
+        const dnd = findChild(center, "notificationCenterDoNotDisturb")
         verify(status !== null)
+        verify(dnd !== null)
         compare(status.text, "Notification history is unavailable.")
+        compare(dnd.enabled, false)
+        compare(dnd.Accessible.focusable, false)
 
         verify(notificationCenterFixture.publish(1))
         tryCompare(transients, "count", 1)
@@ -104,6 +114,9 @@ TestCase {
         verify(clear.visible)
         tryCompare(dnd, "activeFocus", true)
         compare(dnd.Accessible.name, "Do not disturb")
+        keyClick(Qt.Key_Space)
+        tryCompare(dndRequestSpy, "count", 1)
+        compare(dndRequestSpy.signalArguments[0][0], true)
 
         keyClick(Qt.Key_Down)
         tryCompare(clear, "activeFocus", true)

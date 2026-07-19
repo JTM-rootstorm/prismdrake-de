@@ -205,9 +205,9 @@ class AccessibilityObserverTests(unittest.TestCase):
             )
 
     def test_new_ctest_cells_name_existing_exact_qml_cases(self) -> None:
-        self.assertEqual(len(observer.CTEST_OBSERVED), 119)
-        self.assertEqual(len(observer.CTEST_CASE_EVIDENCE), 21)
-        self.assertEqual(len(observer.UNIMPLEMENTED), 62)
+        self.assertEqual(len(observer.CTEST_OBSERVED), 161)
+        self.assertEqual(len(observer.CTEST_CASE_EVIDENCE), 63)
+        self.assertEqual(len(observer.UNIMPLEMENTED), 20)
         sources = {
             "PanelSurfaceRealAdapters": (
                 ACCESSIBILITY.parents[1] / "tests/qt/qml-panel/tst_PanelSurface.qml"
@@ -228,6 +228,11 @@ class AccessibilityObserverTests(unittest.TestCase):
                 ACCESSIBILITY.parents[1]
                 / "src/shell/quicksettings/tests/qml"
                 / "tst_QuickSettingsSurface.qml"
+            ),
+            "LogoutConfirmationSurface": (
+                ACCESSIBILITY.parents[1]
+                / "src/shell/quicksettings/tests/qml"
+                / "tst_LogoutConfirmationSurface.qml"
             ),
         }
         source_text = {

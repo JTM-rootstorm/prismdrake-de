@@ -56,6 +56,7 @@ FocusScope {
     LayoutMirroring.childrenInherit: true
 
     Rectangle {
+        objectName: "logoutConfirmationBackground"
         anchors.fill: parent
         color: root.tokens.surfaceColor
         border.color: root.tokens.borderColor

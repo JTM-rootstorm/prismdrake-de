@@ -246,6 +246,7 @@ Popup {
                     spacing: root.tokens.menuItemPadding
 
                     Label {
+                        objectName: "panelTaskGroupMemberTitle"
                         width: Math.max(120, parent.width
                                         - activate.width - minimize.width - closeWindow.width
                                         - (3 * parent.spacing))

@@ -195,6 +195,7 @@ Control {
             anchors.verticalCenter: parent.verticalCenter
 
             Text {
+                objectName: "panelGroupedTaskTitle"
                 color: root.tokens.textPrimaryColor
                 text: root.title
                 elide: Text.ElideRight

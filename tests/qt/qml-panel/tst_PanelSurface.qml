@@ -279,6 +279,14 @@ TestCase {
         keyClick(Qt.Key_Escape)
         tryCompare(menu, "opened", false)
         tryCompare(pinned, "activeFocus", true)
+
+        panel.layoutDirection = Qt.RightToLeft
+        compare(pinned.rightToLeft, true)
+        keyClick(Qt.Key_Left)
+        tryCompare(findChild(panel, "panelNotificationCenterButton"), "activeFocus", true)
+        pinned.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Right)
+        tryCompare(launcher(), "activeFocus", true)
     }
 
     function test_singleWindowGroupedTaskExposesAccessibleWindowActions() {
@@ -381,6 +389,129 @@ TestCase {
         tryCompare(panelFixture, "activationCount", 1)
         tryCompare(popup, "opened", false)
         compare(panelFixture.lastActivationTitle, "Editor document")
+    }
+
+    function test_groupedTaskAndPopupExposeCompleteKeyboardStateTransitions() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const editor = panel.taskAt(0)
+        const terminal = panel.taskAt(1)
+        compare(editor.activeState, true)
+        compare(editor.urgentState, true)
+        compare(editor.presentation.minimized, false)
+        compare(editor.enabled, true)
+        compare(editor.Accessible.checked, true)
+
+        editor.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Tab)
+        tryCompare(terminal, "activeFocus", true)
+        keyClick(Qt.Key_Backtab)
+        tryCompare(editor, "activeFocus", true)
+        keyClick(Qt.Key_Right)
+        tryCompare(terminal, "activeFocus", true)
+        keyClick(Qt.Key_Left)
+        tryCompare(editor, "activeFocus", true)
+
+        keyClick(Qt.Key_Menu)
+        const context = groupedContextMenu(editor)
+        tryCompare(context, "opened", true)
+        compare(findChild(editor, "panelGroupedTaskMinimize").enabled, false)
+        keyClick(Qt.Key_Escape)
+        tryCompare(context, "opened", false)
+        tryCompare(editor, "activeFocus", true)
+        keyClick(Qt.Key_F10, Qt.ShiftModifier)
+        tryCompare(context, "opened", true)
+        keyClick(Qt.Key_Escape)
+        tryCompare(context, "opened", false)
+        tryCompare(editor, "activeFocus", true)
+
+        keyClick(Qt.Key_Space)
+        const popup = findChild(editor, "panelTaskGroupPopup")
+        tryCompare(popup, "opened", true)
+        verify(editor.Accessible.description.indexOf("Window list shown") >= 0)
+        const firstMember = popup.memberAt(0)
+        const secondMember = popup.memberAt(1)
+        tryCompare(firstMember, "activeFocus", true)
+        verify(firstMember.Accessible.description.indexOf("Active") >= 0)
+        verify(firstMember.Accessible.description.indexOf("Minimized") < 0)
+        keyClick(Qt.Key_Down)
+        tryCompare(secondMember, "activeFocus", true)
+        verify(secondMember.Accessible.description.indexOf("Urgent") >= 0)
+        keyClick(Qt.Key_Backtab)
+        tryCompare(firstMember, "activeFocus", true)
+        keyClick(Qt.Key_Tab)
+        const activate = findChild(firstMember, "panelTaskGroupActivate")
+        tryCompare(activate, "activeFocus", true)
+        keyClick(Qt.Key_Backtab)
+        tryCompare(firstMember, "activeFocus", true)
+        keyClick(Qt.Key_F10, Qt.ShiftModifier)
+        tryCompare(activate, "activeFocus", true)
+        keyClick(Qt.Key_Escape)
+        tryCompare(popup, "opened", false)
+        tryCompare(editor, "activeFocus", true)
+
+        keyClick(Qt.Key_Return)
+        tryCompare(popup, "opened", true)
+        tryCompare(firstMember, "activeFocus", true)
+        keyClick(Qt.Key_Space)
+        tryCompare(panelFixture, "activationCount", 1)
+        tryCompare(popup, "opened", false)
+    }
+
+    function test_pinnedSurfaceConsumesAccessibleGenerationTokens() {
+        verify(panelFixture.resetAccessible())
+        groupedTasks = true
+        panel.layoutDirection = Qt.RightToLeft
+        compare(panel.themeGeneration.highContrast, true)
+        compare(panel.themeGeneration.reducedMotion, true)
+        compare(panel.themeGeneration.transparencyDisabled, true)
+        compare(panel.themeGeneration.panel.fallbackActive, true)
+        verify(panel.themeGeneration.panel.bodyFontPixels > 14)
+        compare(findChild(panel, "panelClock").font.pixelSize,
+                panel.themeGeneration.panel.bodyFontPixels)
+
+        verify(panelFixture.publishPinnedOnlyGroup())
+        tryCompare(panel, "taskCount", 1)
+        const pinned = panel.taskAt(0)
+        compare(pinned.tokens, panel.themeGeneration.panel)
+        compare(pinned.rightToLeft, true)
+        compare(findChild(pinned, "panelGroupedTaskTitle").font.pixelSize,
+                panel.themeGeneration.panel.bodyFontPixels)
+        verify(pinned.height >= panel.themeGeneration.panel.minimumTargetSize)
+        verify(pinned.width >= panel.themeGeneration.panel.minimumTargetSize)
+    }
+
+    function test_groupedSurfacesConsumeAccessibleGenerationTokens() {
+        verify(panelFixture.resetAccessible())
+        groupedTasks = true
+        panel.layoutDirection = Qt.RightToLeft
+        compare(panel.themeGeneration.highContrast, true)
+        compare(panel.themeGeneration.reducedMotion, true)
+        compare(panel.themeGeneration.transparencyDisabled, true)
+        compare(panel.themeGeneration.panel.fallbackActive, true)
+        verify(panel.themeGeneration.panel.bodyFontPixels > 14)
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+        const editor = panel.taskAt(0)
+        compare(editor.tokens, panel.themeGeneration.panel)
+        compare(editor.rightToLeft, true)
+        compare(findChild(editor, "panelGroupedTaskTitle").font.pixelSize,
+                panel.themeGeneration.panel.bodyFontPixels)
+        verify(editor.height >= panel.themeGeneration.panel.minimumTargetSize)
+        editor.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Return)
+        const popup = findChild(editor, "panelTaskGroupPopup")
+        tryCompare(popup, "opened", true)
+        compare(popup.tokens, panel.themeGeneration.panel)
+        compare(popup.rightToLeft, true)
+        compare(findChild(popup.memberAt(0), "panelTaskGroupMemberTitle").font.pixelSize,
+                panel.themeGeneration.panel.bodyFontPixels)
+        verify(popup.width <= testCase.width)
+        verify(popup.memberAt(0).height >= panel.themeGeneration.panel.minimumTargetSize)
+        keyClick(Qt.Key_Escape)
+        tryCompare(popup, "opened", false)
     }
 
     function test_groupPopupOverflowRevealMirrorsForRightToLeft() {
@@ -793,10 +924,15 @@ TestCase {
         compare(panel.themeGeneration.panel.fallbackActive, true)
         compare(panel.themeGeneration.panel.fastMotionMs, 0)
         compare(panel.themeGeneration.panel.minimumTargetSize, 48)
+        verify(panel.themeGeneration.panel.bodyFontPixels > 14)
+        compare(findChild(panel, "panelClock").font.pixelSize,
+                panel.themeGeneration.panel.bodyFontPixels)
         verify(launcher().height >= 48)
         verify(panel.taskAt(0).height >= 48)
         verify(diagnostics().Accessible.description.indexOf("Opaque fallback active") >= 0)
         const first = panel.taskAt(0)
+        compare(findChild(first, "panelTaskTitle").font.pixelSize,
+                panel.themeGeneration.panel.bodyFontPixels)
         verify(first.openActionMenu())
         tryCompare(contextMenu(first), "opened", true)
         verify(contextMenu(first).height <= panel.height)

@@ -225,7 +225,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         "PanelSurfaceQmlTest",
         frozenset({
             "arrow_navigation", "minimum_target_size", "high_contrast", "reduced_motion",
-            "disabled_transparency", "rtl_smoke",
+            "disabled_transparency", "text_scale", "rtl_smoke",
         }),
     ),
     "pinned_task": (
@@ -235,7 +235,8 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "space_activation", "escape_recovery", "menu_key", "shift_f10",
             "accessible_name", "accessible_role", "accessible_description",
             "state_focused", "state_active", "state_minimized", "state_disabled",
-            "state_urgent", "state_checked", "minimum_target_size",
+            "state_urgent", "state_checked", "minimum_target_size", "high_contrast",
+            "reduced_motion", "disabled_transparency", "text_scale", "rtl_smoke",
         }),
     ),
     "running_task": (
@@ -245,39 +246,47 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
             "space_activation", "accessible_description", "state_checked",
             "state_active", "state_minimized", "state_disabled", "state_urgent",
             "minimum_target_size", "high_contrast", "reduced_motion",
-            "disabled_transparency",
-            "rtl_smoke",
+            "disabled_transparency", "text_scale", "rtl_smoke",
         }),
     ),
     "grouped_task": (
         "PanelSurfaceQmlTest",
         frozenset({
-            "enter_activation", "escape_recovery", "accessible_description",
-            "state_focused", "state_urgent", "minimum_target_size",
+            "tab_backtab", "arrow_navigation", "enter_activation", "space_activation",
+            "escape_recovery", "menu_key", "shift_f10", "accessible_description",
+            "state_focused", "state_active", "state_minimized", "state_disabled",
+            "state_urgent", "state_checked", "minimum_target_size", "high_contrast",
+            "reduced_motion", "disabled_transparency", "text_scale", "rtl_smoke",
         }),
     ),
     "group_popup": (
         "PanelSurfaceQmlTest",
         frozenset({
-            "arrow_navigation", "enter_activation", "escape_recovery", "menu_key",
+            "tab_backtab", "arrow_navigation", "enter_activation", "space_activation",
+            "escape_recovery", "menu_key", "shift_f10",
             "accessible_name", "accessible_role", "accessible_description",
-            "state_focused", "minimum_target_size", "rtl_smoke",
+            "state_focused", "state_active", "state_minimized", "state_urgent",
+            "minimum_target_size", "high_contrast", "reduced_motion",
+            "disabled_transparency", "text_scale", "rtl_smoke",
         }),
     ),
     "launcher": (
         "LauncherSurfaceQmlTest",
         frozenset({
             "tab_backtab", "arrow_navigation", "enter_activation",
-            "escape_recovery", "accessible_description", "minimum_target_size",
-            "state_unavailable", "reduced_motion", "disabled_transparency", "rtl_smoke",
+            "space_activation", "escape_recovery", "accessible_description",
+            "minimum_target_size", "state_unavailable", "high_contrast",
+            "reduced_motion", "disabled_transparency", "text_scale", "rtl_smoke",
+            "long_string_layout",
         }),
     ),
     "launcher_results": (
         "LauncherSurfaceQmlTest",
         frozenset({
-            "tab_backtab", "accessible_description", "state_selected",
-            "state_checked", "state_focused", "minimum_target_size", "reduced_motion",
-            "disabled_transparency", "rtl_smoke", "long_string_layout",
+            "tab_backtab", "space_activation", "menu_key", "accessible_description",
+            "state_selected", "state_checked", "state_focused", "minimum_target_size",
+            "high_contrast", "reduced_motion", "disabled_transparency", "text_scale",
+            "rtl_smoke", "long_string_layout",
         }),
     ),
     "transient_notification": (
@@ -293,8 +302,9 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
     "notification_center": (
         "NotificationCenterQmlTest",
         frozenset({
-            "tab_backtab", "arrow_navigation", "escape_recovery",
-            "accessible_description", "minimum_target_size", "high_contrast",
+            "tab_backtab", "arrow_navigation", "space_activation", "escape_recovery",
+            "accessible_description", "state_disabled", "minimum_target_size",
+            "high_contrast",
             "reduced_motion", "disabled_transparency", "state_unavailable",
             "text_scale", "rtl_smoke",
         }),
@@ -312,7 +322,7 @@ CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({
             "tab_backtab", "arrow_navigation", "space_activation", "escape_recovery",
             "accessible_description", "state_disabled", "minimum_target_size", "text_scale",
-            "rtl_smoke", "long_string_layout",
+            "disabled_transparency", "rtl_smoke", "long_string_layout",
         }),
     ),
 }
@@ -393,6 +403,89 @@ CTEST_CASE_EVIDENCE: dict[tuple[str, str], tuple[str, ...]] = {
         "QuickSettingsSurface::test_oneAdapterFailureDoesNotDisableOthers",
     ),
 }
+CTEST_CASE_EVIDENCE.update({
+    ("pinned_task", check): (
+        "PanelSurfaceRealAdapters::test_pinnedSurfaceConsumesAccessibleGenerationTokens",
+    )
+    for check in (
+        "disabled_transparency", "high_contrast", "reduced_motion", "rtl_smoke",
+        "text_scale",
+    )
+})
+CTEST_CASE_EVIDENCE[("running_task", "text_scale")] = (
+    "PanelSurfaceRealAdapters::test_accessibilityAndOpaqueFallbackComeFromOneRealGeneration",
+)
+CTEST_CASE_EVIDENCE[("panel", "text_scale")] = (
+    "PanelSurfaceRealAdapters::test_accessibilityAndOpaqueFallbackComeFromOneRealGeneration",
+)
+CTEST_CASE_EVIDENCE.update({
+    ("grouped_task", check): (
+        "PanelSurfaceRealAdapters::test_groupedTaskAndPopupExposeCompleteKeyboardStateTransitions",
+    )
+    for check in (
+        "arrow_navigation", "menu_key", "shift_f10", "space_activation", "state_active",
+        "state_checked", "state_disabled", "state_minimized", "tab_backtab",
+    )
+})
+CTEST_CASE_EVIDENCE.update({
+    ("grouped_task", check): (
+        "PanelSurfaceRealAdapters::test_groupedSurfacesConsumeAccessibleGenerationTokens",
+    )
+    for check in (
+        "disabled_transparency", "high_contrast", "reduced_motion", "rtl_smoke",
+        "text_scale",
+    )
+})
+CTEST_CASE_EVIDENCE.update({
+    ("group_popup", check): (
+        "PanelSurfaceRealAdapters::test_groupedTaskAndPopupExposeCompleteKeyboardStateTransitions",
+    )
+    for check in (
+        "shift_f10", "space_activation", "state_active", "state_minimized",
+        "state_urgent", "tab_backtab",
+    )
+})
+CTEST_CASE_EVIDENCE.update({
+    ("group_popup", check): (
+        "PanelSurfaceRealAdapters::test_groupedSurfacesConsumeAccessibleGenerationTokens",
+    )
+    for check in (
+        "disabled_transparency", "high_contrast", "reduced_motion", "text_scale",
+    )
+})
+CTEST_CASE_EVIDENCE.update({
+    ("launcher", check): (
+        "LauncherSurfaceRealAdapters::test_accessibleFallbackTargetsAndPlainUntrustedText",
+    )
+    for check in ("high_contrast", "long_string_layout", "text_scale")
+})
+CTEST_CASE_EVIDENCE[("launcher", "space_activation")] = (
+    "LauncherSurfaceRealAdapters::test_explicitRefreshAndOpaqueIconPresentation",
+)
+CTEST_CASE_EVIDENCE[("launcher_results", "menu_key")] = (
+    "LauncherSurfaceRealAdapters::test_applicationActionsAreKeyboardReachable",
+)
+CTEST_CASE_EVIDENCE[("launcher_results", "space_activation")] = (
+    "LauncherSurfaceRealAdapters::test_boundedSearchKeyboardActivationAndFocusExit",
+)
+CTEST_CASE_EVIDENCE.update({
+    ("launcher_results", check): (
+        "LauncherSurfaceRealAdapters::test_accessibleFallbackTargetsAndPlainUntrustedText",
+    )
+    for check in ("high_contrast", "text_scale")
+})
+CTEST_CASE_EVIDENCE[("notification_center", "space_activation")] = (
+    "NotificationCenterSurface::test_keyboardTraversalAndFocusReturn",
+)
+CTEST_CASE_EVIDENCE[("notification_center", "state_disabled")] = (
+    "NotificationCenterSurface::test_unavailableAndLiteralAccessibleContent",
+)
+CTEST_CASE_EVIDENCE.update({
+    ("logout_confirmation", check): (
+        "LogoutConfirmationSurface::test_accessibleModalFocusAndActions",
+    )
+    for check in ("disabled_transparency",)
+})
 if not set(CTEST_CASE_EVIDENCE) <= set(CTEST_OBSERVED):
     raise RuntimeError("accessibility_ctest_case_map_invalid")
 
@@ -471,46 +564,35 @@ _MATRIX_KEYS = {
 UNIMPLEMENTED_CHECKS = {
     "panel": frozenset({
         "enter_activation", "long_string_layout",
-        "space_activation", "text_scale",
+        "space_activation",
     }),
     "pinned_task": frozenset({
-        "disabled_transparency", "high_contrast", "long_string_layout",
-        "reduced_motion", "rtl_smoke", "state_expanded", "text_scale",
+        "long_string_layout", "state_expanded",
     }),
     "running_task": frozenset({
-        "long_string_layout", "state_expanded", "text_scale",
+        "long_string_layout", "state_expanded",
     }),
     "grouped_task": frozenset({
-        "arrow_navigation", "disabled_transparency", "high_contrast",
-        "long_string_layout", "menu_key", "reduced_motion", "rtl_smoke",
-        "shift_f10", "space_activation", "state_active", "state_checked",
-        "state_disabled", "state_expanded", "state_minimized", "tab_backtab",
-        "text_scale",
+        "long_string_layout", "state_expanded",
     }),
     "group_popup": frozenset({
-        "disabled_transparency", "high_contrast", "long_string_layout",
-        "reduced_motion", "shift_f10", "space_activation", "state_active",
-        "state_disabled", "state_minimized", "state_selected",
-        "state_urgent", "tab_backtab", "text_scale",
+        "long_string_layout", "state_disabled", "state_selected",
     }),
-    "launcher": frozenset({
-        "high_contrast", "long_string_layout", "space_activation", "text_scale",
-    }),
+    "launcher": frozenset(),
     "launcher_results": frozenset({
-        "high_contrast", "menu_key", "space_activation", "state_disabled",
-        "state_expanded", "text_scale",
+        "state_disabled", "state_expanded",
     }),
     "desktop_surface_exclusion": frozenset(),
     "transient_notification": frozenset({
     }),
     "notification_center": frozenset({
-        "long_string_layout", "space_activation", "state_disabled",
+        "long_string_layout",
     }),
     "quick_settings": frozenset({
         "enter_activation", "high_contrast", "reduced_motion",
     }),
     "logout_confirmation": frozenset({
-        "disabled_transparency", "high_contrast", "reduced_motion",
+        "high_contrast", "reduced_motion",
     }),
     "output_migration": frozenset(),
     "service_restart_focus_recovery": frozenset(),
