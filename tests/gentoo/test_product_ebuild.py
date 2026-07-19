@@ -79,14 +79,14 @@ class ProductEbuildContractTests(unittest.TestCase):
         depend = dependency_body(self.source, "DEPEND")
         rdepend = dependency_body(self.source, "RDEPEND")
 
-        self.assertIn("x11-base/xorg-server[xvfb]", bdepend)
         for atom in (
-            "x11-base/xorg-server",
-            "x11-drivers/xf86-video-dummy",
             "x11-apps/xrandr",
+            "x11-base/xorg-server[xvfb]",
+            "x11-drivers/xf86-video-dummy",
             "x11-themes/hicolor-icon-theme",
         ):
             with self.subTest(atom=atom):
+                self.assertIn(atom, bdepend)
                 self.assertNotIn(atom, depend)
                 self.assertNotIn(atom, rdepend)
 
