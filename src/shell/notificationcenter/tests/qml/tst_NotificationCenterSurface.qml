@@ -1,0 +1,122 @@
+import QtQuick
+import QtTest
+import "../../../notifications/qml" as Notifications
+
+// The Quick Test setup publishes this test-only context fixture before loading the file.
+// qmllint disable unqualified
+
+TestCase {
+    id: testCase
+    name: "NotificationCenterSurface"
+    when: windowShown
+    width: 1000
+    height: 760
+
+    QtObject {
+        id: themeGeneration
+        property string profileId: "forge"
+        property string profileDisplayName: "Prismdrake Forge"
+        property QtObject notification: QtObject {
+            property color surfaceColor: "#494237"
+            property color borderColor: "#c7a965"
+            property color textPrimaryColor: "#ffffff"
+            property color textMutedColor: "#dfd5c2"
+            property color focusColor: "#ffe08a"
+            property color criticalColor: "#a72f46"
+            property color controlColor: "#625747"
+            property color pressedControlColor: "#7a6b56"
+            property real cardRadius: 5
+            property real cardPadding: 10
+            property real borderWidth: 2
+            property real focusWidth: 3
+            property real minimumTargetSize: 48
+            property string bodyFontFamily: "sans-serif"
+            property int bodyFontPixels: 14
+            property int titleFontPixels: 16
+            property int fastMotionMs: 60
+            property bool reducedMotion: false
+            property bool fallbackActive: true
+            property bool highContrast: false
+        }
+    }
+
+    Notifications.NotificationCenterSurface {
+        id: center
+        x: 20
+        y: 20
+        width: 600
+        height: 700
+        presentation: notificationCenterFixture.presentation
+        themeGeneration: themeGeneration
+    }
+
+    Notifications.TransientNotificationStack {
+        id: transients
+        x: 640
+        y: 20
+        width: 340
+        presentation: notificationCenterFixture.presentation
+        themeGeneration: themeGeneration
+    }
+
+    SignalSpy { id: closeSpy; target: center; signalName: "closeRequested" }
+    SignalSpy { id: returnSpy; target: center; signalName: "focusReturnRequested" }
+
+    function init() {
+        notificationCenterFixture.reset()
+        closeSpy.clear()
+        returnSpy.clear()
+        tryCompare(transients, "count", 0)
+    }
+
+    function test_unavailableAndLiteralAccessibleContent() {
+        const status = findChild(center, "notificationCenterStatus")
+        verify(status !== null)
+        compare(status.text, "Notification history is unavailable.")
+
+        verify(notificationCenterFixture.publish(1))
+        tryCompare(transients, "count", 1)
+        const history = findChild(center, "notificationCenterHistoryScroll")
+        verify(history !== null)
+        const summary = findChild(history, "notificationSummary")
+        verify(summary !== null)
+        compare(summary.text, "<b>Literal summary</b>")
+        compare(summary.textFormat, Text.PlainText)
+        const card = findChild(history, "notificationCardBackground").parent
+        compare(card.Accessible.name, "<b>Literal summary</b>")
+    }
+
+    function test_keyboardTraversalAndFocusReturn() {
+        verify(notificationCenterFixture.publish(1))
+        center.focusFirstControl()
+        const dnd = findChild(center, "notificationCenterDoNotDisturb")
+        const clear = findChild(center, "notificationCenterClearHistory")
+        verify(dnd !== null)
+        verify(clear !== null)
+        tryCompare(dnd, "activeFocus", true)
+        compare(dnd.Accessible.name, "Do not disturb")
+
+        keyClick(Qt.Key_Tab)
+        tryCompare(clear, "activeFocus", true)
+        compare(clear.Accessible.name, "Clear notification history")
+        keyClick(Qt.Key_Tab)
+        const history = findChild(center, "notificationCenterHistoryScroll")
+        const card = findChild(history, "notificationCardBackground").parent
+        tryCompare(card, "activeFocus", true)
+
+        keyClick(Qt.Key_Escape)
+        tryCompare(closeSpy, "count", 1)
+        tryCompare(returnSpy, "count", 1)
+    }
+
+    function test_transientStackIsBoundedToNewestFive() {
+        verify(notificationCenterFixture.publish(8, true))
+        tryCompare(transients, "count", 5)
+        const dndStatus = findChild(center, "notificationCenterStatus")
+        compare(dndStatus.visible, false)
+        verify(center.Accessible.description.length > 0)
+        compare(transients.Accessible.name, "Transient notifications")
+    }
+}
+
+// qmllint enable unqualified

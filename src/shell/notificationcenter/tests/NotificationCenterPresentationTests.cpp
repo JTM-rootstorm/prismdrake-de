@@ -65,6 +65,25 @@ TEST(NotificationCenterPresentationTest, SeparatesHistoryAndTransientMirrors) {
     EXPECT_FALSE(history->cardAt(1)->dismissible());
 }
 
+TEST(NotificationCenterPresentationTest, BoundsTransientStackToNewestCards) {
+    auto source = std::make_shared<NotificationCenterSnapshot>();
+    source->generation = 1U;
+    source->historyMode = notifications::HistoryMode::session;
+    for (std::uint64_t id = 1U; id <= maximumTransientStackCards + 2U; ++id) {
+        source->records.push_back(record(id, true, true, false));
+    }
+    source->serializedJson = "bounded-transient-stack";
+
+    NotificationCenterPresentation presentation;
+    ASSERT_TRUE(presentation.applySnapshot(source));
+    auto *transients = static_cast<NotificationRecordListModel *>(presentation.transientModel());
+    ASSERT_EQ(transients->rowCount(), static_cast<int>(maximumTransientStackCards));
+    ASSERT_NE(transients->cardAt(0), nullptr);
+    EXPECT_EQ(transients->cardAt(0)->summary(), QStringLiteral("Literal <b>summary</b>"));
+    EXPECT_EQ(presentation.historyModel()->rowCount(),
+              static_cast<int>(maximumTransientStackCards + 2U));
+}
+
 TEST(NotificationCenterPresentationTest, KeepsPrivateIdentitiesInsideTypedIntents) {
     NotificationCenterPresentation presentation;
     ASSERT_TRUE(presentation.applySnapshot(snapshot()));

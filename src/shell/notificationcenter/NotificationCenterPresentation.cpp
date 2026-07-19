@@ -158,6 +158,10 @@ NotificationRecordListModel::selectedRecords(const NotificationCenterSnapshotPtr
             selected.push_back(record);
         }
     }
+    if (filter_ == Filter::transient && selected.size() > maximumTransientStackCards) {
+        selected.erase(selected.begin(),
+                       selected.end() - static_cast<std::ptrdiff_t>(maximumTransientStackCards));
+    }
     return selected;
 }
 

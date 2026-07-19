@@ -48,3 +48,26 @@ add_test(NAME NotificationCenterClientDbusTest
 set_tests_properties(NotificationCenterClientDbusTest PROPERTIES
     RUN_SERIAL TRUE
     TIMEOUT 30)
+
+add_executable(prismdrake-notification-center-qml-tests
+    NotificationCenterQmlFixture.cpp
+    NotificationCenterQmlFixture.hpp
+    NotificationCenterQmlTestRunner.cpp)
+set_target_properties(prismdrake-notification-center-qml-tests PROPERTIES AUTOMOC ON)
+target_link_libraries(prismdrake-notification-center-qml-tests
+    PRIVATE
+        Prismdrake::notification-center-presentation
+        Prismdrake::shell-notification-qml
+        Qt6::Qml
+        Qt6::QuickTest)
+
+prismdrake_configure_cpp_target(prismdrake-notification-center-qml-tests)
+prismdrake_enable_warnings(prismdrake-notification-center-qml-tests)
+prismdrake_enable_sanitizers(prismdrake-notification-center-qml-tests)
+
+add_test(NAME NotificationCenterQmlTest
+    COMMAND prismdrake-notification-center-qml-tests
+        -input "${CMAKE_CURRENT_SOURCE_DIR}/qml")
+set_tests_properties(NotificationCenterQmlTest PROPERTIES
+    ENVIRONMENT
+        "QT_QPA_PLATFORM=offscreen;QSG_RHI_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")

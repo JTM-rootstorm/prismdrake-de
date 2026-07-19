@@ -16,6 +16,8 @@
 
 namespace prismdrake::shell::notificationcenter {
 
+inline constexpr std::size_t maximumTransientStackCards = 5U;
+
 class NotificationActionPresentation final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString label READ label CONSTANT)
