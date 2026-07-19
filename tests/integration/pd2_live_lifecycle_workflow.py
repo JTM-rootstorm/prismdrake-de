@@ -309,19 +309,22 @@ class SettingsEpochObservation:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class NotificationEpochObservation:
-    """Authority and a content-free structural notification projection.
+    """Authority plus durable and safely degraded notification projections.
 
-    The fingerprint covers normalized record identities, generations, urgency
-    classes, and action availability only. It must never include titles,
-    bodies, paths, application arguments, or other captured content.
+    The fingerprint covers only durable record identities, generations,
+    urgency classes, and action identifiers. It excludes live notification
+    identifiers, transient presentation, action availability, titles, bodies,
+    paths, application arguments, and all other captured content.
     """
 
     authority: ProcessIdentity
     shell: ProcessIdentity
     state_generation: int
-    state_fingerprint: bytes
-    live_record_count: int
-    shell_bound_authority: ProcessIdentity | None
+    durable_fingerprint: bytes
+    durable_record_count: int
+    persistent_history: bool
+    safe_runtime_degradation: bool
+    shell_dependency_available: bool
 
     def __post_init__(self) -> None:
         if (
@@ -329,20 +332,16 @@ class NotificationEpochObservation:
             or self.authority.role != "prismdrake-notifyd"
             or type(self.shell) is not ProcessIdentity
             or self.shell.role != "prismdrake-shell"
-            or (
-                self.shell_bound_authority is not None
-                and (
-                    type(self.shell_bound_authority) is not ProcessIdentity
-                    or self.shell_bound_authority.role != "prismdrake-notifyd"
-                )
-            )
-            or not isinstance(self.state_fingerprint, bytes)
-            or len(self.state_fingerprint) != 32
+            or not isinstance(self.durable_fingerprint, bytes)
+            or len(self.durable_fingerprint) != 32
+            or type(self.persistent_history) is not bool
+            or type(self.safe_runtime_degradation) is not bool
+            or type(self.shell_dependency_available) is not bool
         ):
             _fail("lifecycle_notification_epoch_invalid")
         _uint(self.state_generation, "lifecycle_notification_epoch_invalid")
         _uint(
-            self.live_record_count,
+            self.durable_record_count,
             "lifecycle_notification_epoch_invalid",
             allow_zero=True,
         )
@@ -629,8 +628,10 @@ class InstalledLifecycleWorkflow:
         if (
             notification.authority != components.notifyd
             or notification.shell != components.shell
-            or notification.shell_bound_authority != components.notifyd
-            or notification.live_record_count == 0
+            or not notification.shell_dependency_available
+            or not notification.persistent_history
+            or not notification.safe_runtime_degradation
+            or notification.durable_record_count == 0
         ):
             _fail("lifecycle_notification_baseline_invalid")
         self._outputs.remove_output(topology.primary, topology.generation)
@@ -751,9 +752,11 @@ class InstalledLifecycleWorkflow:
         if (
             current.authority != components.notifyd
             or current.shell != components.shell
-            or current.shell_bound_authority != components.notifyd
-            or current.state_fingerprint != prior.state_fingerprint
-            or current.live_record_count != prior.live_record_count
+            or not current.shell_dependency_available
+            or not current.persistent_history
+            or not current.safe_runtime_degradation
+            or current.durable_fingerprint != prior.durable_fingerprint
+            or current.durable_record_count != prior.durable_record_count
         ):
             _fail("lifecycle_notification_reacquisition_invalid")
         self._notification = current
@@ -770,9 +773,13 @@ class InstalledLifecycleWorkflow:
         if (
             current_notification.authority != components.notifyd
             or current_notification.shell != components.shell
-            or current_notification.shell_bound_authority != components.notifyd
-            or current_notification.state_fingerprint != notification.state_fingerprint
-            or current_notification.live_record_count != notification.live_record_count
+            or not current_notification.shell_dependency_available
+            or not current_notification.persistent_history
+            or not current_notification.safe_runtime_degradation
+            or current_notification.durable_fingerprint
+            != notification.durable_fingerprint
+            or current_notification.durable_record_count
+            != notification.durable_record_count
             or current_windows != windows
         ):
             _fail("lifecycle_external_state_not_preserved")

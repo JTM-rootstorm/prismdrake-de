@@ -56,9 +56,11 @@ class FakeInstalledPorts:
             (0x1001, 0x1002),
         )
         self.notification_fingerprint = b"n" * 32
-        self.notification_bound = self.components_value.notifyd
+        self.notification_dependency_available = True
         self.notification_generation = 9
         self.notification_record_count = 2
+        self.notification_persistent = True
+        self.notification_safe_degradation = True
         self.settings_generation = 7
         self.last_restart: str | None = None
         self.restart_returns_stale_before = False
@@ -173,11 +175,12 @@ class FakeInstalledPorts:
         if expected.role == "prismdrake-notifyd":
             # The restart observation carries the already-observed invalidation
             # transition. The next state read represents reacquisition.
-            self.notification_bound = self.components_value.notifyd
+            self.notification_dependency_available = True
             self.notification_generation = 1
             self.notification_fingerprint = self.notification_fingerprint_after_restart
+            self.notification_safe_degradation = True
         elif expected.role == "prismdrake-shell":
-            self.notification_bound = self.components_value.notifyd
+            self.notification_dependency_available = True
         self.last_restart = expected.role
         return RestartObservation(
             expected.role, before, new, self.components_value, invalidated
@@ -214,7 +217,9 @@ class FakeInstalledPorts:
             self.notification_generation,
             self.notification_fingerprint,
             self.notification_record_count,
-            self.notification_bound,
+            self.notification_persistent,
+            self.notification_safe_degradation,
+            self.notification_dependency_available,
         )
 
     def window_authority(self) -> WindowAuthorityObservation:
@@ -318,6 +323,20 @@ class InstalledLifecycleWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(LifecycleWorkflowError, "lifecycle_window_state_invalid"):
             WindowAuthorityObservation(identity("window-manager", 2), (), (1,))
 
+        ports = FakeInstalledPorts()
+        ports.notification_persistent = False
+        with self.assertRaisesRegex(
+            LifecycleWorkflowError, "lifecycle_notification_baseline_invalid"
+        ):
+            workflow(ports).run_step("remove_current_primary_output")
+
+        ports = FakeInstalledPorts()
+        ports.notification_safe_degradation = False
+        with self.assertRaisesRegex(
+            LifecycleWorkflowError, "lifecycle_notification_baseline_invalid"
+        ):
+            workflow(ports).run_step("remove_current_primary_output")
+
     def test_rejects_unknown_out_of_order_and_post_failure_steps(self) -> None:
         instance = workflow(FakeInstalledPorts())
         with self.assertRaisesRegex(LifecycleWorkflowError, "lifecycle_step_not_reviewed"):
@@ -391,7 +410,7 @@ class InstalledLifecycleWorkflowTests(unittest.TestCase):
                 ):
                     instance.run_step("verify_complete_settings_epoch_rebuild")
 
-    def test_requires_notification_invalidation_and_content_preserving_reacquisition(self) -> None:
+    def test_requires_notification_invalidation_and_durable_state_reacquisition(self) -> None:
         ports = FakeInstalledPorts()
         instance = workflow(ports)
         run_to(instance, "verify_complete_settings_epoch_rebuild")
@@ -406,6 +425,32 @@ class InstalledLifecycleWorkflowTests(unittest.TestCase):
         run_to(instance, "verify_complete_settings_epoch_rebuild")
         ports.notification_fingerprint_after_restart = b"x" * 32
         instance.run_step("restart_notifyd")
+        with self.assertRaisesRegex(
+            LifecycleWorkflowError, "lifecycle_notification_reacquisition_invalid"
+        ):
+            instance.run_step("verify_notification_state_reacquisition")
+
+        for attribute in (
+            "notification_persistent",
+            "notification_safe_degradation",
+        ):
+            with self.subTest(attribute=attribute):
+                ports = FakeInstalledPorts()
+                instance = workflow(ports)
+                run_to(instance, "verify_complete_settings_epoch_rebuild")
+                instance.run_step("restart_notifyd")
+                setattr(ports, attribute, False)
+                with self.assertRaisesRegex(
+                    LifecycleWorkflowError,
+                    "lifecycle_notification_reacquisition_invalid",
+                ):
+                    instance.run_step("verify_notification_state_reacquisition")
+
+        ports = FakeInstalledPorts()
+        instance = workflow(ports)
+        run_to(instance, "verify_complete_settings_epoch_rebuild")
+        instance.run_step("restart_notifyd")
+        ports.notification_record_count += 1
         with self.assertRaisesRegex(
             LifecycleWorkflowError, "lifecycle_notification_reacquisition_invalid"
         ):

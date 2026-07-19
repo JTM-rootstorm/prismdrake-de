@@ -597,7 +597,7 @@ class FakeAccessibility:
         self.states.append((selector.name, state_name, expected))
         return (
             self.observe(shell_pid, selector, environment)
-            and state_name == "CHECKED"
+            and state_name in {"CHECKED", "ENABLED"}
             and isinstance(expected, bool)
         )
 
@@ -609,7 +609,12 @@ class FakeAccessibility:
             shell_pid == self.operations.surface_owner
             and "DBUS_SESSION_BUS_ADDRESS" in environment
             and selector.name
-            in {"Transient notifications", "Desktop wallpaper", "Quick settings"}
+            in {
+                "Transient notifications",
+                "Desktop wallpaper",
+                "Quick settings",
+                "Notification center",
+            }
         )
 
     def reject_stale_action(
@@ -976,8 +981,16 @@ class SurfaceParserTests(unittest.TestCase):
         self.assertEqual(document["panel"]["grouping"], "always")
         self.assertEqual(document["desktop"]["wallpaper_source"], "")
         self.assertEqual(document["desktop"]["background_color"], "#182033")
+        self.assertEqual(document["notifications"]["history"], "session")
         self.assertEqual(document["developer"]["mock_capability_overrides"], [])
         self.assertNotIn("/home/", payload)
+
+        persistent = tomllib.loads(_session_config("persistent"))
+        self.assertEqual(persistent["notifications"]["history"], "persistent")
+        with self.assertRaisesRegex(
+            HarnessError, "^private_session_history_mode_invalid$"
+        ):
+            _session_config("disabled")
 
 
 class NotificationSurfaceAdapterTests(unittest.TestCase):
@@ -2000,7 +2013,10 @@ class LivePortTests(unittest.TestCase):
             Path(environment["XDG_CONFIG_HOME"]) / "prismdrake" / "config.toml"
         )
         self.assertEqual(stat.S_IMODE(configuration.stat().st_mode), 0o600)
-        self.assertEqual(configuration.read_text(encoding="ascii"), _session_config())
+        self.assertEqual(
+            configuration.read_text(encoding="ascii"),
+            _session_config("persistent"),
+        )
         geometry_queries = [
             argv
             for argv, _environment in operations.run_calls
@@ -2465,8 +2481,9 @@ class LivePortTests(unittest.TestCase):
 
     def test_lifecycle_restart_uses_exact_failure_invalidation_boundary(self) -> None:
         operations = FakeOperations()
+        accessibility = FakeAccessibility(operations)
         port = LiveXorgHarnessPort(
-            config(installed_paths()), operations, FakeAccessibility(operations)
+            config(installed_paths()), operations, accessibility
         )
         port.run_step("failure_replay", "restart_settingsd")
         before = port.components()
@@ -2477,6 +2494,33 @@ class LivePortTests(unittest.TestCase):
         self.assertTrue(restarted.dependent_invalidated)
         self.assertEqual(operations.fail_identity_calls[-1], old)
         self.assertNotIn(old, operations.stop_identity_calls)
+
+        quick_window = 0x500005
+        quick_geometry = WindowGeometry(1220, 452, 380, 400)
+        operations.controlled_windows[QUICK_SETTINGS_WINDOW_TITLE] = quick_window
+        operations.surface_geometries[quick_window] = quick_geometry
+        operations.window_geometry_payloads[quick_window] = xwininfo_payload(
+            quick_window, quick_geometry
+        )
+        before = port.components()
+        prior_commands = len(operations.run_calls)
+        restarted_notifyd = port.restart_exact(before.notifyd)
+        notifyd_old = ProcessIdentity(before.notifyd.pid, before.notifyd.start_time)
+        self.assertTrue(restarted_notifyd.dependent_invalidated)
+        self.assertEqual(operations.fail_identity_calls[-1], notifyd_old)
+        self.assertEqual(
+            accessibility.states[-3:],
+            [
+                ("Do not disturb", "ENABLED", True),
+                ("Do not disturb", "ENABLED", False),
+                ("Do not disturb", "ENABLED", True),
+            ],
+        )
+        restart_commands = operations.run_calls[prior_commands:]
+        self.assertFalse(
+            any(Path(argv[0]).name == "prismdrake-shellctl" for argv, _env in restart_commands)
+        )
+        self.assertTrue(port._lifecycle_shell_notifyd_available)  # noqa: SLF001
         self.assertEqual(
             port.cleanup("failure_replay"), Observation(True, True)
         )

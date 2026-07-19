@@ -327,6 +327,44 @@ class LiveAtspiHelperTests(unittest.TestCase):
             ),
         )
 
+    def test_observes_disabled_state_on_unique_visible_control(self) -> None:
+        control = FakeNode(
+            "Do not disturb",
+            FakeRole.CHECK_BOX,
+            states={FakeStateType.SHOWING, FakeStateType.VISIBLE},
+        )
+        atspi, application = fixture([control])
+        selector = ControlSelector("Do not disturb", "check_box")
+
+        result = observe_control_state(
+            atspi, exact_owner(application), selector, "ENABLED", False
+        )
+
+        self.assertEqual(result.category, "atspi_control_state_observed")
+        self.assert_category(
+            "atspi_control_state_mismatch",
+            lambda: observe_control_state(
+                atspi, exact_owner(application), selector, "ENABLED", True
+            ),
+        )
+        application.children.append(
+            FakeNode(
+                "Do not disturb",
+                FakeRole.CHECK_BOX,
+                states={FakeStateType.SHOWING, FakeStateType.VISIBLE},
+            )
+        )
+        self.assert_category(
+            "atspi_control_identity",
+            lambda: observe_control_state(
+                atspi,
+                exact_owner(application),
+                selector,
+                "ENABLED",
+                False,
+            ),
+        )
+
     def test_maps_qt_pane_surfaces_to_reviewed_atspi_panel_roles(self) -> None:
         control = FakeNode(
             "Quick settings",

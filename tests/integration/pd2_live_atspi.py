@@ -18,7 +18,7 @@ MAX_NAME_LENGTH = 256
 MAX_NODES = 1024
 
 REVIEWED_ACTIONS = frozenset({"Press"})
-REVIEWED_STATES = frozenset({"CHECKED"})
+REVIEWED_STATES = frozenset({"CHECKED", "ENABLED"})
 ROLE_ENUM_NAMES = {
     "check_box": ("CHECK_BOX",),
     "dialog": ("DIALOG",),
@@ -245,7 +245,13 @@ def _action_names(node: Any) -> list[str]:
     return [] if interface is None else _interface_action_names(interface)
 
 
-def _select_control(atspi: Any, application: Any, selector: ControlSelector) -> Any:
+def _select_control(
+    atspi: Any,
+    application: Any,
+    selector: ControlSelector,
+    *,
+    require_enabled: bool = True,
+) -> Any:
     matches: list[Any] = []
     for node in _walk(application):
         if _node_name(node) != selector.name or not _role_matches(
@@ -271,7 +277,7 @@ def _select_control(atspi: Any, application: Any, selector: ControlSelector) -> 
         _fail("atspi_control_identity")
 
     control = matches[0]
-    if not _has_state(atspi, control, "ENABLED"):
+    if require_enabled and not _has_state(atspi, control, "ENABLED"):
         _fail("atspi_control_state")
     if selector.require_description and not _node_description(control):
         _fail("atspi_description_missing")
@@ -285,11 +291,18 @@ def _resolve_control(
     owner_probe: OwnerProbe,
     selector: ControlSelector,
     require_action: bool,
+    *,
+    require_enabled: bool = True,
 ) -> tuple[Any, Any]:
     _validate_selector(selector, require_action)
     application = _find_application(atspi)
     _verify_owner(application, owner_probe)
-    return application, _select_control(atspi, application, selector)
+    return application, _select_control(
+        atspi,
+        application,
+        selector,
+        require_enabled=require_enabled,
+    )
 
 
 def observe_showing_control(
@@ -381,7 +394,11 @@ def observe_control_state(
     if state_name not in REVIEWED_STATES or not isinstance(expected, bool):
         _fail("atspi_state_not_reviewed")
     _application, control = _resolve_control(
-        atspi, owner_probe, selector, require_action=False
+        atspi,
+        owner_probe,
+        selector,
+        require_action=False,
+        require_enabled=state_name != "ENABLED",
     )
     if _has_state(atspi, control, state_name) != expected:
         _fail("atspi_control_state_mismatch")

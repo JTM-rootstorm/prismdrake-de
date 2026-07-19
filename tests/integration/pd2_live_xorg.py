@@ -1217,10 +1217,12 @@ def parse_window_geometry(payload: bytes) -> WindowGeometry:
     return WindowGeometry(values["x"], values["y"], values["width"], values["height"])
 
 
-def _session_config() -> str:
+def _session_config(history_mode: str = "session") -> str:
     """Return the complete private PD2 demonstration configuration."""
 
-    return """schema_version = 2
+    if history_mode not in {"session", "persistent"}:
+        raise HarnessError("private_session_history_mode_invalid")
+    return f"""schema_version = 2
 profile = "lustre"
 
 [appearance]
@@ -1250,7 +1252,7 @@ recent_items = "local_only"
 
 [notifications]
 enabled = true
-history = "session"
+history = "{history_mode}"
 default_timeout_ms = 5000
 do_not_disturb = false
 
@@ -1465,7 +1467,8 @@ class LiveXorgHarnessPort:
             PRIMARY_OUTPUT: 1,
             SECONDARY_OUTPUT: 1,
         }
-        self._lifecycle_shell_bound_notifyd: ProcessIdentity | None = None
+        self._lifecycle_shell_notifyd_available = False
+        self._lifecycle_shell_notifyd_rebind_required = False
         self._lifecycle_survival_notification_prepared = False
         self._lifecycle_shutdown_started: float | None = None
         self._lifecycle_shutdown_components: LifecycleComponentObservation | None = None
@@ -1536,7 +1539,7 @@ class LiveXorgHarnessPort:
             self._start_environment(two_outputs=True)
             self._require_topology(two_outputs=True)
         elif identifier == "start_installed_prismdrake_session":
-            self._start_session()
+            self._start_session(_session_config("persistent"))
         elif identifier == "verify_component_readiness":
             self._wait_for_session_readiness()
             self.capture_process_ownership()
@@ -1649,6 +1652,8 @@ class LiveXorgHarnessPort:
             self._controlled_windows.clear()
         elif identifier in self._NOTIFICATION_STEPS:
             self._run_notification_step(identifier)
+            if identifier == "open_notification_center":
+                self._lifecycle_shell_notifyd_available = True
         elif identifier in self._SETTINGS_STEPS:
             self._run_settings_step(identifier)
         elif identifier == "verify_accessible_descriptions_states_and_backtab":
@@ -1819,9 +1824,7 @@ class LiveXorgHarnessPort:
                 raise HarnessError("live_environment_not_started")
             state_root = self._runtime / "state"
             fixture = create_malformed_history_fixture(state_root)
-            configuration = _session_config().replace(
-                'history = "session"', 'history = "persistent"'
-            )
+            configuration = _session_config("persistent")
             self._start_session(configuration)
             self._wait_for_session_readiness()
             before = self._component_identities()
@@ -2295,7 +2298,7 @@ class LiveXorgHarnessPort:
             self._operations.pause(0.05)
         raise HarnessError("tier_c_atspi_timeout")
 
-    def _wait_tier_c_accessible_state(
+    def _wait_accessible_state(
         self,
         selector: ControlSelector,
         state_name: str,
@@ -2431,7 +2434,7 @@ class LiveXorgHarnessPort:
                 ControlSelector("Do not disturb", "check_box", require_focused=True)
             )
         elif identifier == "notification_center":
-            self._wait_tier_c_accessible_state(
+            self._wait_accessible_state(
                 ControlSelector("Do not disturb", "check_box"),
                 "CHECKED",
                 True,
@@ -2448,7 +2451,7 @@ class LiveXorgHarnessPort:
                 "Use Prismdrake Forge", "radio_button", require_focused=True
             )
             self.observe_atspi(forge)
-            self._wait_tier_c_accessible_state(
+            self._wait_accessible_state(
                 forge,
                 "CHECKED",
                 True,
@@ -2787,7 +2790,7 @@ class LiveXorgHarnessPort:
 
         self._restore_lifecycle_quick_settings()
 
-        if self.notification_epoch().live_record_count == 0:
+        if self.notification_epoch().durable_record_count == 0:
             raise HarnessError("lifecycle_notification_fixture_timeout")
         return self.window_authority()
 
@@ -2837,6 +2840,20 @@ class LiveXorgHarnessPort:
         executable = self._config.installed_executables.get(role)
         if executable is None:
             raise HarnessError("component_identity_unavailable")
+        notification_dependency = ControlSelector(
+            "Do not disturb", "check_box", require_description=True
+        )
+        if role == "prismdrake-notifyd":
+            _window, geometry = self._lifecycle_quick_settings_window(
+                self._shell_identity()
+            )
+            self._output_for_geometry(geometry, self.topology())
+            self._wait_accessible_state(
+                notification_dependency,
+                "ENABLED",
+                True,
+                "lifecycle_notifyd_dependency_precondition_timeout",
+            )
         local = ProcessIdentity(identity.pid, identity.start_time)
         if not self._operations.fail_identity(
             local, executable, self._config.stop_timeout
@@ -2844,10 +2861,20 @@ class LiveXorgHarnessPort:
             raise HarnessError("component_restart_signal_failed")
         if role == "prismdrake-shell":
             self._surface_shell_identity = None
+            self._lifecycle_shell_notifyd_available = False
+            self._lifecycle_shell_notifyd_rebind_required = True
         # Exact old-authority death is the invalidation boundary. A supervised
         # replacement may reacquire D-Bus before a sampling probe can observe
         # the owner gap, but it cannot preserve the killed process identity.
         invalidated = role != "prismdrake-shell"
+        if role == "prismdrake-notifyd":
+            self._lifecycle_shell_notifyd_available = False
+            self._wait_accessible_state(
+                notification_dependency,
+                "ENABLED",
+                False,
+                "lifecycle_notifyd_dependency_invalidation_timeout",
+            )
         deadline = self._operations.monotonic() + self._config.readiness_timeout
         replacement: ProcessIdentity | None = None
         while self._operations.monotonic() < deadline:
@@ -2865,16 +2892,16 @@ class LiveXorgHarnessPort:
             self._operations.pause(0.05)
         if replacement is None:
             raise HarnessError("component_restart_timeout")
+        if role == "prismdrake-notifyd":
+            self._wait_accessible_state(
+                notification_dependency,
+                "ENABLED",
+                True,
+                "lifecycle_notifyd_dependency_reacquisition_timeout",
+            )
+            self._lifecycle_shell_notifyd_available = True
         after = self.components()
         self._require_controlled_windows_unchanged(self._controlled_windows)
-        if role == "prismdrake-shell":
-            self._lifecycle_shell_bound_notifyd = ProcessIdentity(
-                after.notifyd.pid, after.notifyd.start_time
-            )
-        elif role == "prismdrake-notifyd":
-            self._lifecycle_shell_bound_notifyd = ProcessIdentity(
-                after.notifyd.pid, after.notifyd.start_time
-            )
         return LifecycleRestartObservation(
             role,
             identity,
@@ -2943,44 +2970,83 @@ class LiveXorgHarnessPort:
         port = LiveDbusNotificationPort(epoch.dbus_probe)
         state = port.current_state()
         if not self._lifecycle_survival_notification_prepared:
-            if not state.records:
-                sender = epoch.sender
-                if not isinstance(sender, PersistentNotificationProbe):
-                    raise HarnessError("lifecycle_notification_sender_unavailable")
-                sender.create_critical()
-                deadline = self._operations.monotonic() + self._config.readiness_timeout
-                while self._operations.monotonic() < deadline:
+            sender = epoch.sender
+            if not isinstance(sender, PersistentNotificationProbe):
+                raise HarnessError("lifecycle_notification_sender_unavailable")
+            deadline = self._operations.monotonic() + self._config.readiness_timeout
+            while self._operations.monotonic() < deadline:
+                if not state.records:
+                    sender.create_critical()
                     state = port.current_state()
-                    if state.records:
-                        break
-                    self._operations.pause(0.05)
-                else:
-                    raise HarnessError("lifecycle_notification_fixture_timeout")
+                    continue
+                live = tuple(
+                    record for record in state.records if record.notification_id is not None
+                )
+                if live:
+                    for record in live:
+                        port.dismiss(record.record_id, record.content_generation)
+                    state = port.current_state()
+                    continue
+                if all(
+                    not record.transient
+                    and all(not enabled for _action_id, enabled in record.actions)
+                    for record in state.records
+                ):
+                    break
+                self._operations.pause(0.05)
+                state = port.current_state()
+            else:
+                raise HarnessError("lifecycle_notification_fixture_timeout")
             self._lifecycle_survival_notification_prepared = True
-        structural = tuple(
+        durable = tuple(
             (
                 record.record_id,
                 record.content_generation,
                 record.urgency,
-                record.transient,
-                record.actions,
+                tuple(action_id for action_id, _enabled in record.actions),
             )
             for record in state.records
         )
         fingerprint = hashlib.sha256(
-            json.dumps(structural, separators=(",", ":")).encode("ascii")
+            json.dumps(durable, separators=(",", ":")).encode("ascii")
         ).digest()
-        bound = self._lifecycle_shell_bound_notifyd
-        if bound is None:
-            bound = ProcessIdentity(components.notifyd.pid, components.notifyd.start_time)
-            self._lifecycle_shell_bound_notifyd = bound
+        safe_runtime_degradation = all(
+            record.notification_id is None
+            and not record.transient
+            and all(not enabled for _action_id, enabled in record.actions)
+            for record in state.records
+        )
+        if self._lifecycle_shell_notifyd_rebind_required:
+            self._invoke_shellctl("notifications", "open")
+            self._wait_accessible(
+                ControlSelector("Notification center", "pane"),
+                "lifecycle_shell_notifyd_rebind_timeout",
+            )
+            self._xdotool("key", "--clearmodifiers", "Escape")
+            self._wait_accessible_absent(
+                ControlSelector("Notification center", "pane"),
+                "lifecycle_shell_notifyd_rebind_dismissal_timeout",
+            )
+            self._invoke_shellctl("panel", "focus")
+            self._wait_accessible(
+                ControlSelector(
+                    "Open applications", "push_button", require_focused=True
+                ),
+                "lifecycle_shell_notifyd_rebind_focus_timeout",
+            )
+            self._lifecycle_shell_notifyd_rebind_required = False
+            self._lifecycle_shell_notifyd_available = True
+        if not self._lifecycle_shell_notifyd_available:
+            raise HarnessError("lifecycle_shell_notifyd_binding_unavailable")
         return LifecycleNotificationEpochObservation(
             components.notifyd,
             components.shell,
             state.generation,
             fingerprint,
             len(state.records),
-            self._lifecycle_identity("prismdrake-notifyd", bound),
+            state.history_mode == "persistent",
+            safe_runtime_degradation,
+            self._lifecycle_shell_notifyd_available,
         )
 
     def _wait_logout_state(
@@ -3216,7 +3282,8 @@ class LiveXorgHarnessPort:
         self._lifecycle_cleanup_ready = False
         self._lifecycle_shutdown_started = None
         self._lifecycle_shutdown_components = None
-        self._lifecycle_shell_bound_notifyd = None
+        self._lifecycle_shell_notifyd_available = False
+        self._lifecycle_shell_notifyd_rebind_required = False
         self._lifecycle_survival_notification_prepared = False
         if tier_c_error is not None:
             raise tier_c_error
@@ -3774,7 +3841,7 @@ class LiveXorgHarnessPort:
             require_description=True,
         )
         self._wait_accessible(lustre, "accessibility_profile_description_timeout")
-        self._wait_tier_c_accessible_state(
+        self._wait_accessible_state(
             lustre,
             "CHECKED",
             True,
@@ -3784,7 +3851,7 @@ class LiveXorgHarnessPort:
             "Do not disturb", "check_box", require_description=True
         )
         self._wait_accessible(dnd, "accessibility_dnd_description_timeout")
-        self._wait_tier_c_accessible_state(
+        self._wait_accessible_state(
             dnd,
             "CHECKED",
             False,
@@ -3849,6 +3916,17 @@ class LiveXorgHarnessPort:
         )
         self._xdotool("key", "--clearmodifiers", "shift+Tab")
         self._wait_accessible(selector, "accessibility_backtab_recovery_timeout")
+        if key == "notifyd":
+            self._invoke_shellctl("notifications", "open")
+            self._wait_accessible(
+                ControlSelector("Notification center", "pane"),
+                "accessibility_notifyd_presentation_timeout",
+            )
+            self._xdotool("key", "--clearmodifiers", "Escape")
+            self._wait_accessible_absent(
+                ControlSelector("Notification center", "pane"),
+                "accessibility_notifyd_presentation_dismissal_timeout",
+            )
         del self._accessibility_references[key]
         del self._accessibility_reference_shells[key]
 
