@@ -129,6 +129,18 @@ TestCase {
         compare(diagnostics().visible, false)
     }
 
+    function test_focusQuickSettingsRestoresTheExactPanelControl() {
+        developmentDiagnostics = false
+        explicitProductionAffordances = true
+        const quickSettings = findChild(panel, "panelQuickSettingsButton")
+
+        panel.focusLauncher()
+        compare(launcher().activeFocus, true)
+        panel.focusQuickSettings()
+        compare(quickSettings.activeFocus, true)
+        compare(quickSettings.Accessible.focused, true)
+    }
+
     function test_groupedTasksExposeProductionActionsAndOutputScopedAffordances() {
         groupedTasks = true
         verify(panelFixture.publishRepresentativeGroups())

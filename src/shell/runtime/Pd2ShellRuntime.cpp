@@ -690,6 +690,10 @@ Result<void> Pd2ShellRuntime::ensureSingletonViews() {
             SLOT(launcherActionMenuClosed()));
     connect(quick_settings_view_->rootObject(), SIGNAL(closeRequested()), this,
             SLOT(quickSettingsDismissRequested()));
+    connect(quick_settings_view_->rootObject(), SIGNAL(focusExitForward()), this,
+            SLOT(quickSettingsDismissRequested()));
+    connect(quick_settings_view_->rootObject(), SIGNAL(focusExitBackward()), this,
+            SLOT(quickSettingsDismissRequested()));
     connect(notification_center_view_->rootObject(), SIGNAL(closeRequested()), this,
             SLOT(notificationCenterDismissRequested()));
     connect(logout_view_->rootObject(), SIGNAL(confirmRequested()), this,
@@ -908,8 +912,27 @@ void Pd2ShellRuntime::panelNotificationCenterRequested(const QString &outputName
 }
 
 void Pd2ShellRuntime::panelQuickSettingsRequested(const QString &outputName) {
-    static_cast<void>(
-        composition_.request(control::ShellAction::open_quick_settings, outputName.toStdString()));
+    auto output = composition::OutputName::create(outputName.toStdString());
+    auto id = composition::FocusControlId::create("quick-settings-button");
+    if (!output) {
+        report("panel quick settings origin", output.error());
+        return;
+    }
+    if (!id) {
+        report("panel quick settings origin", id.error());
+        return;
+    }
+    auto origin = composition::FocusOrigin::control(
+        output.value(), composition::FocusControlRole::panelQuickSettings, id.value());
+    if (!origin) {
+        report("panel quick settings origin", origin.error());
+        return;
+    }
+    auto presented = composition_.present(composition::SurfaceFamily::quickSettings,
+                                          outputName.toStdString(), std::move(origin).value());
+    if (!presented) {
+        report("panel quick settings", presented.error());
+    }
 }
 
 Result<void> Pd2ShellRuntime::presentActionMenu(std::string_view outputName,
@@ -1094,9 +1117,16 @@ Pd2ShellRuntime::restoreControlFocus(const composition::FocusOrigin &origin) {
     if (!panel || !panel->rootObject()) {
         return control::ShellRequestFailure::output_unavailable;
     }
-    const char *method = *origin.role() == composition::FocusControlRole::panelTaskGroup
-                             ? "restoreActionMenuFocus"
-                             : "focusLauncher";
+    const char *method = "focusLauncher";
+    if (*origin.role() == composition::FocusControlRole::panelTaskGroup) {
+        method = "restoreActionMenuFocus";
+    } else if (*origin.role() == composition::FocusControlRole::panelQuickSettings) {
+        auto access = panels_->requestKeyboardAccess(origin.output()->value());
+        if (!access) {
+            return control::ShellRequestFailure::output_unavailable;
+        }
+        method = "focusQuickSettings";
+    }
     return QMetaObject::invokeMethod(panel->rootObject(), method, Qt::QueuedConnection)
                ? control::ShellRequestFailure::none
                : control::ShellRequestFailure::internal;

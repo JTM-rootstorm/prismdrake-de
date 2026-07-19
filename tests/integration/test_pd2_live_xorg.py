@@ -497,6 +497,7 @@ class FakeAccessibility:
         self.pinned = False
         self.observed: list[str] = []
         self.absent: list[str] = []
+        self.states: list[tuple[str, str, bool]] = []
         self.invoked: list[str] = []
         self.persist_pin = True
         self.references: list[object] = []
@@ -577,10 +578,11 @@ class FakeAccessibility:
         expected: bool,
         environment: Mapping[str, str],
     ) -> bool:
+        self.states.append((selector.name, state_name, expected))
         return (
             self.observe(shell_pid, selector, environment)
             and state_name == "CHECKED"
-            and expected is True
+            and isinstance(expected, bool)
         )
 
     def observe_absent(
@@ -590,7 +592,8 @@ class FakeAccessibility:
         return (
             shell_pid == self.operations.surface_owner
             and "DBUS_SESSION_BUS_ADDRESS" in environment
-            and selector.name in {"Transient notifications", "Desktop wallpaper"}
+            and selector.name
+            in {"Transient notifications", "Desktop wallpaper", "Quick settings"}
         )
 
     def reject_stale_action(
@@ -1971,6 +1974,31 @@ class LivePortTests(unittest.TestCase):
                 "Shift_L+F10",
             ],
         )
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_accessibility_metadata_starts_from_surface_owned_focus(self) -> None:
+        operations = FakeOperations()
+        accessibility = FakeAccessibility(operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+            "verify_accessible_descriptions_states_and_backtab",
+        ):
+            port.run_step("installed_workflow", identifier)
+
+        keys = [
+            argv[-1]
+            for argv, _environment in operations.run_calls
+            if argv[:3] == ("/usr/bin/xdotool", "key", "--clearmodifiers")
+        ]
+        self.assertEqual(keys, ["Escape", "shift+Tab", "space"])
+        self.assertIn("Use Prismdrake Lustre", accessibility.observed)
+        self.assertIn("Open quick settings", accessibility.observed)
+        self.assertIn(("Do not disturb", "CHECKED", False), accessibility.states)
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_window_state_parser_accepts_only_exact_empty_or_known_atoms(self) -> None:

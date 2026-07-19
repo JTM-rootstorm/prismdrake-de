@@ -60,6 +60,13 @@ FocusScope {
             launcher.forceActiveFocus(Qt.OtherFocusReason)
     }
 
+    function focusQuickSettings() {
+        if (productionAffordancesVisible)
+            quickSettings.forceActiveFocus(Qt.BacktabFocusReason)
+        else
+            focusNotification()
+    }
+
     function focusTask(index, backward) {
         const candidate = root.taskAt(index)
         if (candidate !== null) {

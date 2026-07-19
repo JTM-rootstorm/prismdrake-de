@@ -3620,6 +3620,19 @@ class LiveXorgHarnessPort:
             self._operations.pause(0.05)
         raise HarnessError(timeout_error)
 
+    def _wait_accessible_absent(
+        self, selector: ControlSelector, timeout_error: str
+    ) -> None:
+        shell = self._shell_identity()
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._accessibility.observe_absent(
+                shell.pid, selector, self.probe_environment()
+            ):
+                return
+            self._operations.pause(0.05)
+        raise HarnessError(timeout_error)
+
     def _focus_and_capture_reference(self, key: str) -> None:
         if key in self._accessibility_references:
             raise HarnessError("accessibility_reference_reused")
@@ -3638,12 +3651,32 @@ class LiveXorgHarnessPort:
         self._accessibility_reference_shells[key] = shell
 
     def _verify_accessible_metadata_and_backtab(self) -> None:
-        self._invoke_shellctl("quick-settings", "open")
+        self._xdotool("key", "--clearmodifiers", "Escape")
+        self._wait_accessible_absent(
+            ControlSelector("Quick settings", "pane"),
+            "accessibility_quick_settings_dismissal_timeout",
+        )
+        self._invoke_shellctl("panel", "focus")
+        panel_trigger = ControlSelector(
+            "Open quick settings",
+            "push_button",
+            "Press",
+            require_focused=True,
+            require_description=True,
+        )
+        shell = self._shell_identity()
+        environment = self.probe_environment()
+        for _index in range(8):
+            if self._accessibility.observe(shell.pid, panel_trigger, environment):
+                break
+            self._xdotool("key", "--clearmodifiers", "Tab")
+        else:
+            raise HarnessError("accessibility_quick_settings_origin_timeout")
+        self._invoke_accessible(panel_trigger)
         self._wait_accessible(
             ControlSelector("Quick settings", "pane", require_description=True),
             "accessibility_quick_settings_description_timeout",
         )
-        self._xdotool("key", "--clearmodifiers", "Tab")
         lustre = ControlSelector(
             "Use Prismdrake Lustre",
             "radio_button",
@@ -3664,7 +3697,7 @@ class LiveXorgHarnessPort:
         self._wait_tier_c_accessible_state(
             dnd,
             "CHECKED",
-            True,
+            False,
             "accessibility_dnd_state_timeout",
         )
         self._wait_accessible(
@@ -3675,16 +3708,16 @@ class LiveXorgHarnessPort:
         )
 
         self._xdotool("key", "--clearmodifiers", "shift+Tab")
-        panel_trigger = ControlSelector(
+        focused_panel_trigger = ControlSelector(
             "Open quick settings",
             "push_button",
             require_focused=True,
             require_description=True,
         )
         self._wait_accessible(
-            panel_trigger, "accessibility_backtab_panel_focus_timeout"
+            focused_panel_trigger, "accessibility_backtab_panel_focus_timeout"
         )
-        self._xdotool("key", "--clearmodifiers", "Tab")
+        self._xdotool("key", "--clearmodifiers", "space")
         self._wait_accessible(lustre, "accessibility_backtab_reentry_timeout")
 
     def _verify_accessibility_reference(
