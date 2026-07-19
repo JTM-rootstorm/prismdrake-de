@@ -158,10 +158,10 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py preflight \
 The preflight command measures the fixed `/usr/bin/prismdrake-*` executable
 set itself and rejects an ownership capture that omits a required packaged
 default, theme, schema, interface, translation catalog, X session entry, or
-reviewed document. The demonstration validates the attestation in both its
-parent and isolated child before executing those files. It is not final
-lifecycle evidence and cannot claim the demonstration, unmerge, or reinstall
-passed.
+reviewed document. The demonstration validates the attestation before and after
+one complete cleaned run so executable or driver drift fails closed at both
+boundaries. It is not final lifecycle evidence and cannot claim the unmerge or
+reinstall passed.
 
 After unmerge, capture both package-file absence and byte-identical preservation
 of the three user-owned state files. These commands only inspect supplied paths;
