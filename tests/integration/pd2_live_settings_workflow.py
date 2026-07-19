@@ -339,7 +339,7 @@ def _accessibility(snapshot: Mapping[str, Any]) -> tuple[
         or preferences.transparency_disabled != resolved.transparency_disabled
         or preferences.text_scale != resolved.text_scale
         or preferences.animation_scale != resolved.animation_scale
-        or preferences.minimum_target_size_px != resolved.minimum_target_size_px
+        or resolved.minimum_target_size_px < preferences.minimum_target_size_px
     ):
         _fail("settings_accessibility_resolution_mismatch")
     return preferences, resolved

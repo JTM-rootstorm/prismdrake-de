@@ -59,6 +59,7 @@ from pd2_live_xorg import (  # noqa: E402
     parse_cardinals,
     parse_window_geometry,
     parse_window_ids,
+    parse_window_type_atoms,
     parse_xrandr_outputs,
 )
 
@@ -897,6 +898,17 @@ class SurfaceParserTests(unittest.TestCase):
             (0, 0, 0, 48),
         )
         self.assertEqual(
+            parse_window_type_atoms(
+                b"_NET_WM_WINDOW_TYPE(ATOM) = _NET_WM_WINDOW_TYPE_UTILITY, "
+                b"_KDE_NET_WM_WINDOW_TYPE_OVERRIDE, _NET_WM_WINDOW_TYPE_NORMAL\n"
+            ),
+            (
+                b"_NET_WM_WINDOW_TYPE_UTILITY",
+                b"_KDE_NET_WM_WINDOW_TYPE_OVERRIDE",
+                b"_NET_WM_WINDOW_TYPE_NORMAL",
+            ),
+        )
+        self.assertEqual(
             parse_window_geometry(
                 xwininfo_payload(DESKTOP_RIGHT, SURFACE_GEOMETRIES[DESKTOP_RIGHT])
             ),
@@ -915,6 +927,13 @@ class SurfaceParserTests(unittest.TestCase):
             ),
             lambda: parse_cardinals(
                 b"_NET_WM_STRUT(CARDINAL) = 0, 0, 48\n", b"_NET_WM_STRUT", 4
+            ),
+            lambda: parse_window_type_atoms(
+                b"_NET_WM_WINDOW_TYPE(ATOM) = _PRIVATE_WINDOW_TYPE\n"
+            ),
+            lambda: parse_window_type_atoms(
+                b"_NET_WM_WINDOW_TYPE(ATOM) = _NET_WM_WINDOW_TYPE_NORMAL, "
+                b"_NET_WM_WINDOW_TYPE_NORMAL\n"
             ),
             lambda: parse_window_geometry(
                 xwininfo_payload(DESKTOP_LEFT, SURFACE_GEOMETRIES[DESKTOP_LEFT]).replace(

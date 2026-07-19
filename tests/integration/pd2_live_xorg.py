@@ -1114,6 +1114,29 @@ def parse_window_ids(payload: bytes, property_name: bytes) -> tuple[int, ...]:
     return tuple(result)
 
 
+def parse_window_type_atoms(payload: bytes) -> tuple[bytes, ...]:
+    """Parse bounded EWMH window types including Qt's reviewed KDE override hint."""
+
+    prefix = b"_NET_WM_WINDOW_TYPE(ATOM) = "
+    if (
+        not payload.startswith(prefix)
+        or not payload.endswith(b"\n")
+        or len(payload) > 1024
+        or b"\x00" in payload
+    ):
+        raise HarnessError("x11_window_type_invalid")
+    atoms = tuple(payload[len(prefix) : -1].split(b", "))
+    if not atoms or len(atoms) > 8 or len(set(atoms)) != len(atoms):
+        raise HarnessError("x11_window_type_invalid")
+    for atom in atoms:
+        if (
+            re.fullmatch(rb"_NET_WM_WINDOW_TYPE_[A-Z_]{1,64}", atom) is None
+            and atom != b"_KDE_NET_WM_WINDOW_TYPE_OVERRIDE"
+        ):
+            raise HarnessError("x11_window_type_invalid")
+    return atoms
+
+
 def parse_cardinals(payload: bytes, property_name: bytes, count: int) -> tuple[int, ...]:
     """Parse one exact bounded CARDINAL property."""
 
@@ -4162,16 +4185,9 @@ class LiveXorgHarnessPort:
             raise HarnessError("x11_window_list_query_failed")
         windows = parse_window_ids(result.stdout, b"_NET_CLIENT_LIST_STACKING")
         observed: dict[int, WindowGeometry] = {}
-        expected_type = b"_NET_WM_WINDOW_TYPE(ATOM) = " + window_type + b"\n"
-        valid_type = re.compile(
-            rb"_NET_WM_WINDOW_TYPE\(ATOM\) = _NET_WM_WINDOW_TYPE_[A-Z_]{1,64}"
-            rb"(?:, _NET_WM_WINDOW_TYPE_[A-Z_]{1,64})*\n"
-        )
         for window in windows:
             payload = self._window_property(window, b"_NET_WM_WINDOW_TYPE")
-            if payload != expected_type:
-                if valid_type.fullmatch(payload) is None:
-                    raise HarnessError("x11_window_type_invalid")
+            if parse_window_type_atoms(payload) != (window_type,):
                 continue
             owner = self._window_cardinals(window, b"_NET_WM_PID", 1)
             if owner != (shell.pid,):

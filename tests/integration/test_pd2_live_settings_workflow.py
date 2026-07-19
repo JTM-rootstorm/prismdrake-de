@@ -229,6 +229,26 @@ class InstalledSettingsWorkflowTests(unittest.TestCase):
         for forbidden in ("lustre", "forge", "desktop_primary", "fingerprint", "10", "11", "12"):
             self.assertNotIn(forbidden, evidence)
 
+    def test_accepts_profile_minimum_target_above_user_floor(self) -> None:
+        replies = successful_replies()
+        for index, (generation, profile) in {
+            1: (10, "lustre"),
+            3: (11, "forge"),
+            5: (12, "lustre"),
+        }.items():
+            document = snapshot(
+                generation,
+                profile,
+                preference_changes={"minimum_target_size_px": 40},
+                effective_changes={"minimum_target_size_px": 44.0},
+            )
+            replies[index] = result(
+                "settings_get_current_snapshot", (generation, document)
+            )
+        workflow, _dbus, _accessibility, _surfaces = self.make_workflow(replies)
+
+        self.run_through(workflow, 4)
+
     def test_rejects_unknown_reordered_repeated_and_post_complete_steps(self) -> None:
         workflow, _dbus, _accessibility, _surfaces = self.make_workflow()
         self.assert_category(
@@ -426,17 +446,21 @@ class InstalledSettingsWorkflowTests(unittest.TestCase):
             )
 
     def test_rejects_effective_accessibility_mismatch_and_redacts_port_errors(self) -> None:
-        replies = successful_replies()
-        replies[1] = result(
-            "settings_get_current_snapshot",
-            (10, snapshot(10, "lustre", effective_changes={"text_scale": 2.0})),
-        )
-        workflow, _dbus, _accessibility, _surfaces = self.make_workflow(replies)
-        self.run_through(workflow, 1)
-        self.assert_category(
-            "settings_accessibility_resolution_mismatch",
-            lambda: workflow.run_step("switch_lustre_to_forge"),
-        )
+        for changes in (
+            {"text_scale": 2.0},
+            {"minimum_target_size_px": 47.0},
+        ):
+            replies = successful_replies()
+            replies[1] = result(
+                "settings_get_current_snapshot",
+                (10, snapshot(10, "lustre", effective_changes=changes)),
+            )
+            workflow, _dbus, _accessibility, _surfaces = self.make_workflow(replies)
+            self.run_through(workflow, 1)
+            self.assert_category(
+                "settings_accessibility_resolution_mismatch",
+                lambda workflow=workflow: workflow.run_step("switch_lustre_to_forge"),
+            )
 
         workflow, dbus, _accessibility, _surfaces = self.make_workflow()
         dbus.replies.clear()
