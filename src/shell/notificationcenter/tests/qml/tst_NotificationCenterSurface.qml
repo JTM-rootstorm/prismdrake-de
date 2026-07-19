@@ -9,6 +9,7 @@ TestCase {
     id: testCase
     name: "NotificationCenterSurface"
     when: windowShown
+    visible: true
     width: 1000
     height: 760
 
@@ -93,6 +94,7 @@ TestCase {
         const clear = findChild(center, "notificationCenterClearHistory")
         verify(dnd !== null)
         verify(clear !== null)
+        verify(clear.visible)
         tryCompare(dnd, "activeFocus", true)
         compare(dnd.Accessible.name, "Do not disturb")
 

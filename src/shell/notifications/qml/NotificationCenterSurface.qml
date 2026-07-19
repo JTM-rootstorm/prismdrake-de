@@ -80,6 +80,13 @@ FocusScope {
         event.accepted = true
     }
 
+    Shortcut {
+        sequence: "Escape"
+        context: Qt.WindowShortcut
+        enabled: root.visible
+        onActivated: root.closeAndReturnFocus()
+    }
+
     Rectangle {
         anchors.fill: parent
         color: root.themeGeneration.notification.surfaceColor
@@ -131,6 +138,7 @@ FocusScope {
                     if (dndSwitch.enabled)
                         dndSwitch.toggle()
                 }
+                Keys.priority: Keys.BeforeItem
                 onToggled: {
                     if (root.serviceAvailable
                             && checked !== root.presentation.effectiveDoNotDisturb)
@@ -157,7 +165,9 @@ FocusScope {
                 id: clearButton
                 objectName: "notificationCenterClearHistory"
 
-                visible: root.canClear
+                visible: root.serviceAvailable
+                    && root.presentation.historyCount > 0
+                    && root.presentation.historyModeId !== "disabled"
                 enabled: visible
                 text: qsTr("Clear")
                 activeFocusOnTab: false
@@ -168,6 +178,7 @@ FocusScope {
                 Accessible.focused: activeFocus
                 Accessible.onPressAction: clearButton.clicked()
                 onClicked: root.presentation.requestClearHistory()
+                Keys.priority: Keys.BeforeItem
                 Keys.onTabPressed: function(event) {
                     root.focusHistory(true)
                     event.accepted = true

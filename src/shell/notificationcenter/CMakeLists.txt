@@ -58,5 +58,10 @@ prismdrake_enable_warnings(prismdrake-notification-center-presentation)
 prismdrake_enable_sanitizers(prismdrake-notification-center-presentation)
 
 if(BUILD_TESTING)
+    find_package(GTest QUIET)
+    if(NOT GTest_FOUND)
+        message(FATAL_ERROR
+            "Notification-center tests require system-packaged GoogleTest.")
+    endif()
     add_subdirectory(tests)
 endif()
