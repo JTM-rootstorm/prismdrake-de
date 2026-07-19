@@ -44,6 +44,7 @@ _KEYS = frozenset(
 _RESULT_CATEGORIES = frozenset(
     {
         "tier_c_clients_cleaned",
+        "tier_c_desktop_accessibility_excluded",
         "tier_c_keyboard_complete",
         "tier_c_material_observed",
         "tier_c_step_complete",
@@ -158,6 +159,8 @@ class TierCReplayPort(Protocol):
     def capture_reviewed_material(
         self, identifier: str, sample_points: tuple[tuple[int, int], ...]
     ) -> MaterialObservation: ...
+
+    def observe_desktop_exclusion(self) -> PortResult: ...
 
     def complete_step(self, identifier: str) -> PortResult: ...
 
@@ -398,6 +401,11 @@ class TierCReplayWorkflow:
                 self._port.send_reviewed_keys(identifier, contract.keys),
                 len(contract.keys),
             )
+            if identifier == "desktop":
+                _validate_port_result(
+                    self._port.observe_desktop_exclusion(),
+                    "tier_c_desktop_accessibility_excluded",
+                )
             _validate_port_result(
                 self._port.complete_step(identifier), "tier_c_step_complete"
             )

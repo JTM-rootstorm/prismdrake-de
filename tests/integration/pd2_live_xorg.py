@@ -2339,6 +2339,26 @@ class LiveXorgHarnessPort:
             transparent,
         )
 
+    def observe_desktop_exclusion(self) -> TierCPortResult:
+        if self._tier_c_identifier != "desktop" or self._tier_c_surface is None:
+            raise HarnessError("tier_c_desktop_accessibility_state_invalid")
+        shell = self._shell_identity()
+        environment = self.probe_environment()
+        panel = ControlSelector(
+            "Open applications", "push_button", require_focused=True
+        )
+        wallpaper = ControlSelector("Desktop wallpaper", "panel")
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._accessibility.observe(
+                shell.pid, panel, environment
+            ) and self._accessibility.observe_absent(
+                shell.pid, wallpaper, environment
+            ):
+                return TierCPortResult("tier_c_desktop_accessibility_excluded")
+            self._operations.pause(0.05)
+        raise HarnessError("tier_c_desktop_accessibility_exclusion_timeout")
+
     def complete_step(self, identifier: str) -> TierCPortResult:
         if identifier != self._tier_c_identifier or self._tier_c_surface is None:
             raise HarnessError("tier_c_step_state_invalid")

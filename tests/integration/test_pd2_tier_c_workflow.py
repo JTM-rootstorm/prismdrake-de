@@ -78,6 +78,9 @@ class FakePort:
         self.keyboard_result: Any = None
         self.atspi_results: list[Any] = []
         self.material_result: Any = None
+        self.desktop_exclusion_result: Any = PortResult(
+            "tier_c_desktop_accessibility_excluded"
+        )
         self.complete_result: Any = PortResult("tier_c_step_complete")
         self.cleanup_result: Any = ClientCleanupObservation(
             "tier_c_clients_cleaned", True
@@ -131,6 +134,11 @@ class FakePort:
         self.operations.append(("complete", identifier))
         return self.complete_result
 
+    def observe_desktop_exclusion(self) -> PortResult:
+        self._maybe_raise("desktop_exclusion")
+        self.operations.append(("desktop_exclusion",))
+        return self.desktop_exclusion_result
+
     def cleanup_clients(self) -> ClientCleanupObservation:
         self._maybe_raise("cleanup")
         self.operations.append(("cleanup",))
@@ -181,21 +189,35 @@ class TierCWorkflowTests(unittest.TestCase):
         self.assertTrue(trace.finished)
         self.assertEqual(
             [operation[0] for operation in port.operations],
-            [item for _step in TIER_C_STEPS for item in (
-                "prepare", "atspi", "atspi", "atspi", "material", "keys", "complete"
-            )] + ["cleanup"],
+            [
+                item
+                for step in TIER_C_STEPS
+                for item in (
+                    "prepare",
+                    "atspi",
+                    "atspi",
+                    "atspi",
+                    "material",
+                    "keys",
+                    *(("desktop_exclusion",) if step == "desktop" else ()),
+                    "complete",
+                )
+            ]
+            + ["cleanup"],
         )
         for index, identifier in enumerate(TIER_C_STEPS):
-            base = index * 7
+            base = index * 7 + (1 if index > 0 else 0)
             self.assertIs(port.operations[base][1], STEP_CONTRACTS[identifier])
+            keyboard_offset = 5
             self.assertEqual(
-                port.operations[base + 5],
+                port.operations[base + keyboard_offset],
                 ("keys", identifier, STEP_CONTRACTS[identifier].keys),
             )
             self.assertEqual(
                 port.operations[base + 4],
                 ("material", identifier, STEP_CONTRACTS[identifier].sample_points),
             )
+        self.assertEqual(port.operations[6], ("desktop_exclusion",))
         for result in (*results, cleanup):
             validate_tier_c_result(result)
             self.assertEqual(set(result.as_dict()), {"category", "status"})
@@ -250,6 +272,25 @@ class TierCWorkflowTests(unittest.TestCase):
                     "tier_c_port_result_invalid",
                     lambda: workflow.run_step("desktop"),
                 )
+
+    def test_desktop_exclusion_is_exact_and_only_runs_for_desktop(self) -> None:
+        workflow, port, _trace = self.make_workflow()
+        workflow.run_step("desktop")
+        self.assertEqual(
+            [operation for operation in port.operations if operation[0] == "desktop_exclusion"],
+            [("desktop_exclusion",)],
+        )
+        workflow.run_step("panel")
+        self.assertEqual(
+            [operation for operation in port.operations if operation[0] == "desktop_exclusion"],
+            [("desktop_exclusion",)],
+        )
+
+        workflow, port, _trace = self.make_workflow()
+        port.desktop_exclusion_result = PortResult("tier_c_step_complete")
+        self.assert_category(
+            "tier_c_port_result_invalid", lambda: workflow.run_step("desktop")
+        )
 
     def test_rejects_incomplete_or_malformed_keyboard_observation(self) -> None:
         cases = (

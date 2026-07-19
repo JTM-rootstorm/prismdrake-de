@@ -496,6 +496,7 @@ class FakeAccessibility:
         self.operations = operations
         self.pinned = False
         self.observed: list[str] = []
+        self.absent: list[str] = []
         self.invoked: list[str] = []
         self.persist_pin = True
         self.references: list[object] = []
@@ -585,10 +586,11 @@ class FakeAccessibility:
     def observe_absent(
         self, shell_pid: int, selector: object, environment: Mapping[str, str]
     ) -> bool:
+        self.absent.append(selector.name)
         return (
             shell_pid == self.operations.surface_owner
             and "DBUS_SESSION_BUS_ADDRESS" in environment
-            and selector.name == "Transient notifications"
+            and selector.name in {"Transient notifications", "Desktop wallpaper"}
         )
 
     def reject_stale_action(
@@ -1402,6 +1404,7 @@ class LivePortTests(unittest.TestCase):
             self.assertEqual(set(traced_commands), {":1140"})
             self.assertIn(ProcessIdentity(3001, 30_010), operations.stop_identity_calls)
             self.assertEqual(capture.call_count, len(TIER_C_STEPS) * 2)
+            self.assertIn("Desktop wallpaper", accessibility.absent)
             self.assertTrue(
                 all(call.args[3]["DISPLAY"] == ":140" for call in capture.call_args_list)
             )
