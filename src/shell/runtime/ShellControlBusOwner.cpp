@@ -36,9 +36,10 @@ ShellControlBusOwner::ShellControlBusOwner(control::ShellPresentationPort &prese
 ShellControlBusOwner::~ShellControlBusOwner() { stop(); }
 
 Result<void> ShellControlBusOwner::start() {
-    if (bus_) {
+    if (start_attempted_) {
         return Result<void>::failure(transportError(ErrorCode::invalid_argument));
     }
+    start_attempted_ = true;
     sd_bus *opened = nullptr;
     if (sd_bus_open_user(&opened) < 0 || opened == nullptr) {
         return Result<void>::failure(transportError());
@@ -75,6 +76,7 @@ Result<void> ShellControlBusOwner::start() {
 }
 
 void ShellControlBusOwner::stop() noexcept {
+    start_attempted_ = true;
     service_.beginServiceStop();
     timer_.stop();
     read_notifier_.reset();

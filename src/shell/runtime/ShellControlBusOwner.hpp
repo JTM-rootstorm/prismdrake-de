@@ -45,6 +45,7 @@ class ShellControlBusOwner final : public QObject {
     std::unique_ptr<QSocketNotifier> write_notifier_;
     QTimer timer_;
     bool dispatch_queued_{false};
+    bool start_attempted_{false};
 };
 
 } // namespace prismdrake::shell::runtime
