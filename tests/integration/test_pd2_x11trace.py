@@ -17,6 +17,7 @@ from pd2_x11trace import (  # noqa: E402
     MAX_TRACE_LINES,
     X11TraceError,
     parse_x11trace,
+    require_tier_c_no_capture_or_blur,
 )
 
 
@@ -49,8 +50,11 @@ class X11TraceParserTests(unittest.TestCase):
     def parse(self, payload: bytes):  # noqa: ANN201
         return parse_x11trace(payload, capture_complete=True)
 
+    def require_clean(self, payload: bytes):  # noqa: ANN201
+        return require_tier_c_no_capture_or_blur(payload, capture_complete=True)
+
     def test_allows_harmless_extension_and_atom_discovery(self) -> None:
-        summary = self.parse(trace())
+        summary = self.require_clean(trace())
 
         self.assertTrue(summary.trace_complete)
         self.assertEqual(summary.request_count, 3)
@@ -66,28 +70,30 @@ class X11TraceParserTests(unittest.TestCase):
         )
 
     def test_rejects_core_get_image_opcode_even_if_name_is_misleading(self) -> None:
-        summary = self.parse(
-            trace(
-                "000:<:0004: 20: Request(73): HarmlessName drawable=0x00200001 "
-                "x=0 y=0 width=1 height=1"
-            )
+        payload = trace(
+            "000:<:0004: 20: Request(73): HarmlessName drawable=0x00200001 "
+            "x=0 y=0 width=1 height=1"
         )
+        summary = self.parse(payload)
 
         self.assertEqual(summary.core_get_image_count, 1)
         self.assertEqual(summary.forbidden_request_count, 1)
         self.assertTrue(summary.shell_side_capture_observed)
+        with self.assertRaisesRegex(X11TraceError, "^tier_c_forbidden_x11_operation$"):
+            self.require_clean(payload)
 
     def test_rejects_mit_shm_get_image(self) -> None:
-        summary = self.parse(
-            trace(
-                "000:<:0004: 40: MIT-SHM-Request(130,4): ShmGetImage "
-                "drawable=0x00200001 x=0 y=0 width=1 height=1"
-            )
+        payload = trace(
+            "000:<:0004: 40: MIT-SHM-Request(130,4): ShmGetImage "
+            "drawable=0x00200001 x=0 y=0 width=1 height=1"
         )
+        summary = self.parse(payload)
 
         self.assertEqual(summary.mit_shm_get_image_count, 1)
         self.assertEqual(summary.forbidden_request_count, 1)
         self.assertTrue(summary.shell_side_capture_observed)
+        with self.assertRaisesRegex(X11TraceError, "^tier_c_forbidden_x11_operation$"):
+            self.require_clean(payload)
 
     def test_rejects_each_composite_capture_or_redirect_request(self) -> None:
         operations = (
@@ -97,41 +103,46 @@ class X11TraceParserTests(unittest.TestCase):
         )
         for operation, field in operations:
             with self.subTest(operation=operation):
-                summary = self.parse(
-                    trace(
-                        f"000:<:0004: 12: Composite-Request(142,0): {operation} "
-                        "window=0x00200001"
-                    )
+                payload = trace(
+                    f"000:<:0004: 12: Composite-Request(142,0): {operation} "
+                    "window=0x00200001"
                 )
+                summary = self.parse(payload)
                 self.assertEqual(getattr(summary, field), 1)
                 self.assertEqual(summary.forbidden_request_count, 1)
                 self.assertTrue(summary.shell_side_capture_observed)
+                with self.assertRaisesRegex(
+                    X11TraceError, "^tier_c_forbidden_x11_operation$"
+                ):
+                    self.require_clean(payload)
 
     def test_rejects_each_fixed_backdrop_property_mutation(self) -> None:
         for index, atom in enumerate(
             ("_KDE_NET_WM_BLUR_BEHIND_REGION", "GW_BACKDROP_V1"), start=0x1EF
         ):
             with self.subTest(atom=atom):
-                summary = self.parse(
-                    trace(
-                        "000:<:0004: 32: Request(18): ChangeProperty "
-                        f"mode=Replace(0x00) window=0x00200001 property=0x{index:08x}(\"{atom}\") "
-                        "type=0x00000006(\"CARDINAL\") format=32 data={0x00000001}"
-                    )
+                payload = trace(
+                    "000:<:0004: 32: Request(18): ChangeProperty "
+                    f"mode=Replace(0x00) window=0x00200001 property=0x{index:08x}(\"{atom}\") "
+                    "type=0x00000006(\"CARDINAL\") format=32 data={0x00000001}"
                 )
+                summary = self.parse(payload)
                 self.assertEqual(summary.backdrop_property_mutation_count, 1)
                 self.assertEqual(summary.forbidden_request_count, 1)
                 self.assertTrue(summary.blur_attempt_observed)
+                with self.assertRaisesRegex(
+                    X11TraceError, "^tier_c_forbidden_x11_operation$"
+                ):
+                    self.require_clean(payload)
 
     def test_does_not_treat_fixed_atom_text_outside_property_field_as_mutation(self) -> None:
-        summary = self.parse(
-            trace(
-                "000:<:0004: 32: Request(18): ChangeProperty mode=Replace(0x00) "
-                "window=0x00200001 property=0x000001f1(\"SAFE_PROPERTY\") "
-                "type=0x0000001f(\"STRING\") format=8 "
-                "data='_KDE_NET_WM_BLUR_BEHIND_REGION'"
-            )
+        payload = trace(
+            "000:<:0004: 32: Request(18): ChangeProperty mode=Replace(0x00) "
+            "window=0x00200001 property=0x000001f1(\"SAFE_PROPERTY\") "
+            "type=0x0000001f(\"STRING\") format=8 "
+            "data='_KDE_NET_WM_BLUR_BEHIND_REGION'"
         )
+        summary = self.require_clean(payload)
 
         self.assertEqual(summary.backdrop_property_mutation_count, 0)
         self.assertEqual(summary.forbidden_request_count, 0)

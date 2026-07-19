@@ -255,3 +255,16 @@ def parse_x11trace(
         shell_side_capture_observed=shell_side_capture_count > 0,
         blur_attempt_observed=backdrop_property_mutation_count > 0,
     )
+
+
+def require_tier_c_no_capture_or_blur(
+    payload: bytes,
+    *,
+    capture_complete: bool,
+) -> X11TraceSummary:
+    """Return a clean Tier C summary or reject it with one redacted category."""
+
+    summary = parse_x11trace(payload, capture_complete=capture_complete)
+    if summary.forbidden_request_count != 0:
+        _fail("tier_c_forbidden_x11_operation")
+    return summary
