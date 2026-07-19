@@ -879,12 +879,11 @@ class NotificationService final {
         sdbus::Message signal;
         const char *destination =
             event.destination && !event.destination->empty() ? event.destination->c_str() : nullptr;
-        int result =
-            destination == nullptr
-                ? sd_bus_message_new_signal(bus_, signal.put(), standardObjectPath,
-                                            standardInterface, "NotificationClosed")
-                : sd_bus_message_new_signal_to(bus_, signal.put(), destination, standardObjectPath,
+        int result = sd_bus_message_new_signal(bus_, signal.put(), standardObjectPath,
                                                standardInterface, "NotificationClosed");
+        if (result >= 0 && destination != nullptr) {
+            result = sd_bus_message_set_destination(signal.get(), destination);
+        }
         if (result >= 0) {
             result = sd_bus_message_append(signal.get(), "uu", event.notificationId,
                                            static_cast<std::uint32_t>(event.reason));
@@ -900,9 +899,11 @@ class NotificationService final {
 
     [[nodiscard]] Result<void> emitAction(const ActionEvent &event) {
         sdbus::Message signal;
-        int result =
-            sd_bus_message_new_signal_to(bus_, signal.put(), event.destination.c_str(),
-                                         standardObjectPath, standardInterface, "ActionInvoked");
+        int result = sd_bus_message_new_signal(bus_, signal.put(), standardObjectPath,
+                                               standardInterface, "ActionInvoked");
+        if (result >= 0) {
+            result = sd_bus_message_set_destination(signal.get(), event.destination.c_str());
+        }
         if (result >= 0) {
             result = sd_bus_message_append(signal.get(), "us", event.notificationId,
                                            event.actionId.c_str());
