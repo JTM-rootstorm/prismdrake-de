@@ -39,8 +39,8 @@ form an acyclic graph; consumers wait with bounded timeouts and useful errors.
 | Process | Owned name | Object path and interfaces | Status |
 |---|---|---|---|
 | `prismdrake-settingsd` | `org.prismdrake.Settings1` | `/org/prismdrake/Settings1`: `org.prismdrake.Settings1`, `org.prismdrake.SettingsSnapshot1` | Implemented Experimental settings boundary; snapshot v2 is the Accepted PD2 target |
-| `prismdrake-notifyd` | `org.freedesktop.Notifications` | standard path and `org.freedesktop.Notifications` 1.3 | Accepted PD2 target; implementation pending |
-| `prismdrake-notifyd` | `org.prismdrake.NotificationCenter1` | `/org/prismdrake/NotificationCenter1`: `org.prismdrake.NotificationCenter1` | Accepted Experimental PD2 contract; implementation pending |
+| `prismdrake-notifyd` | `org.freedesktop.Notifications` | standard path and `org.freedesktop.Notifications` 1.3 | Implemented PD2 standards boundary |
+| `prismdrake-notifyd` | `org.prismdrake.NotificationCenter1` | `/org/prismdrake/NotificationCenter1`: `org.prismdrake.NotificationCenter1` | Implemented Experimental PD2 contract |
 | `prismdrake-shell` | `org.prismdrake.Shell1` | `/org/prismdrake/Shell1`: `org.prismdrake.Shell1` | Accepted Experimental PD2 contract; implementation pending |
 | `prismdrake-session` | `org.prismdrake.Session1` | `/org/prismdrake/Session1`: `org.prismdrake.Session1` | Accepted Experimental PD2 contract; implementation pending |
 

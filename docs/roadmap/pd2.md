@@ -104,7 +104,7 @@ integration gate before the Wave 2 worker base was frozen:
 - Wallpaper state uses immutable generations, bounded local regular-file
   reads, worker-side Qt image decoding, solid fallback, stale-load
   cancellation, and deterministic center, fit, fill, stretch, and tile
-  geometry. Desktop window presentation remains Wave 2 work.
+  geometry. Wave 2 now supplies the corresponding per-output presentation.
 
 No Wave 1 implementation introduces a native `GW_*` path, compositor blur,
 desktop icons, an implicit command shell, a mandatory GNOME desktop-stack
@@ -118,6 +118,48 @@ reference VM repeated all 380 GCC build steps and passed 648 tests with zero
 failures and three explicit skips. Clang 22.1.8 repeated the same 380 build
 steps, 648 passes, and three skips. Formatting, 61 contract-negative paths,
 and Portage QA passed.
+
+### Wave 2 implementation status
+
+The five core-surface lanes are implemented and passed their combined
+integration gate before the Wave 3 worker base was frozen:
+
+- The panel presents ordered pins and grouped tasks, bounded group actions, a
+  localized clock, and output-aware placement. Production and development
+  affordances are separate explicit inputs, so grouped task state cannot
+  accidentally enable diagnostic controls.
+- The launcher uses the bounded application catalog and typed activation path,
+  monitors desktop-entry changes, prefers standard D-Bus activation, and uses
+  direct argument-vector launch only for validated fallback entries. Pin
+  mutations remain owned by the persistent pin store.
+- The notification center and transient stack mirror complete typed notifyd
+  state. History, actions, close requests, do-not-disturb state, service loss,
+  and presentation identity remain behind the notification authority boundary.
+- One non-focusable desktop surface is staged per valid output. Wallpaper and
+  topology generations apply atomically; conflicting generations and a failed
+  output-window replacement leave the previous complete desktop visible.
+- Quick settings exposes only the five Prismdrake-owned PD2 capabilities.
+  Settings and notification mutations are correlated with their exact owner
+  epoch and resulting generation, so unrelated publications cannot complete or
+  reject a pending request.
+
+This checkpoint does not yet compose the modules into the installed shell or
+claim a usable desktop session. Runtime ownership, cross-surface focus,
+session supervision, live multi-output recovery, and installed lifecycle proof
+remain Wave 3 and later work. It adds no native `GW_*` path, compositor blur,
+fake audio, networking, Bluetooth, power, or lock controls, desktop icons, or
+new external-service authority.
+
+The combined source registered 701 tests. A clean GCC warnings-as-errors host
+build passed all 701 with zero failures and 13 explicit environment or opt-in
+skips. Its staged install contained the expected 21 files. Formatting, all QML
+lint targets, and 61 contract-negative paths passed. The exact checkpoint was
+then replayed in the Gentoo reference VM. GCC 15.3.0 and Clang 22.1.8 each
+completed 478 warnings-as-errors build steps and passed all 701 tests with zero
+failures and the same three explicit skips: unavailable live AT-SPI test
+dependencies, the root-only ownership rejection, and the opt-in development
+demonstration. Formatting, QML lint, and 61 contract-negative paths passed
+there as well. The exact overlay also passed `pkgdev manifest` and `pkgcheck`.
 
 ## Active workstreams
 
