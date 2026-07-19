@@ -106,8 +106,7 @@ TEST(ShellRuntimeCompositionTest, ReleasesPanelKeyboardBeforeFocusedSingletonPre
 
     EXPECT_EQ(runtime.request(control::ShellAction::open_quick_settings, "LEFT-1"),
               ShellRequestFailure::none);
-    EXPECT_EQ(port.events,
-              (std::vector<std::string>{"release_panel_keyboard", "apply"}));
+    EXPECT_EQ(port.events, (std::vector<std::string>{"release_panel_keyboard", "apply"}));
     EXPECT_EQ(port.panelKeyboardReleases, 1U);
 
     PresentationPort rejecting;
@@ -119,8 +118,7 @@ TEST(ShellRuntimeCompositionTest, ReleasesPanelKeyboardBeforeFocusedSingletonPre
     rejecting.batches.clear();
     EXPECT_EQ(rejectedRuntime.request(control::ShellAction::open_quick_settings, "LEFT-1"),
               ShellRequestFailure::internal);
-    EXPECT_EQ(rejecting.events,
-              (std::vector<std::string>{"release_panel_keyboard"}));
+    EXPECT_EQ(rejecting.events, (std::vector<std::string>{"release_panel_keyboard"}));
     EXPECT_TRUE(rejecting.batches.empty());
 }
 

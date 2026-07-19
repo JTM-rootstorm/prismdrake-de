@@ -670,10 +670,8 @@ Result<void> Pd2ShellRuntime::ensureSingletonViews() {
                 report("surface size placement", positioned.error());
             }
         };
-        connect(&view, &QWindow::widthChanged, this,
-                [reposition](int) { reposition(); });
-        connect(&view, &QWindow::heightChanged, this,
-                [reposition](int) { reposition(); });
+        connect(&view, &QWindow::widthChanged, this, [reposition](int) { reposition(); });
+        connect(&view, &QWindow::heightChanged, this, [reposition](int) { reposition(); });
     };
     trackPlacement(*launcher_view_, composition::SurfaceFamily::launcher);
     trackPlacement(*quick_settings_view_, composition::SurfaceFamily::quickSettings);

@@ -260,8 +260,8 @@ Result<void> ShellRuntimeComposition::escape() {
 
 control::ShellRequestFailure
 ShellRuntimeComposition::applyPresentation(const composition::CompositionTransition &transition) {
-    const bool focusesSingleton = std::ranges::any_of(
-        transition.intents(), [](const composition::CompositionIntent &intent) {
+    const bool focusesSingleton =
+        std::ranges::any_of(transition.intents(), [](const composition::CompositionIntent &intent) {
             const auto *focus = std::get_if<composition::FocusSurfaceIntent>(&intent);
             return focus != nullptr && focus->family != composition::SurfaceFamily::actionMenu;
         });

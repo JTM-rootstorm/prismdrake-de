@@ -272,8 +272,7 @@ TEST(NotificationAuthorityTest, DismissClosesLiveRecordBeforeHistoryClear) {
     ASSERT_TRUE(dismissed);
     EXPECT_TRUE(dismissed.value().published);
     ASSERT_EQ(dismissed.value().closeEvents.size(), 1U);
-    EXPECT_EQ(dismissed.value().closeEvents.front().notificationId,
-              created.value().notificationId);
+    EXPECT_EQ(dismissed.value().closeEvents.front().notificationId, created.value().notificationId);
     EXPECT_EQ(dismissed.value().closeEvents.front().reason, CloseReason::dismissed);
     EXPECT_EQ(dismissed.value().closeEvents.front().destination, ":1.56");
     ASSERT_EQ(owner.records().size(), 1U);
