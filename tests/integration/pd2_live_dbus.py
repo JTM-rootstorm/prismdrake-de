@@ -9,8 +9,12 @@ accepted.  Returned evidence is categorical and never serializes reply data.
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import math
+import multiprocessing
 import os
+import stat
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,9 +29,59 @@ MAX_ACTION_ID_BYTES = 256
 MAX_ACTION_ID_CODEPOINTS = 64
 MAX_SETTINGS_BYTES = 1024 * 1024
 MAX_NOTIFICATION_STATE_BYTES = 8 * 1024 * 1024
+MAX_REPLY_ENVELOPE_BYTES = 65_536
 MAX_DIAGNOSTICS = 64
+MAX_JSON_DEPTH = 64
+MAX_JSON_NODES = 131_072
+MAX_SCHEMA_BYTES = 1024 * 1024
 UINT32_MAX = (1 << 32) - 1
 UINT64_MAX = (1 << 64) - 1
+HELPER_CONNECT_CLOSE_SECONDS = 4.0
+HELPER_STOP_SECONDS = 0.5
+
+CLOSED_ERROR_CATEGORIES = frozenset(
+    {
+        "dbus_argument_invalid",
+        "dbus_argument_oversized",
+        "dbus_arguments_invalid",
+        "dbus_boolean_invalid",
+        "dbus_byte_array_bound",
+        "dbus_byte_array_invalid",
+        "dbus_call_failed",
+        "dbus_diagnostic_bound",
+        "dbus_diagnostic_invalid",
+        "dbus_environment_bound",
+        "dbus_environment_invalid",
+        "dbus_evidence_invalid",
+        "dbus_helper_failed",
+        "dbus_helper_timeout",
+        "dbus_json_depth_bound",
+        "dbus_json_duplicate_key",
+        "dbus_json_generation_invalid",
+        "dbus_json_invalid",
+        "dbus_json_node_bound",
+        "dbus_json_noncanonical",
+        "dbus_json_schema_invalid",
+        "dbus_operation_not_reviewed",
+        "dbus_private_address_invalid",
+        "dbus_private_address_mismatch",
+        "dbus_private_connection_close_failed",
+        "dbus_private_connection_failed",
+        "dbus_private_socket_identity_invalid",
+        "dbus_probe_closed",
+        "dbus_profile_invalid",
+        "dbus_profile_reply_invalid",
+        "dbus_property_not_reviewed",
+        "dbus_reply_oversized",
+        "dbus_reply_size_invalid",
+        "dbus_reply_type_invalid",
+        "dbus_schema_unavailable",
+        "dbus_schema_validation_failed",
+        "dbus_schema_version_invalid",
+        "dbus_session_state_invalid",
+        "dbus_unsigned_invalid",
+    }
+)
 
 SESSION_STATES = frozenset(
     {
@@ -63,6 +117,15 @@ class MethodSpec:
 
 
 @dataclass(frozen=True)
+class PrivateBusEndpoint:
+    """Exact private-bus address and socket identity attested by the adapter."""
+
+    address: str
+    socket_device: int
+    socket_inode: int
+
+
+@dataclass(frozen=True)
 class ProbeResult:
     """Typed live result whose evidence form never contains reply data."""
 
@@ -86,6 +149,7 @@ class Transport(Protocol):
 
 
 TransportFactory = Callable[[str], Transport]
+SocketInspector = Callable[[Path], tuple[int, int] | None]
 
 
 def _spec(
@@ -311,7 +375,7 @@ PROPERTIES: Mapping[str, tuple[str, str, str]] = {}
 
 
 def _fail(category: str) -> None:
-    raise LiveDbusProbeError(category)
+    raise LiveDbusProbeError(category) from None
 
 
 def _bounded_utf8(value: Any, byte_limit: int, *, empty: bool = True) -> str:
@@ -352,7 +416,94 @@ def _octets(value: Any, maximum: int, *, empty: bool = False) -> bytes:
     return payload
 
 
-def _json_document(value: Any, maximum: int, generation: int) -> dict[str, Any]:
+def _reject_json_constant(value: str) -> Any:
+    del value
+    raise ValueError("non-finite JSON number")
+
+
+def _finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("non-finite JSON number")
+    return parsed
+
+
+def _validate_json_shape(document: Any) -> None:
+    pending = [(document, 1)]
+    nodes = 0
+    while pending:
+        value, depth = pending.pop()
+        nodes += 1
+        if nodes > MAX_JSON_NODES:
+            _fail("dbus_json_node_bound")
+        if depth > MAX_JSON_DEPTH:
+            _fail("dbus_json_depth_bound")
+        if isinstance(value, dict):
+            pending.extend((item, depth + 1) for item in value.values())
+        elif isinstance(value, list):
+            pending.extend((item, depth + 1) for item in value)
+
+
+_SCHEMA_VALIDATOR: Callable[[Any, dict[str, Any], dict[str, Any], str], list[str]] | None = None
+_SCHEMA_CACHE: dict[str, dict[str, Any]] = {}
+
+
+def _project_schema_validator() -> Callable[
+    [Any, dict[str, Any], dict[str, Any], str], list[str]
+]:
+    global _SCHEMA_VALIDATOR  # pylint: disable=global-statement
+    if _SCHEMA_VALIDATOR is not None:
+        return _SCHEMA_VALIDATOR
+    source_root = Path(__file__).resolve().parents[2]
+    module_path = source_root / "tools/validate.py"
+    try:
+        module_spec = importlib.util.spec_from_file_location(
+            "_prismdrake_pd2_contract_validator", module_path
+        )
+        if module_spec is None or module_spec.loader is None:
+            _fail("dbus_schema_unavailable")
+        module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(module)
+        validator = getattr(module, "validate_schema", None)
+    except LiveDbusProbeError:
+        raise
+    except Exception:
+        _fail("dbus_schema_unavailable")
+    if not callable(validator):
+        _fail("dbus_schema_unavailable")
+    _SCHEMA_VALIDATOR = validator
+    return validator
+
+
+def _committed_schema(name: str) -> dict[str, Any]:
+    cached = _SCHEMA_CACHE.get(name)
+    if cached is not None:
+        return cached
+    path = Path(__file__).resolve().parents[2] / "schemas" / name
+    try:
+        payload = path.read_bytes()
+    except OSError:
+        _fail("dbus_schema_unavailable")
+    if not payload or len(payload) > MAX_SCHEMA_BYTES:
+        _fail("dbus_schema_unavailable")
+    try:
+        schema = json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=lambda pairs: dict(pairs),
+            parse_constant=_reject_json_constant,
+            parse_float=_finite_json_float,
+        )
+    except (UnicodeError, ValueError, json.JSONDecodeError):
+        _fail("dbus_schema_unavailable")
+    if not isinstance(schema, dict):
+        _fail("dbus_schema_unavailable")
+    _SCHEMA_CACHE[name] = schema
+    return schema
+
+
+def _json_document(
+    value: Any, maximum: int, generation: int, schema_name: str
+) -> dict[str, Any]:
     payload = _octets(value, maximum)
 
     def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -364,11 +515,17 @@ def _json_document(value: Any, maximum: int, generation: int) -> dict[str, Any]:
         return result
 
     try:
-        document = json.loads(payload.decode("utf-8"), object_pairs_hook=unique_object)
+        document = json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=unique_object,
+            parse_constant=_reject_json_constant,
+            parse_float=_finite_json_float,
+        )
     except LiveDbusProbeError:
         raise
-    except (UnicodeError, json.JSONDecodeError):
+    except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError):
         _fail("dbus_json_invalid")
+    _validate_json_shape(document)
     embedded_generation = document.get("generation") if isinstance(document, dict) else None
     if (
         isinstance(embedded_generation, bool)
@@ -376,6 +533,28 @@ def _json_document(value: Any, maximum: int, generation: int) -> dict[str, Any]:
         or embedded_generation != generation
     ):
         _fail("dbus_json_generation_invalid")
+    schema = _committed_schema(schema_name)
+    try:
+        schema_errors = _project_schema_validator()(
+            document, schema, schema, "live_dbus_reply"
+        )
+    except LiveDbusProbeError:
+        raise
+    except Exception:
+        _fail("dbus_schema_validation_failed")
+    if schema_errors:
+        _fail("dbus_json_schema_invalid")
+    try:
+        canonical = json.dumps(
+            document,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError):
+        _fail("dbus_json_invalid")
+    if canonical != payload:
+        _fail("dbus_json_noncanonical")
     return document
 
 
@@ -497,7 +676,15 @@ def _validate_reply(operation: str, reply: Any) -> tuple[Any, ...]:
             if operation == "settings_get_current_snapshot"
             else MAX_NOTIFICATION_STATE_BYTES
         )
-        return (generation, _json_document(reply[1], limit, generation))
+        schema_name = (
+            "prismdrake-runtime-snapshot.schema.json"
+            if operation == "settings_get_current_snapshot"
+            else "prismdrake-notification-state.schema.json"
+        )
+        return (
+            generation,
+            _json_document(reply[1], limit, generation, schema_name),
+        )
     if operation.startswith("shell_") or operation in {
         "session_confirm_logout",
         "session_cancel_logout",
@@ -525,8 +712,8 @@ def _validate_reply(operation: str, reply: Any) -> tuple[Any, ...]:
 
 
 def _validate_environment(
-    environment: Mapping[str, str], address: str | None
-) -> str:
+    environment: Mapping[str, str], endpoint: PrivateBusEndpoint
+) -> tuple[str, Path, Path]:
     if not isinstance(environment, Mapping) or len(environment) > MAX_ENVIRONMENT_ENTRIES:
         _fail("dbus_environment_invalid")
     checked: dict[str, str] = {}
@@ -547,14 +734,19 @@ def _validate_environment(
             _fail("dbus_environment_bound")
         checked[key] = value
     supplied = checked.get("DBUS_SESSION_BUS_ADDRESS")
-    if address is None:
-        address = supplied
+    address = endpoint.address
     if not isinstance(address, str) or supplied != address:
         _fail("dbus_private_address_mismatch")
     if len(address.encode("utf-8")) > MAX_ADDRESS_BYTES or not address.startswith("unix:path="):
         _fail("dbus_private_address_invalid")
     socket_text = address.removeprefix("unix:path=")
-    if not socket_text or "," in socket_text or ";" in socket_text or "\x00" in socket_text:
+    if (
+        not socket_text
+        or "," in socket_text
+        or ";" in socket_text
+        or "%" in socket_text
+        or "\x00" in socket_text
+    ):
         _fail("dbus_private_address_invalid")
     socket_path = Path(socket_text)
     runtime_text = checked.get("XDG_RUNTIME_DIR")
@@ -565,16 +757,79 @@ def _validate_environment(
         _fail("dbus_private_address_invalid")
     if ".." in socket_path.parts or ".." in runtime_path.parts:
         _fail("dbus_private_address_invalid")
-    try:
-        if os.path.commonpath((str(runtime_path), str(socket_path))) != str(runtime_path):
-            _fail("dbus_private_address_invalid")
-    except ValueError:
+    if socket_path.parent != runtime_path:
         _fail("dbus_private_address_invalid")
-    return address
+    if (
+        isinstance(endpoint.socket_device, bool)
+        or not isinstance(endpoint.socket_device, int)
+        or endpoint.socket_device < 0
+        or isinstance(endpoint.socket_inode, bool)
+        or not isinstance(endpoint.socket_inode, int)
+        or endpoint.socket_inode <= 0
+    ):
+        _fail("dbus_private_socket_identity_invalid")
+    return address, socket_path, runtime_path
 
 
-class GioTransport:
-    """Exact-address Gio transport with typed variants and no auto-start."""
+def inspect_private_bus_socket(path: Path) -> tuple[int, int] | None:
+    """Return a direct Unix-socket identity without following symlinks."""
+
+    try:
+        metadata = path.lstat()
+    except OSError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISSOCK(metadata.st_mode):
+        return None
+    return metadata.st_dev, metadata.st_ino
+
+
+def _validate_marshaled_reply_size(spec: MethodSpec, size: Any) -> None:
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        _fail("dbus_reply_size_invalid")
+    if (
+        spec.interface == "org.prismdrake.NotificationCenter1"
+        and spec.member == "GetCurrentState"
+    ):
+        payload_limit = MAX_NOTIFICATION_STATE_BYTES
+    elif (
+        spec.interface == "org.prismdrake.SettingsSnapshot1"
+        and spec.member == "GetCurrentSnapshot"
+    ):
+        payload_limit = MAX_SETTINGS_BYTES
+    elif (
+        spec.interface == "org.prismdrake.Settings1"
+        and spec.member == "ValidateCandidate"
+    ):
+        payload_limit = 65_536
+    else:
+        payload_limit = 4096
+    if size > payload_limit + MAX_REPLY_ENVELOPE_BYTES:
+        _fail("dbus_reply_oversized")
+
+
+def _verify_private_endpoint(
+    endpoint: PrivateBusEndpoint,
+    socket_path: Path,
+    runtime_path: Path,
+    socket_inspector: SocketInspector,
+) -> None:
+    try:
+        runtime_metadata = runtime_path.lstat()
+        identity = socket_inspector(socket_path)
+    except Exception:
+        _fail("dbus_private_socket_identity_invalid")
+    if (
+        stat.S_ISLNK(runtime_metadata.st_mode)
+        or not stat.S_ISDIR(runtime_metadata.st_mode)
+        or runtime_metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(runtime_metadata.st_mode) != 0o700
+        or identity != (endpoint.socket_device, endpoint.socket_inode)
+    ):
+        _fail("dbus_private_socket_identity_invalid")
+
+
+class _DirectGioTransport:
+    """Child-process-only Gio transport with typed variants and no auto-start."""
 
     def __init__(self, address: str) -> None:
         try:
@@ -591,8 +846,8 @@ class GioTransport:
                 address, flags, None, None
             )
             connection.set_exit_on_close(False)
-        except Exception as error:
-            raise LiveDbusProbeError("dbus_private_connection_failed") from error
+        except Exception:
+            _fail("dbus_private_connection_failed")
         self._gio = Gio
         self._glib = GLib
         self._connection = connection
@@ -612,9 +867,12 @@ class GioTransport:
                 spec.timeout_milliseconds,
                 None,
             )
+            _validate_marshaled_reply_size(spec, reply.get_size())
             unpacked = reply.unpack()
-        except Exception as error:
-            raise LiveDbusProbeError("dbus_call_failed") from error
+        except LiveDbusProbeError:
+            raise
+        except Exception:
+            _fail("dbus_call_failed")
         if not isinstance(unpacked, tuple):
             _fail("dbus_reply_type_invalid")
         return unpacked
@@ -622,44 +880,200 @@ class GioTransport:
     def close(self) -> None:
         try:
             self._connection.close_sync(None)
-        except Exception as error:
-            raise LiveDbusProbeError("dbus_private_connection_close_failed") from error
+        except Exception:
+            _fail("dbus_private_connection_close_failed")
+
+
+def _gio_helper(
+    sender: Any, address: str, spec: MethodSpec, arguments: tuple[Any, ...]
+) -> None:
+    category: str | None = None
+    reply: tuple[Any, ...] | None = None
+    transport: _DirectGioTransport | None = None
+    try:
+        transport = _DirectGioTransport(address)
+        reply = transport.call(spec, arguments)
+        transport.close()
+        transport = None
+    except LiveDbusProbeError as error:
+        category = str(error)
+    except Exception:
+        category = "dbus_helper_failed"
+    if transport is not None:
+        try:
+            transport.close()
+        except Exception:
+            category = category or "dbus_private_connection_close_failed"
+    try:
+        sender.send(("error", category) if category else ("ok", reply))
+    except Exception:
+        pass
+    finally:
+        sender.close()
+
+
+class _BoundedGioTransport:
+    """Runs Gio connect, call, and close inside one killable helper process."""
+
+    def __init__(
+        self,
+        address: str,
+        *,
+        helper: Callable[[Any, str, MethodSpec, tuple[Any, ...]], None] = _gio_helper,
+        connect_close_seconds: float = HELPER_CONNECT_CLOSE_SECONDS,
+    ) -> None:
+        self._address = address
+        self._helper = helper
+        self._connect_close_seconds = connect_close_seconds
+
+    @staticmethod
+    def _stop_helper(process: multiprocessing.Process) -> None:
+        if process.is_alive():
+            process.terminate()
+            process.join(HELPER_STOP_SECONDS)
+        if process.is_alive():
+            process.kill()
+            process.join(HELPER_STOP_SECONDS)
+
+    def call(self, spec: MethodSpec, arguments: tuple[Any, ...]) -> tuple[Any, ...]:
+        receiver, sender = multiprocessing.get_context("spawn").Pipe(duplex=False)
+        process = multiprocessing.get_context("spawn").Process(
+            target=self._helper,
+            args=(sender, self._address, spec, arguments),
+            daemon=True,
+        )
+        started = False
+        try:
+            process.start()
+            started = True
+            sender.close()
+            timeout = (
+                spec.timeout_milliseconds / 1000.0
+                + self._connect_close_seconds
+            )
+            if not receiver.poll(timeout):
+                self._stop_helper(process)
+                _fail("dbus_helper_timeout")
+            try:
+                message = receiver.recv()
+            except (EOFError, OSError):
+                self._stop_helper(process)
+                _fail("dbus_helper_failed")
+            process.join(HELPER_STOP_SECONDS)
+            if process.is_alive():
+                self._stop_helper(process)
+                _fail("dbus_helper_timeout")
+        finally:
+            receiver.close()
+            sender.close()
+            if started and process.is_alive():
+                self._stop_helper(process)
+        if (
+            not isinstance(message, tuple)
+            or len(message) != 2
+            or message[0] not in {"ok", "error"}
+        ):
+            _fail("dbus_helper_failed")
+        if message[0] == "error":
+            category = message[1]
+            if not isinstance(category, str) or category not in CLOSED_ERROR_CATEGORIES:
+                _fail("dbus_helper_failed")
+            _fail(category)
+        if not isinstance(message[1], tuple):
+            _fail("dbus_reply_type_invalid")
+        return message[1]
+
+    def close(self) -> None:
+        # Each call owns and closes its exact child connection before replying.
+        return
+
+
+def _error_category(error: Exception, fallback: str) -> str:
+    if isinstance(error, LiveDbusProbeError):
+        category = str(error)
+        if category in CLOSED_ERROR_CATEGORIES:
+            return category
+    return fallback
+
+
+def _raise_public(category: str) -> None:
+    error = LiveDbusProbeError(category)
+    error.__cause__ = None
+    error.__context__ = None
+    raise error from None
 
 
 class LiveDbusProbe:
-    """Closed, typed probe bound to one caller-supplied private bus epoch."""
+    """Closed, typed probe bound to one caller-attested private bus epoch.
+
+    Gio connects by pathname and cannot atomically select a Unix-socket inode.
+    The adapter therefore owns the mode-0700 runtime and this probe rejects any
+    identity change before or after a call.  A detected same-UID path race
+    invalidates evidence; this harness does not claim the rejected call was
+    never delivered.
+    """
 
     def __init__(
         self,
         environment: Mapping[str, str],
         *,
-        address: str | None = None,
-        transport_factory: TransportFactory = GioTransport,
+        endpoint: PrivateBusEndpoint,
+        transport_factory: TransportFactory | None = None,
+        socket_inspector: SocketInspector = inspect_private_bus_socket,
     ) -> None:
-        private_address = _validate_environment(environment, address)
+        failure: str | None = None
         try:
-            self._transport = transport_factory(private_address)
-        except LiveDbusProbeError:
-            raise
+            address, socket_path, runtime_path = _validate_environment(
+                environment, endpoint
+            )
+            _verify_private_endpoint(
+                endpoint, socket_path, runtime_path, socket_inspector
+            )
+            factory = transport_factory or _BoundedGioTransport
+            transport = factory(address)
         except Exception as error:
-            raise LiveDbusProbeError("dbus_private_connection_failed") from error
+            failure = _error_category(error, "dbus_private_connection_failed")
+        if failure is not None:
+            _raise_public(failure)
+        self._endpoint = endpoint
+        self._socket_path = socket_path
+        self._runtime_path = runtime_path
+        self._socket_inspector = socket_inspector
+        self._transport = transport
         self._closed = False
 
     def call(self, operation: str, *arguments: Any) -> ProbeResult:
-        if self._closed:
-            _fail("dbus_probe_closed")
-        spec = METHODS.get(operation)
-        if spec is None:
-            _fail("dbus_operation_not_reviewed")
-        checked_arguments = _validate_arguments(operation, tuple(arguments))
+        failure: str | None = None
+        result: ProbeResult | None = None
         try:
+            if self._closed:
+                _fail("dbus_probe_closed")
+            spec = METHODS.get(operation)
+            if spec is None:
+                _fail("dbus_operation_not_reviewed")
+            checked_arguments = _validate_arguments(operation, tuple(arguments))
+            _verify_private_endpoint(
+                self._endpoint,
+                self._socket_path,
+                self._runtime_path,
+                self._socket_inspector,
+            )
             reply = self._transport.call(spec, checked_arguments)
-        except LiveDbusProbeError:
-            raise
+            _verify_private_endpoint(
+                self._endpoint,
+                self._socket_path,
+                self._runtime_path,
+                self._socket_inspector,
+            )
+            payload = _validate_reply(operation, reply)
+            result = ProbeResult(operation, spec.category, payload)
         except Exception as error:
-            raise LiveDbusProbeError("dbus_call_failed") from error
-        payload = _validate_reply(operation, reply)
-        return ProbeResult(operation, spec.category, payload)
+            failure = _error_category(error, "dbus_call_failed")
+        if failure is not None:
+            _raise_public(failure)
+        if result is None:
+            _raise_public("dbus_call_failed")
+        return result
 
     def get_property(self, operation: str) -> ProbeResult:
         del operation
@@ -669,7 +1083,15 @@ class LiveDbusProbe:
         if self._closed:
             return
         self._closed = True
-        self._transport.close()
+        failure: str | None = None
+        try:
+            self._transport.close()
+        except Exception as error:
+            failure = _error_category(
+                error, "dbus_private_connection_close_failed"
+            )
+        if failure is not None:
+            _raise_public(failure)
 
     def __enter__(self) -> "LiveDbusProbe":
         return self
@@ -679,22 +1101,28 @@ class LiveDbusProbe:
         self.close()
 
 
-def contract_manifest() -> frozenset[tuple[str, str, str, str]]:
-    """Return the exact interface/member/signature surface under review."""
+def contract_manifest() -> frozenset[
+    tuple[str, str, str, str, str, str, int, str]
+]:
+    """Return every fixed routing, signature, timeout, and category field."""
 
     return frozenset(
         (
+            spec.service,
+            spec.path,
             spec.interface,
             spec.member,
             spec.input_signature,
             spec.output_signature,
+            spec.timeout_milliseconds,
+            spec.category,
         )
         for spec in METHODS.values()
     )
 
 
 def validate_evidence(result: ProbeResult) -> None:
-    """Reject anything except a fixed categorical result serialization."""
+    """Validate serialization shape, not provenance or execution authenticity."""
 
     spec = METHODS.get(result.operation) if isinstance(result, ProbeResult) else None
     if (
