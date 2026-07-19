@@ -1451,6 +1451,12 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
+                argv[-3:] == ("--addmode", "DUMMY1", "1600x900")
+                for argv, _env in operations.run_calls
+            )
+        )
+        self.assertTrue(
+            any(
                 argv[-6:] == (
                     "--output", "DUMMY1", "--mode", "1600x900",
                     "--pos", "1600x0",

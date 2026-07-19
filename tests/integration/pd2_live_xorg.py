@@ -4143,6 +4143,7 @@ class LiveXorgHarnessPort:
         )
 
     def _enable_secondary(self) -> None:
+        self._xrandr("--addmode", SECONDARY_OUTPUT, OUTPUT_MODE)
         self._xrandr(
             "--output", SECONDARY_OUTPUT, "--mode", OUTPUT_MODE,
             "--pos", "1600x0",
