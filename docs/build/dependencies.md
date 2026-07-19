@@ -66,8 +66,10 @@ carry a verified or observed version.
 - `prismdrake-settingsd` is an Experimental implemented service. Its boundary
   records direct system toml++ 3.4.0 configuration parsing, header-only
   nlohmann JSON 3.12.0-r1 theme/runtime serialization, and the sd-bus provider.
-  Gentoo prefers and directly links basu 0.2.1; Ubuntu CI uses libsystemd as the
-  API-compatible provider, and CMake selects exactly one. The D-Bus broker is a
+  Gentoo prefers and directly links basu 0.2.1; the retired historical Ubuntu
+  lane used libsystemd as the API-compatible provider, and CMake selects exactly
+  one. Current validation and milestone evidence come from local and Gentoo
+  procedures rather than a hosted CI requirement. The D-Bus broker is a
   mandatory runtime service/tool rather than a directly linked libdbus client.
   The complete Gentoo dynamic closure is measured in the
   [settings-service evidence](../research/pd1-settings-service-evidence.md);
@@ -86,19 +88,20 @@ carry a verified or observed version.
   immutable model generations, stale-record removal, and observation-based
   request confirmation are also implemented without another link dependency.
   The bounded production task presentation now provides activation, minimize,
-  and close actions; pinned/grouped task policy remains outside this PD1 slice.
+  and close actions. PD2 adds pin and grouping policy above the same
+  window-manager-authoritative X11 boundary without another X11 dependency.
 - `prismdrake-session` is an Experimental init-neutral supervisor. It directly
-  uses the selected sd-bus provider for bounded settings readiness and the
-  internal X11 adapter for display readiness, then owns only the exact settings
-  and shell PIDs it launches. A dependency-free private Linux event-descriptor
-  contract now bounds post-exec shell readiness to each exact child and one
-  complete panel presentation epoch. Gentoo selects basu; the development
-  harness supplies an isolated D-Bus lifecycle, including supervised settings
-  owner loss and recovery. Supported minimum versions and the complete
-  installed closure were separate concerns; the exact PD1 package lifecycle now
-  measures the installed session boundary. Supported provider and broker minima
-  remain open. A standard X11 session entry and the original three PD1
-  Experimental process targets share one CMake install contract.
+  uses the selected sd-bus provider for bounded settings and notification
+  readiness and the internal X11 adapter for display readiness, then owns only
+  the exact settingsd, notifyd, and shell children it launches. A dependency-free
+  private Linux event-descriptor contract bounds post-exec readiness to each
+  exact child and one complete panel presentation epoch. Gentoo selects basu;
+  the development harness supplies isolated D-Bus lifecycle and restart tests.
+  Supported provider and broker minima remain open. A standard X11 session entry
+  and the five PD2 executables (`prismdrake-session`, `prismdrake-settingsd`,
+  `prismdrake-notifyd`, `prismdrake-shell`, and `prismdrake-shellctl`) share one
+  CMake install contract; their final installed closure remains a WP16 evidence
+  result rather than a source-tree claim.
 - `prismdrake-shell` is Experimental. Its immutable settings/theme projection
   directly uses Qt Core and GUI; its asynchronous launcher controller, passive
   launcher and notification adapters, and actionable task adapter use Qt Core;
