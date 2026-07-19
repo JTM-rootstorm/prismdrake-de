@@ -1,10 +1,18 @@
 add_library(prismdrake-shell-runtime-state STATIC
+    ShellRuntimeComposition.cpp
+    ShellRuntimeComposition.hpp
     ShellRuntimeState.cpp
     ShellRuntimeState.hpp)
 add_library(Prismdrake::shell-runtime-state ALIAS prismdrake-shell-runtime-state)
 target_include_directories(prismdrake-shell-runtime-state
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
 prismdrake_configure_cpp_target(prismdrake-shell-runtime-state)
+target_link_libraries(prismdrake-shell-runtime-state
+    PUBLIC
+        Prismdrake::shell-composition
+        Prismdrake::shell-control
+        Prismdrake::output-surfaces
+        Prismdrake::shell-quick-settings)
 prismdrake_enable_warnings(prismdrake-shell-runtime-state)
 prismdrake_enable_sanitizers(prismdrake-shell-runtime-state)
 

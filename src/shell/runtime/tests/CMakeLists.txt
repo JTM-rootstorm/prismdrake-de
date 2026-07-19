@@ -1,6 +1,7 @@
 find_package(GTest QUIET)
 if(GTest_FOUND)
     add_executable(prismdrake-shell-runtime-state-tests
+        tests/ShellRuntimeCompositionTests.cpp
         tests/ShellRuntimeStateTests.cpp)
     target_link_libraries(prismdrake-shell-runtime-state-tests
         PRIVATE
