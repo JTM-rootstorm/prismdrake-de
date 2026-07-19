@@ -76,6 +76,7 @@ add_subdirectory(src/settings)
 add_subdirectory(src/ipc)
 add_subdirectory(src/x11)
 add_subdirectory(src/shell)
+add_subdirectory(src/shellctl)
 add_subdirectory(src/settingsd)
 add_subdirectory(src/session)
 
