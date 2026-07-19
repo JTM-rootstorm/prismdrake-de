@@ -38,6 +38,7 @@ class ShellOutputMonitor final : public QObject {
     [[nodiscard]] foundation::Result<void> configure(std::uint32_t panelHeightLogical,
                                                      outputs::PanelPlacementPolicy policy,
                                                      std::uint64_t settingsGeneration);
+    void beginSettingsOwnerEpoch() noexcept;
     void requestRefresh() noexcept;
 
     /// Applies one already validated native topology with copied Qt observations. This is the

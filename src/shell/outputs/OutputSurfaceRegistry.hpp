@@ -103,6 +103,10 @@ class OutputSurfaceRegistry final {
     reconfigure(std::uint32_t panelHeightLogical, const ReconciledTopologySnapshot &topology,
                 const PanelPlacementPolicy &panelPolicy, std::uint64_t settingsGeneration);
 
+    /// Starts a newly acquired settings-owner epoch. Topology and shell surface generations stay
+    /// intact, while settings generation ordering restarts for the new authoritative owner.
+    void beginSettingsOwnerEpoch() noexcept;
+
     [[nodiscard]] foundation::Result<SurfacePlacement>
     anchorTransient(SurfaceKind kind, std::string_view invokingOutputName = {});
     void dismissTransient(SurfaceKind kind) noexcept;

@@ -289,6 +289,8 @@ Result<SurfaceRegistrySnapshot> OutputSurfaceRegistry::reconfigure(
     return publication;
 }
 
+void OutputSurfaceRegistry::beginSettingsOwnerEpoch() noexcept { settings_generation_ = 0U; }
+
 Result<SurfacePlacement>
 OutputSurfaceRegistry::resolveTransient(SurfaceKind kind, std::string_view requestedOutput) const {
     if (!transientKind(kind) || !topology_) {

@@ -223,6 +223,24 @@ TEST(OutputSurfaceRegistryTest, ReconcilesNewSettingsPolicyWithoutForgingTopolog
     EXPECT_EQ(registry.current()->panels()[0].outputName, "DP-1");
 }
 
+TEST(OutputSurfaceRegistryTest, NewSettingsOwnerMayRestartGenerationOnExistingTopology) {
+    auto registry = OutputSurfaceRegistry::create(48U).value();
+    const auto topology = twoOutputs(10U, 1U);
+    auto previous = registry.observe(topology, {PanelOutputPolicy::all, {}}, 3U);
+    ASSERT_TRUE(previous);
+
+    EXPECT_FALSE(registry.observe(topology, {PanelOutputPolicy::all, {}}, 1U));
+    registry.beginSettingsOwnerEpoch();
+    auto reacquired = registry.observe(topology, {PanelOutputPolicy::all, {}}, 1U);
+
+    ASSERT_TRUE(reacquired);
+    EXPECT_EQ(reacquired.value().topologyGeneration(), previous.value().topologyGeneration());
+    EXPECT_EQ(reacquired.value().settingsGeneration(), 1U);
+    EXPECT_GT(reacquired.value().surfaceGeneration(), previous.value().surfaceGeneration());
+    EXPECT_EQ(reacquired.value().panels().size(), previous.value().panels().size());
+    EXPECT_FALSE(registry.observe(topology, {PanelOutputPolicy::all, {}}, 0U));
+}
+
 TEST(OutputSurfaceRegistryTest, PublishesGeometryAndScaleChangesAsOneNewGeneration) {
     const auto native =
         nativeTopology({candidate(1U, 10U, "HDMI-1", 0, 0, 1920U, 1080U)}, 1U, 1920U, 1080U);

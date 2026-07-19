@@ -69,5 +69,35 @@ TEST(ShellOutputMonitorTest, ObserverFailureKeepsTopologyAndPolicyRetryable) {
     EXPECT_EQ(accepted.back().panels().size(), 2U);
 }
 
+TEST(ShellOutputMonitorTest, NewSettingsOwnerRestartsGenerationWithoutLosingTopology) {
+    std::vector<outputs::SurfaceRegistrySnapshot> accepted;
+    ShellOutputMonitor monitor{":test",
+                               [&](const outputs::SurfaceRegistrySnapshot &snapshot) {
+                                   accepted.push_back(snapshot);
+                                   return foundation::Result<void>::success();
+                               },
+                               {}};
+    const std::array screens{
+        outputs::QtScreenObservation{"LEFT-1", {0, 0, 800U, 600U}, 1.0},
+        outputs::QtScreenObservation{"RIGHT-1", {800, 0, 800U, 600U}, 1.0},
+    };
+
+    ASSERT_TRUE(monitor.configure(48U, {outputs::PanelOutputPolicy::all, {}}, 3U));
+    ASSERT_TRUE(monitor.observeTopology(topology(), screens));
+    ASSERT_EQ(accepted.size(), 1U);
+    const auto previousSurfaceGeneration = accepted.back().surfaceGeneration();
+
+    EXPECT_FALSE(monitor.configure(48U, {outputs::PanelOutputPolicy::all, {}}, 1U));
+    monitor.beginSettingsOwnerEpoch();
+    ASSERT_TRUE(monitor.configure(48U, {outputs::PanelOutputPolicy::all, {}}, 1U));
+    ASSERT_EQ(accepted.size(), 2U);
+    EXPECT_EQ(accepted.back().topologyGeneration(), 1U);
+    EXPECT_EQ(accepted.back().settingsGeneration(), 1U);
+    EXPECT_GT(accepted.back().surfaceGeneration(), previousSurfaceGeneration);
+    EXPECT_EQ(accepted.back().panels().size(), 2U);
+
+    EXPECT_FALSE(monitor.configure(48U, {outputs::PanelOutputPolicy::all, {}}, 1U));
+}
+
 } // namespace
 } // namespace prismdrake::shell::runtime

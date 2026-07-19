@@ -130,6 +130,13 @@ Result<void> ShellOutputMonitor::configure(std::uint32_t panelHeightLogical,
     return Result<void>::success();
 }
 
+void ShellOutputMonitor::beginSettingsOwnerEpoch() noexcept {
+    settings_generation_ = 0U;
+    if (registry_) {
+        registry_->beginSettingsOwnerEpoch();
+    }
+}
+
 void ShellOutputMonitor::requestRefresh() noexcept {
     if (wake_descriptor_ < 0) {
         return;

@@ -347,6 +347,7 @@ void Pd2ShellRuntime::loseSettings() {
     settings_available_ = false;
     desktop_controller_.settingsOwnerLost();
     auto authority = composition_.observeSettingsOwner(std::nullopt);
+    outputs_->beginSettingsOwnerEpoch();
     panels_->clear();
     quick_settings_.clearSettingsOwner();
     launcher_view_.reset();
