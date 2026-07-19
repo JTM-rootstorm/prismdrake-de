@@ -84,7 +84,7 @@ class FakeHarnessPort:
 
 class HarnessExecutionTests(unittest.TestCase):
     def test_closed_contract_has_exact_required_cardinality(self) -> None:
-        self.assertEqual(len(WORKFLOW_STEPS), 47)
+        self.assertEqual(len(WORKFLOW_STEPS), 48)
         self.assertEqual(len(FAILURE_SCENARIOS), 17)
         self.assertEqual(len(TIER_C_STEPS), 8)
         self.assertEqual(

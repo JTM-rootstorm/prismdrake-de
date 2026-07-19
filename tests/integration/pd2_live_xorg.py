@@ -1320,6 +1320,7 @@ class LiveXorgHarnessPort:
         ("installed_workflow", "switch_lustre_to_forge"),
         ("installed_workflow", "verify_complete_settings_generation"),
         ("installed_workflow", "switch_back_preserving_accessibility"),
+        ("installed_workflow", "verify_accessible_descriptions_states_and_backtab"),
         ("installed_workflow", "verify_output_migration_accessibility"),
         ("installed_workflow", "verify_settingsd_focus_recovery"),
         ("installed_workflow", "verify_notifyd_focus_recovery"),
@@ -1550,6 +1551,8 @@ class LiveXorgHarnessPort:
             self._run_notification_step(identifier)
         elif identifier in self._SETTINGS_STEPS:
             self._run_settings_step(identifier)
+        elif identifier == "verify_accessible_descriptions_states_and_backtab":
+            self._verify_accessible_metadata_and_backtab()
         elif identifier == "verify_output_migration_accessibility":
             self._verify_accessibility_reference(
                 "output_migration", stale=True, replacement_shell=False, reacquire=False
@@ -3491,6 +3494,56 @@ class LiveXorgHarnessPort:
             raise HarnessError("accessibility_reference_capture_failed")
         self._accessibility_references[key] = reference
         self._accessibility_reference_shells[key] = shell
+
+    def _verify_accessible_metadata_and_backtab(self) -> None:
+        self._invoke_shellctl("quick-settings", "open")
+        self._wait_accessible(
+            ControlSelector("Quick settings", "pane", require_description=True),
+            "accessibility_quick_settings_description_timeout",
+        )
+        self._xdotool("key", "--clearmodifiers", "Tab")
+        lustre = ControlSelector(
+            "Use Prismdrake Lustre",
+            "radio_button",
+            require_focused=True,
+            require_description=True,
+        )
+        self._wait_accessible(lustre, "accessibility_profile_description_timeout")
+        self._wait_tier_c_accessible_state(
+            lustre,
+            "CHECKED",
+            True,
+            "accessibility_profile_state_timeout",
+        )
+        dnd = ControlSelector(
+            "Do not disturb", "check_box", require_description=True
+        )
+        self._wait_accessible(dnd, "accessibility_dnd_description_timeout")
+        self._wait_tier_c_accessible_state(
+            dnd,
+            "CHECKED",
+            True,
+            "accessibility_dnd_state_timeout",
+        )
+        self._wait_accessible(
+            ControlSelector(
+                "Request logout", "push_button", require_description=True
+            ),
+            "accessibility_logout_description_timeout",
+        )
+
+        self._xdotool("key", "--clearmodifiers", "shift+Tab")
+        panel_trigger = ControlSelector(
+            "Open quick settings",
+            "push_button",
+            require_focused=True,
+            require_description=True,
+        )
+        self._wait_accessible(
+            panel_trigger, "accessibility_backtab_panel_focus_timeout"
+        )
+        self._xdotool("key", "--clearmodifiers", "Tab")
+        self._wait_accessible(lustre, "accessibility_backtab_reentry_timeout")
 
     def _verify_accessibility_reference(
         self,

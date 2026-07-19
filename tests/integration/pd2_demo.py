@@ -75,6 +75,7 @@ WORKFLOW_STEPS = (
     "switch_lustre_to_forge",
     "verify_complete_settings_generation",
     "switch_back_preserving_accessibility",
+    "verify_accessible_descriptions_states_and_backtab",
     "remove_current_primary_output",
     "verify_surface_migration",
     "verify_output_migration_accessibility",

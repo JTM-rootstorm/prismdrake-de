@@ -12,6 +12,7 @@ APPLICATION_NAME = "prismdrake-shell"
 MAX_ACTIONS = 16
 MAX_ACTION_NAME_LENGTH = 64
 MAX_CHILDREN = 256
+MAX_DESCRIPTION_LENGTH = 512
 MAX_DEPTH = 32
 MAX_NAME_LENGTH = 256
 MAX_NODES = 1024
@@ -56,6 +57,7 @@ class ControlSelector:
     role: str
     action: str | None = None
     require_focused: bool = False
+    require_description: bool = False
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,14 @@ def _node_name(node: Any) -> str:
     )
 
 
+def _node_description(node: Any) -> str:
+    return _bounded_text(
+        _node_value(node.get_description),
+        MAX_DESCRIPTION_LENGTH,
+        "atspi_description_bound",
+    )
+
+
 def _walk(root: Any) -> list[Any]:
     found: list[Any] = []
     seen: set[int] = set()
@@ -156,6 +166,7 @@ def _validate_selector(selector: ControlSelector, require_action: bool) -> None:
         or not isinstance(selector.role, str)
         or selector.role not in ROLE_ENUM_NAMES
         or not isinstance(selector.require_focused, bool)
+        or not isinstance(selector.require_description, bool)
     ):
         _fail("atspi_selector_invalid")
     if selector.action is not None and (
@@ -264,6 +275,8 @@ def _select_control(atspi: Any, application: Any, selector: ControlSelector) -> 
     control = matches[0]
     if not _has_state(atspi, control, "ENABLED"):
         _fail("atspi_control_state")
+    if selector.require_description and not _node_description(control):
+        _fail("atspi_description_missing")
     if selector.action is not None and selector.action not in _action_names(control):
         _fail("atspi_action_missing")
     return control

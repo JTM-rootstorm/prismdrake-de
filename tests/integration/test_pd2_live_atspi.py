@@ -118,6 +118,7 @@ class FakeNode:
         action: FakeAction | None = None,
         reported_children: int | None = None,
         disappears: bool = False,
+        description: str = "",
     ) -> None:
         self.name = name
         self.role = role
@@ -126,6 +127,7 @@ class FakeNode:
         self.action = action
         self.reported_children = reported_children
         self.disappears = disappears
+        self.description = description
 
     def get_name(self) -> str:
         if self.disappears:
@@ -134,6 +136,9 @@ class FakeNode:
 
     def get_role(self) -> str:
         return self.role
+
+    def get_description(self) -> str:
+        return self.description
 
     def get_child_count(self) -> int:
         return (
@@ -247,6 +252,30 @@ class LiveAtspiHelperTests(unittest.TestCase):
         )
 
         self.assertEqual(result.category, "atspi_control_ready")
+
+    def test_requires_bounded_nonempty_description_when_selected(self) -> None:
+        described = FakeNode(
+            "Use Prismdrake Lustre",
+            FakeRole.RADIO_BUTTON,
+            states=set(VISIBLE),
+            description="Switch the complete desktop profile",
+        )
+        atspi, application = fixture([described])
+        selector = ControlSelector(
+            "Use Prismdrake Lustre",
+            "radio_button",
+            require_focused=True,
+            require_description=True,
+        )
+        self.assertEqual(
+            observe_showing_control(atspi, exact_owner(application), selector).category,
+            "atspi_control_ready",
+        )
+        described.description = ""
+        self.assert_category(
+            "atspi_description_missing",
+            lambda: observe_showing_control(atspi, exact_owner(application), selector),
+        )
 
     def test_invokes_only_the_exact_reviewed_action_after_rechecking_owner(self) -> None:
         calls: list[FakeNode] = []

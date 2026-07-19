@@ -66,8 +66,8 @@
     },
     "workflow": {
       "type": "array",
-      "minItems": 47,
-      "maxItems": 47,
+      "minItems": 48,
+      "maxItems": 48,
       "items": { "$ref": "#/$defs/result" }
     },
     "failure_replay": {
