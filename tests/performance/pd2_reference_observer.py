@@ -80,6 +80,15 @@ I18N_TESTS = {
 }
 
 I18N_EXACT_TESTS = {
+    "qt_translation_routing": frozenset(
+        {
+            "TranslationCatalogTest.LoadsExpandedPseudoLocaleAndRestoresSourceStrings",
+            "TranslationCatalogTest.PreservesPlaceholdersInExpandedPseudoLocale",
+            "TranslationCatalogTest.LoadsRtlPseudoLocaleWithoutOwningLayoutPolicy",
+            "TranslationCatalogTest.RejectsUntrustedTagsAndFailsSoftWhenCatalogIsMissing",
+            "TranslationCatalogTest.RejectsRelativeCatalogDirectories",
+        }
+    ),
     "rtl_fixture": frozenset(
         {
             "TranslationCatalogTest.LoadsRtlPseudoLocaleWithoutOwningLayoutPolicy",

@@ -251,12 +251,8 @@ class ReferenceObserverTests(unittest.TestCase):
             write_build_attestation(Path(temporary))
             observer.ctest_result("locale_aware_clock")
 
-    def test_visual_i18n_checks_require_the_exact_intended_test_selection(self) -> None:
-        selections = {
-            "rtl_fixture": observer.I18N_EXACT_TESTS["rtl_fixture"],
-            "long_string_fixture": observer.I18N_EXACT_TESTS["long_string_fixture"],
-        }
-        for check, names in selections.items():
+    def test_grouped_i18n_checks_require_the_exact_intended_test_selection(self) -> None:
+        for check, names in observer.I18N_EXACT_TESTS.items():
             output = "".join(
                 f"{index}/{len(names)} Test #{index}: {name} .... Passed\n"
                 for index, name in enumerate(sorted(names), 1)
