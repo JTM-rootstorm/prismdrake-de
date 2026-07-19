@@ -43,6 +43,15 @@ OBSERVER_ENVIRONMENT_KEYS = (
     "QT_QUICK_CONTROLS_STYLE",
     "TZ",
     "XDG_RUNTIME_DIR",
+    "PRISMDRAKE_PD2_BUILD_DIRECTORY",
+    "PRISMDRAKE_PD2_CTEST",
+    "PRISMDRAKE_PD2_GCC",
+    "PRISMDRAKE_PD2_CLANG",
+    "PRISMDRAKE_PD2_QMAKE",
+    "PRISMDRAKE_PD2_XPROP",
+    "PRISMDRAKE_PD2_PERFORMANCE_RUNNER",
+    "PRISMDRAKE_PD2_PD1_EVIDENCE",
+    "PRISMDRAKE_PD2_INSTALLED_DEMO_EVIDENCE",
 )
 
 
@@ -86,11 +95,12 @@ def parse_arguments() -> object:
     )
     parser.add_argument("--reviewed-skip", action="append", default=[], type=reviewed_skip)
     parser.add_argument("--limitation", action="append", required=True, type=safe_text)
-    parser.add_argument("--environment-observer", required=True, type=executable)
-    parser.add_argument("--performance-observer", required=True, type=executable)
-    parser.add_argument("--accessibility-observer", required=True, type=executable)
-    parser.add_argument("--internationalization-observer", required=True, type=executable)
-    parser.add_argument("--cleanup-observer", required=True, type=executable)
+    parser.add_argument("--observer", type=executable)
+    parser.add_argument("--environment-observer", type=executable)
+    parser.add_argument("--performance-observer", type=executable)
+    parser.add_argument("--accessibility-observer", type=executable)
+    parser.add_argument("--internationalization-observer", type=executable)
+    parser.add_argument("--cleanup-observer", type=executable)
     parser.add_argument("--output", required=True, type=output_path)
     return parser.parse_args()
 
@@ -107,6 +117,7 @@ def build_observer_environment(options: object) -> dict[str, str]:
             "PRISMDRAKE_PD2_SOURCE_REVISION": options.source_revision,
             "PRISMDRAKE_PD2_REFERENCE_ENVIRONMENT_ID": options.environment_id,
             "PRISMDRAKE_PD2_METHOD_ID": LIVE_METHOD_ID,
+            "PRISMDRAKE_PD2_PD1_REFERENCE_REVISION": options.pd1_reference_revision,
         }
     )
     return environment
@@ -128,13 +139,21 @@ def run(options: object) -> None:
         reviewed_skips=skips,
         limitations=tuple(options.limitation),
     )
-    commands = ObserverCommands(
-        environment=options.environment_observer,
-        performance=options.performance_observer,
-        accessibility=options.accessibility_observer,
-        internationalization=options.internationalization_observer,
-        cleanup=options.cleanup_observer,
+    individual = (
+        options.environment_observer,
+        options.performance_observer,
+        options.accessibility_observer,
+        options.internationalization_observer,
+        options.cleanup_observer,
     )
+    if options.observer is not None:
+        if any(value is not None for value in individual):
+            raise CollectorError("observer_mode_conflict")
+        commands = ObserverCommands.unified(options.observer)
+    else:
+        if any(value is None for value in individual):
+            raise CollectorError("observer_set_incomplete")
+        commands = ObserverCommands(*individual)
     port = CommandLiveEvidencePort(commands, build_observer_environment(options))
     write_evidence(options.output, collect_evidence(config, port))
 

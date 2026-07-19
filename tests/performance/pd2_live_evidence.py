@@ -409,14 +409,40 @@ def write_evidence(path: Path, document: Mapping[str, Any]) -> None:
 
 
 @dataclass(frozen=True)
+class ObserverCommand:
+    """One exact executable plus fixed role-selection arguments."""
+
+    executable: Path
+    prefix_arguments: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ObserverCommands:
     """Exact live observer executables; each emits one bound JSON envelope."""
 
-    environment: Path
-    performance: Path
-    accessibility: Path
-    internationalization: Path
-    cleanup: Path
+    environment: Path | ObserverCommand
+    performance: Path | ObserverCommand
+    accessibility: Path | ObserverCommand
+    internationalization: Path | ObserverCommand
+    cleanup: Path | ObserverCommand
+
+    @classmethod
+    def unified(cls, executable: Path) -> "ObserverCommands":
+        """Select all protocol roles through one composable observer executable."""
+
+        return cls(
+            environment=ObserverCommand(executable, ("--role", "environment")),
+            performance=ObserverCommand(executable, ("--role", "performance")),
+            accessibility=ObserverCommand(executable, ("--role", "accessibility")),
+            internationalization=ObserverCommand(
+                executable, ("--role", "internationalization")
+            ),
+            cleanup=ObserverCommand(executable, ("--role", "cleanup")),
+        )
+
+
+def _observer_command(value: Path | ObserverCommand) -> ObserverCommand:
+    return value if isinstance(value, ObserverCommand) else ObserverCommand(value)
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -437,27 +463,45 @@ class CommandLiveEvidencePort:
         timeout_seconds: float = 15.0,
     ) -> None:
         _require(timeout_seconds > 0, "live_observer_timeout_invalid")
-        for executable in (
+        for command_value in (
             commands.environment,
             commands.performance,
             commands.accessibility,
             commands.internationalization,
             commands.cleanup,
         ):
+            command = _observer_command(command_value)
+            executable = command.executable
             _require(
                 executable.is_absolute()
                 and executable.is_file()
                 and os.access(executable, os.X_OK),
                 "live_observer_executable_invalid",
             )
+            _require(
+                all(
+                    isinstance(argument, str)
+                    and argument
+                    and "\x00" not in argument
+                    for argument in command.prefix_arguments
+                ),
+                "live_observer_arguments_invalid",
+            )
         self._commands = commands
         self._environment = dict(environment or {})
         self._timeout = timeout_seconds
 
-    def _run(self, executable: Path, arguments: Sequence[str]) -> BoundResult:
+    def _run(
+        self, command_value: Path | ObserverCommand, arguments: Sequence[str]
+    ) -> BoundResult:
+        command = _observer_command(command_value)
         try:
             completed = subprocess.run(
-                [str(executable), *arguments],
+                [
+                    str(command.executable),
+                    *command.prefix_arguments,
+                    *arguments,
+                ],
                 env=self._environment,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,

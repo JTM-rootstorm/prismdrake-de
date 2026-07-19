@@ -90,6 +90,15 @@ set_tests_properties(Pd2LivePerformanceAccessibilityCollectorTest PROPERTIES
     LABELS "performance;accessibility;contract"
     TIMEOUT 20)
 
+add_test(
+    NAME Pd2ReferenceVmObserverTest
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_reference_observer.py")
+set_tests_properties(Pd2ReferenceVmObserverTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    LABELS "performance;accessibility;i18n;contract"
+    TIMEOUT 20)
+
 find_program(prismdrake_performance_fc_match_executable fc-match REQUIRED)
 execute_process(
     COMMAND "${prismdrake_performance_fc_match_executable}"

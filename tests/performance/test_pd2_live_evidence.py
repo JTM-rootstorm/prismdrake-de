@@ -287,6 +287,32 @@ class CommandAdapterTests(unittest.TestCase):
         )
         self.assertFalse(run.call_args.kwargs.get("shell", False))
 
+    def test_unified_observer_selects_role_before_probe_arguments(self) -> None:
+        binding = {
+            "source_revision": REVISION,
+            "reference_environment_id": ENVIRONMENT_ID,
+            "method_id": LIVE_METHOD_ID,
+        }
+        payload = json.dumps({"binding": binding, "result": passed()}).encode("utf-8")
+        with mock.patch.object(
+            subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0, payload, b""),
+        ) as run:
+            CommandLiveEvidencePort(
+                ObserverCommands.unified(Path("/bin/true"))
+            ).internationalization("rtl_fixture")
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                "/bin/true",
+                "--role",
+                "internationalization",
+                "--check",
+                "rtl_fixture",
+            ],
+        )
+
     def test_stderr_duplicate_json_and_oversized_output_fail_closed(self) -> None:
         commands = ObserverCommands(*([Path("/bin/true")] * 5))
         cases = (
@@ -308,6 +334,7 @@ class CommandAdapterTests(unittest.TestCase):
         options = SimpleNamespace(
             source_revision=REVISION,
             environment_id=ENVIRONMENT_ID,
+            pd1_reference_revision=PD1_REVISION,
         )
         with mock.patch.dict(
             "os.environ",
@@ -324,6 +351,9 @@ class CommandAdapterTests(unittest.TestCase):
             environment["PRISMDRAKE_PD2_REFERENCE_ENVIRONMENT_ID"], ENVIRONMENT_ID
         )
         self.assertEqual(environment["PRISMDRAKE_PD2_METHOD_ID"], LIVE_METHOD_ID)
+        self.assertEqual(
+            environment["PRISMDRAKE_PD2_PD1_REFERENCE_REVISION"], PD1_REVISION
+        )
         self.assertNotIn("UNRELATED_SECRET", environment)
 
     def test_reviewed_skip_parser_accepts_only_closed_reason_codes(self) -> None:
