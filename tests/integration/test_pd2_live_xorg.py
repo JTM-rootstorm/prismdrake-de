@@ -48,6 +48,7 @@ from pd2_live_xorg import (  # noqa: E402
     LiveSettingsSurfaceAdapter,
     ProcessIdentity,
     QUICK_SETTINGS_WINDOW_TITLE,
+    SESSION_SHUTDOWN_SEQUENCE,
     SETTINGS_WORKFLOW_CONFIG,
     SystemNotificationFailureReplayPort,
     WindowGeometry,
@@ -57,6 +58,7 @@ from pd2_live_xorg import (  # noqa: E402
     _session_config,
     _xorg_config,
     parse_cardinals,
+    parse_session_transition_output,
     parse_window_geometry,
     parse_window_ids,
     parse_window_type_atoms,
@@ -653,6 +655,7 @@ def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
         xprop=Path("/usr/bin/xprop"),
         xwininfo=Path("/usr/bin/xwininfo"),
         dbus_daemon=Path("/usr/bin/dbus-daemon"),
+        dbus_monitor=Path("/usr/bin/dbus-monitor"),
         installed_executables=installed or {},
         xdotool=Path("/usr/bin/xdotool"),
         xwd=Path("/usr/bin/xwd"),
@@ -991,6 +994,75 @@ class SurfaceParserTests(unittest.TestCase):
             HarnessError, "^private_session_history_mode_invalid$"
         ):
             _session_config("disabled")
+
+
+class SessionTransitionParserTests(unittest.TestCase):
+    @staticmethod
+    def payload(
+        states: Sequence[str], transactions: Sequence[int] | None = None
+    ) -> bytes:
+        selected = transactions or (42,) * len(states)
+        return b"".join(
+            (
+                b"signal time=1 sender=:1.4 -> destination=(null destination) "
+                b"serial=1 path=/org/prismdrake/Session1; "
+                b"interface=org.prismdrake.Session1; member=SessionStateChanged\n"
+                + f"   uint64 {transaction}\n".encode("ascii")
+                + f'   string "{state}"\n'.encode("ascii")
+            )
+            for transaction, state in zip(selected, states, strict=True)
+        )
+
+    def test_accepts_only_exact_transaction_shutdown_sequence(self) -> None:
+        payload = self.payload(SESSION_SHUTDOWN_SEQUENCE)
+        self.assertEqual(
+            parse_session_transition_output(payload, 42), SESSION_SHUTDOWN_SEQUENCE
+        )
+
+    def test_rejects_missing_transition(self) -> None:
+        with self.assertRaisesRegex(
+            HarnessError, "^lifecycle_logout_transition_invalid$"
+        ):
+            parse_session_transition_output(
+                self.payload(SESSION_SHUTDOWN_SEQUENCE[:-1]), 42
+            )
+
+    def test_rejects_reordered_transition(self) -> None:
+        reordered = list(SESSION_SHUTDOWN_SEQUENCE)
+        reordered[1], reordered[2] = reordered[2], reordered[1]
+        with self.assertRaisesRegex(
+            HarnessError, "^lifecycle_logout_transition_invalid$"
+        ):
+            parse_session_transition_output(self.payload(reordered), 42)
+
+    def test_rejects_wrong_transaction(self) -> None:
+        transactions = [42] * len(SESSION_SHUTDOWN_SEQUENCE)
+        transactions[2] = 43
+        with self.assertRaisesRegex(
+            HarnessError, "^lifecycle_logout_transition_invalid$"
+        ):
+            parse_session_transition_output(
+                self.payload(SESSION_SHUTDOWN_SEQUENCE, transactions), 42
+            )
+
+    def test_rejects_extra_transition(self) -> None:
+        with self.assertRaisesRegex(
+            HarnessError, "^lifecycle_logout_transition_invalid$"
+        ):
+            parse_session_transition_output(
+                self.payload((*SESSION_SHUTDOWN_SEQUENCE, "complete")), 42
+            )
+
+    def test_rejects_malformed_transition_arguments(self) -> None:
+        malformed = self.payload(SESSION_SHUTDOWN_SEQUENCE).replace(
+            b'   string "confirmed"\n',
+            b'   string "confirmed"\n   string "unexpected"\n',
+            1,
+        )
+        with self.assertRaisesRegex(
+            HarnessError, "^lifecycle_logout_transition_invalid$"
+        ):
+            parse_session_transition_output(malformed, 42)
 
 
 class NotificationSurfaceAdapterTests(unittest.TestCase):
@@ -1481,7 +1553,26 @@ class LivePortTests(unittest.TestCase):
             self.assertEqual(key_calls, expected_keys)
 
     def test_logout_methods_use_shellctl_accessibility_and_reject_stale_id(self) -> None:
-        port = LiveXorgHarnessPort(config(installed_paths()), FakeOperations())
+        monitor_calls: list[object] = []
+
+        class Monitor:
+            def finish(self, transaction_id, timeout):
+                monitor_calls.append(("finish", transaction_id, timeout))
+                return SESSION_SHUTDOWN_SEQUENCE
+
+            def close(self):
+                monitor_calls.append("close")
+                return True
+
+        def monitor_factory(executable, address, environment, timeout):
+            monitor_calls.append((executable, address, environment, timeout))
+            return Monitor()
+
+        port = LiveXorgHarnessPort(
+            config(installed_paths()),
+            FakeOperations(),
+            session_transition_monitor_factory=monitor_factory,
+        )
         components = LifecycleComponentObservation(
             LifecycleProcessIdentity("prismdrake-settingsd", 201, 2001),
             LifecycleProcessIdentity("prismdrake-notifyd", 202, 2002),
@@ -1526,14 +1617,22 @@ class LivePortTests(unittest.TestCase):
         with patch.object(
             port,
             "_wait_logout_state",
-            side_effect=((42, "confirmation_requested"), (42, "stopping_shell")),
+            return_value=(42, "confirmation_requested"),
         ), patch.object(port, "components", return_value=components), patch.object(
             port, "_invoke_accessible"
-        ) as invoke:
+        ) as invoke, patch.object(port, "_attest_private_bus"), patch.object(
+            port, "_private_bus_address", return_value="unix:path=/private/bus"
+        ), patch.object(
+            port,
+            "_private_bus_environment",
+            return_value={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/private/bus"},
+        ):
             confirmed = port.confirm(42)
         self.assertEqual((confirmed.transaction_id, confirmed.state), (42, "stopping_shell"))
         self.assertEqual(invoke.call_args.args[0].name, "Confirm logout")
         self.assertEqual(port._lifecycle_shutdown_components, components)  # noqa: SLF001
+        self.assertEqual(monitor_calls[1][0:2], ("finish", 42))
+        self.assertGreaterEqual(monitor_calls.count("close"), 1)
 
     def test_routes_installed_lifecycle_steps_but_reserves_cleanup_for_adapter(self) -> None:
         port = LiveXorgHarnessPort(config(), FakeOperations())

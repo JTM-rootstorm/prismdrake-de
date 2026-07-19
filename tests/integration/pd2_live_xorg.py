@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import select
 import shutil
 import signal
 import socket
@@ -106,6 +107,13 @@ MAX_DESKTOP_PATH_BYTES = 4096
 MAX_PROCESS_SCAN_ENTRIES = 32_768
 MAX_PROCESS_ANCESTRY_DEPTH = 64
 MAX_SURFACE_WINDOWS = 64
+SESSION_SHUTDOWN_SEQUENCE = (
+    "confirmed",
+    "stopping_shell",
+    "stopping_notifyd",
+    "stopping_settingsd",
+    "complete",
+)
 OUTPUT_MODE = "1600x900"
 SECONDARY_OUTPUT_MODE = "1600x900-pd2-secondary"
 OUTPUT_WIDTH = 1600
@@ -284,6 +292,19 @@ class AccessibilityOperations(Protocol):
     def reject_stale_reference(
         self, reference: object, environment: Mapping[str, str]
     ) -> bool: ...
+
+
+class SessionTransitionMonitor(Protocol):
+    """Pre-armed exact observer for the reviewed session transition signal."""
+
+    def finish(self, transaction_id: int, timeout: float) -> tuple[str, ...]: ...
+
+    def close(self) -> bool: ...
+
+
+SessionTransitionMonitorFactory = Callable[
+    [Path, str, Mapping[str, str], float], SessionTransitionMonitor
+]
 
 
 class SystemAccessibilityOperations:
@@ -693,6 +714,149 @@ class SystemOperations:
 
     def pause(self, duration: float) -> None:
         time.sleep(duration)
+
+
+def parse_session_transition_output(
+    payload: bytes, transaction_id: int
+) -> tuple[str, ...]:
+    """Return the exact reviewed shutdown sequence without retaining other output."""
+
+    if (
+        not isinstance(payload, bytes)
+        or not 1 <= len(payload) <= MAX_COMMAND_OUTPUT_BYTES
+        or b"\x00" in payload
+        or type(transaction_id) is not int
+        or not 1 <= transaction_id <= (1 << 64) - 1
+    ):
+        raise HarnessError("lifecycle_logout_transition_invalid")
+    marker = (
+        b"path=/org/prismdrake/Session1; "
+        b"interface=org.prismdrake.Session1; member=SessionStateChanged"
+    )
+    observed: list[tuple[int, str]] = []
+    for block in re.split(rb"(?=signal time=)", payload):
+        if marker not in block:
+            continue
+        transactions = re.findall(rb"^\s+uint64 ([0-9]{1,20})$", block, re.MULTILINE)
+        states = re.findall(
+            rb'^\s+string "([a-z_]{1,32})"$', block, re.MULTILINE
+        )
+        if len(transactions) != 1 or len(states) != 1:
+            raise HarnessError("lifecycle_logout_transition_invalid")
+        try:
+            transaction = int(transactions[0])
+            state = states[0].decode("ascii")
+        except (ValueError, UnicodeError):
+            raise HarnessError("lifecycle_logout_transition_invalid") from None
+        observed.append((transaction, state))
+    if (
+        tuple(state for _transaction, state in observed) != SESSION_SHUTDOWN_SEQUENCE
+        or any(transaction != transaction_id for transaction, _state in observed)
+    ):
+        raise HarnessError("lifecycle_logout_transition_invalid")
+    return SESSION_SHUTDOWN_SEQUENCE
+
+
+class SystemSessionTransitionMonitor:
+    """Bounded ``dbus-monitor`` observer armed before the confirm action."""
+
+    _MATCH = (
+        "type='signal',sender='org.prismdrake.Session1',"
+        "path='/org/prismdrake/Session1',"
+        "interface='org.prismdrake.Session1',member='SessionStateChanged'"
+    )
+
+    def __init__(
+        self,
+        executable: Path,
+        address: str,
+        environment: Mapping[str, str],
+        readiness_timeout: float,
+    ) -> None:
+        self._process: subprocess.Popen[bytes] | None = None
+        self._payload = bytearray()
+        try:
+            process = subprocess.Popen(  # noqa: S603 - exact reviewed argv, no shell
+                [str(executable), "--address", address, self._MATCH],
+                env=dict(environment),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                close_fds=True,
+            )
+            self._process = process
+            self._read_until(b"member=NameAcquired", readiness_timeout)
+            self._payload.clear()
+        except Exception:
+            self.close()
+            raise HarnessError("lifecycle_logout_monitor_start_failed") from None
+
+    def _read_until(self, marker: bytes, timeout: float) -> None:
+        process = self._process
+        if process is None or process.stdout is None or timeout <= 0:
+            raise HarnessError("lifecycle_logout_monitor_failed")
+        descriptor = process.stdout.fileno()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if marker in self._payload:
+                return
+            if process.poll() is not None:
+                break
+            remaining = max(0.0, deadline - time.monotonic())
+            ready, _writable, _failed = select.select(
+                [descriptor], [], [], min(remaining, 0.05)
+            )
+            if not ready:
+                continue
+            chunk = os.read(descriptor, 4096)
+            if not chunk:
+                break
+            self._payload.extend(chunk)
+            if len(self._payload) > MAX_COMMAND_OUTPUT_BYTES:
+                raise HarnessError("lifecycle_logout_monitor_failed")
+        if marker not in self._payload:
+            raise HarnessError("lifecycle_logout_monitor_failed")
+
+    def finish(self, transaction_id: int, timeout: float) -> tuple[str, ...]:
+        process = self._process
+        if process is None:
+            raise HarnessError("lifecycle_logout_monitor_failed")
+        try:
+            self._read_until(b'string "complete"', timeout)
+            process.terminate()
+            stdout, stderr = process.communicate(timeout=min(max(timeout, 0.05), 2.0))
+            self._payload.extend(stdout)
+            if (
+                stderr
+                or len(self._payload) > MAX_COMMAND_OUTPUT_BYTES
+                or process.returncode not in {-signal.SIGTERM, 0}
+            ):
+                raise HarnessError("lifecycle_logout_monitor_failed")
+            return parse_session_transition_output(bytes(self._payload), transaction_id)
+        except HarnessError:
+            raise
+        except Exception:
+            raise HarnessError("lifecycle_logout_monitor_failed") from None
+        finally:
+            self.close()
+
+    def close(self) -> bool:
+        process = self._process
+        self._process = None
+        if process is None:
+            return True
+        try:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=0.2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=0.2)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return process.poll() is not None
 
 
 class LiveNotificationSurfaceAdapter:
@@ -1293,6 +1457,7 @@ class LiveXorgConfig:
     xprop: Path
     xwininfo: Path
     dbus_daemon: Path
+    dbus_monitor: Path
     installed_executables: Mapping[str, Path]
     xdotool: Path | None = None
     xwd: Path | None = None
@@ -1433,6 +1598,7 @@ class LiveXorgHarnessPort:
         settings_epoch_factory: SettingsEpochFactory | None = None,
         notification_failure_replay: NotificationFailureReplayPort | None = None,
         tier_c_trace_factory: TierCTraceFactory | None = None,
+        session_transition_monitor_factory: SessionTransitionMonitorFactory | None = None,
     ) -> None:
         self._config = config
         self._operations = operations or SystemOperations()
@@ -1445,6 +1611,9 @@ class LiveXorgHarnessPort:
             notification_failure_replay or SystemNotificationFailureReplayPort()
         )
         self._tier_c_trace_factory = tier_c_trace_factory or X11TraceSupervisor
+        self._session_transition_monitor_factory = (
+            session_transition_monitor_factory or SystemSessionTransitionMonitor
+        )
         self._runtime: Path | None = None
         self._display: str | None = None
         self._xorg: ChildProcess | None = None
@@ -3106,8 +3275,21 @@ class LiveXorgHarnessPort:
         self._wait_logout_state("confirmation_requested", transaction=transaction_id)
         self._lifecycle_shutdown_components = self.components()
         self._lifecycle_shutdown_started = self._operations.monotonic()
-        self._invoke_accessible(ControlSelector("Confirm logout", "push_button", "Press"))
-        self._wait_logout_state("stopping_shell", transaction=transaction_id)
+        self._attest_private_bus()
+        monitor = self._session_transition_monitor_factory(
+            self._config.dbus_monitor,
+            self._private_bus_address(),
+            self._private_bus_environment(),
+            self._config.readiness_timeout,
+        )
+        try:
+            self._invoke_accessible(ControlSelector("Confirm logout", "push_button", "Press"))
+            sequence = monitor.finish(transaction_id, self._config.readiness_timeout)
+        finally:
+            monitor.close()
+        self._attest_private_bus()
+        if sequence != SESSION_SHUTDOWN_SEQUENCE:
+            raise HarnessError("lifecycle_logout_transition_invalid")
         return LifecycleLogoutObservation(transaction_id, "stopping_shell")
 
     def _identity_alive(self, identity: LifecycleProcessIdentity) -> bool:
