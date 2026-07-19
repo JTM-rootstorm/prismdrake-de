@@ -120,15 +120,22 @@ An immutable icon request contains:
 - the active icon-theme generation; and
 - the fixed Prismdrake generic fallback identity.
 
-Resolution follows the freedesktop icon-theme path. A Qt 6.11 adapter uses
-`QIcon::fromTheme()` for theme names and system Qt image plugins for supported
-raster formats. Qt SVG provides SVG decoding. A desktop-entry icon may be a
-validated absolute path; relative paths, URLs, command text, and path traversal
-are rejected. Missing or invalid input always reaches a guaranteed original
-generic Prismdrake fallback.
+Resolution follows the freedesktop icon-theme path through explicit bounded
+lookup. Inside the icon worker, the Qt 6.11 metadata provider captures only the
+reentrant active-theme name, fallback-theme name, and theme-search paths. The
+worker then validates those values, reads bounded
+`index.theme` files without following leaf symlinks, follows a bounded
+inheritance chain, and selects from bounded directory and format candidates.
+System Qt image readers decode supported raster data and Qt SVG provides SVG
+decoding. A desktop-entry icon may be a validated absolute path; relative
+paths, URLs, command text, and path traversal are rejected. Missing or invalid
+input always reaches a guaranteed original generic Prismdrake fallback.
 
-Every decode has fixed source-byte, decoded-dimension, frame-count, and memory
-bounds. Decode and filesystem discovery do not block the GUI thread. Cache keys
+Theme metadata capture, filesystem discovery, and every decode stay on the
+worker and have fixed search-root, path-byte, inheritance, source-byte,
+decoded-dimension, frame-count, memory, and outstanding-request bounds. A
+destroyed request context suppresses its callback, and the launcher rejects a
+completion whose request or theme generation is no longer current. Cache keys
 contain immutable request fields, device pixel ratio, and theme generation;
 they contain no window title or PID. Cache replacement is bounded.
 

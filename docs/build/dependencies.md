@@ -88,15 +88,20 @@ carry a verified or observed version.
   immutable model generations, stale-record removal, and observation-based
   request confirmation are also implemented without another link dependency.
   The bounded production task presentation now provides activation, minimize,
-  and close actions. PD2 adds pin and grouping policy above the same
-  window-manager-authoritative X11 boundary without another X11 dependency.
+  and close actions. Its dedicated task worker owns the X11 connection,
+  reply-bearing refreshes, event drain, and checked requests while Qt receives
+  only queued presentation completions. PD2 adds pin and grouping policy above
+  the same window-manager-authoritative X11 boundary without another X11
+  dependency.
 - `prismdrake-session` is an Experimental init-neutral supervisor. It directly
   uses the selected sd-bus provider for bounded settings and notification
   readiness and the internal X11 adapter for display readiness, then owns only
   the exact settingsd, notifyd, and shell children it launches. A dependency-free
   private Linux event-descriptor contract bounds post-exec readiness to each
-  exact child and one complete panel presentation epoch. Gentoo selects basu;
-  the development harness supplies isolated D-Bus lifecycle and restart tests.
+  exact child and one complete panel presentation epoch. Child supervision
+  waits on the bus descriptor, monotonic deadline, and a dedicated signal
+  channel rather than a fixed polling cadence. Gentoo selects basu; the
+  development harness supplies isolated D-Bus lifecycle and restart tests.
   Supported provider and broker minima remain open. A standard X11 session entry
   and the five PD2 executables (`prismdrake-session`, `prismdrake-settingsd`,
   `prismdrake-notifyd`, `prismdrake-shell`, and `prismdrake-shellctl`) share one
@@ -104,11 +109,15 @@ carry a verified or observed version.
   result rather than a source-tree claim.
 - `prismdrake-shell` is Experimental. Its immutable settings/theme projection
   directly uses Qt Core and GUI; its asynchronous launcher controller, passive
-  launcher and notification adapters, and actionable task adapter use Qt Core;
-  and its
+  launcher and notification adapters, and actionable task adapter use Qt Core.
+  A dedicated launcher-monitor worker owns recursive application discovery and
+  Qt filesystem-watch registration, replacement, and removal under hard work
+  and watch-capacity bounds; this adds no library dependency. Its
   compiled panel, launcher, and notification modules use QML, Quick, and Quick
-  Controls. Its icon resolver directly uses system Qt SVG for bounded raster
-  and SVG icon loading; the product dependency retains the Qt 6.11 floor.
+  Controls. Its icon resolver captures only reentrant Qt theme metadata on its
+  worker, performs bounded manual icon-theme discovery, and uses system Qt
+  image readers and Qt SVG for bounded raster and SVG loading; the product
+  dependency retains the Qt 6.11 floor.
   The shell's expanded-state accessibility adapter subclasses Qt Quick's
   complete accessible-item implementation because Qt 6.11 does not expose the
   `expanded`, `collapsed`, or `expandable` state bits through the public QML
@@ -123,7 +132,9 @@ carry a verified or observed version.
   to source strings, and the loader accepts only bounded language tags beneath
   its trusted packaged directory.
   The panel window host and event-driven task controller use Qt GUI/Core and the
-  internal standards-only X11 adapter; Quick Test is test-only. The live
+  internal standards-only X11 adapter. The task worker owns blocking X11
+  replies, event drain, and checked actions; the Qt owner thread publishes only
+  current queued results. Quick Test is test-only. The live
   snapshot client directly uses the selected sd-bus provider and session D-Bus,
   while its canonical inverse parser includes the
   system nlohmann JSON header. Qt 6.11 is the maintainer-selected declared

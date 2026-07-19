@@ -23,8 +23,8 @@ storage, C++, QML, and evidence formats remain Experimental.
 | Area | Current source behavior | Requirements |
 |---|---|---|
 | Outputs and surfaces | One registry reconciles bounded RandR and Qt screen observations, creates one desktop per active output, applies the configured panel-output policy, and transfers or dismisses global transient surfaces after topology changes. | `PD-OUTPUT-001` through `PD-OUTPUT-004`, `PD-PANEL-001`, `PD-DESKTOP-001` |
-| Panel and tasks | Shared panel QML presents ordered pins and running tasks, deterministic `always`, `never`, and `when_full` grouping, explicit active/minimized/urgent/modal state, group navigation, launch, activate, minimize, close, and pin actions. Window requests remain checked EWMH requests to the active WM. | `PD-PANEL-001` through `PD-PANEL-005`, `PD-PANEL-008`, `PD-WIN-001` through `PD-WIN-007` |
-| Launcher | The local XDG application catalog is monitored without polling, publishes complete generations, supports bounded cancellable search, desktop actions, typed D-Bus activation, direct execution without an implicit shell where allowed, icons with fallback, pins, and Prismdrake destinations. | `PD-LAUNCH-001` through `PD-LAUNCH-005`, `PD-LAUNCH-007`, `PD-LAUNCH-008`, `PD-INT-007`, `PD-SEC-002`, `PD-PERF-006` |
+| Panel and tasks | Shared panel QML presents ordered pins and running tasks, deterministic `always`, `never`, and `when_full` grouping, explicit active/minimized/urgent/modal state, group navigation, launch, activate, minimize, close, and pin actions. A dedicated task worker owns reply-bearing X11 refreshes, events, and checked EWMH requests to the active WM. | `PD-PANEL-001` through `PD-PANEL-005`, `PD-PANEL-008`, `PD-WIN-001` through `PD-WIN-007`, `PD-PERF-001`, `PD-PERF-004` |
+| Launcher | The local XDG application catalog is monitored without polling. Dedicated workers own bounded recursive discovery, watch replacement, catalog refresh, search, launch, and icon lookup; owner-thread publication remains generation-checked. The launcher supports desktop actions, typed D-Bus activation, direct execution without an implicit shell where allowed, icons with fallback, pins, and Prismdrake destinations. | `PD-LAUNCH-001` through `PD-LAUNCH-005`, `PD-LAUNCH-007`, `PD-LAUNCH-008`, `PD-INT-007`, `PD-SEC-002`, `PD-PERF-001`, `PD-PERF-004`, `PD-PERF-006` |
 | Desktop and wallpaper | A non-focusable standard X11 desktop surface is hosted per active output. One bounded decoded wallpaper snapshot is laid out in the configured mode on every output; invalid or missing images use the configured solid color. | `PD-DESKTOP-001` through `PD-DESKTOP-003`, `PD-DESKTOP-005`, `PD-DESKTOP-006` |
 | Notifications | Toolkit-neutral notifyd owns freedesktop Notifications 1.3, replacement, timeout, sender/action lifecycle, disabled/session/private persistent history, effective do-not-disturb state, and complete Experimental notification-center snapshots. The shell mirrors those snapshots into transient and history surfaces. | `PD-NOTIFY-001` through `PD-NOTIFY-007`, `PD-SEC-007`, `PD-SEC-011`, `PD-SEC-012` |
 | Quick settings | The installed surface exposes only Prismdrake-owned operations: active profile and runtime profile switch, effective do-not-disturb, notification-center opening, logout request, and bounded status text. Unavailable adapters remain visibly disabled. | `PD-QUICK-001` through `PD-QUICK-006` |
@@ -51,9 +51,21 @@ instead of collapsing into one guessed application. Grouping changes preserve
 typed presentation identities and never make the shell authoritative for
 focus, stacking, minimization, or lifecycle.
 
+The task-controller owner thread keeps presentation policy and immutable
+generation publication. One dedicated `TaskIoWorker` owns its X11
+connection, blocks on the X11 event descriptor and a private wake descriptor,
+drains task events, performs reply-bearing refreshes, and sends checked
+activate, minimize, and close requests. Refresh hints are replaceable and
+coalesced; action work has a fixed queue bound and is rejected when its applied
+refresh token or window incarnation is stale. Completions return through queued
+owner-thread callbacks, and teardown cancels descriptor waits before joining
+the worker. This keeps the path event-driven without transferring window-state
+authority from the active WM.
+
 This behavior implements the PD2 portions of `PD-PANEL-002` through
 `PD-PANEL-005`, `PD-WIN-003` through `PD-WIN-007`, `PD-INPUT-001`, and
-`PD-A11Y-001` through `PD-A11Y-009`.
+`PD-A11Y-001` through `PD-A11Y-009`, plus `PD-PERF-001`, `PD-PERF-004`, and
+`PD-REL-007`.
 
 ## Launcher behavior and privacy
 
@@ -64,10 +76,19 @@ bounded rescan instead of unbounded polling. Desktop-entry arguments are parsed
 through the closed execution contract and are never passed to an implicit
 shell. Terminal-only entries remain unavailable when no terminal policy exists.
 
+One dedicated collection worker owns recursive application-root traversal and
+filesystem-watch creation, registration, replacement, and removal. Its hard
+work budget counts every visited node, including irrelevant files, while a
+separate watch-capacity bound limits retained paths. Replacement generations
+discard stale collection results; discovery and batched watch changes observe
+cooperative stop requests, and teardown stops and joins the worker. The owner
+thread receives only coalesced change notifications, generation-checked
+results, and a bounded fail-soft recovery schedule.
+
 PD2 has no recent-file, online-search, package-search, or document-index
 provider. It does not store launcher history. Those limits implement the
 privacy boundary in `PD-LAUNCH-006`, `PD-SEC-002`, `PD-SEC-008`, and
-`PD-PERF-006`.
+`PD-PERF-001`, `PD-PERF-004`, `PD-PERF-006`, and `PD-REL-007`.
 
 ## Desktop and wallpaper behavior
 
