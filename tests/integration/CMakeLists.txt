@@ -115,6 +115,15 @@ set_tests_properties(Pd2InstalledDemonstrationContractTest PROPERTIES
     TIMEOUT 10)
 
 add_test(
+    NAME Pd2InstalledDemonstrationDriverContractTest
+    COMMAND
+        "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_installed_demo_driver.py")
+set_tests_properties(Pd2InstalledDemonstrationDriverContractTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    TIMEOUT 20)
+
+add_test(
     NAME Pd2LiveXorgHarnessContractTest
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_live_xorg.py")
 set_tests_properties(Pd2LiveXorgHarnessContractTest PROPERTIES

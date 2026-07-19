@@ -95,6 +95,24 @@ loader diagnostic. Live harness configuration must therefore name
 `/usr/bin/x11trace` explicitly and must fail closed when it is absent; it must
 not fall back to glibc's tool.
 
+Run the PD2 installed demonstration only after capturing a mode-0600 PD2
+preflight attestation that hashes `tests/integration/pd2_demo.py` as its exact
+driver. The controlled-window fixture must be an absolute regular executable;
+the output parent must already exist. The driver derives the source revision
+from the attestation and writes only normalized mode-0600 evidence:
+
+```sh
+python3 tests/integration/pd2_demo.py \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --controlled-window-fixture /absolute/path/prismdrake-controlled-window-fixture \
+  --output /absolute/private/evidence/pd2-installed-demonstration.json
+```
+
+The command binds the fixed five `/usr/bin/prismdrake-*` executables before and
+after the run, uses only reviewed absolute X11 observer paths, and reports fixed
+failure categories without echoing supplied paths. Revalidate a retained record
+without starting X11 by passing only `--validate-evidence`.
+
 These observers are test-only. They are selected by `USE=test` for the product
 ebuild and by `USE=x11` for `dev-util/prismdrake-dev-env`; neither belongs in
 `DEPEND` or `RDEPEND`. The Gentoo tracer is currently `~amd64` in the reference

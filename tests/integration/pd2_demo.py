@@ -17,10 +17,16 @@ import os
 import re
 import stat
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn, Protocol
+
+
+# When invoked directly, keep the adapter's import of ``pd2_demo`` bound to
+# this exact module so protocol value classes are not defined a second time.
+if __name__ == "__main__":
+    sys.modules["pd2_demo"] = sys.modules[__name__]
 
 
 SCHEMA_VERSION = 1
@@ -145,6 +151,22 @@ PRIVATE_MARKERS = (
     "display=",
 )
 
+INSTALLED_EXECUTABLE_PATHS = tuple(
+    Path("/usr/bin") / name for name in EXECUTABLE_NAMES
+)
+REVIEWED_LIVE_TOOL_PATHS = {
+    "xorg": Path("/usr/bin/Xorg"),
+    "xrandr": Path("/usr/bin/xrandr"),
+    "openbox": Path("/usr/bin/openbox"),
+    "xprop": Path("/usr/bin/xprop"),
+    "xwininfo": Path("/usr/bin/xwininfo"),
+    "dbus_daemon": Path("/usr/bin/dbus-daemon"),
+    "xdotool": Path("/usr/bin/xdotool"),
+    "xwd": Path("/usr/bin/xwd"),
+    "x11trace": Path("/usr/bin/x11trace"),
+}
+MAX_BOUND_FILE_BYTES = 128 * 1024 * 1024
+
 
 class HarnessError(RuntimeError):
     """The PD2 harness contract failed closed."""
@@ -152,6 +174,14 @@ class HarnessError(RuntimeError):
 
 class DuplicateJsonKeyError(ValueError):
     """Strict JSON loading encountered a repeated object key."""
+
+
+class _RedactedArgumentParser(argparse.ArgumentParser):
+    """Reject invalid invocations without echoing caller-supplied paths."""
+
+    def error(self, message: str) -> NoReturn:
+        del message
+        raise HarnessError("arguments_invalid")
 
 
 def require(condition: bool, identifier: str) -> None:
@@ -590,17 +620,253 @@ def write_evidence(path: Path, document: Any) -> None:
             pass
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--validate-evidence", type=Path)
-    arguments = parser.parse_args(argv)
+def _sha256_regular_file(path: Path) -> str:
+    """Hash one exact bounded regular file without following its final link."""
+
+    require(path.is_absolute() and not path.is_symlink(), "bound_file_invalid")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        if arguments.validate_evidence is None:
-            raise HarnessError("installed_backend_not_configured")
-        document = load_evidence(arguments.validate_evidence)
-        validate_evidence(document)
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise HarnessError("bound_file_unavailable") from error
+    try:
+        before = os.fstat(descriptor)
+        require(
+            stat.S_ISREG(before.st_mode)
+            and 0 < before.st_size <= MAX_BOUND_FILE_BYTES,
+            "bound_file_invalid",
+        )
+        digest = hashlib.sha256()
+        total = 0
+        while True:
+            block = os.read(descriptor, 1024 * 1024)
+            if not block:
+                break
+            total += len(block)
+            require(total <= before.st_size, "bound_file_changed")
+            digest.update(block)
+        after = os.fstat(descriptor)
+        require(
+            total == before.st_size
+            and after.st_size == before.st_size
+            and after.st_mtime_ns == before.st_mtime_ns
+            and (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino),
+            "bound_file_changed",
+        )
+        return digest.hexdigest()
+    except OSError as error:
+        raise HarnessError("bound_file_read_failed") from error
+    finally:
+        os.close(descriptor)
+
+
+def _require_private_attestation(path: Path) -> None:
+    require(path.is_absolute() and not path.is_symlink(), "attestation_path_invalid")
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise HarnessError("attestation_unavailable") from error
+    require(
+        stat.S_ISREG(metadata.st_mode)
+        and metadata.st_uid == os.geteuid()
+        and stat.S_IMODE(metadata.st_mode) == 0o600,
+        "attestation_file_invalid",
+    )
+
+
+def _controlled_fixture_sha256(path: Path) -> str:
+    require(path.is_absolute(), "controlled_fixture_invalid")
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise HarnessError("controlled_fixture_unavailable") from error
+    require(
+        stat.S_ISREG(metadata.st_mode)
+        and not stat.S_ISLNK(metadata.st_mode)
+        and metadata.st_mode & 0o111 != 0
+        and metadata.st_mode & 0o022 == 0,
+        "controlled_fixture_invalid",
+    )
+    return _sha256_regular_file(path)
+
+
+def _require_output_target(path: Path) -> None:
+    require(path.is_absolute() and path.name not in {"", ".", ".."},
+            "output_target_invalid")
+    require(path.parent.is_dir() and not path.parent.is_symlink(),
+            "output_parent_invalid")
+    if path.exists() or path.is_symlink():
+        require(path.is_file() and not path.is_symlink(), "output_target_invalid")
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    require(not temporary.exists() and not temporary.is_symlink(),
+            "output_temporary_exists")
+
+
+def _attestation_api() -> tuple[Callable[[Path], Any], Callable[..., None]]:
+    gentoo_tests = Path(__file__).resolve().parents[1] / "gentoo"
+    gentoo_path = os.fspath(gentoo_tests)
+    if gentoo_path not in sys.path:
+        sys.path.insert(0, gentoo_path)
+    from pd2_installed_artifact_attestation import (  # pylint: disable=import-outside-toplevel
+        load_attestation,
+        validate_attested_files,
+    )
+
+    return load_attestation, validate_attested_files
+
+
+def _driver_path() -> Path:
+    path = Path(__file__)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    require(not path.is_symlink(), "demo_driver_invalid")
+    return path
+
+
+def _require_reviewed_live_tools() -> None:
+    for path in REVIEWED_LIVE_TOOL_PATHS.values():
+        require(path.is_absolute(), "live_tool_path_invalid")
+        try:
+            metadata = path.lstat()
+        except OSError as error:
+            raise HarnessError("live_tool_unavailable") from error
+        require(
+            stat.S_ISREG(metadata.st_mode)
+            and not stat.S_ISLNK(metadata.st_mode)
+            and metadata.st_mode & 0o111 != 0
+            and metadata.st_mode & 0o022 == 0
+            and os.access(path, os.X_OK),
+            "live_tool_invalid",
+        )
+
+
+def _build_live_port(controlled_window_fixture: Path) -> HarnessPort:
+    """Construct the production adapter from reviewed absolute VM tools."""
+
+    _require_reviewed_live_tools()
+    # Imported lazily so evidence validation remains usable on non-X11 hosts.
+    from pd2_live_xorg import (  # pylint: disable=import-outside-toplevel
+        LiveXorgConfig,
+        LiveXorgHarnessPort,
+        SystemAccessibilityOperations,
+        SystemOperations,
+    )
+
+    config = LiveXorgConfig(
+        xorg=REVIEWED_LIVE_TOOL_PATHS["xorg"],
+        xrandr=REVIEWED_LIVE_TOOL_PATHS["xrandr"],
+        openbox=REVIEWED_LIVE_TOOL_PATHS["openbox"],
+        xprop=REVIEWED_LIVE_TOOL_PATHS["xprop"],
+        xwininfo=REVIEWED_LIVE_TOOL_PATHS["xwininfo"],
+        dbus_daemon=REVIEWED_LIVE_TOOL_PATHS["dbus_daemon"],
+        installed_executables=dict(zip(EXECUTABLE_NAMES, INSTALLED_EXECUTABLE_PATHS)),
+        xdotool=REVIEWED_LIVE_TOOL_PATHS["xdotool"],
+        xwd=REVIEWED_LIVE_TOOL_PATHS["xwd"],
+        controlled_window_fixture=controlled_window_fixture,
+    )
+    return LiveXorgHarnessPort(
+        config,
+        operations=SystemOperations(),
+        accessibility=SystemAccessibilityOperations(),
+    )
+
+
+def execute_installed_demonstration(
+    attestation_path: Path,
+    controlled_window_fixture: Path,
+    output: Path,
+    *,
+    driver_path: Path | None = None,
+    attestation_api: tuple[Callable[[Path], Any], Callable[..., None]] | None = None,
+    hash_file: Callable[[Path], str] = _sha256_regular_file,
+    port_factory: Callable[[Path], HarnessPort] = _build_live_port,
+) -> None:
+    """Validate one preflight, execute the live adapter, and publish evidence."""
+
+    _require_output_target(output)
+    _require_private_attestation(attestation_path)
+    fixture_hash = _controlled_fixture_sha256(controlled_window_fixture)
+    selected_driver = driver_path or _driver_path()
+    loader, validate_files = attestation_api or _attestation_api()
+    attestation = loader(attestation_path)
+    validate_files(
+        attestation,
+        INSTALLED_EXECUTABLE_PATHS,
+        selected_driver,
+        hash_file,
+    )
+
+    source = attestation.get("source") if isinstance(attestation, dict) else None
+    revision = source.get("revision") if isinstance(source, dict) else None
+    require(isinstance(revision, str), "attestation_source_revision_invalid")
+    installed = attestation.get("installed")
+    require(isinstance(installed, dict), "attestation_installed_set_invalid")
+    records = installed.get("executables")
+    require(isinstance(records, list) and len(records) == len(EXECUTABLE_NAMES),
+            "attestation_installed_set_invalid")
+    expected_hashes = {
+        name: record.get("sha256") if isinstance(record, dict) else None
+        for name, record in zip(EXECUTABLE_NAMES, records)
+    }
+
+    port = port_factory(controlled_window_fixture)
+    require(
+        port.installed_executable_hashes() == expected_hashes,
+        "attested_executable_set_changed",
+    )
+    document = run_harness(revision, port)
+
+    # Detect a changed source driver, fixture, or installed binary before the
+    # success record becomes durable. The live port has already completed its
+    # mandatory cleanup by this point.
+    validate_files(
+        attestation,
+        INSTALLED_EXECUTABLE_PATHS,
+        selected_driver,
+        hash_file,
+    )
+    require(
+        _controlled_fixture_sha256(controlled_window_fixture) == fixture_hash,
+        "controlled_fixture_changed",
+    )
+    write_evidence(output, document)
+
+
+def main(
+    argv: Sequence[str] | None = None, *, driver_path: Path | None = None
+) -> int:
+    parser = _RedactedArgumentParser(description=__doc__)
+    parser.add_argument("--validate-evidence", type=Path)
+    parser.add_argument("--attestation", type=Path)
+    parser.add_argument("--controlled-window-fixture", type=Path)
+    parser.add_argument("--output", type=Path)
+    try:
+        arguments = parser.parse_args(argv)
+        live_values = (
+            arguments.attestation,
+            arguments.controlled_window_fixture,
+            arguments.output,
+        )
+        if arguments.validate_evidence is not None:
+            require(not any(live_values), "arguments_invalid")
+            document = load_evidence(arguments.validate_evidence)
+            validate_evidence(document)
+        else:
+            require(all(value is not None for value in live_values), "arguments_invalid")
+            execute_installed_demonstration(
+                arguments.attestation,
+                arguments.controlled_window_fixture,
+                arguments.output,
+                driver_path=driver_path,
+            )
     except HarnessError as error:
         print(f"PD2 installed demonstration failed closed: {error}", file=sys.stderr)
+        return 2
+    except Exception:
+        print(
+            "PD2 installed demonstration failed closed: live_execution_failed",
+            file=sys.stderr,
+        )
         return 2
     return 0
 
