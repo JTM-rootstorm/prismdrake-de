@@ -57,6 +57,14 @@ TEST(SessionOptionsTest, ExplicitExecutablesOverrideDefaultsIndependently) {
     EXPECT_EQ(settingsd.value().runtime->shellExecutable,
               std::filesystem::path{"/bin/false"}.lexically_normal());
 
+    const std::array notifydArguments{std::string_view{"--notifyd"},
+                                      std::string_view{"/usr/bin/true"}};
+    const auto notifyd = parseSessionOptions(notifydArguments, executableDefaults);
+    ASSERT_TRUE(notifyd);
+    ASSERT_TRUE(notifyd.value().runtime);
+    EXPECT_EQ(notifyd.value().runtime->notifydExecutable,
+              std::filesystem::path{"/usr/bin/true"}.lexically_normal());
+
     const std::array shellArguments{std::string_view{"--shell"},
                                     std::string_view{"/usr/bin/false"}};
     const auto shell = parseSessionOptions(shellArguments, executableDefaults);
@@ -68,7 +76,7 @@ TEST(SessionOptionsTest, ExplicitExecutablesOverrideDefaultsIndependently) {
               std::filesystem::path{"/usr/bin/false"}.lexically_normal());
 }
 
-TEST(SessionOptionsTest, RequiresBothRuntimeExecutablesWhenDefaultsAreUnavailable) {
+TEST(SessionOptionsTest, RequiresAllRuntimeExecutablesWhenDefaultsAreUnavailable) {
     EXPECT_FALSE(parseSessionOptions({}));
 
     const std::array onlySettingsd{std::string_view{"--settingsd"}, std::string_view{"/bin/true"}};
@@ -76,6 +84,9 @@ TEST(SessionOptionsTest, RequiresBothRuntimeExecutablesWhenDefaultsAreUnavailabl
 
     const std::array onlyShell{std::string_view{"--shell"}, std::string_view{"/bin/false"}};
     EXPECT_FALSE(parseSessionOptions(onlyShell));
+
+    const std::array onlyNotifyd{std::string_view{"--notifyd"}, std::string_view{"/bin/true"}};
+    EXPECT_FALSE(parseSessionOptions(onlyNotifyd));
 }
 
 TEST(SessionOptionsTest, AcceptsEachRuntimeExecutableExactlyOnceInEitherOrder) {

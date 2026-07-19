@@ -23,3 +23,21 @@ gtest_discover_tests(
     PROPERTIES
         ENVIRONMENT
             "PRISMDRAKE_SESSION_SUPERVISOR_CHILD_FIXTURE=$<TARGET_FILE:prismdrake-session-supervisor-child-fixture>")
+
+find_program(PRISMDRAKE_SESSION_DBUS_RUN_SESSION NAMES dbus-run-session REQUIRED)
+
+add_executable(prismdrake-session-composition-runtime-tests
+    SessionCompositionRuntimeTests.cpp)
+target_link_libraries(prismdrake-session-composition-runtime-tests
+    PRIVATE
+        Prismdrake::session-core
+        GTest::gtest_main)
+prismdrake_configure_cpp_target(prismdrake-session-composition-runtime-tests)
+prismdrake_enable_warnings(prismdrake-session-composition-runtime-tests)
+prismdrake_enable_sanitizers(prismdrake-session-composition-runtime-tests)
+
+add_test(
+    NAME session-composition-runtime
+    COMMAND
+        "${PRISMDRAKE_SESSION_DBUS_RUN_SESSION}" --
+        "$<TARGET_FILE:prismdrake-session-composition-runtime-tests>")

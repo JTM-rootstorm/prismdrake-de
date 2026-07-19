@@ -65,6 +65,10 @@ int main(int argc, char **argv) {
     if (argc == 1 && std::string_view{argv[0]} == "prismdrake-shell") {
         return publishShellReadiness() ? 0 : 122;
     }
+    if (argc == 2 && std::string_view{argv[0]} == "prismdrake-notifyd" &&
+        std::string_view{argv[1]} == "--foreground") {
+        return 0;
+    }
     if (argc == 3 && std::string_view{argv[0]} == "prismdrake-settingsd" &&
         std::string_view{argv[1]} == "--foreground" && std::string_view{argv[2]} == "--safe-mode") {
         return 0;

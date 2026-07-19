@@ -73,6 +73,10 @@ TEST(RestartPolicyTest, TreatsSafeModeAsOneFinalLaunchAndNeverRestartsCleanExit)
         ComponentRole::shell, ChildExitReason::failure, start + 8s, start + 9s);
     ASSERT_TRUE(safeModeFailure);
     EXPECT_EQ(safeModeFailure.value().action, RecoveryAction::stop_failed);
+    const auto safeModeNotificationFailure = policy.value().observeExit(
+        ComponentRole::notifyd, ChildExitReason::failure, start + 8s, start + 9s);
+    ASSERT_TRUE(safeModeNotificationFailure);
+    EXPECT_EQ(safeModeNotificationFailure.value().action, RecoveryAction::degrade_component);
     EXPECT_FALSE(policy.value().activateSafeMode());
 }
 
@@ -128,7 +132,7 @@ TEST(RestartPolicyTest, UsesAnInclusiveWindowAndResetsAfterAHealthyInterval) {
 }
 
 TEST(RestartPolicyTest, RejectsInvalidPolicyAndNonMonotonicObservations) {
-    auto config = pd1SessionRecoveryConfig();
+    auto config = pd2SessionRecoveryConfig();
     config.shell.maximumRestarts = 0U;
     const auto invalid = SessionRecoveryPolicy::create(config);
     ASSERT_FALSE(invalid);
