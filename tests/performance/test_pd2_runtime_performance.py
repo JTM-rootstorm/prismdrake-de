@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -187,6 +188,24 @@ class RuntimePerformanceTests(unittest.TestCase):
                     3,
                     port_factory=lambda _path: FailingPort(),
                 )
+
+    def test_writer_preserves_output_created_during_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary).resolve() / "runtime.json"
+
+            def retain_output(_source: object, destination: object, **_kwargs: object) -> None:
+                Path(destination).write_bytes(b"retained")
+                raise FileExistsError
+
+            with (
+                mock.patch.object(runtime, "validate_runtime_evidence"),
+                mock.patch.object(os, "link", side_effect=retain_output),
+                self.assertRaisesRegex(
+                    runtime.RuntimePerformanceError, "^output_write_failed$"
+                ),
+            ):
+                runtime.write_evidence(output, {})
+            self.assertEqual(output.read_bytes(), b"retained")
 
 
 if __name__ == "__main__":

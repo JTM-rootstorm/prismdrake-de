@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 import subprocess
 import sys
@@ -261,6 +262,22 @@ class LiveCollectorTests(unittest.TestCase):
             self.assertEqual(list(output.parent.glob(".wp15.json.*.tmp")), [])
             with self.assertRaisesRegex(EvidenceError, "^live_output_path_invalid$"):
                 write_evidence(output, document)
+
+    def test_atomic_writer_preserves_output_created_during_publication(self) -> None:
+        document = collect_evidence(config(), FakeLivePort())
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary).resolve() / "wp15.json"
+
+            def retain_output(_source: object, destination: object, **_kwargs: object) -> None:
+                Path(destination).write_bytes(b"retained")
+                raise FileExistsError
+
+            with (
+                mock.patch.object(os, "link", side_effect=retain_output),
+                self.assertRaisesRegex(EvidenceError, "^live_output_write_failed$"),
+            ):
+                write_evidence(output, document)
+            self.assertEqual(output.read_bytes(), b"retained")
 
 
 class CommandAdapterTests(unittest.TestCase):

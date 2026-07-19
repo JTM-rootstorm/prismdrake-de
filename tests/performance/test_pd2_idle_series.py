@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import copy
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import pd2_idle_series as idle_series
 from validate_external_evidence import idle_fixture
@@ -95,6 +97,26 @@ class IdleSeriesTests(unittest.TestCase):
                 idle_series.IdleSeriesError, "^output_path_invalid$"
             ):
                 idle_series.write_series(output, document)
+
+    def test_writer_preserves_output_created_during_publication(self) -> None:
+        document = idle_series.assemble_series(
+            [trial(1), trial(2), trial(3)], REVISION, ENVIRONMENT_ID
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary).resolve() / "series.json"
+
+            def retain_output(_source: object, destination: object, **_kwargs: object) -> None:
+                Path(destination).write_bytes(b"retained")
+                raise FileExistsError
+
+            with (
+                mock.patch.object(os, "link", side_effect=retain_output),
+                self.assertRaisesRegex(
+                    idle_series.IdleSeriesError, "^output_write_failed$"
+                ),
+            ):
+                idle_series.write_series(output, document)
+            self.assertEqual(output.read_bytes(), b"retained")
 
     def test_rejects_boolean_sample_as_noninteger_evidence(self) -> None:
         document = idle_series.assemble_series(

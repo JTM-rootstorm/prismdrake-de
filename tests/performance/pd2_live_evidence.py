@@ -388,7 +388,8 @@ def write_evidence(path: Path, document: Mapping[str, Any]) -> None:
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        os.link(temporary, path, follow_symlinks=False)
+        temporary.unlink()
         temporary = None
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:
