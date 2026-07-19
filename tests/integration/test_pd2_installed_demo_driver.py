@@ -24,6 +24,7 @@ import pd2_demo  # noqa: E402
 
 
 REVISION = "a" * 40
+HARNESS_MANIFEST_SHA256 = "b" * 64
 
 
 class FakeLivePort:
@@ -59,6 +60,7 @@ def executable_hashes() -> dict[str, str]:
 def attestation(hashes: dict[str, str]) -> dict[str, object]:
     return {
         "source": {"revision": REVISION},
+        "demo_harness": {"manifest_sha256": HARNESS_MANIFEST_SHA256},
         "installed": {
             "executables": [
                 {"path": os.fspath(path), "sha256": hashes[name]}
@@ -122,6 +124,9 @@ class InstalledExecutionTests(unittest.TestCase):
         self.assertTrue(all(call[3] == self.fixture for call in self.validation_calls))
         evidence = pd2_demo.load_evidence(self.output)
         self.assertEqual(evidence["source_revision"], REVISION)
+        self.assertEqual(
+            evidence["harness_manifest_sha256"], HARNESS_MANIFEST_SHA256
+        )
         self.assertEqual(self.output.stat().st_mode & 0o777, 0o600)
 
     def test_rejects_hash_drift_before_starting_live_environment(self) -> None:
@@ -195,7 +200,9 @@ class InstalledExecutionTests(unittest.TestCase):
 
 class DriverCliTests(unittest.TestCase):
     def test_actual_attested_script_validation_entrypoint(self) -> None:
-        document = pd2_demo.run_harness(REVISION, FakeLivePort(executable_hashes()))
+        document = pd2_demo.run_harness(
+            REVISION, HARNESS_MANIFEST_SHA256, FakeLivePort(executable_hashes())
+        )
         with tempfile.TemporaryDirectory() as temporary:
             evidence = Path(temporary).resolve() / "evidence.json"
             pd2_demo.write_evidence(evidence, document)

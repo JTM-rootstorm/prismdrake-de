@@ -331,10 +331,11 @@ def _validate_process_ownership(values: Mapping[str, object]) -> None:
                 "process_ownership_duplicate")
 
 
-def _aggregate_hash(executables: Sequence[Mapping[str, str]],
+def _aggregate_hash(executables: Sequence[Mapping[str, str]], harness_manifest_sha256: str,
                     result_groups: Sequence[Sequence[Mapping[str, Any]]]) -> str:
     normalized = {
         "executables": list(executables),
+        "harness_manifest_sha256": harness_manifest_sha256,
         "results": [record["result_sha256"] for group in result_groups for record in group],
     }
     payload = json.dumps(
@@ -382,11 +383,15 @@ def _run_phase(port: HarnessPort, phase: str,
     return results, cleanup_record
 
 
-def run_harness(source_revision: str, port: HarnessPort) -> dict[str, Any]:
+def run_harness(
+        source_revision: str, harness_manifest_sha256: str, port: HarnessPort,
+) -> dict[str, Any]:
     """Execute the closed contract through an injected live or hermetic backend."""
 
     require(re.fullmatch(r"[0-9a-f]{40}", source_revision) is not None,
             "source_revision_invalid")
+    require(re.fullmatch(r"[0-9a-f]{64}", harness_manifest_sha256) is not None,
+            "harness_manifest_sha256_invalid")
     try:
         executable_values = port.installed_executable_hashes()
     except Exception as error:
@@ -426,6 +431,7 @@ def run_harness(source_revision: str, port: HarnessPort) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "evidence_kind": "pd2_installed_multi_output_failure_demonstration",
         "source_revision": source_revision,
+        "harness_manifest_sha256": harness_manifest_sha256,
         "environment": {
             "artifact_provenance": "portage_installed",
             "display_topology": "isolated_xorg_dummy_two_output_same_scale",
@@ -462,6 +468,7 @@ def run_harness(source_revision: str, port: HarnessPort) -> dict[str, Any]:
     }
     document["normalized_results_sha256"] = _aggregate_hash(
         executables,
+        harness_manifest_sha256,
         (
             [document["process_ownership"]["result"]],
             workflow_results,
@@ -510,6 +517,10 @@ def validate_evidence(document: Any) -> None:
     require(isinstance(source_revision, str) and
             re.fullmatch(r"[0-9a-f]{40}", source_revision) is not None,
             "source_revision_invalid")
+    harness_manifest_sha256 = document.get("harness_manifest_sha256")
+    require(isinstance(harness_manifest_sha256, str) and
+            re.fullmatch(r"[0-9a-f]{64}", harness_manifest_sha256) is not None,
+            "harness_manifest_sha256_invalid")
     environment = document.get("environment")
     require(environment == {
         "artifact_provenance": "portage_installed",
@@ -575,6 +586,7 @@ def validate_evidence(document: Any) -> None:
     }, "scope_claim_invalid")
     expected_aggregate = _aggregate_hash(
         executable_values,
+        harness_manifest_sha256,
         (
             [ownership_result],
             document["workflow"],
@@ -814,13 +826,18 @@ def execute_installed_demonstration(
         name: record.get("sha256") if isinstance(record, dict) else None
         for name, record in zip(EXECUTABLE_NAMES, records)
     }
+    demo_harness = attestation.get("demo_harness")
+    manifest_sha256 = (
+        demo_harness.get("manifest_sha256") if isinstance(demo_harness, dict) else None
+    )
+    require(isinstance(manifest_sha256, str), "attestation_harness_manifest_invalid")
 
     port = port_factory(controlled_window_fixture)
     require(
         port.installed_executable_hashes() == expected_hashes,
         "attested_executable_set_changed",
     )
-    document = run_harness(revision, port)
+    document = run_harness(revision, manifest_sha256, port)
 
     # Detect a changed source driver, fixture, or installed binary before the
     # success record becomes durable. The live port has already completed its

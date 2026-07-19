@@ -357,7 +357,11 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 del phase
                 return pd2_demo.Observation(True, True)
 
-        evidence = pd2_demo.run_harness(attestation["source"]["revision"], Port())
+        evidence = pd2_demo.run_harness(
+            attestation["source"]["revision"],
+            attestation["demo_harness"]["manifest_sha256"],
+            Port(),
+        )
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "demo.json"
             path.write_text(json.dumps(evidence), encoding="utf-8")
@@ -368,6 +372,16 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                          evidence["normalized_results_sha256"])
         self.assertEqual(capture["harness_manifest_sha256"],
                          attestation["demo_harness"]["manifest_sha256"])
+
+        substituted = pd2_demo.run_harness(
+            attestation["source"]["revision"], "0" * 64, Port()
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "substituted-demo.json"
+            path.write_text(json.dumps(substituted), encoding="utf-8")
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^demonstration_harness_manifest_mismatch$"):
+                capture_installed_demonstration(attestation, "initial_install", path)
 
 
 if __name__ == "__main__":

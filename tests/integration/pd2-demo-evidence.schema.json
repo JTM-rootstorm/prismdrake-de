@@ -8,6 +8,7 @@
     "schema_version",
     "evidence_kind",
     "source_revision",
+    "harness_manifest_sha256",
     "environment",
     "installed_executables",
     "process_ownership",
@@ -22,6 +23,7 @@
     "schema_version": { "const": 1 },
     "evidence_kind": { "const": "pd2_installed_multi_output_failure_demonstration" },
     "source_revision": { "type": "string", "pattern": "[0-9a-f]{40}" },
+    "harness_manifest_sha256": { "type": "string", "pattern": "[0-9a-f]{64}" },
     "environment": {
       "type": "object",
       "additionalProperties": false,

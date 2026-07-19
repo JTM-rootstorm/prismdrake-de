@@ -38,6 +38,7 @@ from pd2_demo import (  # noqa: E402
 
 
 REVISION = "a" * 40
+HARNESS_MANIFEST_SHA256 = "b" * 64
 
 
 class FakeHarnessPort:
@@ -110,7 +111,7 @@ class HarnessExecutionTests(unittest.TestCase):
 
     def test_injected_port_completes_all_steps_and_cleanup(self) -> None:
         port = FakeHarnessPort()
-        document = run_harness(REVISION, port)
+        document = run_harness(REVISION, HARNESS_MANIFEST_SHA256, port)
 
         validate_evidence(document)
         validate_schema(document)
@@ -145,7 +146,7 @@ class HarnessExecutionTests(unittest.TestCase):
         port.step_results[("installed_workflow", identifier)] = Observation(False, False)
 
         with self.assertRaisesRegex(HarnessError, "^step_unobserved$"):
-            run_harness(REVISION, port)
+            run_harness(REVISION, HARNESS_MANIFEST_SHA256, port)
         self.assertEqual(port.cleanup_calls, ["installed_workflow"])
 
     def test_failed_replay_step_still_cleans_its_phase(self) -> None:
@@ -154,7 +155,7 @@ class HarnessExecutionTests(unittest.TestCase):
         port.step_results[("failure_replay", identifier)] = Observation(True, False)
 
         with self.assertRaisesRegex(HarnessError, "^step_failed$"):
-            run_harness(REVISION, port)
+            run_harness(REVISION, HARNESS_MANIFEST_SHA256, port)
         self.assertEqual(port.cleanup_calls, ["installed_workflow", "failure_replay"])
 
     def test_unobserved_cleanup_is_not_retried_or_accepted(self) -> None:
@@ -162,7 +163,7 @@ class HarnessExecutionTests(unittest.TestCase):
         port.cleanup_results["installed_workflow"] = Observation(False, False)
 
         with self.assertRaisesRegex(HarnessError, "^cleanup_failed$"):
-            run_harness(REVISION, port)
+            run_harness(REVISION, HARNESS_MANIFEST_SHA256, port)
         self.assertEqual(port.cleanup_calls, ["installed_workflow"])
 
     def test_backend_exception_fails_closed_after_cleanup(self) -> None:
@@ -170,7 +171,7 @@ class HarnessExecutionTests(unittest.TestCase):
         port.step_results[("installed_workflow", WORKFLOW_STEPS[4])] = RuntimeError("boom")
 
         with self.assertRaisesRegex(HarnessError, "^backend_operation_failed$"):
-            run_harness(REVISION, port)
+            run_harness(REVISION, HARNESS_MANIFEST_SHA256, port)
         self.assertEqual(port.cleanup_calls, ["installed_workflow"])
 
     def test_requires_exact_five_executable_identities(self) -> None:
@@ -178,7 +179,7 @@ class HarnessExecutionTests(unittest.TestCase):
         port.executable_values = dict(list(port.executable_values.items())[:-1])
 
         with self.assertRaisesRegex(HarnessError, "^executable_identity_set_invalid$"):
-            run_harness(REVISION, port)
+            run_harness(REVISION, HARNESS_MANIFEST_SHA256, port)
         self.assertEqual(port.step_calls, [])
         self.assertEqual(port.cleanup_calls, [])
 
@@ -187,7 +188,7 @@ class HarnessExecutionTests(unittest.TestCase):
         port.executable_error = RuntimeError("boom")
 
         with self.assertRaisesRegex(HarnessError, "^backend_operation_failed$"):
-            run_harness(REVISION, port)
+            run_harness(REVISION, HARNESS_MANIFEST_SHA256, port)
         self.assertEqual(port.step_calls, [])
         self.assertEqual(port.cleanup_calls, [])
 
@@ -197,14 +198,16 @@ class HarnessExecutionTests(unittest.TestCase):
         port.process_values = {role: identity for role in PROCESS_ROLES}
 
         with self.assertRaisesRegex(HarnessError, "^process_ownership_duplicate$"):
-            run_harness(REVISION, port)
+            run_harness(REVISION, HARNESS_MANIFEST_SHA256, port)
         self.assertEqual(port.cleanup_calls, ["installed_workflow"])
 
 
 class EvidenceValidationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.document = run_harness(REVISION, FakeHarnessPort())
+        cls.document = run_harness(
+            REVISION, HARNESS_MANIFEST_SHA256, FakeHarnessPort()
+        )
 
     def assert_rejected(self, document: object) -> None:
         with self.assertRaises(HarnessError):
@@ -237,6 +240,11 @@ class EvidenceValidationTests(unittest.TestCase):
                 else:
                     document["normalized_results_sha256"] = "0" * 64
                 self.assert_rejected(document)
+
+    def test_rejects_harness_manifest_substitution(self) -> None:
+        document = copy.deepcopy(self.document)
+        document["harness_manifest_sha256"] = "c" * 64
+        self.assert_rejected(document)
 
     def test_rejects_private_runtime_fields(self) -> None:
         document = copy.deepcopy(self.document)

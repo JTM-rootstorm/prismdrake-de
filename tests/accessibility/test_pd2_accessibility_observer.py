@@ -54,7 +54,7 @@ class FakeHarnessPort:
 class AccessibilityObserverTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.document = pd2_demo.run_harness(REVISION, FakeHarnessPort())
+        cls.document = pd2_demo.run_harness(REVISION, "b" * 64, FakeHarnessPort())
 
     def observed(self, surface: str, check: str) -> dict[str, object]:
         with (

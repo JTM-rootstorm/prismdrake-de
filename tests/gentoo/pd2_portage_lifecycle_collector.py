@@ -493,6 +493,9 @@ def capture_installed_demonstration(
         raise Pd2CollectorError("demonstration_evidence_invalid") from error
     _require(document["source_revision"] == binding["source_revision"],
              "demonstration_source_revision_mismatch")
+    _require(document["harness_manifest_sha256"] ==
+             attestation["demo_harness"]["manifest_sha256"],
+             "demonstration_harness_manifest_mismatch")
     expected = {
         Path(item["path"]).name: item["sha256"]
         for item in attestation["installed"]["executables"]
