@@ -11,6 +11,7 @@
 #include <QObject>
 #include <QTimer>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -61,7 +62,8 @@ class BlockingOperations final : public TaskIoOperations {
   public:
     explicit BlockingOperations(std::shared_ptr<BlockingState> state) : state_(std::move(state)) {}
 
-    foundation::Result<x11::TaskModelObservation> refresh(std::span<const x11::WindowId>) override {
+    foundation::Result<x11::TaskModelObservation> refresh(std::span<const x11::WindowId>,
+                                                          bool) override {
         {
             std::scoped_lock lock{state_->mutex};
             state_->entered = true;
@@ -141,7 +143,8 @@ class CountingOperations final : public TaskIoOperations {
         : descriptor_(descriptor), count_(std::move(count)) {}
     ~CountingOperations() override { (void)close(descriptor_); }
 
-    foundation::Result<x11::TaskModelObservation> refresh(std::span<const x11::WindowId>) override {
+    foundation::Result<x11::TaskModelObservation> refresh(std::span<const x11::WindowId>,
+                                                          bool) override {
         return foundation::Result<x11::TaskModelObservation>::success(testObservation());
     }
     foundation::Result<void> request(const x11::TaskRequestState &,
@@ -158,6 +161,90 @@ class CountingOperations final : public TaskIoOperations {
   private:
     int descriptor_;
     std::shared_ptr<std::atomic<int>> count_;
+};
+
+struct RefreshRecordingState final {
+    std::atomic_bool invalidateAll{false};
+    std::atomic_size_t invalidationCount{0U};
+    int descriptor{-1};
+
+    ~RefreshRecordingState() {
+        if (descriptor >= 0) {
+            (void)close(descriptor);
+        }
+    }
+};
+
+class RefreshRecordingOperations final : public TaskIoOperations {
+  public:
+    explicit RefreshRecordingOperations(std::shared_ptr<RefreshRecordingState> state)
+        : state_(std::move(state)) {}
+
+    foundation::Result<x11::TaskModelObservation>
+    refresh(std::span<const x11::WindowId> invalidations, bool invalidateAll) override {
+        state_->invalidationCount.store(invalidations.size(), std::memory_order_relaxed);
+        state_->invalidateAll.store(invalidateAll, std::memory_order_relaxed);
+        return foundation::Result<x11::TaskModelObservation>::success(testObservation());
+    }
+    foundation::Result<void> request(const x11::TaskRequestState &,
+                                     std::optional<x11::WindowId>) override {
+        return foundation::Result<void>::success();
+    }
+    [[nodiscard]] int eventFileDescriptor() const noexcept override { return state_->descriptor; }
+    foundation::Result<TaskEventRefreshPlan> drainEvents() override {
+        return foundation::Result<TaskEventRefreshPlan>::success({});
+    }
+    void cancelWaits() noexcept override { (void)shutdown(state_->descriptor, SHUT_RDWR); }
+
+  private:
+    std::shared_ptr<RefreshRecordingState> state_;
+};
+
+struct EventStormState final {
+    std::atomic<int> drains{0};
+    int workerDescriptor{-1};
+    int writerDescriptor{-1};
+
+    ~EventStormState() {
+        if (workerDescriptor >= 0) {
+            (void)close(workerDescriptor);
+        }
+        if (writerDescriptor >= 0) {
+            (void)close(writerDescriptor);
+        }
+    }
+};
+
+class EventStormOperations final : public TaskIoOperations {
+  public:
+    explicit EventStormOperations(std::shared_ptr<EventStormState> state)
+        : state_(std::move(state)) {}
+
+    foundation::Result<x11::TaskModelObservation> refresh(std::span<const x11::WindowId>,
+                                                          bool) override {
+        return foundation::Result<x11::TaskModelObservation>::success(testObservation());
+    }
+    foundation::Result<void> request(const x11::TaskRequestState &,
+                                     std::optional<x11::WindowId>) override {
+        return foundation::Result<void>::success();
+    }
+    [[nodiscard]] int eventFileDescriptor() const noexcept override {
+        return state_->workerDescriptor;
+    }
+    foundation::Result<TaskEventRefreshPlan> drainEvents() override {
+        char byte = 0;
+        (void)read(state_->workerDescriptor, &byte, sizeof(byte));
+        const auto index = state_->drains.fetch_add(1, std::memory_order_relaxed) + 1;
+        auto window = x11::WindowId::fromProtocol(static_cast<std::uint32_t>(index));
+        if (!window) {
+            return foundation::Result<TaskEventRefreshPlan>::failure(window.error());
+        }
+        return foundation::Result<TaskEventRefreshPlan>::success({true, false, {window.value()}});
+    }
+    void cancelWaits() noexcept override { (void)shutdown(state_->workerDescriptor, SHUT_RDWR); }
+
+  private:
+    std::shared_ptr<EventStormState> state_;
 };
 
 [[nodiscard]] std::shared_ptr<BlockingState> blockingState() {
@@ -249,6 +336,50 @@ TEST(TaskIoWorkerTest, TeardownInterruptsAnUnresponsiveX11Wait) {
     EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds{1});
 }
 
+TEST(TaskIoWorkerTest, OversizedInvalidationsResetTheAuthoritativeSource) {
+    ensureApplication();
+    int descriptors[2]{-1, -1};
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, descriptors), 0);
+    auto state = std::make_shared<RefreshRecordingState>();
+    state->descriptor = descriptors[0];
+    QObject owner;
+    bool completed = false;
+    auto worker = TaskIoWorker::create(
+        owner,
+        [state] {
+            return foundation::Result<std::unique_ptr<TaskIoOperations>>::success(
+                std::make_unique<RefreshRecordingOperations>(state));
+        },
+        [&completed](auto, auto result) {
+            EXPECT_TRUE(result);
+            completed = true;
+        },
+        [](auto, auto) {}, [](auto) {});
+    ASSERT_TRUE(worker);
+    std::vector<x11::WindowId> invalidations;
+    for (std::uint32_t value = 1U; value <= x11::maximumTaskWindows + 1U; ++value) {
+        invalidations.push_back(x11::WindowId::fromProtocol(value).value());
+    }
+    ASSERT_TRUE(worker.value()->submitRefresh(1U, std::move(invalidations)));
+
+    QEventLoop loop;
+    QTimer poll;
+    poll.setInterval(1);
+    QObject::connect(&poll, &QTimer::timeout, &loop, [&] {
+        if (completed) {
+            loop.quit();
+        }
+    });
+    QTimer::singleShot(1000, &loop, &QEventLoop::quit);
+    poll.start();
+    loop.exec();
+
+    EXPECT_TRUE(completed);
+    EXPECT_TRUE(state->invalidateAll.load(std::memory_order_relaxed));
+    EXPECT_EQ(state->invalidationCount.load(std::memory_order_relaxed), 0U);
+    (void)close(descriptors[1]);
+}
+
 TEST(TaskIoWorkerTest, DrainsMultipleRequestsAfterOneAggregatedWake) {
     ensureApplication();
     int descriptors[2]{-1, -1};
@@ -293,6 +424,58 @@ TEST(TaskIoWorkerTest, DrainsMultipleRequestsAfterOneAggregatedWake) {
     EXPECT_EQ(completions, 2);
     EXPECT_EQ(count->load(std::memory_order_relaxed), 2);
     (void)close(descriptors[1]);
+}
+
+TEST(TaskIoWorkerTest, EventStormQueuesOneBoundedFullRefreshForTheOwner) {
+    ensureApplication();
+    int descriptors[2]{-1, -1};
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, descriptors), 0);
+    auto state = std::make_shared<EventStormState>();
+    state->workerDescriptor = descriptors[0];
+    state->writerDescriptor = descriptors[1];
+    QObject owner;
+    std::vector<TaskEventRefreshPlan> deliveries;
+    auto worker = TaskIoWorker::create(
+        owner,
+        [state] {
+            return foundation::Result<std::unique_ptr<TaskIoOperations>>::success(
+                std::make_unique<EventStormOperations>(state));
+        },
+        [](auto, auto) {}, [](auto, auto) {},
+        [&deliveries](auto result) {
+            ASSERT_TRUE(result);
+            deliveries.push_back(std::move(result).value());
+        });
+    ASSERT_TRUE(worker);
+
+    constexpr int eventCount = static_cast<int>(x11::maximumTaskWindows) + 32;
+    std::array<char, eventCount> events{};
+    ASSERT_EQ(write(state->writerDescriptor, events.data(), events.size()),
+              static_cast<ssize_t>(events.size()));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+    while (state->drains.load(std::memory_order_relaxed) < eventCount &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(state->drains.load(std::memory_order_relaxed), eventCount);
+    EXPECT_TRUE(deliveries.empty());
+
+    QEventLoop loop;
+    QTimer poll;
+    poll.setInterval(1);
+    QObject::connect(&poll, &QTimer::timeout, &loop, [&] {
+        if (!deliveries.empty()) {
+            loop.quit();
+        }
+    });
+    QTimer::singleShot(1000, &loop, &QEventLoop::quit);
+    poll.start();
+    loop.exec();
+
+    ASSERT_EQ(deliveries.size(), 1U);
+    EXPECT_TRUE(deliveries.front().refreshRequired);
+    EXPECT_TRUE(deliveries.front().invalidateAllClients);
+    EXPECT_TRUE(deliveries.front().invalidatedWindows.empty());
 }
 
 } // namespace

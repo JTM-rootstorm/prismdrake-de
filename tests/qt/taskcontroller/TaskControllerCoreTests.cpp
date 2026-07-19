@@ -149,6 +149,29 @@ TEST(TaskSnapshotStabilizationPolicyTest, CoalescesRelevantEventsWhileTimerIsPen
     EXPECT_FALSE(taskRequestPathCanDispatch(false, false));
 }
 
+TEST(TaskSnapshotStabilizationPolicyTest,
+     MultipleDeferredDeliveriesDegradeToFullInvalidationAtTheExactBound) {
+    std::vector<x11::WindowId> first;
+    std::vector<x11::WindowId> second;
+    for (std::uint32_t value = 1U; value <= 200U; ++value) {
+        first.push_back(window(value));
+    }
+    for (std::uint32_t value = 201U; value <= 300U; ++value) {
+        second.push_back(window(value));
+    }
+    bool invalidateAllClients = false;
+    std::vector<x11::WindowId> deferred;
+
+    ASSERT_FALSE(taskRefreshShouldRunImmediately(true, true));
+    mergeTaskRefreshInvalidations(false, first, invalidateAllClients, deferred);
+    ASSERT_FALSE(invalidateAllClients);
+    ASSERT_EQ(deferred.size(), 200U);
+    mergeTaskRefreshInvalidations(false, second, invalidateAllClients, deferred);
+
+    EXPECT_TRUE(invalidateAllClients);
+    EXPECT_TRUE(deferred.empty());
+}
+
 TEST(TaskControllerCoreTest, PublishesPresentationAndConfirmsExactTypedActivation) {
     tasks::TaskPresentationModel presentation;
     std::optional<x11::TaskRequestState> dispatched;

@@ -13,9 +13,13 @@
 #include <array>
 #include <cerrno>
 #include <cstdint>
+#include <exception>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <poll.h>
 #include <sys/eventfd.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <utility>
 #include <variant>
@@ -43,20 +47,126 @@ using foundation::Result;
            std::holds_alternative<x11::ProtocolErrorHint>(event);
 }
 
+class X11OutputMonitorOperations final : public ShellOutputMonitorOperations {
+  public:
+    [[nodiscard]] static Result<std::unique_ptr<ShellOutputMonitorOperations>>
+    create(std::string display) {
+        auto connection = x11::X11Connection::connect(display);
+        if (!connection) {
+            return Result<std::unique_ptr<ShellOutputMonitorOperations>>::failure(
+                connection.error());
+        }
+        auto randr = x11::RandrTopologyProtocol::negotiate(connection.value());
+        if (!randr) {
+            return Result<std::unique_ptr<ShellOutputMonitorOperations>>::failure(randr.error());
+        }
+        auto events = x11::RootEventStream::create(connection.value(), randr.value());
+        if (!events) {
+            return Result<std::unique_ptr<ShellOutputMonitorOperations>>::failure(events.error());
+        }
+        return Result<std::unique_ptr<ShellOutputMonitorOperations>>::success(
+            std::unique_ptr<ShellOutputMonitorOperations>(new X11OutputMonitorOperations(
+                std::move(connection).value(), std::move(randr).value(),
+                std::move(events).value())));
+    }
+
+    Result<x11::RandrTopologySnapshot> query() override { return randr_.query(connection_); }
+
+    [[nodiscard]] int eventFileDescriptor() const noexcept override {
+        return connection_.eventFileDescriptor();
+    }
+
+    Result<bool> drainEvents() override {
+        auto batch = events_.drain();
+        if (!batch) {
+            return Result<bool>::failure(batch.error());
+        }
+        bool refresh = batch.value().examinationLimitReached;
+        for (const auto &event : batch.value().events) {
+            refresh = refresh || needsRefresh(event);
+        }
+        return Result<bool>::success(refresh);
+    }
+
+    void cancelWaits() noexcept override {
+        const int descriptor = connection_.eventFileDescriptor();
+        if (descriptor >= 0) {
+            (void)::shutdown(descriptor, SHUT_RDWR);
+        }
+    }
+
+  private:
+    X11OutputMonitorOperations(x11::X11Connection connection, x11::RandrTopologyProtocol randr,
+                               x11::RootEventStream events)
+        : connection_(std::move(connection)), randr_(std::move(randr)), events_(std::move(events)) {
+    }
+
+    x11::X11Connection connection_;
+    x11::RandrTopologyProtocol randr_;
+    x11::RootEventStream events_;
+};
+
+class OperationsGuard final {
+  public:
+    OperationsGuard(std::atomic<ShellOutputMonitorOperations *> &published, std::mutex &mutex,
+                    ShellOutputMonitorOperations *operations)
+        : published_(published), mutex_(mutex) {
+        std::scoped_lock lock{mutex_};
+        published_.store(operations, std::memory_order_release);
+    }
+    ~OperationsGuard() {
+        std::scoped_lock lock{mutex_};
+        published_.store(nullptr, std::memory_order_release);
+    }
+
+  private:
+    std::atomic<ShellOutputMonitorOperations *> &published_;
+    std::mutex &mutex_;
+};
+
 } // namespace
+
+struct ShellOutputMonitor::PublicationState final {
+    struct Failure final {
+        foundation::Error error;
+        bool fatal;
+        std::uint64_t topologyEpoch;
+    };
+
+    std::mutex mutex;
+    std::optional<x11::RandrTopologySnapshot> topology;
+    std::optional<Failure> failure;
+    bool queued{false};
+    bool stopping{false};
+    std::uint64_t topologyEpoch{0U};
+};
 
 ShellOutputMonitor::ShellOutputMonitor(std::string display, SnapshotObserver snapshotObserver,
                                        FailureObserver failureObserver, QObject *parent)
-    : QObject(parent), display_(std::move(display)),
-      snapshot_observer_(std::move(snapshotObserver)),
+    : ShellOutputMonitor(
+          [display = std::move(display)] { return X11OutputMonitorOperations::create(display); },
+          std::move(snapshotObserver), std::move(failureObserver), parent) {
+    observe_qt_screens_ = true;
+}
+
+ShellOutputMonitor::ShellOutputMonitor(OperationsFactory operationsFactory,
+                                       SnapshotObserver snapshotObserver,
+                                       FailureObserver failureObserver, QObject *parent)
+    : QObject(parent), operations_factory_(std::move(operationsFactory)),
+      observe_qt_screens_(false), snapshot_observer_(std::move(snapshotObserver)),
       failure_observer_(std::move(failureObserver)) {}
 
 ShellOutputMonitor::~ShellOutputMonitor() { stop(); }
 
 Result<void> ShellOutputMonitor::start() {
+    auto *coreApplication = QCoreApplication::instance();
     auto *application = qobject_cast<QGuiApplication *>(QCoreApplication::instance());
-    if (running_.exchange(true) || application == nullptr || !snapshot_observer_) {
-        running_ = false;
+    if (coreApplication == nullptr || !operations_factory_ || !snapshot_observer_ ||
+        (observe_qt_screens_ && application == nullptr)) {
+        return Result<void>::failure(invalidConfiguration());
+    }
+    bool stopped = false;
+    if (!running_.compare_exchange_strong(stopped, true)) {
         return Result<void>::failure(invalidConfiguration());
     }
     wake_descriptor_ = ::eventfd(0U, EFD_CLOEXEC | EFD_NONBLOCK);
@@ -64,20 +174,43 @@ Result<void> ShellOutputMonitor::start() {
         running_ = false;
         return Result<void>::failure(monitorError());
     }
-    for (auto *screen : QGuiApplication::screens()) {
-        if (screen != nullptr) {
-            observeScreen(*screen);
-        }
+    try {
+        std::scoped_lock lock{publication_state_mutex_};
+        publication_state_ = std::make_shared<PublicationState>();
+    } catch (const std::exception &) {
+        (void)::close(wake_descriptor_);
+        wake_descriptor_ = -1;
+        running_ = false;
+        return Result<void>::failure(monitorError());
     }
-    connect(application, &QGuiApplication::screenAdded, this, [this](QScreen *screen) {
-        if (screen != nullptr) {
-            observeScreen(*screen);
-            requestRefresh();
+    if (application != nullptr) {
+        for (auto *screen : QGuiApplication::screens()) {
+            if (screen != nullptr) {
+                observeScreen(*screen);
+            }
         }
-    });
-    connect(application, &QGuiApplication::screenRemoved, this,
-            [this](QScreen *) { requestRefresh(); });
-    worker_ = std::jthread([this](std::stop_token token) { workerMain(token); });
+        connect(application, &QGuiApplication::screenAdded, this, [this](QScreen *screen) {
+            if (screen != nullptr) {
+                observeScreen(*screen);
+                requestRefresh();
+            }
+        });
+        connect(application, &QGuiApplication::screenRemoved, this,
+                [this](QScreen *) { requestRefresh(); });
+    }
+    try {
+        worker_ = std::jthread([this](std::stop_token token) { workerMain(token); });
+    } catch (const std::exception &) {
+        QObject::disconnect(nullptr, nullptr, this, nullptr);
+        if (auto state = publicationState()) {
+            std::scoped_lock lock{state->mutex};
+            state->stopping = true;
+        }
+        (void)::close(wake_descriptor_);
+        wake_descriptor_ = -1;
+        running_ = false;
+        return Result<void>::failure(monitorError());
+    }
     return Result<void>::success();
 }
 
@@ -85,8 +218,21 @@ void ShellOutputMonitor::stop() noexcept {
     if (!running_.exchange(false)) {
         return;
     }
+    QObject::disconnect(nullptr, nullptr, this, nullptr);
+    if (auto state = publicationState()) {
+        std::scoped_lock lock{state->mutex};
+        state->stopping = true;
+        state->topology.reset();
+        state->failure.reset();
+    }
     worker_.request_stop();
     requestRefresh();
+    {
+        std::scoped_lock lock{operations_mutex_};
+        if (auto *operations = operations_.load(std::memory_order_acquire); operations != nullptr) {
+            operations->cancelWaits();
+        }
+    }
     if (worker_.joinable()) {
         worker_.join();
     }
@@ -155,29 +301,26 @@ void ShellOutputMonitor::observeScreen(QScreen &screen) {
 }
 
 void ShellOutputMonitor::workerMain(std::stop_token stopToken) noexcept {
-    auto connection = x11::X11Connection::connect(display_);
-    if (!connection) {
-        publishFailure(connection.error(), true);
+    auto operations = operations_factory_();
+    if (!operations) {
+        if (!stopToken.stop_requested()) {
+            publishFailure(operations.error(), true);
+        }
         return;
     }
-    auto randr = x11::RandrTopologyProtocol::negotiate(connection.value());
-    if (!randr) {
-        publishFailure(randr.error(), true);
-        return;
-    }
-    auto events = x11::RootEventStream::create(connection.value(), randr.value());
-    if (!events) {
-        publishFailure(events.error(), true);
-        return;
-    }
+    OperationsGuard operationsGuard{operations_, operations_mutex_, operations.value().get()};
 
     bool refresh = true;
     while (!stopToken.stop_requested()) {
         if (refresh) {
-            auto snapshot = randr.value().query(connection.value());
+            auto snapshot = operations.value()->query();
+            if (stopToken.stop_requested()) {
+                return;
+            }
             if (!snapshot) {
-                publishFailure(snapshot.error(), !connection.value().healthy());
-                if (!connection.value().healthy()) {
+                const bool fatal = snapshot.error().code == ErrorCode::io_error;
+                publishFailure(snapshot.error(), fatal);
+                if (fatal) {
                     return;
                 }
             } else {
@@ -187,7 +330,7 @@ void ShellOutputMonitor::workerMain(std::stop_token stopToken) noexcept {
         }
 
         std::array<pollfd, 2> descriptors{{
-            {connection.value().eventFileDescriptor(), POLLIN, 0},
+            {operations.value()->eventFileDescriptor(), POLLIN, 0},
             {wake_descriptor_, POLLIN, 0},
         }};
         int polled = -1;
@@ -212,46 +355,141 @@ void ShellOutputMonitor::workerMain(std::stop_token stopToken) noexcept {
             return;
         }
         if ((descriptors[0].revents & POLLIN) != 0) {
-            auto batch = events.value().drain();
-            if (!batch) {
-                publishFailure(batch.error(), !connection.value().healthy());
-                if (!connection.value().healthy()) {
+            auto drained = operations.value()->drainEvents();
+            if (!drained) {
+                const bool fatal = drained.error().code == ErrorCode::io_error;
+                publishFailure(drained.error(), fatal);
+                if (fatal) {
                     return;
                 }
             } else {
-                for (const auto &event : batch.value().events) {
-                    refresh = refresh || needsRefresh(event);
-                }
-                if (batch.value().examinationLimitReached) {
-                    refresh = true;
-                }
+                refresh = refresh || drained.value();
             }
         }
     }
 }
 
 void ShellOutputMonitor::publishTopology(x11::RandrTopologySnapshot snapshot) noexcept {
-    QPointer<ShellOutputMonitor> guard{this};
-    QMetaObject::invokeMethod(
-        this,
-        [guard, snapshot = std::move(snapshot)]() mutable {
-            if (guard) {
-                guard->applyTopology(std::move(snapshot));
-            }
-        },
-        Qt::QueuedConnection);
+    auto state = publicationState();
+    if (!state) {
+        return;
+    }
+    bool queue = false;
+    {
+        std::scoped_lock lock{state->mutex};
+        if (state->stopping) {
+            return;
+        }
+        ++state->topologyEpoch;
+        state->topology = std::move(snapshot);
+        if (state->failure && !state->failure->fatal) {
+            state->failure.reset();
+        }
+        if (!state->queued) {
+            state->queued = true;
+            queue = true;
+        }
+    }
+    if (queue) {
+        queuePublication(state);
+    }
 }
 
 void ShellOutputMonitor::publishFailure(foundation::Error error, bool fatal) noexcept {
+    auto state = publicationState();
+    if (!state) {
+        return;
+    }
+    bool queue = false;
+    {
+        std::scoped_lock lock{state->mutex};
+        if (state->stopping) {
+            return;
+        }
+        if (!state->failure || fatal || !state->failure->fatal) {
+            state->failure =
+                PublicationState::Failure{std::move(error), fatal, state->topologyEpoch};
+        }
+        if (fatal) {
+            state->topology.reset();
+        }
+        if (!state->queued) {
+            state->queued = true;
+            queue = true;
+        }
+    }
+    if (queue) {
+        queuePublication(state);
+    }
+}
+
+std::shared_ptr<ShellOutputMonitor::PublicationState>
+ShellOutputMonitor::publicationState() const noexcept {
+    std::scoped_lock lock{publication_state_mutex_};
+    return publication_state_;
+}
+
+void ShellOutputMonitor::queuePublication(const std::shared_ptr<PublicationState> &state) noexcept {
     QPointer<ShellOutputMonitor> guard{this};
-    QMetaObject::invokeMethod(
+    const bool accepted = QMetaObject::invokeMethod(
         this,
-        [guard, error = std::move(error), fatal]() {
-            if (guard && guard->failure_observer_) {
-                guard->failure_observer_(error, fatal);
+        [guard, state] {
+            std::optional<x11::RandrTopologySnapshot> topology;
+            std::optional<PublicationState::Failure> failure;
+            {
+                std::scoped_lock lock{state->mutex};
+                if (state->stopping) {
+                    state->queued = false;
+                    return;
+                }
+                if (state->failure && state->failure->fatal) {
+                    failure = std::move(state->failure);
+                    state->failure.reset();
+                    state->topology.reset();
+                } else if (state->topology) {
+                    topology = std::move(state->topology);
+                    state->topology.reset();
+                } else if (state->failure) {
+                    failure = std::move(state->failure);
+                    state->failure.reset();
+                }
+            }
+            if (guard && topology) {
+                guard->applyTopology(std::move(*topology));
+            } else if (guard && failure && guard->failure_observer_) {
+                bool superseded = false;
+                {
+                    std::scoped_lock lock{state->mutex};
+                    superseded = !failure->fatal && failure->topologyEpoch != state->topologyEpoch;
+                }
+                if (!superseded) {
+                    guard->failure_observer_(failure->error, failure->fatal);
+                }
+            }
+            bool queueAgain = false;
+            {
+                std::scoped_lock lock{state->mutex};
+                if (state->stopping) {
+                    state->topology.reset();
+                    state->failure.reset();
+                    state->queued = false;
+                    return;
+                }
+                if (state->topology || state->failure) {
+                    queueAgain = true;
+                } else {
+                    state->queued = false;
+                }
+            }
+            if (queueAgain && guard) {
+                guard->queuePublication(state);
             }
         },
         Qt::QueuedConnection);
+    if (!accepted) {
+        std::scoped_lock lock{state->mutex};
+        state->queued = false;
+    }
 }
 
 void ShellOutputMonitor::applyTopology(x11::RandrTopologySnapshot snapshot) {
@@ -269,8 +507,9 @@ void ShellOutputMonitor::applyTopology(x11::RandrTopologySnapshot snapshot) {
         return;
     }
     std::vector<outputs::QtScreenObservation> screens;
-    screens.reserve(static_cast<std::size_t>(QGuiApplication::screens().size()));
-    for (const auto *screen : QGuiApplication::screens()) {
+    const auto qtScreens = observe_qt_screens_ ? QGuiApplication::screens() : QList<QScreen *>{};
+    screens.reserve(static_cast<std::size_t>(qtScreens.size()));
+    for (const auto *screen : qtScreens) {
         if (screen == nullptr) {
             continue;
         }

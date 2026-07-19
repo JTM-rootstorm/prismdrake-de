@@ -64,6 +64,31 @@ bool taskRequestPathCanDispatch(bool adapterAvailable, bool stabilizationPending
     return adapterAvailable && !stabilizationPending;
 }
 
+void mergeTaskRefreshInvalidations(bool incomingInvalidateAll,
+                                   std::span<const x11::WindowId> incoming,
+                                   bool &invalidateAllClients,
+                                   std::vector<x11::WindowId> &invalidatedWindows) {
+    if (invalidateAllClients) {
+        return;
+    }
+    if (incomingInvalidateAll || incoming.size() > x11::maximumTaskWindows) {
+        invalidateAllClients = true;
+        invalidatedWindows.clear();
+        return;
+    }
+    for (const auto window : incoming) {
+        if (std::ranges::find(invalidatedWindows, window) != invalidatedWindows.end()) {
+            continue;
+        }
+        if (invalidatedWindows.size() >= x11::maximumTaskWindows) {
+            invalidateAllClients = true;
+            invalidatedWindows.clear();
+            return;
+        }
+        invalidatedWindows.push_back(window);
+    }
+}
+
 Result<TaskEventRefreshPlan> planTaskEventRefresh(std::span<const x11::RootEvent> events) {
     if (events.size() > x11::maximumRootEventsPerDrain) {
         return Result<TaskEventRefreshPlan>::failure(

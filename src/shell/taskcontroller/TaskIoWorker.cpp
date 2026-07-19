@@ -1,6 +1,7 @@
 #include "TaskIoWorker.hpp"
 
 #include <QMetaObject>
+#include <QPointer>
 
 #include <algorithm>
 #include <array>
@@ -52,22 +53,22 @@ inline constexpr std::size_t maximumQueuedTaskIoRequests = 64U;
          "Wait for the latest authoritative task snapshot before retrying."});
 }
 
-[[nodiscard]] std::vector<x11::WindowId> mergeInvalidations(std::vector<x11::WindowId> first,
-                                                            std::vector<x11::WindowId> second) {
+[[nodiscard]] bool mergeInvalidations(std::vector<x11::WindowId> &target,
+                                      std::span<const x11::WindowId> incoming) {
     std::set<x11::WindowId::Value> seen;
-    std::vector<x11::WindowId> merged;
-    merged.reserve(first.size() + second.size());
-    for (const auto window : first) {
+    for (const auto window : target) {
+        seen.insert(window.value());
+    }
+    for (const auto window : incoming) {
         if (seen.insert(window.value()).second) {
-            merged.push_back(window);
+            if (target.size() >= x11::maximumTaskWindows) {
+                target.clear();
+                return false;
+            }
+            target.push_back(window);
         }
     }
-    for (const auto window : second) {
-        if (seen.insert(window.value()).second) {
-            merged.push_back(window);
-        }
-    }
-    return merged;
+    return true;
 }
 
 class OperationsGuard final {
@@ -89,6 +90,14 @@ class OperationsGuard final {
 };
 
 } // namespace
+
+struct TaskIoWorker::EventDeliveryState final {
+    std::mutex mutex;
+    std::optional<Result<TaskEventRefreshPlan>> pending;
+    EventCallback callback;
+    bool queued{false};
+    bool stopping{false};
+};
 
 Result<std::unique_ptr<TaskIoWorker>>
 TaskIoWorker::create(QObject &owner, OperationsFactory factory, RefreshCallback refreshCallback,
@@ -119,9 +128,16 @@ TaskIoWorker::TaskIoWorker(QObject &owner, OperationsFactory factory,
     : owner_(owner), factory_(std::move(factory)), refresh_callback_(std::move(refreshCallback)),
       request_callback_(std::move(requestCallback)), event_callback_(std::move(eventCallback)),
       wake_descriptor_(wakeDescriptor),
+      event_delivery_state_(std::make_shared<EventDeliveryState>()),
       thread_([this](std::stop_token stopToken) { run(stopToken); }) {}
 
 TaskIoWorker::~TaskIoWorker() {
+    {
+        std::scoped_lock lock{event_delivery_state_->mutex};
+        event_delivery_state_->stopping = true;
+        event_delivery_state_->pending.reset();
+        event_delivery_state_->callback = {};
+    }
     {
         std::scoped_lock lock{mutex_};
         stopping_ = true;
@@ -146,7 +162,8 @@ TaskIoWorker::~TaskIoWorker() {
 }
 
 Result<void> TaskIoWorker::submitRefresh(std::uint64_t token,
-                                         std::vector<x11::WindowId> invalidatedWindows) {
+                                         std::vector<x11::WindowId> invalidatedWindows,
+                                         bool invalidateAllClients) {
     if (token == 0U) {
         return Result<void>::failure({ErrorCode::invalid_argument,
                                       "The task refresh token is invalid.",
@@ -157,11 +174,19 @@ Result<void> TaskIoWorker::submitRefresh(std::uint64_t token,
         if (stopping_) {
             return stoppedWorker();
         }
-        if (pending_refresh_) {
-            invalidatedWindows = mergeInvalidations(std::move(pending_refresh_->invalidatedWindows),
-                                                    std::move(invalidatedWindows));
+        if (invalidateAllClients || invalidatedWindows.size() > x11::maximumTaskWindows) {
+            invalidateAllClients = true;
+            invalidatedWindows.clear();
         }
-        pending_refresh_ = RefreshJob{token, std::move(invalidatedWindows)};
+        if (pending_refresh_) {
+            invalidateAllClients = invalidateAllClients || pending_refresh_->invalidateAllClients;
+            if (invalidateAllClients ||
+                !mergeInvalidations(invalidatedWindows, pending_refresh_->invalidatedWindows)) {
+                invalidateAllClients = true;
+                invalidatedWindows.clear();
+            }
+        }
+        pending_refresh_ = RefreshJob{token, std::move(invalidatedWindows), invalidateAllClients};
         if (!wake()) {
             pending_refresh_.reset();
             return Result<void>::failure(wakeFailure());
@@ -264,7 +289,8 @@ void TaskIoWorker::run(std::stop_token stopToken) {
                                Result<x11::TaskModelObservation>::failure(*setupError));
                 continue;
             }
-            auto result = operations.value()->refresh(refresh->invalidatedWindows);
+            auto result = operations.value()->refresh(refresh->invalidatedWindows,
+                                                      refresh->invalidateAllClients);
             if (result) {
                 currentRefreshToken = refresh->token;
             }
@@ -319,10 +345,107 @@ void TaskIoWorker::deliverRequest(x11::TaskRequestState request, Result<void> re
 }
 
 void TaskIoWorker::deliverEvent(Result<TaskEventRefreshPlan> result) {
-    auto payload = std::make_shared<Result<TaskEventRefreshPlan>>(std::move(result));
-    const auto callback = event_callback_;
-    QMetaObject::invokeMethod(
-        &owner_, [callback, payload] { callback(std::move(*payload)); }, Qt::QueuedConnection);
+    auto state = event_delivery_state_;
+    bool queue = false;
+    {
+        std::scoped_lock lock{state->mutex};
+        if (state->stopping) {
+            return;
+        }
+        if (!state->callback) {
+            state->callback = event_callback_;
+        }
+        if (!result) {
+            if (!state->pending || state->pending->hasValue() ||
+                (result.error().code == ErrorCode::io_error &&
+                 state->pending->error().code != ErrorCode::io_error)) {
+                state->pending = std::move(result);
+            }
+        } else if (!state->pending) {
+            auto plan = std::move(result).value();
+            if (plan.invalidateAllClients ||
+                plan.invalidatedWindows.size() > x11::maximumTaskWindows) {
+                plan.invalidateAllClients = true;
+                plan.invalidatedWindows.clear();
+            }
+            state->pending = Result<TaskEventRefreshPlan>::success(std::move(plan));
+        } else if (state->pending->hasValue()) {
+            auto &pending = state->pending->value();
+            auto incoming = std::move(result).value();
+            pending.refreshRequired = pending.refreshRequired || incoming.refreshRequired;
+            pending.invalidateAllClients =
+                pending.invalidateAllClients || incoming.invalidateAllClients;
+            if (pending.invalidateAllClients ||
+                !mergeInvalidations(pending.invalidatedWindows, incoming.invalidatedWindows)) {
+                pending.invalidateAllClients = true;
+                pending.invalidatedWindows.clear();
+            }
+        } else if (state->pending->error().code != ErrorCode::io_error) {
+            auto plan = std::move(result).value();
+            if (plan.invalidateAllClients ||
+                plan.invalidatedWindows.size() > x11::maximumTaskWindows) {
+                plan.invalidateAllClients = true;
+                plan.invalidatedWindows.clear();
+            }
+            state->pending = Result<TaskEventRefreshPlan>::success(std::move(plan));
+        }
+        if (!state->queued) {
+            state->queued = true;
+            queue = true;
+        }
+    }
+    if (queue) {
+        queueEventDelivery(&owner_, state);
+    }
+}
+
+void TaskIoWorker::queueEventDelivery(QObject *owner,
+                                      const std::shared_ptr<EventDeliveryState> &state) {
+    if (owner == nullptr) {
+        return;
+    }
+    QPointer<QObject> guard{owner};
+    const bool accepted = QMetaObject::invokeMethod(
+        owner,
+        [guard, state] {
+            std::optional<Result<TaskEventRefreshPlan>> result;
+            EventCallback callback;
+            {
+                std::scoped_lock lock{state->mutex};
+                if (state->stopping || !state->pending) {
+                    state->queued = false;
+                    return;
+                }
+                result = std::move(state->pending);
+                state->pending.reset();
+                callback = state->callback;
+            }
+            if (callback) {
+                callback(std::move(*result));
+            }
+            bool queueAgain = false;
+            {
+                std::scoped_lock lock{state->mutex};
+                if (state->stopping) {
+                    state->pending.reset();
+                    state->queued = false;
+                    return;
+                }
+                if (state->pending) {
+                    queueAgain = true;
+                } else {
+                    state->queued = false;
+                }
+            }
+            if (queueAgain && guard) {
+                queueEventDelivery(guard.data(), state);
+            }
+        },
+        Qt::QueuedConnection);
+    if (!accepted) {
+        std::scoped_lock lock{state->mutex};
+        state->queued = false;
+    }
 }
 
 } // namespace prismdrake::shell::taskcontroller

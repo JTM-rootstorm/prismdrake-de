@@ -27,7 +27,7 @@ class TaskIoOperations {
     virtual ~TaskIoOperations() = default;
 
     [[nodiscard]] virtual foundation::Result<x11::TaskModelObservation>
-    refresh(std::span<const x11::WindowId> invalidatedWindows) = 0;
+    refresh(std::span<const x11::WindowId> invalidatedWindows, bool invalidateAllClients) = 0;
     [[nodiscard]] virtual foundation::Result<void>
     request(const x11::TaskRequestState &request, std::optional<x11::WindowId> currentlyActive) = 0;
     [[nodiscard]] virtual int eventFileDescriptor() const noexcept = 0;
@@ -58,7 +58,8 @@ class TaskIoWorker final {
     TaskIoWorker &operator=(const TaskIoWorker &) = delete;
 
     [[nodiscard]] foundation::Result<void>
-    submitRefresh(std::uint64_t token, std::vector<x11::WindowId> invalidatedWindows);
+    submitRefresh(std::uint64_t token, std::vector<x11::WindowId> invalidatedWindows,
+                  bool invalidateAllClients = false);
     [[nodiscard]] foundation::Result<void>
     submitRequest(std::uint64_t appliedRefreshToken, const x11::TaskRequestState &request,
                   std::optional<x11::WindowId> currentlyActive);
@@ -67,12 +68,14 @@ class TaskIoWorker final {
     struct RefreshJob final {
         std::uint64_t token;
         std::vector<x11::WindowId> invalidatedWindows;
+        bool invalidateAllClients;
     };
     struct RequestJob final {
         std::uint64_t appliedRefreshToken;
         x11::TaskRequestState request;
         std::optional<x11::WindowId> currentlyActive;
     };
+    struct EventDeliveryState;
 
     TaskIoWorker(QObject &owner, OperationsFactory factory, RefreshCallback refreshCallback,
                  RequestCallback requestCallback, EventCallback eventCallback, int wakeDescriptor);
@@ -80,6 +83,8 @@ class TaskIoWorker final {
     void deliverRefresh(std::uint64_t token, foundation::Result<x11::TaskModelObservation> result);
     void deliverRequest(x11::TaskRequestState request, foundation::Result<void> result);
     void deliverEvent(foundation::Result<TaskEventRefreshPlan> result);
+    static void queueEventDelivery(QObject *owner,
+                                   const std::shared_ptr<EventDeliveryState> &state);
     [[nodiscard]] bool wake() noexcept;
 
     QObject &owner_;
@@ -94,6 +99,7 @@ class TaskIoWorker final {
     int wake_descriptor_{-1};
     std::atomic<TaskIoOperations *> operations_{nullptr};
     std::mutex operations_mutex_;
+    std::shared_ptr<EventDeliveryState> event_delivery_state_;
     std::jthread thread_;
 };
 

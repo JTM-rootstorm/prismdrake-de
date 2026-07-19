@@ -60,7 +60,8 @@ class TaskController final {
                    OutcomeCallback outcome);
 
     [[nodiscard]] foundation::Result<void>
-    refreshTasks(std::vector<x11::WindowId> invalidatedWindows = {});
+    refreshTasks(std::vector<x11::WindowId> invalidatedWindows = {},
+                 bool invalidateAllClients = false);
     [[nodiscard]] foundation::Result<void>
     dispatchCheckedRequest(const x11::TaskRequestState &request);
     void handleRefreshCompletion(std::uint64_t token,
@@ -85,6 +86,7 @@ class TaskController final {
     std::uint64_t requested_refresh_token_{0U};
     std::uint64_t applied_refresh_token_{0U};
     std::vector<x11::WindowId> deferred_invalidations_;
+    bool deferred_full_invalidation_{false};
     bool refresh_pending_{false};
     bool terminated_{false};
 };

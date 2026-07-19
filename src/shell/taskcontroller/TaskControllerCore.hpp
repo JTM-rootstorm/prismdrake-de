@@ -69,8 +69,18 @@ struct TaskRequestUpdate final {
 
 struct TaskEventRefreshPlan final {
     bool refreshRequired{false};
+    /// Discards every cached client incarnation before the next authoritative refresh.
+    /// This is the bounded degradation path when coalesced event invalidations overflow.
+    bool invalidateAllClients{false};
     std::vector<x11::WindowId> invalidatedWindows;
 };
+
+/// Merges event invalidations into one bounded deferred epoch. Overflow explicitly degrades to
+/// resetting every cached client incarnation before the next authoritative refresh.
+void mergeTaskRefreshInvalidations(bool incomingInvalidateAll,
+                                   std::span<const x11::WindowId> incoming,
+                                   bool &invalidateAllClients,
+                                   std::vector<x11::WindowId> &invalidatedWindows);
 
 /// Coalesces one bounded root-event batch into one task refresh decision.
 [[nodiscard]] foundation::Result<TaskEventRefreshPlan>

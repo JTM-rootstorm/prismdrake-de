@@ -72,13 +72,20 @@ class X11TaskIoOperations final : public TaskIoOperations {
                                     std::move(source).value())));
     }
 
-    Result<x11::TaskModelObservation>
-    refresh(std::span<const x11::WindowId> invalidatedWindows) override {
+    Result<x11::TaskModelObservation> refresh(std::span<const x11::WindowId> invalidatedWindows,
+                                              bool invalidateAllClients) override {
         requests_.reset();
-        for (const auto window : invalidatedWindows) {
-            source_.invalidateClient(window);
+        if (invalidateAllClients) {
+            auto source = x11::EwmhTaskSource::create(connection_);
+            if (!source) {
+                return Result<x11::TaskModelObservation>::failure(source.error());
+            }
+            source_.emplace(std::move(source).value());
         }
-        auto observation = source_.refresh(connection_);
+        for (const auto window : invalidatedWindows) {
+            source_->invalidateClient(window);
+        }
+        auto observation = source_->refresh(connection_);
         if (!observation) {
             return Result<x11::TaskModelObservation>::failure(observation.error());
         }
@@ -144,7 +151,7 @@ class X11TaskIoOperations final : public TaskIoOperations {
 
     x11::X11Connection connection_;
     x11::RootEventStream events_;
-    x11::EwmhTaskSource source_;
+    std::optional<x11::EwmhTaskSource> source_;
     std::optional<x11::EwmhWindowRequests> requests_;
     std::map<x11::WindowId::Value, x11::WindowIncarnationId> observed_incarnations_;
 };
@@ -224,7 +231,8 @@ TaskController::~TaskController() {
     event_context_.reset();
 }
 
-Result<void> TaskController::refreshTasks(std::vector<x11::WindowId> invalidatedWindows) {
+Result<void> TaskController::refreshTasks(std::vector<x11::WindowId> invalidatedWindows,
+                                          bool invalidateAllClients) {
     if (terminated_) {
         return Result<void>::failure(terminatedController());
     }
@@ -234,7 +242,8 @@ Result<void> TaskController::refreshTasks(std::vector<x11::WindowId> invalidated
     const auto token = next_refresh_token_++;
     requested_refresh_token_ = token;
     refresh_pending_ = true;
-    auto submitted = io_worker_->submitRefresh(token, std::move(invalidatedWindows));
+    auto submitted =
+        io_worker_->submitRefresh(token, std::move(invalidatedWindows), invalidateAllClients);
     if (!submitted) {
         refresh_pending_ = false;
         return submitted;
@@ -269,7 +278,8 @@ void TaskController::retryTaskRefresh() {
     }
     auto invalidations = std::move(deferred_invalidations_);
     deferred_invalidations_.clear();
-    auto refreshed = refreshTasks(std::move(invalidations));
+    const bool invalidateAllClients = std::exchange(deferred_full_invalidation_, false);
+    auto refreshed = refreshTasks(std::move(invalidations), invalidateAllClients);
     if (!refreshed) {
         if (refreshed.error().code == ErrorCode::io_error) {
             terminateForConnectionLoss(refreshed.error());
@@ -327,12 +337,8 @@ void TaskController::handleEventCompletion(Result<TaskEventRefreshPlan> result) 
         return;
     }
     auto &plan = result.value();
-    for (const auto window : plan.invalidatedWindows) {
-        const auto duplicate = std::ranges::find(deferred_invalidations_, window);
-        if (duplicate == deferred_invalidations_.end()) {
-            deferred_invalidations_.push_back(window);
-        }
-    }
+    mergeTaskRefreshInvalidations(plan.invalidateAllClients, plan.invalidatedWindows,
+                                  deferred_full_invalidation_, deferred_invalidations_);
     const bool stabilizationPending = stabilization_timer_ && stabilization_timer_->isActive();
     if (!taskRefreshShouldRunImmediately(plan.refreshRequired, stabilizationPending)) {
         return;
@@ -340,7 +346,8 @@ void TaskController::handleEventCompletion(Result<TaskEventRefreshPlan> result) 
     stabilization_policy_.beginRealEventEpoch();
     auto invalidations = std::move(deferred_invalidations_);
     deferred_invalidations_.clear();
-    auto refreshed = refreshTasks(std::move(invalidations));
+    const bool invalidateAllClients = std::exchange(deferred_full_invalidation_, false);
+    auto refreshed = refreshTasks(std::move(invalidations), invalidateAllClients);
     if (!refreshed) {
         if (refreshed.error().code == ErrorCode::io_error) {
             terminateForConnectionLoss(refreshed.error());
@@ -386,6 +393,7 @@ void TaskController::terminateForConnectionLoss(const foundation::Error &error) 
     terminated_ = true;
     refresh_pending_ = false;
     deferred_invalidations_.clear();
+    deferred_full_invalidation_ = false;
     resetStabilization();
     auto callback = connection_lost_;
     QMetaObject::invokeMethod(
