@@ -27,6 +27,7 @@ TestCase {
     SignalSpy { id: dismissed; target: surface; signalName: "dismissRequested" }
     SignalSpy { id: forwardExit; target: surface; signalName: "focusExitForward" }
     SignalSpy { id: backwardExit; target: surface; signalName: "focusExitBackward" }
+    SignalSpy { id: refreshed; target: surface.launcherModel; signalName: "refreshRequested" }
 
     function search() {
         return findChild(surface, "launcherSearchField")
@@ -47,8 +48,38 @@ TestCase {
         dismissed.clear()
         forwardExit.clear()
         backwardExit.clear()
+        refreshed.clear()
         tryCompare(surface, "viewState", "results")
         tryCompare(surface, "resultCount", 3)
+    }
+
+    function test_explicitRefreshAndOpaqueIconPresentation() {
+        const refresh = findChild(surface, "launcherRefreshButton")
+        verify(refresh !== null)
+        verify(refresh.width >= surface.tokens.minimumTargetSize)
+        verify(refresh.height >= surface.tokens.minimumTargetSize)
+        mouseClick(refresh)
+        tryCompare(refreshed, "count", 1)
+
+        const result = surface.resultAt(0)
+        verify(result !== null)
+        const icon = findChild(result, "launcherResultIcon")
+        verify(icon !== null)
+        verify(icon.source.toString().indexOf("private") < 0)
+        verify(result.presentation.iconKey.indexOf("desktop") < 0)
+    }
+
+    function test_applicationActionsAreKeyboardReachable() {
+        const result = surface.resultAt(0)
+        verify(result !== null)
+        result.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Menu)
+
+        const menu = findChild(result, "launcherActionsMenu")
+        verify(menu !== null)
+        tryCompare(menu, "visible", true)
+        keyClick(Qt.Key_Escape)
+        tryCompare(menu, "visible", false)
     }
 
     function test_realProfilesShareTreeAndLauncherGeneration() {
@@ -161,6 +192,9 @@ TestCase {
         tryCompare(surface.resultAt(0), "activeFocus", true)
         keyClick(Qt.Key_Backtab)
         tryCompare(field, "activeFocus", true)
+        keyClick(Qt.Key_Backtab)
+        const refresh = findChild(surface, "launcherRefreshButton")
+        tryCompare(refresh, "activeFocus", true)
         keyClick(Qt.Key_Backtab)
         tryCompare(backwardExit, "count", 1)
 

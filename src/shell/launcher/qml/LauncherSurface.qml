@@ -33,6 +33,10 @@ FocusScope {
         search.forceActiveFocus(Qt.TabFocusReason)
     }
 
+    function focusRefresh() {
+        refresh.forceActiveFocus(Qt.BacktabFocusReason)
+    }
+
     function submitSearch() {
         searchRequested(search.text)
     }
@@ -139,17 +143,47 @@ FocusScope {
         anchors.margins: root.tokens.tilePadding
         spacing: root.tokens.tilePadding
 
-        Label {
-            objectName: "launcherHeading"
+        RowLayout {
             Layout.fillWidth: true
-            color: root.tokens.textPrimaryColor
-            textFormat: Text.PlainText
-            font.family: root.tokens.bodyFontFamily
-            font.pixelSize: root.tokens.titleFontPixels
-            font.bold: true
-            text: qsTr("Applications")
-            Accessible.role: Accessible.Heading
-            Accessible.name: text
+
+            Label {
+                objectName: "launcherHeading"
+                Layout.fillWidth: true
+                color: root.tokens.textPrimaryColor
+                textFormat: Text.PlainText
+                font.family: root.tokens.bodyFontFamily
+                font.pixelSize: root.tokens.titleFontPixels
+                font.bold: true
+                text: qsTr("Applications")
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+
+            Button {
+                id: refresh
+                objectName: "launcherRefreshButton"
+                Layout.minimumWidth: root.tokens.minimumTargetSize
+                Layout.minimumHeight: root.tokens.minimumTargetSize
+                text: qsTr("Refresh")
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.description: qsTr("Rescan local application entries")
+                activeFocusOnTab: false
+                Keys.priority: Keys.BeforeItem
+                Keys.onTabPressed: event => {
+                    event.accepted = true
+                    search.forceActiveFocus(Qt.TabFocusReason)
+                }
+                Keys.onBacktabPressed: event => {
+                    event.accepted = true
+                    root.focusExitBackward()
+                }
+                Keys.onEscapePressed: event => {
+                    event.accepted = true
+                    root.dismissRequested()
+                }
+                onClicked: root.launcherModel.requestRefresh()
+            }
         }
 
         TextField {
@@ -189,7 +223,7 @@ FocusScope {
             }
             Keys.onBacktabPressed: event => {
                 event.accepted = true
-                root.focusExitBackward()
+                root.focusRefresh()
             }
             Keys.onEscapePressed: event => {
                 event.accepted = true
