@@ -170,6 +170,22 @@ class Pd2EvidenceContractTest(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceError, "pd1_regression_claim_invalid"):
             validate_evidence_document(document)
 
+    def test_enforces_common_action_acknowledgement_target_per_sample(self) -> None:
+        at_target = reference_document()
+        at_target["performance"]["common_action_acknowledgement"] = observed(
+            100.0, comparison_status="not_available"
+        )
+        validate_evidence_document(at_target)
+
+        over_target = reference_document()
+        measurement = observed(50.0, comparison_status="not_available")
+        measurement["samples"] = [50.0, 100.001, 50.0]
+        over_target["performance"]["common_action_acknowledgement"] = measurement
+        with self.assertRaisesRegex(
+            EvidenceError, "common_action_acknowledgement_target_exceeded"
+        ):
+            validate_evidence_document(over_target)
+
     def test_rejects_regression_without_explanation(self) -> None:
         document = reference_document()
         measurement = observed(10.0, comparison_status="regression", baseline=5.0)

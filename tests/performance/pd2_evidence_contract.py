@@ -89,6 +89,8 @@ TIMING_MEASUREMENTS = [
     "common_action_acknowledgement",
 ]
 
+COMMON_ACTION_ACKNOWLEDGEMENT_TARGET_MS = 100.0
+
 FORBIDDEN_KEY_TOKENS = {
     "address",
     "body",
@@ -204,6 +206,14 @@ def _validate_measurement(name: str, measurement: dict[str, Any]) -> None:
         return
     expected_unit = "wakeups_per_minute" if name == "idle_wakeups" else "milliseconds"
     _require(measurement["unit"] == expected_unit, "measurement_unit_invalid")
+    if name == "common_action_acknowledgement":
+        _require(
+            all(
+                sample <= COMMON_ACTION_ACKNOWLEDGEMENT_TARGET_MS
+                for sample in measurement["samples"]
+            ),
+            "common_action_acknowledgement_target_exceeded",
+        )
     observed_median = statistics.median(measurement["samples"])
     comparison = measurement["pd1_comparison"]
     comparison_status = comparison["status"]

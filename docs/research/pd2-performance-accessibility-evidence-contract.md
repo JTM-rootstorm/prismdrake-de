@@ -42,6 +42,10 @@ computes the median. A median above the supplied PD1 value must be marked as a
 regression and carry a review explanation. A metric with no equivalent PD1
 endpoint must say `not_available` or `not_comparable` and explain why. Omitting
 the comparison or labeling a larger median as no regression fails validation.
+Every common-action acknowledgement sample must also remain at or below the
+project's 100 ms target. This target is enforced independently of PD1
+comparison status so an unavailable historical baseline cannot hide a slow
+acknowledgement.
 
 ## Accessibility and internationalization matrix
 
