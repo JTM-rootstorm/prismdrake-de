@@ -20,6 +20,8 @@ import pd2_live_xorg as live_xorg  # noqa: E402
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation  # noqa: E402
 from pd2_live_notification_workflow import WorkflowResult  # noqa: E402
 from pd2_live_lifecycle_workflow import (  # noqa: E402
+    ComponentObservation as LifecycleComponentObservation,
+    ProcessIdentity as LifecycleProcessIdentity,
     STEP_CATEGORIES as LIFECYCLE_STEP_CATEGORIES,
     WorkflowResult as LifecycleWorkflowResult,
 )
@@ -1074,6 +1076,61 @@ class NotificationFailureReplayAdapterTests(unittest.TestCase):
 
 
 class LivePortTests(unittest.TestCase):
+    def test_logout_methods_use_shellctl_accessibility_and_reject_stale_id(self) -> None:
+        port = LiveXorgHarnessPort(config(installed_paths()), FakeOperations())
+        components = LifecycleComponentObservation(
+            LifecycleProcessIdentity("prismdrake-settingsd", 201, 2001),
+            LifecycleProcessIdentity("prismdrake-notifyd", 202, 2002),
+            LifecycleProcessIdentity("prismdrake-shell", 203, 2003),
+        )
+
+        with patch.object(port, "_invoke_shellctl") as shellctl, patch.object(
+            port, "_wait_logout_state", return_value=(41, "confirmation_requested")
+        ), patch.object(port, "_wait_accessible") as wait_accessible:
+            requested = port.request_through_shellctl()
+        self.assertEqual(
+            (requested.transaction_id, requested.state), (41, "confirmation_pending")
+        )
+        shellctl.assert_called_once_with("session", "logout")
+        self.assertEqual(wait_accessible.call_args.args[0].name, "Log out of Prismdrake")
+
+        with patch.object(
+            port,
+            "_wait_logout_state",
+            side_effect=((41, "confirmation_requested"), (0, "idle")),
+        ), patch.object(port, "_invoke_accessible") as invoke:
+            cancelled = port.cancel(41)
+        self.assertEqual((cancelled.transaction_id, cancelled.state), (41, "cancelled"))
+        self.assertEqual(invoke.call_args.args[0].name, "Cancel logout")
+
+        class RejectingProbe:
+            def call(self, operation, transaction):
+                self.request = (operation, transaction)
+                raise RuntimeError("redacted")
+
+            def close(self):
+                self.closed = True
+
+        rejecting = RejectingProbe()
+        with patch.object(port, "_private_probe", return_value=rejecting), patch.object(
+            port, "_wait_logout_state", return_value=(0, "idle")
+        ):
+            self.assertTrue(port.reject_stale_transaction(41))
+        self.assertEqual(rejecting.request, ("session_cancel_logout", 41))
+        self.assertTrue(rejecting.closed)
+
+        with patch.object(
+            port,
+            "_wait_logout_state",
+            side_effect=((42, "confirmation_requested"), (42, "stopping_shell")),
+        ), patch.object(port, "components", return_value=components), patch.object(
+            port, "_invoke_accessible"
+        ) as invoke:
+            confirmed = port.confirm(42)
+        self.assertEqual((confirmed.transaction_id, confirmed.state), (42, "stopping_shell"))
+        self.assertEqual(invoke.call_args.args[0].name, "Confirm logout")
+        self.assertEqual(port._lifecycle_shutdown_components, components)  # noqa: SLF001
+
     def test_routes_installed_lifecycle_steps_but_reserves_cleanup_for_adapter(self) -> None:
         port = LiveXorgHarnessPort(config(), FakeOperations())
         workflow = FakeLifecycleWorkflow()
@@ -1092,6 +1149,14 @@ class LivePortTests(unittest.TestCase):
             port.run_step(
                 "installed_workflow", "verify_clean_test_environment_cleanup"
             )
+        self.assertEqual(
+            port.cleanup("installed_workflow"), Observation(True, True)
+        )
+        self.assertEqual(workflow.calls, list(LIFECYCLE_STEP_CATEGORIES))
+        self.assertEqual(
+            port.cleanup("installed_workflow"), Observation(True, True)
+        )
+        self.assertEqual(workflow.calls, list(LIFECYCLE_STEP_CATEGORIES))
 
     def test_starts_real_adapter_commands_and_observes_two_output_topology(self) -> None:
         operations = FakeOperations()

@@ -1288,6 +1288,7 @@ class LiveXorgHarnessPort:
             SECONDARY_OUTPUT: 1,
         }
         self._lifecycle_shell_bound_notifyd: ProcessIdentity | None = None
+        self._lifecycle_survival_notification_prepared = False
         self._lifecycle_shutdown_started: float | None = None
         self._lifecycle_shutdown_components: LifecycleComponentObservation | None = None
         self._lifecycle_cleanup_ready = False
@@ -1971,6 +1972,17 @@ class LiveXorgHarnessPort:
         return matches[0]
 
     def surface_placements(self) -> LifecycleSurfacePlacementObservation:
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            try:
+                return self._observe_lifecycle_surface_placements()
+            except HarnessError:
+                self._operations.pause(0.05)
+        raise HarnessError("lifecycle_surface_placement_timeout")
+
+    def _observe_lifecycle_surface_placements(
+        self,
+    ) -> LifecycleSurfacePlacementObservation:
         topology = self.topology()
         shell = self._shell_identity()
         panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
@@ -1984,13 +1996,7 @@ class LiveXorgHarnessPort:
         ):
             output = self._output_for_geometry(geometry, topology)
             placements.append(LifecycleSurfacePlacement(surface, output, True, True))
-        quick_window = self._settings_surface_window("quick_settings")
-        result = self._run_x11(
-            (str(self._config.xwininfo), "-id", f"0x{quick_window:x}", "-stats")
-        )
-        if result.returncode != 0:
-            raise HarnessError("lifecycle_quick_settings_geometry_invalid")
-        quick_geometry = parse_window_geometry(result.stdout)
+        quick_window, quick_geometry = self._lifecycle_quick_settings_window(shell)
         placements.append(
             LifecycleSurfacePlacement(
                 "quick_settings",
@@ -2003,6 +2009,28 @@ class LiveXorgHarnessPort:
             topology.generation, tuple(placements)
         )
 
+    def _lifecycle_quick_settings_window(
+        self, shell: ProcessIdentity
+    ) -> tuple[int, WindowGeometry]:
+        windows = self._visible_named_window_ids(QUICK_SETTINGS_WINDOW_TITLE)
+        if len(windows) != 1:
+            raise HarnessError("lifecycle_quick_settings_window_invalid")
+        quick_window = windows[0]
+        if self._window_cardinals(quick_window, b"_NET_WM_PID", 1) != (shell.pid,):
+            raise HarnessError("lifecycle_quick_settings_owner_invalid")
+        result = self._run_x11(
+            (str(self._config.xwininfo), "-id", f"0x{quick_window:x}", "-stats")
+        )
+        if result.returncode != 0:
+            raise HarnessError("lifecycle_quick_settings_geometry_invalid")
+        quick_geometry = parse_window_geometry(result.stdout)
+        if (
+            quick_geometry.width != 380
+            or not 100 <= quick_geometry.height <= OUTPUT_HEIGHT - PANEL_HEIGHT
+        ):
+            raise HarnessError("lifecycle_quick_settings_geometry_invalid")
+        return quick_window, quick_geometry
+
     def remove_output(
         self, output: LifecycleOutputIdentity, topology_generation: int
     ) -> None:
@@ -2014,6 +2042,7 @@ class LiveXorgHarnessPort:
         self._xrandr("--output", output.name, "--off")
         self._lifecycle_topology_generation += 1
         self._surface_shell_identity = None
+        self._wait_lifecycle_output_state(output.name, active=False, primary=False)
 
     def readd_output(
         self, output: LifecycleOutputIdentity, topology_generation: int
@@ -2041,6 +2070,18 @@ class LiveXorgHarnessPort:
         self._lifecycle_connection_epochs[PRIMARY_OUTPUT] += 1
         self._lifecycle_topology_generation += 1
         self._surface_shell_identity = None
+        self._wait_lifecycle_output_state(PRIMARY_OUTPUT, active=True, primary=True)
+
+    def _wait_lifecycle_output_state(
+        self, name: str, *, active: bool, primary: bool
+    ) -> None:
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            output = self._query_outputs().get(name)
+            if output is not None and output.active == active and output.primary == primary:
+                return
+            self._operations.pause(0.05)
+        raise HarnessError("lifecycle_output_mutation_timeout")
 
     def components(self) -> LifecycleComponentObservation:
         identities = self._component_identities()
@@ -2082,17 +2123,7 @@ class LiveXorgHarnessPort:
         if len(self._controlled_processes) != 2:
             raise HarnessError("lifecycle_survival_processes_missing")
 
-        epoch = self._notification_workflow_epoch()
-        sender = epoch.sender
-        if not isinstance(sender, PersistentNotificationProbe):
-            raise HarnessError("lifecycle_notification_sender_unavailable")
-        sender.create_critical()
-        deadline = self._operations.monotonic() + self._config.readiness_timeout
-        while self._operations.monotonic() < deadline:
-            if self.notification_epoch().live_record_count > 0:
-                break
-            self._operations.pause(0.05)
-        else:
+        if self.notification_epoch().live_record_count == 0:
             raise HarnessError("lifecycle_notification_fixture_timeout")
         return self.window_authority()
 
@@ -2109,7 +2140,10 @@ class LiveXorgHarnessPort:
             raise HarnessError("lifecycle_controlled_fixture_unavailable")
         for title in (CONTROLLED_WINDOW_ONE, CONTROLLED_WINDOW_TWO):
             identity = self._controlled_processes.get(title)
-            if identity is None or self._operations.identify_pid(identity.pid, fixture) != identity:
+            if (
+                identity is None
+                or self._operations.identify_pid(identity.pid, fixture) != identity
+            ):
                 raise HarnessError("lifecycle_application_identity_invalid")
             applications.append(self._lifecycle_identity("application", identity))
         return LifecycleWindowAuthorityObservation(
@@ -2232,14 +2266,28 @@ class LiveXorgHarnessPort:
 
     def notification_epoch(self) -> LifecycleNotificationEpochObservation:
         components = self.components()
-        state = LiveDbusNotificationPort(
-            self._notification_workflow_epoch().dbus_probe
-        ).current_state()
+        epoch = self._notification_workflow_epoch()
+        port = LiveDbusNotificationPort(epoch.dbus_probe)
+        state = port.current_state()
+        if not self._lifecycle_survival_notification_prepared:
+            if not state.records:
+                sender = epoch.sender
+                if not isinstance(sender, PersistentNotificationProbe):
+                    raise HarnessError("lifecycle_notification_sender_unavailable")
+                sender.create_critical()
+                deadline = self._operations.monotonic() + self._config.readiness_timeout
+                while self._operations.monotonic() < deadline:
+                    state = port.current_state()
+                    if state.records:
+                        break
+                    self._operations.pause(0.05)
+                else:
+                    raise HarnessError("lifecycle_notification_fixture_timeout")
+            self._lifecycle_survival_notification_prepared = True
         structural = tuple(
             (
                 record.record_id,
                 record.content_generation,
-                record.notification_id,
                 record.urgency,
                 record.transient,
                 record.actions,
@@ -2262,8 +2310,176 @@ class LiveXorgHarnessPort:
             self._lifecycle_identity("prismdrake-notifyd", bound),
         )
 
+    def _wait_logout_state(
+        self, expected: str, *, transaction: int | None = None
+    ) -> tuple[int, str]:
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            probe: LiveDbusProbe | None = None
+            try:
+                probe = self._private_probe()
+                observed_transaction, state = probe.call("session_get_state").payload
+            except Exception:
+                pass
+            else:
+                if state == expected and (
+                    transaction is None or observed_transaction == transaction
+                ):
+                    return observed_transaction, state
+            finally:
+                if probe is not None:
+                    probe.close()
+            self._operations.pause(0.05)
+        raise HarnessError("lifecycle_logout_state_timeout")
+
+    def request_through_shellctl(self) -> LifecycleLogoutObservation:
+        self._invoke_shellctl("session", "logout")
+        transaction, _state = self._wait_logout_state("confirmation_requested")
+        self._wait_accessible(
+            ControlSelector("Log out of Prismdrake", "dialog"),
+            "lifecycle_logout_confirmation_timeout",
+        )
+        return LifecycleLogoutObservation(transaction, "confirmation_pending")
+
+    def cancel(self, transaction_id: int) -> LifecycleLogoutObservation:
+        current, _state = self._wait_logout_state(
+            "confirmation_requested", transaction=transaction_id
+        )
+        self._invoke_accessible(ControlSelector("Cancel logout", "push_button", "Press"))
+        self._wait_logout_state("idle")
+        return LifecycleLogoutObservation(current, "cancelled")
+
+    def reject_stale_transaction(self, transaction_id: int) -> bool:
+        probe = self._private_probe()
+        rejected = False
+        try:
+            probe.call("session_cancel_logout", transaction_id)
+        except Exception:
+            rejected = True
+        finally:
+            probe.close()
+        if not rejected:
+            return False
+        observed, state = self._wait_logout_state("idle")
+        return observed == 0 and state == "idle"
+
+    def confirm(self, transaction_id: int) -> LifecycleLogoutObservation:
+        self._wait_logout_state("confirmation_requested", transaction=transaction_id)
+        self._lifecycle_shutdown_components = self.components()
+        self._lifecycle_shutdown_started = self._operations.monotonic()
+        self._invoke_accessible(ControlSelector("Confirm logout", "push_button", "Press"))
+        self._wait_logout_state("stopping_shell", transaction=transaction_id)
+        return LifecycleLogoutObservation(transaction_id, "stopping_shell")
+
+    def _identity_alive(self, identity: LifecycleProcessIdentity) -> bool:
+        executable = {
+            "prismdrake-settingsd": self._config.installed_executables.get(
+                "prismdrake-settingsd"
+            ),
+            "prismdrake-notifyd": self._config.installed_executables.get(
+                "prismdrake-notifyd"
+            ),
+            "prismdrake-shell": self._config.installed_executables.get(
+                "prismdrake-shell"
+            ),
+            "window-manager": self._config.openbox,
+            "application": self._config.controlled_window_fixture,
+        }.get(identity.role)
+        if executable is None:
+            return False
+        return self._operations.identify_pid(identity.pid, executable) == ProcessIdentity(
+            identity.pid, identity.start_time
+        )
+
+    def shutdown_observation(self, transaction_id: int) -> LifecycleShutdownObservation:
+        components = self._lifecycle_shutdown_components
+        started = self._lifecycle_shutdown_started
+        if components is None or started is None:
+            raise HarnessError("lifecycle_shutdown_not_started")
+        events: list[LifecycleShutdownEvent] = []
+        order = ("prismdrake-shell", "prismdrake-notifyd", "prismdrake-settingsd")
+        deadline = started + min(self._config.readiness_timeout, 10.0)
+        for index, role in enumerate(order):
+            identity = components.for_role(role)
+            later = tuple(components.for_role(item) for item in order[index + 1 :])
+            while self._operations.monotonic() < deadline:
+                if not self._identity_alive(identity):
+                    elapsed = max(
+                        0, int((self._operations.monotonic() - started) * 1000)
+                    )
+                    events.append(LifecycleShutdownEvent(role, identity, elapsed))
+                    break
+                if any(not self._identity_alive(item) for item in later):
+                    raise HarnessError("lifecycle_shutdown_order_invalid")
+                self._operations.pause(0.01)
+            else:
+                raise HarnessError("lifecycle_shutdown_timeout")
+        while self._operations.monotonic() < deadline:
+            if self._session is not None and self._session.poll() is not None:
+                total = max(0, int((self._operations.monotonic() - started) * 1000))
+                return LifecycleShutdownObservation(
+                    transaction_id, tuple(events), total, True
+                )
+            self._operations.pause(0.01)
+        raise HarnessError("lifecycle_session_shutdown_timeout")
+
+    def identities_alive(
+        self, identities: tuple[LifecycleProcessIdentity, ...]
+    ) -> bool:
+        return bool(identities) and all(self._identity_alive(item) for item in identities)
+
+    def _capture_cleanup_boundary(self) -> None:
+        tracked: list[tuple[ProcessIdentity, Path]] = []
+        children = (
+            (self._xorg, self._config.xorg),
+            (self._openbox, self._config.openbox),
+            (self._bus, self._config.dbus_daemon),
+            (
+                self._session,
+                self._config.installed_executables.get("prismdrake-session"),
+            ),
+        )
+        for child, executable in children:
+            if child is None or executable is None:
+                continue
+            identity = self._operations.identify(child, executable)
+            if identity is not None:
+                tracked.append((identity, executable))
+        fixture = self._config.controlled_window_fixture
+        if fixture is not None:
+            tracked.extend(
+                (identity, fixture) for identity in self._controlled_processes.values()
+            )
+        self._cleanup_processes = tuple(tracked)
+        self._cleanup_runtime = self._runtime
+        self._cleanup_bus_path = (
+            None if self._runtime is None else self._runtime / "bus"
+        )
+
+    def observe_exact_environment_cleanup(self) -> LifecycleCleanupObservation:
+        remaining = sum(
+            self._operations.identify_pid(identity.pid, executable) == identity
+            for identity, executable in self._cleanup_processes
+        )
+        runtime_present = (
+            self._cleanup_runtime is not None and self._cleanup_runtime.exists()
+        )
+        bus_present = (
+            self._cleanup_bus_path is not None
+            and (
+                self._operations.socket_identity(self._cleanup_bus_path) is not None
+                or self._operations.socket_connectable(self._cleanup_bus_path)
+            )
+        )
+        return LifecycleCleanupObservation(
+            remaining, runtime_present, bus_present
+        )
+
     def cleanup(self, phase: str) -> Observation:
-        del phase
+        lifecycle_cleanup = phase == "installed_workflow" and self._lifecycle_cleanup_ready
+        workflow = self._lifecycle_workflow if lifecycle_cleanup else None
+        if lifecycle_cleanup:
+            self._capture_cleanup_boundary()
         clean = True
         if self._settings_epoch is not None:
             clean = self._settings_epoch.close() and clean
@@ -2305,6 +2521,15 @@ class LiveXorgHarnessPort:
             self._runtime = None
         if not clean:
             raise HarnessError("live_cleanup_failed")
+        if workflow is not None:
+            result = workflow.run_step("verify_clean_test_environment_cleanup")
+            validate_lifecycle_workflow_result(result)
+        self._lifecycle_workflow = None
+        self._lifecycle_cleanup_ready = False
+        self._lifecycle_shutdown_started = None
+        self._lifecycle_shutdown_components = None
+        self._lifecycle_shell_bound_notifyd = None
+        self._lifecycle_survival_notification_prepared = False
         return Observation(True, True)
 
     @staticmethod
