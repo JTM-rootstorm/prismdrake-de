@@ -5,6 +5,8 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
+#include <vector>
 
 namespace prismdrake::x11 {
 
@@ -27,9 +29,20 @@ struct BottomPanelStrut final {
     friend bool operator==(const BottomPanelStrut &, const BottomPanelStrut &) = default;
 };
 
+struct BottomPanelStrutRequest final {
+    OutputGeometry output;
+    std::uint32_t panelHeight;
+};
+
 /// Validates containment and derives one full-output-width bottom panel plus
 /// its EWMH reservation arrays. This pure calculation owns no WM or X11 state.
 [[nodiscard]] foundation::Result<BottomPanelStrut>
 calculateBottomPanelStrut(RootGeometry root, OutputGeometry output, std::uint32_t panelHeight);
+
+/// Derives one independent reservation per requested output. The complete set
+/// is rejected if any panel is invalid; each result retains only its own edge
+/// interval and never combines another panel's reservation.
+[[nodiscard]] foundation::Result<std::vector<BottomPanelStrut>>
+calculateBottomPanelStruts(RootGeometry root, std::span<const BottomPanelStrutRequest> requests);
 
 } // namespace prismdrake::x11

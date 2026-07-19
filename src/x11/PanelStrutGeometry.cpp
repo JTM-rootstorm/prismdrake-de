@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <utility>
 
 namespace prismdrake::x11 {
 namespace {
@@ -55,6 +56,25 @@ Result<BottomPanelStrut> calculateBottomPanelStrut(RootGeometry root, OutputGeom
         panel,
         {0U, 0U, 0U, bottomCardinal},
         {0U, 0U, 0U, bottomCardinal, 0U, 0U, 0U, 0U, 0U, 0U, startCardinal, endCardinal}});
+}
+
+Result<std::vector<BottomPanelStrut>>
+calculateBottomPanelStruts(RootGeometry root, std::span<const BottomPanelStrutRequest> requests) {
+    if (requests.size() > maximumTopologyOutputs) {
+        return Result<std::vector<BottomPanelStrut>>::failure(
+            {ErrorCode::too_large, "The panel reservation set exceeds its output bound.",
+             "Publish at most one bounded panel reservation per active output."});
+    }
+    std::vector<BottomPanelStrut> struts;
+    struts.reserve(requests.size());
+    for (const auto &request : requests) {
+        auto calculated = calculateBottomPanelStrut(root, request.output, request.panelHeight);
+        if (!calculated) {
+            return Result<std::vector<BottomPanelStrut>>::failure(calculated.error());
+        }
+        struts.push_back(std::move(calculated).value());
+    }
+    return Result<std::vector<BottomPanelStrut>>::success(std::move(struts));
 }
 
 } // namespace prismdrake::x11

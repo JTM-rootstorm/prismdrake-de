@@ -1,6 +1,7 @@
 add_subdirectory(theme)
 add_subdirectory(notifications)
 add_subdirectory(settings)
+add_subdirectory(outputs)
 add_subdirectory(launcher)
 add_subdirectory(launcher/controller)
 add_subdirectory(launcher/qml)
