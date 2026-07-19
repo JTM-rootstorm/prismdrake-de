@@ -11,6 +11,8 @@ prismdrake_add_gentoo_python_test(GentooVmToolsTest test_vm_tools.py)
 prismdrake_add_gentoo_python_test(
     GentooProductEbuildTest test_product_ebuild.py)
 prismdrake_add_gentoo_python_test(
+    GentooCMakeInstallContractTest test_cmake_install_contract.py)
+prismdrake_add_gentoo_python_test(
     GentooPortageLifecycleEvidenceTest test_portage_lifecycle_evidence.py)
 prismdrake_add_gentoo_python_test(
     GentooInstalledArtifactAttestationTest test_installed_artifact_attestation.py)
