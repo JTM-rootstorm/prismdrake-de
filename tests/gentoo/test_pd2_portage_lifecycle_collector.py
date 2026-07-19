@@ -31,6 +31,8 @@ from pd2_portage_lifecycle_collector import (
     capture_installed_demonstration,
     capture_ordinary_reinstall,
     capture_package_test,
+    capture_portage_qa,
+    capture_portage_resolutions,
     capture_sandbox_exclusions,
     capture_unmerge_absence,
     capture_user_state_preservation,
@@ -427,6 +429,79 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                     "/usr/bin/python3", "-c",
                     "import sys; sys.stdout.write('x' * 4096)",
                 ])
+
+    def test_executes_disposable_qa_and_both_bound_resolutions(self) -> None:
+        attestation = example_attestation_document()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            repository = source / "packaging/gentoo/repository"
+            ebuild = repository / "x11-misc/prismdrake/prismdrake-9999.ebuild"
+            ebuild.parent.mkdir(parents=True)
+            ebuild.write_text("EAPI=8\n", encoding="utf-8")
+            (repository / "profiles").mkdir()
+            (repository / "profiles/repo_name").write_text(
+                "prismdrake-local\n", encoding="utf-8",
+            )
+            installed_repository = root / "installed-repository"
+            installed_ebuild = installed_repository / attestation["source"]["ebuild_path"]
+            installed_ebuild.parent.mkdir(parents=True)
+            installed_ebuild.write_text("EAPI=8\n", encoding="utf-8")
+            calls: list[tuple[list[str], Path | None]] = []
+
+            def runner(command: list[str], cwd: Path | None) -> str:
+                calls.append((command, cwd))
+                if command[:3] == ["/usr/bin/git", "rev-parse", "--verify"]:
+                    return attestation["source"]["revision"] + "\n"
+                if command[:3] == ["/usr/bin/git", "status", "--porcelain=v1"]:
+                    return ""
+                if command[0] == "/usr/bin/pkgdev":
+                    assert cwd is not None
+                    (cwd / "Manifest").write_text("generated\n", encoding="utf-8")
+                    return "manifest complete\n"
+                if command[0] == "/usr/bin/pkgcheck":
+                    return ""
+                if command[0] == "/usr/bin/portageq":
+                    return str(installed_repository) + "\n"
+                if command[0] == "/usr/bin/env":
+                    return ("[ebuild N] x11-misc/prismdrake-9999 " +
+                            ("test\n" if command[1] == "USE=test" else "-test\n"))
+                raise AssertionError(command)
+
+            def hash_file(path: Path) -> str:
+                if path.name == "prismdrake-9999.ebuild":
+                    return attestation["source"]["ebuild_sha256"]
+                return collector.sha256_regular_file(path)
+
+            qa = capture_portage_qa(
+                attestation, source, hash_file=hash_file, command_runner=runner,
+            )
+            self.assertEqual(qa["result"], "passed")
+            self.assertFalse((repository / "Manifest").exists())
+            self.assertRegex(qa["repository_tree_sha256"], r"^[0-9a-f]{64}$")
+
+            records = capture_portage_resolutions(
+                attestation, source, hash_file=hash_file, command_runner=runner,
+            )
+            self.assertEqual([item["mode"] for item in records], ["default", "use_test"])
+            self.assertNotEqual(records[0]["dependency_graph_sha256"],
+                                records[1]["dependency_graph_sha256"])
+            emerge_calls = [command for command, _cwd in calls
+                            if command[0] == "/usr/bin/env"]
+            self.assertEqual([command[1] for command in emerge_calls],
+                             ["USE=-test", "USE=test"])
+
+            def same_graph(command: list[str], cwd: Path | None) -> str:
+                if command[0] == "/usr/bin/env":
+                    return "[ebuild N] x11-misc/prismdrake-9999\n"
+                return runner(command, cwd)
+
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^resolution_dependency_graphs_not_distinct$"):
+                capture_portage_resolutions(
+                    attestation, source, hash_file=hash_file,
+                    command_runner=same_graph,
+                )
     def test_scanelf_and_reinstall_are_bound_to_attested_bytes(self) -> None:
         attestation = example_attestation_document()
         hashes = {item["path"]: item["sha256"]

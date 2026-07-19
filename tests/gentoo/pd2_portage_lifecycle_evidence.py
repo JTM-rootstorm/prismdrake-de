@@ -177,6 +177,10 @@ def validate_evidence_document(document: Any) -> None:
     ebuild_hash = source["ebuild_sha256"]
     _require(source["repository_uri"] == SOURCE_URI, "source_repository_mismatch")
 
+    portage_qa = document["portage_qa"]
+    _require_binding(portage_qa, revision, ebuild_hash,
+                     document["tested_artifact"]["artifact_sha256"])
+
     resolutions = document["resolutions"]
     _require(tuple(item["mode"] for item in resolutions) == ("default", "use_test"),
              "resolution_order_mismatch")
@@ -385,6 +389,14 @@ def example_evidence_document() -> dict[str, Any]:
         "schema_version": 1,
         "evidence_kind": "pd2_portage_installed_lifecycle",
         "source": source,
+        "portage_qa": {
+            **binding,
+            "result": "passed",
+            "source_repository_tree_sha256": "0" * 64,
+            "repository_tree_sha256": "d" * 64,
+            "pkgdev_output_sha256": "e" * 64,
+            "pkgcheck_output_sha256": "f" * 64,
+        },
         "resolutions": [
             {
                 "mode": "default",

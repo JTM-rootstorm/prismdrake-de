@@ -8,6 +8,7 @@
     "schema_version",
     "evidence_kind",
     "source",
+    "portage_qa",
     "resolutions",
     "tested_artifact",
     "package_test",
@@ -22,6 +23,21 @@
     "schema_version": { "const": 1 },
     "evidence_kind": { "const": "pd2_portage_installed_lifecycle" },
     "source": { "$ref": "#/$defs/source" },
+    "portage_qa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_revision", "ebuild_sha256", "artifact_sha256", "result", "source_repository_tree_sha256", "repository_tree_sha256", "pkgdev_output_sha256", "pkgcheck_output_sha256"],
+      "properties": {
+        "source_revision": { "$ref": "#/$defs/revision" },
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "result": { "const": "passed" },
+        "source_repository_tree_sha256": { "$ref": "#/$defs/sha256" },
+        "repository_tree_sha256": { "$ref": "#/$defs/sha256" },
+        "pkgdev_output_sha256": { "$ref": "#/$defs/sha256" },
+        "pkgcheck_output_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
     "resolutions": {
       "type": "array",
       "minItems": 2,

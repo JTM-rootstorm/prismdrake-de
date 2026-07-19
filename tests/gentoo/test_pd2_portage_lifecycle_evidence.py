@@ -86,6 +86,8 @@ class Pd2LifecycleEvidenceTests(unittest.TestCase):
     def test_rejects_resolution_and_package_test_drift(self) -> None:
         mutations = (
             lambda value: value["resolutions"].reverse(),
+            lambda value: value["portage_qa"].update({"result": "failed"}),
+            lambda value: value["portage_qa"].update({"source_revision": "9" * 40}),
             lambda value: value["resolutions"][0].update({"use_test": True}),
             lambda value: value["resolutions"][1].update({
                 "dependency_graph_sha256": value["resolutions"][0]["dependency_graph_sha256"]}),

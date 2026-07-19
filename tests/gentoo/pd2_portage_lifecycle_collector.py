@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Collect bounded PD2 lifecycle facts without invoking Portage.
+"""Collect bounded PD2 lifecycle facts with explicit Portage observer stages.
 
-The collector directly verifies source, executes bounded CTest and linkage
-observers, and inspects installed files. It has no install, unmerge, or package
-resolution path.
+The collector directly verifies source, executes bounded QA, resolution, CTest,
+and linkage observers, and inspects installed files. It never installs or
+unmerges a package.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import selectors
+import shutil
 import signal
 import stat
 import subprocess
@@ -65,9 +66,15 @@ MAX_CTEST_JUNIT_BYTES = 16 * 1024 * 1024
 SOURCE_COMMAND_TIMEOUT_SECONDS = 30
 OBSERVER_COMMAND_TIMEOUT_SECONDS = 120
 CTEST_COMMAND_TIMEOUT_SECONDS = 1800
+PORTAGE_COMMAND_TIMEOUT_SECONDS = 1800
 CTEST_PATH = Path("/usr/bin/ctest")
 SCANELF_PATH = Path("/usr/bin/scanelf")
 EQUERY_PATH = Path("/usr/bin/equery")
+PKGDEV_PATH = Path("/usr/bin/pkgdev")
+PKGCHECK_PATH = Path("/usr/bin/pkgcheck")
+PORTAGEQ_PATH = Path("/usr/bin/portageq")
+ENV_PATH = Path("/usr/bin/env")
+EMERGE_PATH = Path("/usr/bin/emerge")
 VDB_DIRECTORY = Path("/var/db/pkg/x11-misc/prismdrake-9999")
 EBUILD_RELATIVE_PATH = Path(
     "packaging/gentoo/repository/x11-misc/prismdrake/prismdrake-9999.ebuild"
@@ -219,6 +226,9 @@ def _command_timeout(command: list[str]) -> int:
         return CTEST_COMMAND_TIMEOUT_SECONDS
     if executable.name == "git":
         return SOURCE_COMMAND_TIMEOUT_SECONDS
+    if executable in (PKGDEV_PATH, PKGCHECK_PATH, PORTAGEQ_PATH, EMERGE_PATH,
+                      ENV_PATH):
+        return PORTAGE_COMMAND_TIMEOUT_SECONDS
     return OBSERVER_COMMAND_TIMEOUT_SECONDS
 
 
@@ -334,6 +344,145 @@ def verify_exact_source(
         "ebuild_sha256": ebuild_hash,
         "bundle_sha256": bundle_hash,
     }
+
+
+def _verify_clean_source_binding(
+        source_checkout: Path, source: dict[str, Any],
+        hash_file: Callable[[Path], str],
+        command_runner: Callable[[list[str], Path | None], str],
+) -> None:
+    _require(source_checkout.is_absolute() and source_checkout.is_dir() and
+             not source_checkout.is_symlink(), "source_checkout_invalid")
+    revision = command_runner(
+        ["/usr/bin/git", "rev-parse", "--verify", "HEAD"], source_checkout,
+    ).strip()
+    _require(revision == source["revision"], "source_revision_mismatch")
+    _require(command_runner(
+        ["/usr/bin/git", "status", "--porcelain=v1", "--untracked-files=all"],
+        source_checkout,
+    ) == "", "source_checkout_not_clean")
+    _require(hash_file(source_checkout / EBUILD_RELATIVE_PATH) ==
+             source["ebuild_sha256"], "source_ebuild_mismatch")
+
+
+def _repository_tree_sha256(repository: Path) -> str:
+    records: list[dict[str, str]] = []
+    total_bytes = 0
+    try:
+        paths = sorted(repository.rglob("*"))
+    except OSError as error:
+        raise Pd2CollectorError("qa_repository_invalid") from error
+    _require(len(paths) <= 1000, "qa_repository_invalid")
+    for path in paths:
+        _require(not path.is_symlink(), "qa_repository_invalid")
+        if path.is_dir():
+            continue
+        _require(path.is_file(), "qa_repository_invalid")
+        try:
+            payload = path.read_bytes()
+            relative = path.relative_to(repository).as_posix()
+        except OSError as error:
+            raise Pd2CollectorError("qa_repository_invalid") from error
+        total_bytes += len(payload)
+        _require(total_bytes <= MAX_CAPTURE_FILE_BYTES, "qa_repository_invalid")
+        records.append({
+            "path": relative,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        })
+    _require(records, "qa_repository_invalid")
+    return hashlib.sha256(json.dumps(
+        records, ensure_ascii=True, separators=(",", ":"), sort_keys=True,
+    ).encode("utf-8")).hexdigest()
+
+
+def capture_portage_qa(
+        attestation: dict[str, Any], source_checkout: Path,
+        pkgdev: Path = PKGDEV_PATH, pkgcheck: Path = PKGCHECK_PATH,
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+) -> dict[str, Any]:
+    """Run manifest generation and pkgcheck against a disposable repository copy."""
+
+    binding = _binding(attestation)
+    source = attestation["source"]
+    _verify_clean_source_binding(source_checkout, source, hash_file, command_runner)
+    repository = source_checkout / "packaging/gentoo/repository"
+    _require(repository.is_dir() and not repository.is_symlink(),
+             "qa_repository_invalid")
+    source_tree_hash = _repository_tree_sha256(repository)
+    with tempfile.TemporaryDirectory(prefix="prismdrake-pd2-portage-qa-") as temporary:
+        temporary_root = Path(temporary)
+        disposable_repository = temporary_root / "repository"
+        cache = temporary_root / "pkgcheck-cache"
+        try:
+            shutil.copytree(repository, disposable_repository)
+            cache.mkdir()
+        except OSError as error:
+            raise Pd2CollectorError("qa_repository_copy_failed") from error
+        pkgdev_output = command_runner(
+            [str(pkgdev), "manifest"], disposable_repository,
+        )
+        pkgcheck_output = command_runner([
+            str(pkgcheck), "scan", "--cache-dir", str(cache),
+            str(disposable_repository),
+        ], None)
+        tree_hash = _repository_tree_sha256(disposable_repository)
+        _require(hash_file(disposable_repository / EBUILD_RELATIVE_PATH.relative_to(
+            "packaging/gentoo/repository")) == source["ebuild_sha256"],
+            "qa_ebuild_mismatch")
+    return {
+        **binding,
+        "result": "passed",
+        "source_repository_tree_sha256": source_tree_hash,
+        "repository_tree_sha256": tree_hash,
+        "pkgdev_output_sha256": hashlib.sha256(pkgdev_output.encode("utf-8")).hexdigest(),
+        "pkgcheck_output_sha256": hashlib.sha256(
+            pkgcheck_output.encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def capture_portage_resolutions(
+        attestation: dict[str, Any], source_checkout: Path,
+        portageq: Path = PORTAGEQ_PATH, emerge: Path = EMERGE_PATH,
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+) -> list[dict[str, Any]]:
+    """Execute both exact package pretend resolutions against the selected overlay."""
+
+    source = attestation["source"]
+    _verify_clean_source_binding(source_checkout, source, hash_file, command_runner)
+    repository_output = command_runner(
+        [str(portageq), "get_repo_path", "/", source["repository_name"]], None,
+    )
+    repository_lines = repository_output.splitlines()
+    _require(len(repository_lines) == 1, "portage_repository_path_invalid")
+    repository = Path(repository_lines[0])
+    _require(repository.is_absolute() and repository.is_dir() and
+             not repository.is_symlink(), "portage_repository_path_invalid")
+    installed_ebuild = repository / source["ebuild_path"]
+    _require(hash_file(installed_ebuild) == source["ebuild_sha256"],
+             "portage_repository_ebuild_mismatch")
+    records = []
+    for mode, use_value, use_test in (
+            ("default", "USE=-test", False), ("use_test", "USE=test", True)):
+        output = command_runner([
+            str(ENV_PATH), use_value, str(emerge), "--pretend", "--verbose", "--tree",
+            "--newuse", f"={PACKAGE_VERSIONED_ATOM}::{source['repository_name']}",
+        ], None)
+        _require(PACKAGE_ATOM in output, "portage_resolution_output_invalid")
+        records.append({
+            "mode": mode,
+            "source_revision": source["revision"],
+            "ebuild_sha256": source["ebuild_sha256"],
+            "use_test": use_test,
+            "result": "resolved",
+            "dependency_graph_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
+        })
+    _require(records[0]["dependency_graph_sha256"] !=
+             records[1]["dependency_graph_sha256"],
+             "resolution_dependency_graphs_not_distinct")
+    return records
 
 
 def load_build_provenance(path: Path, revision: str) -> dict[str, Any]:
@@ -1030,6 +1179,14 @@ def main(argv: list[str] | None = None) -> int:
             preservation.add_argument(f"--{phase}-{kind.replace('_', '-')}",
                                       type=Path, required=True)
     preservation.add_argument("--output", type=Path, required=True)
+    qa = subparsers.add_parser("qa")
+    qa.add_argument("--attestation", type=Path, required=True)
+    qa.add_argument("--source-checkout", type=Path, required=True)
+    qa.add_argument("--output", type=Path, required=True)
+    resolutions = subparsers.add_parser("resolutions")
+    resolutions.add_argument("--attestation", type=Path, required=True)
+    resolutions.add_argument("--source-checkout", type=Path, required=True)
+    resolutions.add_argument("--output", type=Path, required=True)
     package_test = subparsers.add_parser("package-test")
     package_test.add_argument("--attestation", type=Path, required=True)
     package_test.add_argument("--test-build", type=Path, required=True)
@@ -1072,6 +1229,14 @@ def main(argv: list[str] | None = None) -> int:
             before = {kind: getattr(arguments, f"before_{kind}") for kind in USER_DATA_KINDS}
             after = {kind: getattr(arguments, f"after_{kind}") for kind in USER_DATA_KINDS}
             document = {"user_data": capture_user_state_preservation(before, after)}
+        elif arguments.command == "qa":
+            attestation = load_attestation(arguments.attestation)
+            document = capture_portage_qa(attestation, arguments.source_checkout)
+        elif arguments.command == "resolutions":
+            attestation = load_attestation(arguments.attestation)
+            document = {"resolutions": capture_portage_resolutions(
+                attestation, arguments.source_checkout,
+            )}
         elif arguments.command == "package-test":
             attestation = load_attestation(arguments.attestation)
             document = capture_package_test(
