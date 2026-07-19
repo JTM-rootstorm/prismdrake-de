@@ -123,10 +123,12 @@ class DetachedProcessExecutor final : public LauncherProcessExecutor {
 
 class DefaultLaunchBackend final : public LauncherLaunchBackend {
   public:
-    explicit DefaultLaunchBackend(std::unique_ptr<LauncherProcessExecutor> executor)
-        : executor_(std::move(executor)) {}
+    DefaultLaunchBackend(std::unique_ptr<LauncherProcessExecutor> executor,
+                         std::unique_ptr<LauncherApplicationActivator> activator)
+        : executor_(std::move(executor)), activator_(std::move(activator)) {}
 
     Result<void> launch(const prismdrake::launcher::DiscoveredDesktopEntry &discovered,
+                        std::optional<std::string> desktopActionId,
                         const prismdrake::launcher::ProcessLaunchContext &context,
                         const foundation::CancellationToken &cancellation) override {
         auto provenance = prismdrake::launcher::validateDiscoveredDesktopFileLocation(
@@ -134,9 +136,41 @@ class DefaultLaunchBackend final : public LauncherLaunchBackend {
         if (!provenance) {
             return provenance;
         }
+        std::optional<std::string> selectedExec = discovered.entry.exec;
+        if (desktopActionId) {
+            const auto action =
+                std::ranges::find_if(discovered.entry.actions, [&](const auto &candidate) {
+                    return candidate.identifier == *desktopActionId;
+                });
+            if (action == discovered.entry.actions.end()) {
+                return Result<void>::failure({ErrorCode::validation_error,
+                                              "The selected desktop action is unavailable.",
+                                              "Choose a current bounded desktop action."});
+            }
+            selectedExec = action->exec;
+        }
+        if (discovered.entry.dbusActivatable) {
+            auto activated = activator_->activate(
+                discovered.id,
+                desktopActionId ? std::optional<std::string_view>{*desktopActionId} : std::nullopt,
+                cancellation);
+            if (activated) {
+                return activated;
+            }
+            // The Desktop Entry contract permits Exec fallback only when the selected launch
+            // target provides an Exec value. Never manufacture a command for activation-only
+            // entries.
+            if (!selectedExec) {
+                return activated;
+            }
+        }
+
+        auto directEntry = discovered.entry;
+        directEntry.dbusActivatable = false;
+        directEntry.exec = std::move(selectedExec);
         prismdrake::launcher::DesktopExecExpansionContext expansion;
         expansion.desktopFileLocation = discovered.location.absolutePath().native();
-        auto invocations = prismdrake::launcher::expandDesktopExec(discovered.entry, expansion);
+        auto invocations = prismdrake::launcher::expandDesktopExec(directEntry, expansion);
         if (!invocations) {
             return Result<void>::failure(invocations.error());
         }
@@ -147,7 +181,7 @@ class DefaultLaunchBackend final : public LauncherLaunchBackend {
                                               "discard the stale launch request"});
             }
             auto plan =
-                prismdrake::launcher::makeProcessLaunchPlan(discovered.entry, invocation, context);
+                prismdrake::launcher::makeProcessLaunchPlan(directEntry, invocation, context);
             if (!plan) {
                 return Result<void>::failure(plan.error());
             }
@@ -161,6 +195,7 @@ class DefaultLaunchBackend final : public LauncherLaunchBackend {
 
   private:
     std::unique_ptr<LauncherProcessExecutor> executor_;
+    std::unique_ptr<LauncherApplicationActivator> activator_;
 };
 
 struct RefreshJob final {
@@ -176,6 +211,7 @@ using IndexJob = std::variant<RefreshJob, SearchJob>;
 
 struct LaunchJob final {
     prismdrake::launcher::DiscoveredDesktopEntry entry;
+    std::optional<std::string> desktopActionId;
 };
 
 } // namespace
@@ -299,7 +335,8 @@ class LauncherController::Impl final {
             const auto token = launch_cancellation_->token();
             lock.unlock();
 
-            auto result = launch_backend_->launch(job.entry, owner_->options_.launchContext, token);
+            auto result = launch_backend_->launch(job.entry, std::move(job.desktopActionId),
+                                                  owner_->options_.launchContext, token);
             QMetaObject::invokeMethod(
                 owner_,
                 [owner = owner_, result = std::move(result)]() mutable {
@@ -335,11 +372,15 @@ std::unique_ptr<LauncherIndexBackend> makeDefaultLauncherIndexBackend() {
 }
 
 std::unique_ptr<LauncherLaunchBackend>
-makeDefaultLauncherLaunchBackend(std::unique_ptr<LauncherProcessExecutor> executor) {
+makeDefaultLauncherLaunchBackend(std::unique_ptr<LauncherProcessExecutor> executor,
+                                 std::unique_ptr<LauncherApplicationActivator> activator) {
     if (!executor) {
         executor = std::make_unique<DetachedProcessExecutor>();
     }
-    return std::make_unique<DefaultLaunchBackend>(std::move(executor));
+    if (!activator) {
+        activator = makeDefaultLauncherApplicationActivator();
+    }
+    return std::make_unique<DefaultLaunchBackend>(std::move(executor), std::move(activator));
 }
 
 Result<std::unique_ptr<LauncherController>>
@@ -491,7 +532,7 @@ void LauncherController::handleLaunchIntent(const ApplicationLaunchIntent &inten
         });
     if (match == presentation_.currentSearch()->results.end() ||
         !implementation_->submitLaunch(
-            LaunchJob{catalog_->discovery->entries[match->discoveryEntryIndex]})) {
+            LaunchJob{catalog_->discovery->entries[match->discoveryEntryIndex], std::nullopt})) {
         emit launchRejected();
     }
 }

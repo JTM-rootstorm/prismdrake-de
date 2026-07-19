@@ -1,6 +1,8 @@
 add_library(prismdrake-shell-launcher-controller STATIC
     ApplicationRootMonitor.cpp
     ApplicationRootMonitor.hpp
+    DbusApplicationActivator.cpp
+    DbusApplicationActivator.hpp
     LauncherController.cpp
     LauncherController.hpp)
 add_library(Prismdrake::shell-launcher-controller ALIAS
@@ -12,6 +14,7 @@ target_include_directories(prismdrake-shell-launcher-controller
 target_link_libraries(prismdrake-shell-launcher-controller
     PUBLIC
         Prismdrake::shell-launcher-presentation
+        Prismdrake::sd-bus
         Qt6::Core)
 
 prismdrake_configure_cpp_target(prismdrake-shell-launcher-controller)

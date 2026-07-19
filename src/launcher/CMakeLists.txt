@@ -1,4 +1,6 @@
 add_library(prismdrake-launcher-model STATIC
+    ApplicationActivation.cpp
+    ApplicationActivation.hpp
     ApplicationIdentity.cpp
     ApplicationIdentity.hpp
     ApplicationCatalog.cpp

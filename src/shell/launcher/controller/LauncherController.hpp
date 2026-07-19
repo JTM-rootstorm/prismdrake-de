@@ -3,6 +3,7 @@
 #include "ApplicationPaths.hpp"
 #include "ApplicationRootMonitor.hpp"
 #include "ApplicationSearch.hpp"
+#include "DbusApplicationActivator.hpp"
 #include "DesktopEntryParser.hpp"
 #include "DesktopEntryVisibility.hpp"
 #include "LauncherPresentationModel.hpp"
@@ -13,6 +14,7 @@
 #include <QString>
 
 #include <memory>
+#include <optional>
 
 namespace prismdrake::shell::launcher::controller {
 
@@ -59,13 +61,15 @@ class LauncherLaunchBackend {
     /// Performs blocking expansion, planning, and execution on the dedicated launch thread.
     [[nodiscard]] virtual foundation::Result<void>
     launch(const prismdrake::launcher::DiscoveredDesktopEntry &entry,
+           std::optional<std::string> desktopActionId,
            const prismdrake::launcher::ProcessLaunchContext &context,
            const foundation::CancellationToken &cancellation) = 0;
 };
 
 [[nodiscard]] std::unique_ptr<LauncherIndexBackend> makeDefaultLauncherIndexBackend();
 [[nodiscard]] std::unique_ptr<LauncherLaunchBackend>
-makeDefaultLauncherLaunchBackend(std::unique_ptr<LauncherProcessExecutor> executor = {});
+makeDefaultLauncherLaunchBackend(std::unique_ptr<LauncherProcessExecutor> executor = {},
+                                 std::unique_ptr<LauncherApplicationActivator> activator = {});
 
 /// Owner-thread coordinator for asynchronous discovery, search, and safe application launch.
 class LauncherController final : public QObject {

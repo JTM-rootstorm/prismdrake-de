@@ -125,7 +125,7 @@ class FakeIndexBackend final : public LauncherIndexBackend {
 
 class FakeLaunchBackend final : public LauncherLaunchBackend {
   public:
-    foundation::Result<void> launch(const DiscoveredDesktopEntry &entry,
+    foundation::Result<void> launch(const DiscoveredDesktopEntry &entry, std::optional<std::string>,
                                     const prismdrake::launcher::ProcessLaunchContext &,
                                     const foundation::CancellationToken &) override {
         ++calls;
@@ -135,6 +135,27 @@ class FakeLaunchBackend final : public LauncherLaunchBackend {
 
     std::atomic_int calls{0};
     std::optional<std::string> captured_exec;
+};
+
+class FakeApplicationActivator final : public LauncherApplicationActivator {
+  public:
+    foundation::Result<void> activate(const prismdrake::launcher::DesktopFileId &desktopFileId,
+                                      std::optional<std::string_view> actionId,
+                                      const foundation::CancellationToken &) override {
+        ++calls;
+        captured_id = desktopFileId.value();
+        captured_action = actionId ? std::optional<std::string>{*actionId} : std::nullopt;
+        if (fail) {
+            return foundation::Result<void>::failure(
+                {ErrorCode::not_found, "fixture activation failed", "use a permitted fallback"});
+        }
+        return foundation::Result<void>::success();
+    }
+
+    int calls{0};
+    bool fail{false};
+    std::string captured_id;
+    std::optional<std::string> captured_action;
 };
 
 class CapturingExecutor final : public LauncherProcessExecutor {
@@ -352,7 +373,8 @@ TEST(LauncherControllerTest, DefaultLaunchBackendBuildsLiteralArgvWithoutImplici
                              "/bin/echo \"; touch /tmp/prismdrake-must-not-exist &\" %k");
     foundation::CancellationSource cancellation;
 
-    auto launched = backend->launch(application, options().launchContext, cancellation.token());
+    auto launched =
+        backend->launch(application, std::nullopt, options().launchContext, cancellation.token());
 
     ASSERT_TRUE(launched) << (launched ? "" : launched.error().message);
     ASSERT_EQ(capture->plans.size(), 1U);
@@ -373,10 +395,73 @@ TEST(LauncherControllerTest, DefaultLaunchBackendRejectsMismatchedRetainedLocati
     application.location = std::move(otherLocation).value();
     foundation::CancellationSource cancellation;
 
-    auto launched = backend->launch(application, options().launchContext, cancellation.token());
+    auto launched =
+        backend->launch(application, std::nullopt, options().launchContext, cancellation.token());
 
     ASSERT_FALSE(launched);
     EXPECT_EQ(launched.error().code, ErrorCode::validation_error);
+    EXPECT_TRUE(capture->plans.empty());
+}
+
+TEST(LauncherControllerTest, DerivesStandardDbusIdentityAndRejectsNonBusDesktopIds) {
+    auto valid = prismdrake::launcher::deriveDesktopFileId("org.example.Dragon-Editor.desktop");
+    ASSERT_TRUE(valid);
+    auto identity = prismdrake::launcher::deriveDbusApplicationIdentity(valid.value());
+    ASSERT_TRUE(identity);
+    EXPECT_EQ(identity.value().serviceName, "org.example.Dragon-Editor");
+    EXPECT_EQ(identity.value().objectPath, "/org/example/Dragon_Editor");
+
+    auto invalid = prismdrake::launcher::deriveDesktopFileId("dragon.desktop");
+    ASSERT_TRUE(invalid);
+    auto rejected = prismdrake::launcher::deriveDbusApplicationIdentity(invalid.value());
+    ASSERT_FALSE(rejected);
+    EXPECT_EQ(rejected.error().code, ErrorCode::unsupported);
+}
+
+TEST(LauncherControllerTest, DbusActivationUsesTypedActionAndPermittedDirectFallback) {
+    auto executor = std::make_unique<CapturingExecutor>();
+    auto *capture = executor.get();
+    auto activator = std::make_unique<FakeApplicationActivator>();
+    auto *activation = activator.get();
+    auto backend = makeDefaultLauncherLaunchBackend(std::move(executor), std::move(activator));
+    auto application = entry("org.example.Editor.desktop", "Editor", "/bin/echo fallback");
+    application.entry.dbusActivatable = true;
+    application.entry.actions.push_back(
+        {"NewWindow", "New Window", std::nullopt, "/bin/echo action-fallback"});
+    foundation::CancellationSource cancellation;
+
+    auto activated = backend->launch(application, std::optional<std::string>{"NewWindow"},
+                                     options().launchContext, cancellation.token());
+    ASSERT_TRUE(activated);
+    EXPECT_EQ(activation->calls, 1);
+    EXPECT_EQ(activation->captured_id, "org.example.Editor.desktop");
+    ASSERT_TRUE(activation->captured_action);
+    EXPECT_EQ(*activation->captured_action, "NewWindow");
+    EXPECT_TRUE(capture->plans.empty());
+
+    activation->fail = true;
+    auto fallback = backend->launch(application, std::optional<std::string>{"NewWindow"},
+                                    options().launchContext, cancellation.token());
+    ASSERT_TRUE(fallback);
+    ASSERT_EQ(capture->plans.size(), 1U);
+    EXPECT_EQ(capture->plans[0].argv, (std::vector<std::string>{"/bin/echo", "action-fallback"}));
+}
+
+TEST(LauncherControllerTest, ActivationOnlyEntryDoesNotInventDirectFallback) {
+    auto executor = std::make_unique<CapturingExecutor>();
+    auto *capture = executor.get();
+    auto activator = std::make_unique<FakeApplicationActivator>();
+    activator->fail = true;
+    auto backend = makeDefaultLauncherLaunchBackend(std::move(executor), std::move(activator));
+    auto application = entry("org.example.Settings.desktop", "Settings");
+    application.entry.dbusActivatable = true;
+    application.entry.exec.reset();
+    foundation::CancellationSource cancellation;
+
+    auto launched =
+        backend->launch(application, std::nullopt, options().launchContext, cancellation.token());
+
+    ASSERT_FALSE(launched);
     EXPECT_TRUE(capture->plans.empty());
 }
 
