@@ -278,7 +278,12 @@ bool LauncherSurfaceQmlFixture::rebuildCatalog() {
         if (!entry) {
             return false;
         }
-        entries.push_back(std::move(entry).value());
+        auto discoveredEntry = std::move(entry).value();
+        if (index == 0U) {
+            discoveredEntry.entry.actions.push_back(
+                {"new-window", "New window", std::nullopt, "private-command --new-window"});
+        }
+        entries.push_back(std::move(discoveredEntry));
         visible.push_back(index);
         decisions.push_back({index, ApplicationCatalogEligibilityReason::eligibleWithoutTryExec});
     }

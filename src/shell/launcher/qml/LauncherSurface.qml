@@ -270,6 +270,7 @@ FocusScope {
                     width: ListView.view.width
                     presentation: result
                     tokens: root.tokens
+                    selected: ListView.isCurrentItem
                     onFocusPrevious: root.focusResult(index - 1, true)
                     onFocusNext: root.focusResult(index + 1, false)
                     onDismissRequested: root.dismissRequested()

@@ -8,6 +8,7 @@ Button {
 
     required property var presentation
     required property var tokens
+    property bool selected: false
 
     readonly property string presentationName: presentation !== null ? presentation.name : ""
     readonly property string presentationGenericName: presentation !== null
@@ -26,6 +27,14 @@ Button {
     signal focusNext
     signal dismissRequested
 
+    function actionMenuItemAt(index) {
+        return actionInstantiator.objectAt(index)
+    }
+
+    function pinMenuItem() {
+        return pinItem
+    }
+
     objectName: "launcherResultButton"
     activeFocusOnTab: false
     hoverEnabled: true
@@ -41,14 +50,20 @@ Button {
 
     Accessible.role: Accessible.Button
     Accessible.name: presentationName
-    Accessible.description: qsTr("%1. %2. %3. %4. %5")
-                                .arg(presentationGenericName)
-                                .arg(presentationComment)
-                                .arg(terminalStatus)
-                                .arg(pinned ? qsTr("Pinned") : "")
-                                .arg(applicationResult ? qsTr("Press Menu for actions") : "")
+    Accessible.description: qsTr("Generic name: %1. Description: %2. Terminal required: %3. Pinned: %4. Actions menu available: %5.")
+                                .arg(presentationGenericName.length > 0
+                                     ? presentationGenericName : qsTr("Not provided"))
+                                .arg(presentationComment.length > 0
+                                     ? presentationComment : qsTr("Not provided"))
+                                .arg(terminalRequired ? qsTr("Yes") : qsTr("No"))
+                                .arg(pinned ? qsTr("Yes") : qsTr("No"))
+                                .arg(applicationResult ? qsTr("Yes") : qsTr("No"))
     Accessible.focusable: true
     Accessible.focused: activeFocus
+    Accessible.selectable: true
+    Accessible.selected: selected
+    Accessible.pressed: down
+    Accessible.onPressAction: root.clicked()
 
     Keys.priority: Keys.BeforeItem
     Keys.onUpPressed: event => {
@@ -97,6 +112,7 @@ Button {
     Menu {
         id: actionsMenu
         objectName: "launcherActionsMenu"
+        onClosed: root.forceActiveFocus(Qt.OtherFocusReason)
 
         background: Rectangle {
             radius: root.tokens.tileRadius
@@ -105,17 +121,28 @@ Button {
             border.color: root.tokens.borderColor
         }
 
-        Repeater {
+        Instantiator {
+            id: actionInstantiator
             model: root.presentation !== null ? root.presentation.actions : []
             delegate: MenuItem {
                 id: actionItem
+                required property int index
                 required property var modelData
+                objectName: "launcherActionMenuItem" + index
                 text: modelData.name
                 implicitWidth: Math.max(root.tokens.minimumTargetSize,
                                         contentItem.implicitWidth + leftPadding + rightPadding)
                 implicitHeight: Math.max(root.tokens.minimumTargetSize,
                                          contentItem.implicitHeight + topPadding + bottomPadding)
+                width: implicitWidth
+                height: implicitHeight
+                Accessible.role: Accessible.MenuItem
                 Accessible.name: text
+                Accessible.description: qsTr("Launch the %1 action for %2")
+                                            .arg(text).arg(root.presentationName)
+                Accessible.focusable: enabled
+                Accessible.focused: activeFocus
+                Accessible.onPressAction: actionItem.clicked()
                 onTriggered: modelData.request()
                 contentItem: Text {
                     color: root.tokens.textPrimaryColor
@@ -134,6 +161,8 @@ Button {
                                                          : root.tokens.borderColor
                 }
             }
+            onObjectAdded: (index, object) => actionsMenu.insertItem(index, object)
+            onObjectRemoved: (index, object) => actionsMenu.removeItem(object)
         }
 
         MenuSeparator {
@@ -142,13 +171,27 @@ Button {
 
         MenuItem {
             id: pinItem
+            objectName: "launcherPinMenuItem"
             visible: root.applicationResult
             text: root.pinned ? qsTr("Unpin from panel") : qsTr("Pin to panel")
             implicitWidth: Math.max(root.tokens.minimumTargetSize,
                                     contentItem.implicitWidth + leftPadding + rightPadding)
             implicitHeight: Math.max(root.tokens.minimumTargetSize,
                                      contentItem.implicitHeight + topPadding + bottomPadding)
+            width: implicitWidth
+            height: implicitHeight
+            Accessible.role: Accessible.MenuItem
             Accessible.name: text
+            Accessible.description: root.pinned
+                                    ? qsTr("Remove %1 from the shared panel pins")
+                                        .arg(root.presentationName)
+                                    : qsTr("Add %1 to the shared panel pins")
+                                        .arg(root.presentationName)
+            Accessible.focusable: visible
+            Accessible.focused: activeFocus
+            Accessible.checkable: true
+            Accessible.checked: root.pinned
+            Accessible.onPressAction: pinItem.clicked()
             onTriggered: root.presentation.requestPinToggle()
             contentItem: Text {
                 color: root.tokens.textPrimaryColor
@@ -252,8 +295,8 @@ Button {
 
     background: Rectangle {
         radius: root.tokens.tileRadius
-        color: root.down || root.hovered ? root.tokens.selectionColor
-                                         : root.tokens.controlColor
+        color: root.down || root.hovered || root.selected ? root.tokens.selectionColor
+                                                          : root.tokens.controlColor
         border.width: root.activeFocus ? root.tokens.focusWidth
                                        : root.tokens.tileBorderWidth
         border.color: root.activeFocus ? root.tokens.focusColor : root.tokens.borderColor

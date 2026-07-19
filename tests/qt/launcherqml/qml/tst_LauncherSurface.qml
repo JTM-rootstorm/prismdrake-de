@@ -72,14 +72,30 @@ TestCase {
     function test_applicationActionsAreKeyboardReachable() {
         const result = surface.resultAt(0)
         verify(result !== null)
+        compare(result.Accessible.selectable, true)
+        surface.focusResult(0, false)
+        compare(result.Accessible.selected, true)
         result.forceActiveFocus(Qt.OtherFocusReason)
-        keyClick(Qt.Key_Menu)
+        keyClick(Qt.Key_F10, Qt.ShiftModifier)
 
         const menu = findChild(result, "launcherActionsMenu")
         verify(menu !== null)
         tryCompare(menu, "visible", true)
+        const action = result.actionMenuItemAt(0)
+        const pin = result.pinMenuItem()
+        verify(action !== null)
+        verify(pin !== null)
+        compare(action.Accessible.role, Accessible.MenuItem)
+        verify(action.Accessible.name.length > 0)
+        verify(action.Accessible.description.indexOf(result.presentationName) >= 0)
+        verify(action.width >= surface.tokens.minimumTargetSize)
+        verify(action.height >= surface.tokens.minimumTargetSize)
+        compare(pin.Accessible.role, Accessible.MenuItem)
+        compare(pin.Accessible.checkable, true)
+        compare(pin.Accessible.checked, result.pinned)
         keyClick(Qt.Key_Escape)
         tryCompare(menu, "visible", false)
+        tryCompare(result, "activeFocus", true)
     }
 
     function test_realProfilesShareTreeAndLauncherGeneration() {
@@ -124,7 +140,7 @@ TestCase {
         compare(comment.text, "Untrusted <script>plain text</script> & metadata")
         compare(terminal.visible, true)
         compare(terminal.text, "Requires a terminal")
-        verify(result.Accessible.description.indexOf("Requires a terminal") >= 0)
+        verify(result.Accessible.description.indexOf("Terminal required: Yes") >= 0)
         verify(result.Accessible.description.indexOf("private-command") < 0)
         verify(result.Accessible.description.indexOf("/fixture/private") < 0)
     }
