@@ -59,7 +59,7 @@ TEST(ApplicationIdentityTest, UsesAcceptedSixStepOrderAndAsciiFolding) {
     EXPECT_EQ(records[5].evidence, ApplicationAssociationEvidence::unknownApplication);
 }
 
-TEST(ApplicationIdentityTest, AmbiguityPublishesFallbackAndOnlyRedactedCategory) {
+TEST(ApplicationIdentityTest, AmbiguityPublishesUnknownAndOnlyRedactedCategory) {
     const std::vector catalog{application("first.desktop", "Same"),
                               application("second.desktop", "same")};
     const std::vector windows{
@@ -69,7 +69,9 @@ TEST(ApplicationIdentityTest, AmbiguityPublishesFallbackAndOnlyRedactedCategory)
 
     ASSERT_TRUE(result);
     ASSERT_EQ(result.value()->associations.size(), 1U);
-    EXPECT_EQ(result.value()->associations.front().applicationId.value(), "wm-class:same");
+    EXPECT_EQ(result.value()->associations.front().applicationId.value(), "unknown-application");
+    EXPECT_EQ(result.value()->associations.front().evidence,
+              ApplicationAssociationEvidence::unknownApplication);
     ASSERT_EQ(result.value()->diagnostics.size(), 1U);
     EXPECT_EQ(result.value()->diagnostics.front().code,
               ApplicationAssociationDiagnosticCode::ambiguousStartupWmClassClass);

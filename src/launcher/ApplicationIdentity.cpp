@@ -242,7 +242,10 @@ associateApplications(const std::vector<CatalogApplicationIdentity> &catalog,
         }
         if (!association) {
             const auto fallbackToken = classToken ? classToken : instanceToken;
-            if (fallbackToken) {
+            if (ambiguous) {
+                association = {window.window, ApplicationId::unknown(),
+                               ApplicationAssociationEvidence::unknownApplication};
+            } else if (fallbackToken) {
                 auto fallback = ApplicationId::wmClassFallback(*fallbackToken);
                 if (!fallback) {
                     return Result<std::shared_ptr<const ApplicationAssociationSnapshot>>::failure(
