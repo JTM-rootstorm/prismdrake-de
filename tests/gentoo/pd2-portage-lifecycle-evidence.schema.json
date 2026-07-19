@@ -123,8 +123,8 @@
     }
   },
   "$defs": {
-    "revision": { "type": "string", "pattern": "[0-9a-f]{40}" },
-    "sha256": { "type": "string", "pattern": "[0-9a-f]{64}" },
+    "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "source": {
       "type": "object",
       "additionalProperties": false,
@@ -190,7 +190,7 @@
       "required": ["kind", "path"],
       "properties": {
         "kind": { "enum": ["directory", "regular", "symlink"] },
-        "path": { "type": "string", "minLength": 5, "maxLength": 512, "pattern": "/usr(?:/[A-Za-z0-9._+@-]+)+" }
+        "path": { "type": "string", "minLength": 5, "maxLength": 512, "pattern": "^/usr(?:/[A-Za-z0-9._+@-]+)+$" }
       }
     },
     "ownership_summary": {
@@ -257,7 +257,7 @@
           "minItems": 1,
           "maxItems": 32,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "[A-Za-z0-9][A-Za-z0-9._+\\-]*" }
+          "items": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[A-Za-z0-9][A-Za-z0-9._+\\-]*$" }
         }
       }
     },
