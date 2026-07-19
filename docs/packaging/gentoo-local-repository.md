@@ -287,6 +287,10 @@ runuser --user prismdrake -- \
   --controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE" \
   --output "$PRISMDRAKE_EVIDENCE_ROOT/non-root/pd2-package-test.json"
 
+chown -R root:root "$PRISMDRAKE_SOURCE_CHECKOUT" "$PRISMDRAKE_TEST_BUILD"
+test -z "$(/usr/bin/git -C "$PRISMDRAKE_SOURCE_CHECKOUT" \
+  status --porcelain=v1 --untracked-files=all)"
+
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py linkage \
   --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
   --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-linkage.json"
@@ -311,7 +315,9 @@ the exact clean source and final retained build readable and owned by the
 ordinary test user without changing Git bytes or the canonical root-owned
 preflight artifact. Run the root-owned outside-sandbox stage before this
 ownership handoff; otherwise Git can correctly reject the root observer's
-access to the non-root-owned checkout as dubious ownership.
+access to the non-root-owned checkout as dubious ownership. Restore the two
+disposable trees to root after the non-root package selection and verify the
+checkout remains clean before the later root-owned WP15 source attestation.
 
 The CTest collectors require the retained build's exact clean source directory
 and configured revision, compare the complete ordered inventory to

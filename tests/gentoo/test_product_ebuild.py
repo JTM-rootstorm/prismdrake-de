@@ -325,8 +325,17 @@ class PackagingGuideContractTests(unittest.TestCase):
         package_test = self.source.index(
             "pd2_portage_lifecycle_collector.py package-test"
         )
+        ownership_restore = self.source.index(
+            'chown -R root:root "$PRISMDRAKE_SOURCE_CHECKOUT"'
+        )
         self.assertLess(sandbox, ownership_handoff)
         self.assertLess(ownership_handoff, package_test)
+        self.assertLess(package_test, ownership_restore)
+        restored_source = self.source[ownership_restore:]
+        self.assertIn('git -C "$PRISMDRAKE_SOURCE_CHECKOUT"', restored_source)
+        self.assertIn(
+            "status --porcelain=v1 --untracked-files=all", restored_source
+        )
 
 
 if __name__ == "__main__":
