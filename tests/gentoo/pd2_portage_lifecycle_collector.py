@@ -16,11 +16,15 @@ import math
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any
+import xml.etree.ElementTree as ElementTree
 
 from pd2_installed_artifact_attestation import (
     INSTALLED_EXECUTABLE_PATHS,
@@ -57,6 +61,12 @@ from pd2_portage_lifecycle_evidence import (
 MAX_CAPTURE_FILE_BYTES = 256 * 1024 * 1024
 MAX_CAPTURE_JSON_BYTES = 524_288
 MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024
+MAX_CTEST_JUNIT_BYTES = 16 * 1024 * 1024
+SOURCE_COMMAND_TIMEOUT_SECONDS = 30
+OBSERVER_COMMAND_TIMEOUT_SECONDS = 120
+CTEST_COMMAND_TIMEOUT_SECONDS = 1800
+CTEST_PATH = Path("/usr/bin/ctest")
+SCANELF_PATH = Path("/usr/bin/scanelf")
 EBUILD_RELATIVE_PATH = Path(
     "packaging/gentoo/repository/x11-misc/prismdrake/prismdrake-9999.ebuild"
 )
@@ -199,27 +209,83 @@ def _default_is_executable(path: Path) -> bool:
     return path.is_file() and not path.is_symlink() and os.access(path, os.X_OK)
 
 
+def _command_timeout(command: list[str]) -> int:
+    executable = Path(command[0]) if command else Path()
+    if executable == CTEST_PATH:
+        return CTEST_COMMAND_TIMEOUT_SECONDS
+    if executable.name == "git":
+        return SOURCE_COMMAND_TIMEOUT_SECONDS
+    return OBSERVER_COMMAND_TIMEOUT_SECONDS
+
+
+def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+
+
 def run_checked(command: list[str], cwd: Path | None = None) -> str:
     """Run one bounded, shell-free observer command."""
 
+    _require(bool(command) and Path(command[0]).is_absolute(), "observer_command_invalid")
+    process: subprocess.Popen[bytes] | None = None
+    selector = selectors.DefaultSelector()
+    streams: dict[int, bytearray] = {}
+    stdout_data = b""
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=cwd,
-            check=False,
-            capture_output=True,
-            text=False,
-            timeout=120,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            start_new_session=True,
         )
+        _require(process.stdout is not None and process.stderr is not None,
+                 "observer_command_failed")
+        for stream in (process.stdout, process.stderr):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ)
+            streams[stream.fileno()] = bytearray()
+        deadline = time.monotonic() + _command_timeout(command)
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _terminate_process_group(process)
+                raise Pd2CollectorError("observer_command_timeout")
+            for key, _ in selector.select(min(remaining, 0.25)):
+                block = os.read(key.fd, 64 * 1024)
+                if not block:
+                    selector.unregister(key.fileobj)
+                    continue
+                target = streams[key.fd]
+                target.extend(block)
+                if len(target) > MAX_COMMAND_OUTPUT_BYTES:
+                    _terminate_process_group(process)
+                    raise Pd2CollectorError("observer_output_oversized")
+        return_code = process.wait(timeout=1)
+        stdout_data = bytes(streams[process.stdout.fileno()])
+    except Pd2CollectorError:
+        if process is not None and process.poll() is None:
+            _terminate_process_group(process)
+        raise
     except (OSError, subprocess.SubprocessError) as error:
+        if process is not None and process.poll() is None:
+            _terminate_process_group(process)
         raise Pd2CollectorError("observer_command_failed") from error
-    _require(len(completed.stdout) <= MAX_COMMAND_OUTPUT_BYTES and
-             len(completed.stderr) <= MAX_COMMAND_OUTPUT_BYTES,
-             "observer_output_oversized")
-    _require(completed.returncode == 0, "observer_command_failed")
+    finally:
+        selector.close()
+        if process is not None:
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+    _require(return_code == 0, "observer_command_failed")
     try:
-        return completed.stdout.decode("utf-8")
+        return stdout_data.decode("utf-8")
     except UnicodeError as error:
         raise Pd2CollectorError("observer_output_invalid") from error
 
@@ -299,98 +365,212 @@ def _parse_command_json(payload: str) -> Any:
         raise Pd2CollectorError("observer_output_invalid") from error
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def verify_test_build(
-        build_directory: Path, revision: str,
+        build_directory: Path, source_checkout: Path, revision: str,
         hash_file: Callable[[Path], str] = sha256_regular_file,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
 ) -> None:
-    """Bind a retained CTest tree to its configured source revision."""
+    """Bind a retained CTest tree to one exact clean source checkout."""
 
     _require(build_directory.is_absolute() and build_directory.is_dir() and
              not build_directory.is_symlink(), "test_build_invalid")
+    _require(source_checkout.is_absolute() and source_checkout.is_dir() and
+             not source_checkout.is_symlink(), "test_source_invalid")
     cache = build_directory / "CMakeCache.txt"
     _require_sha256(hash_file(cache))
     try:
         lines = cache.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as error:
         raise Pd2CollectorError("test_build_cache_invalid") from error
-    matches = [line.partition("=")[2] for line in lines if line.startswith(
+    revision_matches = [line.partition("=")[2] for line in lines if line.startswith(
         "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL=")]
-    _require(matches == [revision], "test_build_revision_mismatch")
+    source_matches = [line.partition("=")[2] for line in lines if line.startswith(
+        "CMAKE_HOME_DIRECTORY:INTERNAL=")]
+    _require(revision_matches == [revision], "test_build_revision_mismatch")
+    _require(source_matches == [str(source_checkout)], "test_build_source_mismatch")
+    observed_revision = command_runner(
+        ["/usr/bin/git", "rev-parse", "--verify", "HEAD"], source_checkout,
+    ).strip()
+    _require(observed_revision == revision, "test_source_revision_mismatch")
+    _require(command_runner(
+        ["/usr/bin/git", "status", "--porcelain=v1", "--untracked-files=all"],
+        source_checkout,
+    ) == "", "test_source_not_clean")
 
 
-def _ctest_names(
+def _ctest_inventory(
         ctest: Path, build_directory: Path, command_runner: Callable[[list[str], Path | None], str],
         exclude: bool,
-) -> tuple[str, ...]:
+) -> list[dict[str, Any]]:
     command = [str(ctest), "--test-dir", str(build_directory), "--show-only=json-v1"]
     if exclude:
         command.extend(("--exclude-regex", EXCLUSION_REGEX))
     document = _parse_command_json(command_runner(command, None))
     _require(isinstance(document, dict) and isinstance(document.get("tests"), list),
              "ctest_inventory_invalid")
-    names = tuple(item.get("name") for item in document["tests"] if isinstance(item, dict))
-    _require(len(names) == len(document["tests"]) and
-             all(isinstance(name, str) for name in names), "ctest_inventory_invalid")
-    return names
+    tests = document["tests"]
+    for item in tests:
+        _require(isinstance(item, dict) and isinstance(item.get("name"), str) and
+                 isinstance(item.get("command"), list) and item["command"] and
+                 all(isinstance(token, str) for token in item["command"]),
+                 "ctest_inventory_invalid")
+    _require(len({item["name"] for item in tests}) == len(tests),
+             "ctest_inventory_invalid")
+    return tests
+
+
+def _test_manifest_sha256(
+        inventory: list[dict[str, Any]], build_directory: Path, source_checkout: Path,
+        controlled_fixture: Path, hash_file: Callable[[Path], str],
+) -> str:
+    expected_fixture = build_directory / "tests/integration/prismdrake-controlled-window-fixture"
+    _require(controlled_fixture == expected_fixture and controlled_fixture.is_absolute(),
+             "controlled_fixture_build_mismatch")
+    project_files: dict[str, str] = {}
+    normalized_tests = []
+    for item in inventory:
+        command = item["command"]
+        found_project_file = False
+        for token in command:
+            candidate = Path(token)
+            if (candidate.is_absolute() and candidate.is_file() and
+                    (_is_within(candidate, build_directory) or
+                     _is_within(candidate, source_checkout))):
+                project_files[str(candidate)] = _require_sha256(hash_file(candidate))
+                found_project_file = True
+        _require(found_project_file, "ctest_project_command_unbound")
+        normalized_tests.append({"name": item["name"], "command": command})
+    project_files[str(controlled_fixture)] = _require_sha256(hash_file(controlled_fixture))
+    payload = {
+        "tests": normalized_tests,
+        "project_files": [
+            {"path": path, "sha256": digest}
+            for path, digest in sorted(project_files.items())
+        ],
+    }
+    return hashlib.sha256(json.dumps(
+        payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True,
+    ).encode("utf-8")).hexdigest()
+
+
+def _parse_passing_junit(path: Path, expected_names: tuple[str, ...]) -> None:
+    try:
+        payload = path.read_bytes()
+    except OSError as error:
+        raise Pd2CollectorError("ctest_junit_unavailable") from error
+    _require(0 < len(payload) <= MAX_CTEST_JUNIT_BYTES, "ctest_junit_size_invalid")
+    try:
+        root = ElementTree.fromstring(payload)
+    except ElementTree.ParseError as error:
+        raise Pd2CollectorError("ctest_junit_invalid") from error
+    cases = list(root.iter("testcase"))
+    names = tuple(case.get("name") for case in cases)
+    _require(names == expected_names, "ctest_execution_set_mismatch")
+    _require(all(case.find("failure") is None and case.find("error") is None and
+                 case.find("skipped") is None and case.get("status", "run") == "run"
+                 for case in cases), "ctest_not_all_passed")
+
+
+def _execute_ctest(
+        ctest: Path, build_directory: Path, selection: list[str],
+        expected_names: tuple[str, ...],
+        command_runner: Callable[[list[str], Path | None], str],
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="prismdrake-pd2-ctest-") as temporary:
+        junit = Path(temporary) / "results.xml"
+        command_runner([
+            str(ctest), "--test-dir", str(build_directory), "--output-on-failure",
+            "--parallel", "1", "--no-tests=error", *selection,
+            "--output-junit", str(junit),
+        ], None)
+        _parse_passing_junit(junit, expected_names)
 
 
 def capture_package_test(
-        attestation: dict[str, Any], build_directory: Path, controlled_fixture: Path,
-        ctest: Path = Path("/usr/bin/ctest"),
+        attestation: dict[str, Any], build_directory: Path, source_checkout: Path,
+        controlled_fixture: Path, ctest: Path = CTEST_PATH,
         hash_file: Callable[[Path], str] = sha256_regular_file,
         command_runner: Callable[[list[str], Path | None], str] = run_checked,
 ) -> dict[str, Any]:
     """Inventory and execute the exact package-test CTest selection."""
 
     binding = _binding(attestation)
-    verify_test_build(build_directory, binding["source_revision"], hash_file)
+    verify_test_build(
+        build_directory, source_checkout, binding["source_revision"], hash_file,
+        command_runner,
+    )
     _require(hash_file(controlled_fixture) ==
              attestation["demo_harness"]["controlled_fixture_sha256"],
              "controlled_fixture_hash_mismatch")
-    all_names = _ctest_names(ctest, build_directory, command_runner, False)
-    included_names = _ctest_names(ctest, build_directory, command_runner, True)
+    all_inventory = _ctest_inventory(ctest, build_directory, command_runner, False)
+    included_inventory = _ctest_inventory(ctest, build_directory, command_runner, True)
+    all_names = tuple(item["name"] for item in all_inventory)
+    included_names = tuple(item["name"] for item in included_inventory)
     excluded = tuple(name for name in all_names if name not in set(included_names))
     _require(excluded == EXCLUDED_TESTS, "package_test_exclusions_mismatch")
     _require(len(included_names) > 0, "package_test_empty")
-    command_runner([
-        str(ctest), "--test-dir", str(build_directory), "--output-on-failure",
-        "--parallel", "1", "--no-tests=error", "--exclude-regex", EXCLUSION_REGEX,
-    ], None)
+    manifest_hash = _test_manifest_sha256(
+        all_inventory, build_directory, source_checkout, controlled_fixture, hash_file,
+    )
+    _execute_ctest(
+        ctest, build_directory, ["--exclude-regex", EXCLUSION_REGEX], included_names,
+        command_runner,
+    )
     return {
         **binding,
         "features_test": True,
         "result": "passed",
         "executed_test_count": len(included_names),
+        "skipped_test_count": 0,
+        "disabled_test_count": 0,
+        "not_run_test_count": 0,
+        "test_manifest_sha256": manifest_hash,
         "excluded_tests": list(EXCLUDED_TESTS),
     }
 
 
 def capture_sandbox_exclusions(
-        attestation: dict[str, Any], build_directory: Path,
-        ctest: Path = Path("/usr/bin/ctest"),
+        attestation: dict[str, Any], build_directory: Path, source_checkout: Path,
+        controlled_fixture: Path, ctest: Path = CTEST_PATH,
         hash_file: Callable[[Path], str] = sha256_regular_file,
         command_runner: Callable[[list[str], Path | None], str] = run_checked,
 ) -> list[dict[str, Any]]:
     """Execute the exact four excluded tests with their required repetition."""
 
     binding = _binding(attestation)
-    verify_test_build(build_directory, binding["source_revision"], hash_file)
-    all_names = set(_ctest_names(ctest, build_directory, command_runner, False))
+    verify_test_build(
+        build_directory, source_checkout, binding["source_revision"], hash_file,
+        command_runner,
+    )
+    all_inventory = _ctest_inventory(ctest, build_directory, command_runner, False)
+    all_names = {item["name"] for item in all_inventory}
     _require(set(EXCLUDED_TESTS) <= all_names, "sandbox_exclusion_test_missing")
+    manifest_hash = _test_manifest_sha256(
+        all_inventory, build_directory, source_checkout, controlled_fixture, hash_file,
+    )
     records = []
     for index, (test_id, reason) in enumerate(zip(EXCLUDED_TESTS, EXCLUSION_REASONS)):
         attempts = 1 if index < 2 else 5
         for _ in range(attempts):
-            command_runner([
-                str(ctest), "--test-dir", str(build_directory), "--output-on-failure",
-                "--no-tests=error", "--tests-regex", f"^{re.escape(test_id)}$",
-            ], None)
+            _execute_ctest(
+                ctest, build_directory,
+                ["--tests-regex", f"^{re.escape(test_id)}$"], (test_id,), command_runner,
+            )
         records.append({
             "test_id": test_id,
             "reason": reason,
             **binding,
             "execution_context": "outside_portage_sandbox",
             "result": "passed",
+            "test_manifest_sha256": manifest_hash,
             "attempts": attempts,
             "passes": attempts,
         })
@@ -680,17 +860,17 @@ def main(argv: list[str] | None = None) -> int:
     package_test = subparsers.add_parser("package-test")
     package_test.add_argument("--attestation", type=Path, required=True)
     package_test.add_argument("--test-build", type=Path, required=True)
+    package_test.add_argument("--source-checkout", type=Path, required=True)
     package_test.add_argument("--controlled-window-fixture", type=Path, required=True)
-    package_test.add_argument("--ctest", type=Path, default=Path("/usr/bin/ctest"))
     package_test.add_argument("--output", type=Path, required=True)
     sandbox_tests = subparsers.add_parser("sandbox-tests")
     sandbox_tests.add_argument("--attestation", type=Path, required=True)
     sandbox_tests.add_argument("--test-build", type=Path, required=True)
-    sandbox_tests.add_argument("--ctest", type=Path, default=Path("/usr/bin/ctest"))
+    sandbox_tests.add_argument("--source-checkout", type=Path, required=True)
+    sandbox_tests.add_argument("--controlled-window-fixture", type=Path, required=True)
     sandbox_tests.add_argument("--output", type=Path, required=True)
     linkage = subparsers.add_parser("linkage")
     linkage.add_argument("--attestation", type=Path, required=True)
-    linkage.add_argument("--scanelf", type=Path, default=Path("/usr/bin/scanelf"))
     linkage.add_argument("--output", type=Path, required=True)
     reinstall = subparsers.add_parser("reinstall")
     reinstall.add_argument("--attestation", type=Path, required=True)
@@ -725,17 +905,18 @@ def main(argv: list[str] | None = None) -> int:
         elif arguments.command == "package-test":
             attestation = load_attestation(arguments.attestation)
             document = capture_package_test(
-                attestation, arguments.test_build, arguments.controlled_window_fixture,
-                arguments.ctest,
+                attestation, arguments.test_build, arguments.source_checkout,
+                arguments.controlled_window_fixture,
             )
         elif arguments.command == "sandbox-tests":
             attestation = load_attestation(arguments.attestation)
             document = {"sandbox_exclusions": capture_sandbox_exclusions(
-                attestation, arguments.test_build, arguments.ctest,
+                attestation, arguments.test_build, arguments.source_checkout,
+                arguments.controlled_window_fixture,
             )}
         elif arguments.command == "linkage":
             attestation = load_attestation(arguments.attestation)
-            document = capture_direct_linkage(attestation, arguments.scanelf)
+            document = capture_direct_linkage(attestation, SCANELF_PATH)
         elif arguments.command == "reinstall":
             attestation = load_attestation(arguments.attestation)
             owned_paths = load_capture_json(arguments.owned_paths)

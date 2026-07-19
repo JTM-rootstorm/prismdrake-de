@@ -194,6 +194,10 @@ def validate_evidence_document(document: Any) -> None:
     _require_binding(package_test, revision, ebuild_hash, artifact_hash)
     _require(tuple(package_test["excluded_tests"]) == EXCLUDED_TESTS,
              "package_test_exclusions_mismatch")
+    _require(package_test["skipped_test_count"] == 0 and
+             package_test["disabled_test_count"] == 0 and
+             package_test["not_run_test_count"] == 0,
+             "package_test_incomplete")
 
     initial = document["initial_install"]
     _require_binding(initial, revision, ebuild_hash, artifact_hash)
@@ -252,6 +256,9 @@ def validate_evidence_document(document: Any) -> None:
              "sandbox_exclusion_reason_mismatch")
     for index, exclusion in enumerate(exclusions):
         _require_binding(exclusion, revision, ebuild_hash, artifact_hash)
+        _require(exclusion["test_manifest_sha256"] ==
+                 package_test["test_manifest_sha256"],
+                 "sandbox_exclusion_test_manifest_mismatch")
         _require(exclusion["passes"] == exclusion["attempts"],
                  "sandbox_exclusion_repeat_failure")
         minimum = 1 if index < 2 else 5
@@ -337,6 +344,7 @@ def example_evidence_document() -> dict[str, Any]:
             **binding,
             "execution_context": "outside_portage_sandbox",
             "result": "passed",
+            "test_manifest_sha256": "c" * 64,
             "attempts": attempts,
             "passes": attempts,
         })
@@ -383,6 +391,10 @@ def example_evidence_document() -> dict[str, Any]:
             "features_test": True,
             "result": "passed",
             "executed_test_count": 600,
+            "skipped_test_count": 0,
+            "disabled_test_count": 0,
+            "not_run_test_count": 0,
+            "test_manifest_sha256": "c" * 64,
             "excluded_tests": list(EXCLUDED_TESTS),
         },
         "initial_install": initial,

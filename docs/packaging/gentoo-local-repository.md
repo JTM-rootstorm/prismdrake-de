@@ -171,12 +171,15 @@ outside-sandbox tests, installed linkage, and each demo through the collector:
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py package-test \
   --attestation /absolute/private/evidence/pd2-installed-preflight.json \
   --test-build /absolute/retained-test-build \
+  --source-checkout /absolute/clean/prismdrake-de \
   --controlled-window-fixture /absolute/retained-test-build/tests/integration/prismdrake-controlled-window-fixture \
   --output /absolute/private/evidence/pd2-package-test.json
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py sandbox-tests \
   --attestation /absolute/private/evidence/pd2-installed-preflight.json \
   --test-build /absolute/retained-test-build \
+  --source-checkout /absolute/clean/prismdrake-de \
+  --controlled-window-fixture /absolute/retained-test-build/tests/integration/prismdrake-controlled-window-fixture \
   --output /absolute/private/evidence/pd2-sandbox-tests.json
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py linkage \
@@ -190,11 +193,18 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
   --output /absolute/private/evidence/pd2-initial-demonstration.json
 ```
 
-The CTest collectors verify the retained build's configured source revision;
-the package selection is inventoried before execution so exactly the four
-reviewed tests are excluded. The outside-sandbox collector executes the two
-exact-environment tests once and both Openbox tests five times. Linkage is
-measured by `scanelf` only after the five executable hashes match preflight.
+The CTest collectors require the retained build's exact clean source directory
+and configured revision, hash its actual CTest commands, project-owned command
+files, and controlled fixture, then parse CTest JUnit output. A skipped,
+disabled, failed, missing, or additional selected test fails the stage. Exactly
+the four reviewed tests are excluded from the package selection. The
+outside-sandbox collector executes the two exact-environment tests once and
+both Openbox tests five times against the same test manifest. The collector
+uses only `/usr/bin/ctest` and `/usr/bin/scanelf`; there are no public tool-path
+overrides. Source commands have a 30-second deadline, ordinary observers a
+120-second deadline, and complete CTest selections an 1800-second deadline.
+Output is drained with a fixed limit while each child runs. Linkage is measured
+only after the five executable hashes match preflight.
 
 After unmerge, capture absence of every package-owned regular file and symlink,
 plus byte-identical preservation of the three user-owned state files. Shared

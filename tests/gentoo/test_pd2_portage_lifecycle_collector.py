@@ -7,10 +7,14 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import re
 import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
+
+import pd2_portage_lifecycle_collector as collector
 
 from pd2_installed_artifact_attestation import (
     INSTALLED_EXECUTABLE_PATHS,
@@ -32,6 +36,7 @@ from pd2_portage_lifecycle_collector import (
     capture_user_state_preservation,
     finalize_lifecycle,
     load_capture_json,
+    run_checked,
     sha256_regular_file,
     verify_exact_source,
 )
@@ -261,23 +266,54 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             root = Path(temporary)
             build = root / "build"
             build.mkdir()
+            source = root / "source"
+            source.mkdir()
             (build / "CMakeCache.txt").write_text(
                 "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
-                f"{attestation['source']['revision']}\n",
+                f"{attestation['source']['revision']}\n"
+                f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
                 encoding="utf-8",
             )
-            fixture = root / "fixture"
+            fixture = build / "tests/integration/prismdrake-controlled-window-fixture"
+            fixture.parent.mkdir(parents=True)
             fixture.write_bytes(b"fixture")
+            test_command = source / "test-command.py"
+            test_command.write_bytes(b"test")
             ordinary = "ContractTest.Ordinary"
             all_names = (ordinary, *EXCLUDED_TESTS)
             calls: list[list[str]] = []
+            skipped_junit = False
 
             def runner(command: list[str], cwd: Path | None) -> str:
                 del cwd
                 calls.append(command)
+                if command[:3] == ["/usr/bin/git", "rev-parse", "--verify"]:
+                    return attestation["source"]["revision"] + "\n"
+                if command[:3] == ["/usr/bin/git", "status", "--porcelain=v1"]:
+                    return ""
                 if "--show-only=json-v1" in command:
                     selected = (ordinary,) if "--exclude-regex" in command else all_names
-                    return json.dumps({"tests": [{"name": name} for name in selected]})
+                    return json.dumps({"tests": [
+                        {"name": name, "command": [str(test_command)]}
+                        for name in selected
+                    ]})
+                if "--output-junit" in command:
+                    if "--exclude-regex" in command:
+                        selected = (ordinary,)
+                    else:
+                        expression = command[command.index("--tests-regex") + 1]
+                        selected = tuple(name for name in all_names
+                                         if re.fullmatch(expression, name))
+                    junit = Path(command[command.index("--output-junit") + 1])
+                    junit.write_text(
+                        "<testsuite>" + "".join(
+                            (f'<testcase name="{name}" status="run"><skipped />'
+                             f'</testcase>' if skipped_junit else
+                             f'<testcase name="{name}" status="run" />')
+                            for name in selected
+                        ) + "</testsuite>",
+                        encoding="utf-8",
+                    )
                 return ""
 
             def hash_file(path: Path) -> str:
@@ -286,7 +322,8 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 return "1" * 64
 
             package = capture_package_test(
-                attestation, build, fixture, hash_file=hash_file, command_runner=runner,
+                attestation, build, source, fixture,
+                hash_file=hash_file, command_runner=runner,
             )
             self.assertEqual(package["executed_test_count"], 1)
             self.assertEqual(tuple(package["excluded_tests"]), EXCLUDED_TESTS)
@@ -294,12 +331,28 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
 
             calls.clear()
             exclusions = capture_sandbox_exclusions(
-                attestation, build, hash_file=hash_file, command_runner=runner,
+                attestation, build, source, fixture,
+                hash_file=hash_file, command_runner=runner,
             )
             self.assertEqual([item["attempts"] for item in exclusions], [1, 1, 5, 5])
+            self.assertTrue(all(item["test_manifest_sha256"] ==
+                                package["test_manifest_sha256"] for item in exclusions))
             executions = [call for call in calls if "--tests-regex" in call]
             self.assertEqual(len(executions), 12)
+            skipped_junit = True
+            with self.assertRaisesRegex(Pd2CollectorError, "^ctest_not_all_passed$"):
+                capture_package_test(
+                    attestation, build, source, fixture,
+                    hash_file=hash_file, command_runner=runner,
+                )
 
+    def test_command_output_is_bounded_while_child_runs(self) -> None:
+        with mock.patch.object(collector, "MAX_COMMAND_OUTPUT_BYTES", 1024):
+            with self.assertRaisesRegex(Pd2CollectorError, "^observer_output_oversized$"):
+                run_checked([
+                    "/usr/bin/python3", "-c",
+                    "import sys; sys.stdout.write('x' * 4096)",
+                ])
     def test_scanelf_and_reinstall_are_bound_to_attested_bytes(self) -> None:
         attestation = example_attestation_document()
         hashes = {item["path"]: item["sha256"]
