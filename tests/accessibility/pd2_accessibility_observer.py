@@ -632,6 +632,7 @@ def require_desktop_exclusion_contract(document: Mapping[str, Any]) -> None:
         raise AccessibilityObserverError("desktop_exclusion_contract_invalid") from error
     require(
         qml_source.count("Accessible.ignored: true") == 1
+        and qml_source.count("Accessible.role: Accessible.Pane") == 1
         and 'Accessible.name: qsTr("Desktop wallpaper")' in qml_source
         and workflow_source.count('"tier_c_desktop_accessibility_excluded"') >= 2
         and adapter_source.count('TierCPortResult("tier_c_desktop_accessibility_excluded")')

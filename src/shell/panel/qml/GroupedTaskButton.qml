@@ -21,6 +21,8 @@ Control {
     readonly property bool groupPopupOpen: groupPopup.opened
     readonly property var focusTarget: groupPopup.opened && groupPopup.memberAt(0) !== null
                                        ? groupPopup.memberAt(0) : root
+    readonly property real availableWindowWidth: Window.window !== null
+                                                  ? Window.window.width : width
 
     signal focusExitForward
     signal focusExitBackward
@@ -360,7 +362,7 @@ Control {
         id: groupPopup
         presentation: root.presentation
         tokens: root.tokens
-        maximumWidth: root.Window.window !== null ? root.Window.window.width : root.width
+        maximumWidth: root.availableWindowWidth
         rightToLeft: root.rightToLeft
         onClosed: root.actionMenuClosed()
         onClosedToOrigin: focusRestoreTimer.restart()
