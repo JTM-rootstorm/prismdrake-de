@@ -44,6 +44,7 @@ target_include_directories(prismdrake-shell-runtime
 target_link_libraries(prismdrake-shell-runtime
     PUBLIC
         Prismdrake::shell-runtime-state
+        Prismdrake::async-pin-state
         Prismdrake::shell-launcher-controller
         Prismdrake::shell-notification-presentation
         Prismdrake::notification-center-client

@@ -11,6 +11,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -20,6 +21,7 @@
 #include <vector>
 
 #include <poll.h>
+#include <time.h>
 
 namespace prismdrake::settingsd {
 namespace {
@@ -453,14 +455,11 @@ class SettingsService final {
     WorkerRequestId next_request_id_ = 1U;
 };
 
-[[nodiscard]] bool busDisconnected(short revents) noexcept {
-    return (revents & (POLLERR | POLLHUP | POLLNVAL)) != 0;
-}
-
 } // namespace
 
 Result<ServiceEpochOutcome> runServiceEpoch(const settings::SettingsEngineOptions &options,
-                                            const volatile std::sig_atomic_t &stopRequested) {
+                                            const volatile std::sig_atomic_t &stopRequested,
+                                            ServiceShutdownWake &shutdownWake) {
     auto engine = settings::SettingsEngine::start(options);
     if (!engine) {
         return Result<ServiceEpochOutcome>::failure(engine.error());
@@ -493,47 +492,80 @@ Result<ServiceEpochOutcome> runServiceEpoch(const settings::SettingsEngineOption
         return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::disconnected);
     }
 
+    const auto finishEpoch = [&](ServiceEpochOutcome outcome) {
+        service.rejectPendingForShutdown();
+        worker.value()->stop();
+        if (outcome == ServiceEpochOutcome::stopped) {
+            (void)sd_bus_release_name(bus.get(), serviceName);
+            (void)sd_bus_flush(bus.get());
+        }
+        return Result<ServiceEpochOutcome>::success(outcome);
+    };
+
     while (stopRequested == 0) {
         int processResult = 0;
         do {
             processResult = sd_bus_process(bus.get(), nullptr);
         } while (processResult > 0);
         if (processResult < 0) {
-            service.rejectPendingForShutdown();
-            worker.value()->stop();
-            return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::disconnected);
+            return finishEpoch(ServiceEpochOutcome::disconnected);
         }
 
-        std::array<pollfd, 2> descriptors{{
-            {sd_bus_get_fd(bus.get()), static_cast<short>(sd_bus_get_events(bus.get())), 0},
-            {service.notificationFileDescriptor(), POLLIN, 0},
+        const int busFileDescriptor = sd_bus_get_fd(bus.get());
+        const int busEvents = sd_bus_get_events(bus.get());
+        const int workerFileDescriptor = service.notificationFileDescriptor();
+        const int shutdownFileDescriptor = shutdownWake.fileDescriptor();
+        if (busFileDescriptor < 0 || busEvents < 0 ||
+            busEvents > std::numeric_limits<short>::max() || workerFileDescriptor < 0 ||
+            shutdownFileDescriptor < 0 || busFileDescriptor == workerFileDescriptor ||
+            busFileDescriptor == shutdownFileDescriptor ||
+            workerFileDescriptor == shutdownFileDescriptor) {
+            return finishEpoch(ServiceEpochOutcome::disconnected);
+        }
+
+        std::uint64_t busDeadline = std::numeric_limits<std::uint64_t>::max();
+        if (sd_bus_get_timeout(bus.get(), &busDeadline) < 0) {
+            return finishEpoch(ServiceEpochOutcome::disconnected);
+        }
+        timespec monotonicNow{};
+        if (busDeadline != std::numeric_limits<std::uint64_t>::max() &&
+            ::clock_gettime(CLOCK_MONOTONIC, &monotonicNow) < 0) {
+            return finishEpoch(ServiceEpochOutcome::disconnected);
+        }
+        auto timeout = serviceWaitTimeout(busDeadline, monotonicNow);
+        if (!timeout) {
+            return finishEpoch(ServiceEpochOutcome::disconnected);
+        }
+
+        const short requestedBusEvents = static_cast<short>(busEvents);
+        std::array<pollfd, 3> descriptors{{
+            {busFileDescriptor, requestedBusEvents, 0},
+            {workerFileDescriptor, POLLIN, 0},
+            {shutdownFileDescriptor, POLLIN, 0},
         }};
-        const int pollResult = ::poll(descriptors.data(), descriptors.size(), 100);
-        if (pollResult < 0 && errno != EINTR) {
-            service.rejectPendingForShutdown();
-            worker.value()->stop();
-            return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::disconnected);
+        const timespec *waitDuration =
+            timeout.value().infinite ? nullptr : &timeout.value().duration;
+        const int pollResult =
+            ::ppoll(descriptors.data(), descriptors.size(), waitDuration, nullptr);
+        const int pollError = pollResult < 0 ? errno : 0;
+        const auto event = classifyServiceWait(pollResult, pollError, requestedBusEvents,
+                                               descriptors[0], descriptors[1], descriptors[2]);
+        if (event == ServiceWaitEvent::disconnected) {
+            return finishEpoch(ServiceEpochOutcome::disconnected);
         }
-        if (busDisconnected(descriptors[0].revents)) {
-            service.rejectPendingForShutdown();
-            worker.value()->stop();
-            return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::disconnected);
+        if (event == ServiceWaitEvent::shutdown) {
+            shutdownWake.drain();
+            return finishEpoch(ServiceEpochOutcome::stopped);
         }
-        if ((descriptors[1].revents & POLLIN) != 0) {
+        if (event == ServiceWaitEvent::worker_completion) {
             auto completion = service.dispatchCompletion();
             if (!completion) {
-                service.rejectPendingForShutdown();
-                worker.value()->stop();
-                return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::disconnected);
+                return finishEpoch(ServiceEpochOutcome::disconnected);
             }
         }
     }
 
-    service.rejectPendingForShutdown();
-    worker.value()->stop();
-    (void)sd_bus_release_name(bus.get(), serviceName);
-    (void)sd_bus_flush(bus.get());
-    return Result<ServiceEpochOutcome>::success(ServiceEpochOutcome::stopped);
+    return finishEpoch(ServiceEpochOutcome::stopped);
 }
 
 } // namespace prismdrake::settingsd

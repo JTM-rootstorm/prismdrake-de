@@ -100,6 +100,16 @@ identity with a generic icon and an unavailable launch state until the catalog
 returns or the user removes it. The shell never guesses a replacement desktop
 entry.
 
+The toolkit-neutral `Prismdrake::pin-state` store remains the durable snapshot
+boundary. The Qt shell reaches it only through an owner-scoped asynchronous
+controller with one dedicated worker and at most one outstanding operation.
+Initial load and complete-snapshot replacement therefore never validate, write,
+or synchronize the pin file on the UI thread. A new generation is published on
+the controller owner thread only after the durable replacement succeeds;
+failure retains the prior complete generation, and initial load gates shell
+readiness. Shutdown requests cancellation through the same bounded worker
+boundary before joining it.
+
 ## Icon request contract
 
 An immutable icon request contains:

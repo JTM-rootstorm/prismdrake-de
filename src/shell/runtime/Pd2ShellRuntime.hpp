@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AsyncPinStateController.hpp"
 #include "DesktopSurfaceController.hpp"
 #include "DesktopWindowHost.hpp"
 #include "FatalDisplayShutdown.hpp"
@@ -7,7 +8,6 @@
 #include "LauncherController.hpp"
 #include "NotificationRuntimeAdapter.hpp"
 #include "PanelSurfaceHost.hpp"
-#include "PinState.hpp"
 #include "QuickSettingsModel.hpp"
 #include "SessionControlClient.hpp"
 #include "SettingsProfileControlClient.hpp"
@@ -112,7 +112,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     ShellControlBusOwner control_bus_;
     NotificationRuntimeAdapter notifications_;
     std::unique_ptr<launcher::controller::LauncherController> launcher_;
-    std::optional<panel::PinStateStore> pin_store_;
+    std::unique_ptr<panel::AsyncPinStateController> pin_state_;
     std::unique_ptr<taskcontroller::TaskController> tasks_;
     std::unique_ptr<FatalDisplayShutdown> fatal_display_;
     std::unique_ptr<ShellOutputMonitor> outputs_;

@@ -11,6 +11,21 @@ prismdrake_configure_cpp_target(prismdrake-pin-state)
 prismdrake_enable_warnings(prismdrake-pin-state)
 prismdrake_enable_sanitizers(prismdrake-pin-state)
 
+add_library(prismdrake-async-pin-state STATIC
+    AsyncPinStateController.cpp
+    AsyncPinStateController.hpp)
+add_library(Prismdrake::async-pin-state ALIAS prismdrake-async-pin-state)
+set_target_properties(prismdrake-async-pin-state PROPERTIES AUTOMOC ON)
+
+target_include_directories(prismdrake-async-pin-state
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
+target_link_libraries(prismdrake-async-pin-state
+    PUBLIC Prismdrake::pin-state Qt6::Core)
+
+prismdrake_configure_cpp_target(prismdrake-async-pin-state)
+prismdrake_enable_warnings(prismdrake-async-pin-state)
+prismdrake_enable_sanitizers(prismdrake-async-pin-state)
+
 add_library(prismdrake-grouped-task-model STATIC
     GroupedTaskModel.cpp
     GroupedTaskModel.hpp)

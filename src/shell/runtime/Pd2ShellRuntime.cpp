@@ -103,6 +103,9 @@ Pd2ShellRuntime::Pd2ShellRuntime(ShellRuntimeOptions options)
 
 Pd2ShellRuntime::~Pd2ShellRuntime() {
     stopping_ = true;
+    if (pin_state_) {
+        pin_state_->stop();
+    }
     control_bus_.stop();
     notifications_.stop();
     session_control_.stop();
@@ -132,16 +135,43 @@ Result<void> Pd2ShellRuntime::initialize() {
     if (!paths) {
         return Result<void>::failure(paths.error());
     }
-    auto pins = panel::PinStateStore::openInStateDirectory(paths.value().stateDirectory);
+    auto pins = panel::AsyncPinStateController::create(paths.value().stateDirectory, this);
     if (!pins) {
         return Result<void>::failure(pins.error());
     }
-    pin_store_.emplace(std::move(pins).value());
-    auto launcherPins =
-        launcher_->applyPinSnapshot(pin_store_->current()->generation, pin_store_->current()->pins);
-    if (!launcherPins) {
-        return launcherPins;
-    }
+    pin_state_ = std::move(pins).value();
+    connect(pin_state_.get(), &panel::AsyncPinStateController::snapshotChanged, this, [this]() {
+        const auto &snapshot = pin_state_->current();
+        if (!snapshot) {
+            shutdown("pin state", surfaceError());
+            return;
+        }
+        auto launcherPins = launcher_->applyPinSnapshot(snapshot->generation, snapshot->pins);
+        if (!launcherPins) {
+            shutdown("pin state publication", launcherPins.error());
+            return;
+        }
+        auto grouped = reconcileGroupedTasks();
+        if (!grouped) {
+            shutdown("pin state grouping", grouped.error());
+            return;
+        }
+        auto ready = maybePublishReady();
+        if (!ready) {
+            shutdown("pin state readiness", ready.error());
+        }
+    });
+    connect(pin_state_.get(), &panel::AsyncPinStateController::persistenceFailed, this, [this]() {
+        if (!pin_state_->lastError()) {
+            shutdown("pin state", surfaceError());
+            return;
+        }
+        if (!pin_state_->current()) {
+            shutdown("initial pin state", *pin_state_->lastError());
+            return;
+        }
+        report("pin state", *pin_state_->lastError());
+    });
     auto fatal = FatalDisplayShutdown::create(
         [this](const auto &error) { shutdown("X11 connection", error); });
     if (!fatal) {
@@ -295,6 +325,10 @@ Result<void> Pd2ShellRuntime::start() {
         return Result<void>::failure({ErrorCode::invalid_argument,
                                       "The PD2 shell is already started.",
                                       "Start one exact shell owner epoch."});
+    }
+    auto pins = pin_state_->start();
+    if (!pins) {
+        return pins;
     }
     auto settings = settings_client_.start();
     if (!settings) {
@@ -518,6 +552,9 @@ Result<void> Pd2ShellRuntime::applyWallpaper() {
 }
 
 Result<void> Pd2ShellRuntime::maybePublishReady() {
+    if (!pin_state_ || !pin_state_->current()) {
+        return Result<void>::success();
+    }
     const auto desktop = desktops_ ? desktops_->current() : nullptr;
     const bool presentationReady = theme_ && theme_->current() && launcher_view_ &&
                                    quick_settings_view_ && notification_center_view_ &&
@@ -972,32 +1009,23 @@ void Pd2ShellRuntime::dismissActionMenu() {
 
 Result<void> Pd2ShellRuntime::replacePin(const prismdrake::launcher::DesktopFileId &desktopFileId,
                                          bool pinned) {
-    if (!pin_store_) {
+    if (!pin_state_ || !pin_state_->current()) {
         return Result<void>::failure(surfaceError());
     }
     auto replacement = pinned
-                           ? panel::withPinnedApplication(*pin_store_->current(), desktopFileId)
-                           : panel::withoutPinnedApplication(*pin_store_->current(), desktopFileId);
+                           ? panel::withPinnedApplication(*pin_state_->current(), desktopFileId)
+                           : panel::withoutPinnedApplication(*pin_state_->current(), desktopFileId);
     if (!replacement) {
         return Result<void>::failure(replacement.error());
     }
-    auto published = pin_store_->replace(std::move(replacement).value());
-    if (!published) {
-        return Result<void>::failure(published.error());
-    }
-    auto launcherPins =
-        launcher_->applyPinSnapshot(published.value()->generation, published.value()->pins);
-    if (!launcherPins) {
-        return launcherPins;
-    }
-    return reconcileGroupedTasks();
+    return pin_state_->replace(std::move(replacement).value());
 }
 
 Result<void> Pd2ShellRuntime::reconcileGroupedTasks() {
     const auto tasks = tasks_ ? tasks_->currentSnapshot() : nullptr;
     const auto &catalog = launcher_->catalog();
-    if (!tasks || !catalog || !catalog->complete || !pin_store_ || !settings_snapshot_ ||
-        !surface_snapshot_ || !theme_ || !theme_->current()) {
+    if (!tasks || !catalog || !catalog->complete || !pin_state_ || !pin_state_->current() ||
+        !settings_snapshot_ || !surface_snapshot_ || !theme_ || !theme_->current()) {
         return Result<void>::success();
     }
     if (association_generation_ == std::numeric_limits<std::uint64_t>::max()) {
@@ -1041,7 +1069,7 @@ Result<void> Pd2ShellRuntime::reconcileGroupedTasks() {
         availableWidth = 0.0;
     }
     auto grouped = panel::buildGroupedTasks(
-        {tasks, std::move(associations).value(), catalog, pin_store_->current(),
+        {tasks, std::move(associations).value(), catalog, pin_state_->current(),
          settings_snapshot_->candidate.configuration.panel.grouping, availableWidth,
          theme_->current()->panel()->minimumTargetSize(), 4.0,
          settings_snapshot_->generation.value(), surface_snapshot_->surfaceGeneration()});

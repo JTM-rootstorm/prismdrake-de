@@ -4,9 +4,12 @@
 #include "ServiceOptions.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <iostream>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <string_view>
@@ -17,8 +20,25 @@
 namespace {
 
 volatile std::sig_atomic_t stopRequested = 0;
+volatile std::sig_atomic_t shutdownWakeFileDescriptor = -1;
 
-extern "C" void requestStop(int) { stopRequested = 1; }
+extern "C" void requestStop(int) {
+    const int savedError = errno;
+    stopRequested = 1;
+    prismdrake::settingsd::notifyServiceShutdown(static_cast<int>(shutdownWakeFileDescriptor));
+    errno = savedError;
+}
+
+class SignalWakeRegistration final {
+  public:
+    explicit SignalWakeRegistration(int fileDescriptor) {
+        shutdownWakeFileDescriptor = static_cast<std::sig_atomic_t>(fileDescriptor);
+    }
+    ~SignalWakeRegistration() { shutdownWakeFileDescriptor = -1; }
+
+    SignalWakeRegistration(const SignalWakeRegistration &) = delete;
+    SignalWakeRegistration &operator=(const SignalWakeRegistration &) = delete;
+};
 
 } // namespace
 
@@ -62,13 +82,26 @@ extern "C" void requestStop(int) { stopRequested = 1; }
         return processExitCode(prismdrake::foundation::exitStatusFor(runtimeBoundary.error()));
     }
 
+    auto shutdownWake = ServiceShutdownWake::create();
+    if (!shutdownWake) {
+        std::cerr << "prismdrake-settingsd: " << shutdownWake.error().message << '\n';
+        return processExitCode(prismdrake::foundation::exitStatusFor(shutdownWake.error()));
+    }
+    if (static_cast<std::uintmax_t>(shutdownWake.value()->fileDescriptor()) >
+        static_cast<std::uintmax_t>(std::numeric_limits<std::sig_atomic_t>::max())) {
+        std::cerr << "prismdrake-settingsd: The shutdown notification descriptor exceeds the "
+                     "signal-safe storage range.\n";
+        return processExitCode(ExitStatus::unavailable);
+    }
+    const SignalWakeRegistration wakeRegistration{shutdownWake.value()->fileDescriptor()};
     std::signal(SIGINT, requestStop);
     std::signal(SIGTERM, requestStop);
 
     auto reconnectDelay = std::chrono::milliseconds{100};
     constexpr auto maximumReconnectDelay = std::chrono::milliseconds{2000};
     while (stopRequested == 0) {
-        auto epoch = runServiceEpoch(runtimeOptions.settingsEngine, stopRequested);
+        auto epoch =
+            runServiceEpoch(runtimeOptions.settingsEngine, stopRequested, *shutdownWake.value());
         if (!epoch) {
             std::cerr << "prismdrake-settingsd: " << epoch.error().message << '\n';
             return processExitCode(prismdrake::foundation::exitStatusFor(epoch.error()));

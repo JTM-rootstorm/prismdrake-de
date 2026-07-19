@@ -5,6 +5,8 @@ add_library(prismdrake-settings-service STATIC
     ServiceOptions.hpp
     ServiceWorker.cpp
     ServiceWorker.hpp
+    ServiceWait.cpp
+    ServiceWait.hpp
     SettingsService.cpp
     SettingsService.hpp)
 add_library(Prismdrake::settings-service ALIAS prismdrake-settings-service)

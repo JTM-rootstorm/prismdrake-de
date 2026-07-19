@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Result.hpp"
+#include "ServiceWait.hpp"
 #include "SettingsEngine.hpp"
 
 #include <csignal>
@@ -17,10 +18,10 @@ enum class ServiceEpochOutcome : std::uint8_t {
 ///
 /// A fresh settings engine is built before the session bus name is requested.
 /// Bus loss ends the epoch so the caller can rebuild generation one before
-/// reacquiring the name. The signal flag must be owned by the process and may
-/// be set by an async-signal-safe handler.
+/// reacquiring the name. The process must own both the signal flag and wake
+/// descriptor; an async-signal-safe handler sets the flag and notifies the wake.
 [[nodiscard]] foundation::Result<ServiceEpochOutcome>
 runServiceEpoch(const settings::SettingsEngineOptions &options,
-                const volatile std::sig_atomic_t &stopRequested);
+                const volatile std::sig_atomic_t &stopRequested, ServiceShutdownWake &shutdownWake);
 
 } // namespace prismdrake::settingsd
