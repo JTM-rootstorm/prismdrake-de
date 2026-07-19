@@ -20,12 +20,14 @@ CRITICAL_SUMMARY = "Controlled critical notification"
 
 MAX_ACTIVE_NOTIFICATIONS = 8
 MAX_BUS_ADDRESS_BYTES = 4096
+MAX_DISPATCH_ITERATIONS = 64
 MAX_NOTIFICATION_OPERATIONS = 32
 MAX_PENDING_SIGNALS = 32
 MAX_UNIQUE_NAME_BYTES = 255
 MIN_WAIT_SECONDS = 0.01
 MAX_WAIT_SECONDS = 5.0
 METHOD_TIMEOUT_MS = 1000
+SIGNAL_BOUNDARY_TIMEOUT_SECONDS = 0.25
 UINT32_MAX = (1 << 32) - 1
 
 STANDARD_BUS_NAME = "org.freedesktop.Notifications"
@@ -66,15 +68,17 @@ class NotificationToken:
     _serial: int
     _live_id: int
     _content_generation: int
+    _signal_generation: int
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class NotificationSignal:
     """One validated standard signal retained only inside the live probe."""
 
     kind: str
     notification_id: int
     detail: str | int
+    generation: int
 
 
 class NotificationTransport(Protocol):
@@ -84,7 +88,9 @@ class NotificationTransport(Protocol):
 
     def take_signals(self) -> Sequence[NotificationSignal]: ...
 
-    def dispatch(self) -> None: ...
+    def advance_signal_generation(self, deadline: float) -> int: ...
+
+    def dispatch(self, deadline: float) -> None: ...
 
     def close(self) -> None: ...
 
@@ -134,6 +140,7 @@ def validate_categorical_result(result: CategoricalResult) -> None:
 
 def _validate_signal(signal: NotificationSignal) -> None:
     _uint32(signal.notification_id, "notification_signal_invalid")
+    _uint32(signal.generation, "notification_signal_invalid", allow_zero=True)
     if signal.kind == "action":
         if signal.detail != ACTION_KEY:
             _fail("notification_signal_invalid")
@@ -161,7 +168,8 @@ class GioNotificationTransport:
         self._connection = connection
         self._context = context
         self._signals: deque[NotificationSignal] = deque()
-        self._signal_overflow = False
+        self._signal_error: str | None = None
+        self._signal_generation = 0
         self._closed = False
         subscriptions: list[int] = []
         try:
@@ -209,7 +217,16 @@ class GioNotificationTransport:
         """Connect to only the private address supplied by the harness."""
 
         address = _private_bus_address(environment)
+        connection = None
+        context = None
+        pushed = False
+        transport = None
         try:
+            context = glib.MainContext.new()
+            if context is None:
+                raise RuntimeError
+            context.push_thread_default()
+            pushed = True
             flags = (
                 gio.DBusConnectionFlags.AUTHENTICATION_CLIENT
                 | gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION
@@ -218,21 +235,47 @@ class GioNotificationTransport:
                 address, flags, None, None
             )
             unique_name = connection.get_unique_name()
-            context = glib.MainContext.default()
         except Exception:
+            if connection is not None:
+                try:
+                    connection.close_sync(None)
+                except Exception:
+                    pass
+            if pushed:
+                try:
+                    context.pop_thread_default()
+                except Exception:
+                    pass
             _fail("notification_private_bus_connection_failed")
         if (
             not isinstance(unique_name, str)
             or not unique_name.startswith(":")
             or len(unique_name.encode("utf-8")) > MAX_UNIQUE_NAME_BYTES
-            or context is None
         ):
             try:
                 connection.close_sync(None)
             except Exception:
                 pass
+            try:
+                context.pop_thread_default()
+            except Exception:
+                pass
             _fail("notification_private_bus_identity_invalid")
-        return cls(gio, glib, connection, context)
+        try:
+            transport = cls(gio, glib, connection, context)
+        finally:
+            try:
+                context.pop_thread_default()
+            except Exception:
+                if transport is not None:
+                    transport.close()
+                else:
+                    try:
+                        connection.close_sync(None)
+                    except Exception:
+                        pass
+                _fail("notification_private_bus_connection_failed")
+        return transport
 
     def notify(self, replaces_id: int, summary: str, urgency: int) -> int:
         if self._closed:
@@ -300,6 +343,7 @@ class GioNotificationTransport:
                     "action",
                     _uint32(values[0], "notification_signal_invalid"),
                     ACTION_KEY,
+                    self._signal_generation,
                 )
             elif signal_name == "NotificationClosed":
                 if not isinstance(values, tuple) or len(values) != 2:
@@ -311,30 +355,48 @@ class GioNotificationTransport:
                     "closed",
                     _uint32(values[0], "notification_signal_invalid"),
                     reason,
+                    self._signal_generation,
                 )
             else:
                 raise ValueError
         except Exception:
-            self._signal_overflow = True
+            self._signal_error = "notification_signal_invalid"
             return
         if len(self._signals) >= MAX_PENDING_SIGNALS:
-            self._signal_overflow = True
+            self._signal_error = "notification_signal_bound"
             return
         self._signals.append(event)
 
     def take_signals(self) -> Sequence[NotificationSignal]:
-        if self._signal_overflow:
-            _fail("notification_signal_invalid")
+        if self._signal_error is not None:
+            _fail(self._signal_error)
         signals = tuple(self._signals)
         self._signals.clear()
         return signals
 
-    def dispatch(self) -> None:
+    def advance_signal_generation(self, deadline: float) -> int:
+        self.dispatch(deadline)
+        if self._signal_generation >= UINT32_MAX:
+            _fail("notification_signal_generation_bound")
+        self._signal_generation += 1
+        return self._signal_generation
+
+    def dispatch(self, deadline: float) -> None:
         if self._closed:
             _fail("notification_transport_closed")
+        if isinstance(deadline, bool) or not isinstance(deadline, (int, float)):
+            _fail("notification_signal_deadline_invalid")
         try:
-            while self._context.pending():
+            for _iteration in range(MAX_DISPATCH_ITERATIONS):
+                if time.monotonic() >= deadline:
+                    _fail("notification_signal_dispatch_timeout")
+                if not self._context.pending():
+                    return
                 self._context.iteration(False)
+            if self._context.pending():
+                _fail("notification_signal_dispatch_bound")
+        except LiveNotificationError:
+            raise
         except Exception:
             _fail("notification_signal_dispatch_failed")
 
@@ -362,6 +424,7 @@ class PersistentNotificationProbe:
         self._tokens: dict[int, NotificationToken] = {}
         self._next_serial = 1
         self._operations = 0
+        self._signal_generation = 0
         self._closed = False
         self._pending_signals: deque[NotificationSignal] = deque()
 
@@ -388,8 +451,16 @@ class PersistentNotificationProbe:
         _uint32(live_id, "notification_notify_reply_invalid")
         if any(token._live_id == live_id for token in self._tokens.values()):
             _fail("notification_live_id_duplicate")
-        token = NotificationToken(self._identity, self._next_serial, live_id, 1)
+        signal_generation = self._advance_signal_boundary()
+        token = NotificationToken(
+            self._identity,
+            self._next_serial,
+            live_id,
+            1,
+            signal_generation,
+        )
         self._tokens[token._serial] = token
+        self._prune_pending_signals()
         self._next_serial += 1
         result = CategoricalResult(category)
         validate_categorical_result(result)
@@ -403,15 +474,19 @@ class PersistentNotificationProbe:
         live_id = self._transport.notify(
             current._live_id, REPLACEMENT_SUMMARY, 1
         )
+        _uint32(live_id, "notification_notify_reply_invalid")
         if live_id != current._live_id:
             _fail("notification_replacement_identity")
+        signal_generation = self._advance_signal_boundary()
         replacement = NotificationToken(
             self._identity,
             current._serial,
             current._live_id,
             current._content_generation + 1,
+            signal_generation,
         )
         self._tokens[current._serial] = replacement
+        self._prune_pending_signals()
         result = CategoricalResult("notification_replaced")
         validate_categorical_result(result)
         return replacement, result
@@ -420,7 +495,12 @@ class PersistentNotificationProbe:
         self, token: NotificationToken, timeout_seconds: float
     ) -> CategoricalResult:
         current = self._current_token(token)
-        self._wait_for_signal("action", current._live_id, timeout_seconds)
+        self._wait_for_signal(
+            "action",
+            current._live_id,
+            current._signal_generation,
+            timeout_seconds,
+        )
         result = CategoricalResult("notification_action_observed")
         validate_categorical_result(result)
         return result
@@ -429,14 +509,23 @@ class PersistentNotificationProbe:
         self, token: NotificationToken, timeout_seconds: float
     ) -> CategoricalResult:
         current = self._current_token(token)
-        self._wait_for_signal("closed", current._live_id, timeout_seconds)
+        self._wait_for_signal(
+            "closed",
+            current._live_id,
+            current._signal_generation,
+            timeout_seconds,
+        )
         del self._tokens[current._serial]
         result = CategoricalResult("notification_closed_observed")
         validate_categorical_result(result)
         return result
 
     def _wait_for_signal(
-        self, kind: str, notification_id: int, timeout_seconds: float
+        self,
+        kind: str,
+        notification_id: int,
+        signal_generation: int,
+        timeout_seconds: float,
     ) -> NotificationSignal:
         if (
             isinstance(timeout_seconds, bool)
@@ -446,24 +535,55 @@ class PersistentNotificationProbe:
             _fail("notification_wait_timeout_invalid")
         deadline = time.monotonic() + float(timeout_seconds)
         while True:
-            self._transport.dispatch()
-            incoming = self._transport.take_signals()
-            if len(incoming) > MAX_PENDING_SIGNALS:
-                _fail("notification_signal_bound")
-            for signal in incoming:
-                if not isinstance(signal, NotificationSignal):
-                    _fail("notification_signal_invalid")
-                _validate_signal(signal)
-                if len(self._pending_signals) >= MAX_PENDING_SIGNALS:
-                    _fail("notification_signal_bound")
-                self._pending_signals.append(signal)
+            self._transport.dispatch(deadline)
+            self._collect_signals()
             for index, signal in enumerate(self._pending_signals):
-                if signal.kind == kind and signal.notification_id == notification_id:
+                if (
+                    signal.kind == kind
+                    and signal.notification_id == notification_id
+                    and signal.generation == signal_generation
+                ):
                     del self._pending_signals[index]
                     return signal
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 _fail("notification_signal_timeout")
-            time.sleep(MIN_WAIT_SECONDS)
+            time.sleep(min(MIN_WAIT_SECONDS, remaining))
+
+    def _advance_signal_boundary(self) -> int:
+        deadline = time.monotonic() + SIGNAL_BOUNDARY_TIMEOUT_SECONDS
+        generation = self._transport.advance_signal_generation(deadline)
+        _uint32(generation, "notification_signal_generation_invalid")
+        if generation != self._signal_generation + 1:
+            _fail("notification_signal_generation_invalid")
+        self._signal_generation = generation
+        self._collect_signals()
+        return generation
+
+    def _collect_signals(self) -> None:
+        incoming = self._transport.take_signals()
+        if len(incoming) > MAX_PENDING_SIGNALS:
+            _fail("notification_signal_bound")
+        for signal in incoming:
+            if not isinstance(signal, NotificationSignal):
+                _fail("notification_signal_invalid")
+            _validate_signal(signal)
+            if signal.generation > self._signal_generation:
+                _fail("notification_signal_generation_invalid")
+            if len(self._pending_signals) >= MAX_PENDING_SIGNALS:
+                _fail("notification_signal_bound")
+            self._pending_signals.append(signal)
+
+    def _prune_pending_signals(self) -> None:
+        current_identities = {
+            (token._live_id, token._signal_generation)
+            for token in self._tokens.values()
+        }
+        self._pending_signals = deque(
+            signal
+            for signal in self._pending_signals
+            if (signal.notification_id, signal.generation) in current_identities
+        )
 
     def _current_token(self, token: NotificationToken) -> NotificationToken:
         self._ensure_open()
