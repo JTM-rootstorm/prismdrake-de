@@ -44,6 +44,7 @@ class LauncherSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool publishForge();
     Q_INVOKABLE bool publishRepresentativeResults();
     Q_INVOKABLE bool publishLongResult();
+    Q_INVOKABLE bool publishOverflowActions();
     Q_INVOKABLE bool publishLoading();
     Q_INVOKABLE bool publishNoResults();
     Q_INVOKABLE bool publishEmptyCatalog();
@@ -87,6 +88,7 @@ class LauncherSurfaceQmlFixture final : public QObject {
     std::uint64_t catalog_generation_{6U};
     std::uint64_t request_generation_{0U};
     int launch_count_{0};
+    bool overflow_actions_{false};
     QString last_launched_name_;
     QString captured_search_;
 };

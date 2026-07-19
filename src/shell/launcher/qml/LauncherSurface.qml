@@ -286,6 +286,12 @@ FocusScope {
                     width: ListView.view.width
                     presentation: result
                     tokens: root.tokens
+                    actionMenuMaximumWidth: Math.max(root.tokens.minimumTargetSize,
+                                                     root.width
+                                                     - (4 * root.tokens.tilePadding))
+                    actionMenuMaximumHeight: Math.max(root.tokens.minimumTargetSize,
+                                                      root.height
+                                                      - (4 * root.tokens.tilePadding))
                     selected: ListView.isCurrentItem
                     onFocusPrevious: root.focusResult(index - 1, true)
                     onFocusNext: root.focusResult(index + 1, false)

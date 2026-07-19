@@ -3,6 +3,7 @@
 #include "ApplicationSearch.hpp"
 #include "Cancellation.hpp"
 #include "DesktopEntryDiscovery.hpp"
+#include "DesktopEntryParser.hpp"
 #include "DesktopEntryVisibility.hpp"
 #include "DesktopFileId.hpp"
 
@@ -148,6 +149,7 @@ bool LauncherSurfaceQmlFixture::resetFromConfiguration(const std::filesystem::pa
     catalog_generation_ = 6U;
     request_generation_ = 0U;
     launch_count_ = 0;
+    overflow_actions_ = false;
     last_launched_name_.clear();
     captured_search_.clear();
     emit themeGenerationChanged();
@@ -171,6 +173,7 @@ bool LauncherSurfaceQmlFixture::publishForge() {
 }
 
 bool LauncherSurfaceQmlFixture::publishRepresentativeResults() {
+    overflow_actions_ = false;
     applications_ = {
         {"dragon-editor.desktop", "Dragon Editor", "Text editor", "Edit local plain-text documents",
          false},
@@ -181,13 +184,23 @@ bool LauncherSurfaceQmlFixture::publishRepresentativeResults() {
 }
 
 bool LauncherSurfaceQmlFixture::publishLongResult() {
+    overflow_actions_ = false;
     applications_ = {{"long.desktop", std::string(2048U, 'L'), "Literal <b>utility</b>",
                       "Untrusted <script>plain text</script> & metadata", true}};
     return rebuildCatalog() &&
            publishSearch({}, prismdrake::launcher::maximumApplicationSearchWorkUnits);
 }
 
+bool LauncherSurfaceQmlFixture::publishOverflowActions() {
+    overflow_actions_ = true;
+    applications_ = {{"overflow.desktop", "Overflow Actions", "Geometry fixture",
+                      "Exercises bounded action-menu layout", false}};
+    return rebuildCatalog() &&
+           publishSearch({}, prismdrake::launcher::maximumApplicationSearchWorkUnits);
+}
+
 bool LauncherSurfaceQmlFixture::publishLoading() {
+    overflow_actions_ = false;
     applications_ = {{"alpha.desktop", "Alpha", {}, {}, false},
                      {"beta.desktop", "Beta", {}, {}, false},
                      {"gamma.desktop", "Gamma", {}, {}, false}};
@@ -203,6 +216,7 @@ bool LauncherSurfaceQmlFixture::publishNoResults() {
 }
 
 bool LauncherSurfaceQmlFixture::publishEmptyCatalog() {
+    overflow_actions_ = false;
     applications_.clear();
     return rebuildCatalog() &&
            publishSearch({}, prismdrake::launcher::maximumApplicationSearchWorkUnits);
@@ -279,7 +293,18 @@ bool LauncherSurfaceQmlFixture::rebuildCatalog() {
             return false;
         }
         auto discoveredEntry = std::move(entry).value();
-        if (index == 0U) {
+        if (index == 0U && overflow_actions_) {
+            for (std::size_t actionIndex = 0U;
+                 actionIndex < prismdrake::launcher::maximumDesktopActions; ++actionIndex) {
+                const auto identifier = "overflow-" + std::to_string(actionIndex);
+                const auto name =
+                    actionIndex == 0U
+                        ? std::string(prismdrake::launcher::maximumDesktopEntryValueBytes, 'L')
+                        : "Overflow action " + std::to_string(actionIndex);
+                discoveredEntry.entry.actions.push_back(
+                    {identifier, name, std::nullopt, "private-command --overflow-action"});
+            }
+        } else if (index == 0U) {
             discoveredEntry.entry.actions.push_back(
                 {"new-window", "New window", std::nullopt, "private-command --new-window"});
         }

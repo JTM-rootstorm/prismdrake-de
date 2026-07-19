@@ -121,6 +121,54 @@ TestCase {
         tryCompare(result, "activeFocus", true)
     }
 
+    function test_actionMenuBoundsLongLabelsAndScrollsInRightToLeft() {
+        surface.layoutDirection = Qt.RightToLeft
+        verify(launcherFixture.publishOverflowActions())
+        tryCompare(surface, "resultCount", 1)
+        const result = surface.resultAt(0)
+        compare(result.presentation.actionCount, 64)
+        result.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_F10, Qt.ShiftModifier)
+
+        const menu = findChild(result, "launcherActionsMenu")
+        const viewport = result.actionMenuViewport()
+        tryCompare(menu, "visible", true)
+        verify(viewport !== null)
+        verify(menu.width <= testCase.width - (2 * surface.tokens.tilePadding))
+        verify(menu.height <= testCase.height - (2 * surface.tokens.tilePadding))
+        const viewportOrigin = viewport.mapToItem(testCase, 0, 0)
+        verify(viewportOrigin.x >= 0)
+        verify(viewportOrigin.y >= 0)
+        verify(viewportOrigin.x + viewport.width <= testCase.width)
+        verify(viewportOrigin.y + viewport.height <= testCase.height)
+        tryVerify(function() { return viewport.contentHeight > viewport.availableHeight })
+
+        const first = result.actionMenuItemAt(0)
+        const firstLabel = findChild(first, "launcherActionMenuLabel0")
+        verify(first !== null)
+        verify(firstLabel !== null)
+        compare(first.Accessible.name.length, 65536)
+        compare(firstLabel.text.length, first.Accessible.name.length)
+        compare(firstLabel.textFormat, Text.PlainText)
+        compare(firstLabel.elide, Text.ElideRight)
+        verify(firstLabel.width <= viewport.availableWidth)
+        tryCompare(firstLabel, "truncated", true)
+        compare(first.LayoutMirroring.enabled, true)
+
+        for (let index = 1; index < 64; ++index)
+            keyClick(Qt.Key_Down)
+        const last = result.actionMenuItemAt(63)
+        tryCompare(last, "activeFocus", true)
+        tryVerify(function() { return viewport.contentItem.contentY > 0 })
+        keyClick(Qt.Key_Down)
+        tryCompare(result.pinMenuItem(), "activeFocus", true)
+        keyClick(Qt.Key_Down)
+        tryCompare(first, "activeFocus", true)
+        tryCompare(viewport.contentItem, "contentY", 0)
+        keyClick(Qt.Key_Escape)
+        tryCompare(menu, "visible", false)
+    }
+
     function test_realProfilesShareTreeAndLauncherGeneration() {
         const original = surface
         compare(surface.themeGeneration.profileId, "lustre")
