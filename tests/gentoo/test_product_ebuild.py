@@ -317,6 +317,17 @@ class PackagingGuideContractTests(unittest.TestCase):
             self.source,
         )
 
+    def test_root_source_observers_precede_non_root_ownership_handoff(self) -> None:
+        sandbox = self.source.index(
+            "pd2_portage_lifecycle_collector.py sandbox-tests"
+        )
+        ownership_handoff = self.source.index("chown -R prismdrake:prismdrake")
+        package_test = self.source.index(
+            "pd2_portage_lifecycle_collector.py package-test"
+        )
+        self.assertLess(sandbox, ownership_handoff)
+        self.assertLess(ownership_handoff, package_test)
+
 
 if __name__ == "__main__":
     unittest.main()

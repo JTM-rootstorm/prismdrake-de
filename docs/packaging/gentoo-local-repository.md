@@ -264,6 +264,13 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py resolutions \
   --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
   --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-resolutions.json"
 
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py sandbox-tests \
+  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
+  --test-build "$PRISMDRAKE_TEST_BUILD" \
+  --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
+  --controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE" \
+  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-sandbox-tests.json"
+
 install -d -o prismdrake -g prismdrake -m 0700 \
   "$PRISMDRAKE_EVIDENCE_ROOT/non-root"
 install -o prismdrake -g prismdrake -m 0600 \
@@ -279,13 +286,6 @@ runuser --user prismdrake -- \
   --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
   --controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE" \
   --output "$PRISMDRAKE_EVIDENCE_ROOT/non-root/pd2-package-test.json"
-
-python3 tests/gentoo/pd2_portage_lifecycle_collector.py sandbox-tests \
-  --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
-  --test-build "$PRISMDRAKE_TEST_BUILD" \
-  --source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT" \
-  --controlled-window-fixture "$PRISMDRAKE_CONTROLLED_FIXTURE" \
-  --output "$PRISMDRAKE_EVIDENCE_ROOT/pd2-sandbox-tests.json"
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py linkage \
   --attestation "$PRISMDRAKE_EVIDENCE_ROOT/pd2-installed-preflight.json" \
@@ -309,7 +309,9 @@ The two `chown` targets above are disposable guest copies dedicated to the
 lifecycle run, never the host checkout or Portage's live repository. They make
 the exact clean source and final retained build readable and owned by the
 ordinary test user without changing Git bytes or the canonical root-owned
-preflight artifact.
+preflight artifact. Run the root-owned outside-sandbox stage before this
+ownership handoff; otherwise Git can correctly reject the root observer's
+access to the non-root-owned checkout as dubious ownership.
 
 The CTest collectors require the retained build's exact clean source directory
 and configured revision, compare the complete ordered inventory to
