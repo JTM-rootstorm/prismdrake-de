@@ -7,6 +7,7 @@ endif()
 
 add_subdirectory(fixtures)
 add_subdirectory(gentoo)
+add_subdirectory(icons)
 add_subdirectory(accessibility)
 add_subdirectory(applicationidentity)
 add_subdirectory(unit)

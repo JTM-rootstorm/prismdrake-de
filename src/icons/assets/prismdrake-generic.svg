@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original Prismdrake fallback icon, authored for this GPL-3.0 project. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <path fill="#182033" d="M32 3 57 18v28L32 61 7 46V18Z"/>
+  <path fill="#75d7ff" d="m32 8 20 12-20 9-20-9Z"/>
+  <path fill="#936dff" d="m12 23 18 9v23L12 44Z"/>
+  <path fill="#e868c8" d="m52 23-18 9v23l18-11Z"/>
+  <path fill="#f7fbff" d="m32 17 7 4-7 4-7-4Z"/>
+</svg>
