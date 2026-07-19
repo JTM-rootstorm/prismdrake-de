@@ -67,6 +67,8 @@ OBSERVER_COMMAND_TIMEOUT_SECONDS = 120
 CTEST_COMMAND_TIMEOUT_SECONDS = 1800
 CTEST_PATH = Path("/usr/bin/ctest")
 SCANELF_PATH = Path("/usr/bin/scanelf")
+EQUERY_PATH = Path("/usr/bin/equery")
+VDB_DIRECTORY = Path("/var/db/pkg/x11-misc/prismdrake-9999")
 EBUILD_RELATIVE_PATH = Path(
     "packaging/gentoo/repository/x11-misc/prismdrake/prismdrake-9999.ebuild"
 )
@@ -342,6 +344,111 @@ def load_build_provenance(path: Path, revision: str) -> dict[str, Any]:
     return provenance
 
 
+def _read_bounded_regular(path: Path, maximum: int = MAX_CAPTURE_JSON_BYTES) -> bytes:
+    _require(path.is_absolute() and not path.is_symlink(), "vdb_file_invalid")
+    try:
+        metadata = path.stat()
+        payload = path.read_bytes()
+    except OSError as error:
+        raise Pd2CollectorError("vdb_file_unavailable") from error
+    _require(stat.S_ISREG(metadata.st_mode) and 0 < len(payload) <= maximum,
+             "vdb_file_invalid")
+    return payload
+
+
+def _parse_vdb_contents(payload: bytes) -> list[dict[str, str]]:
+    try:
+        lines = payload.decode("utf-8").splitlines()
+    except UnicodeError as error:
+        raise Pd2CollectorError("vdb_contents_invalid") from error
+    records = []
+    for line in lines:
+        kind, separator, remainder = line.partition(" ")
+        _require(bool(separator), "vdb_contents_invalid")
+        if kind == "obj":
+            parts = remainder.rsplit(" ", 2)
+            _require(len(parts) == 3, "vdb_contents_invalid")
+            path = parts[0]
+            normalized_kind = "regular"
+        elif kind == "sym":
+            path, separator, _target = remainder.partition(" -> ")
+            _require(bool(separator), "vdb_contents_invalid")
+            normalized_kind = "symlink"
+        elif kind == "dir":
+            path = remainder
+            normalized_kind = "directory"
+        else:
+            raise Pd2CollectorError("vdb_contents_invalid")
+        records.append({"kind": normalized_kind, "path": path})
+    try:
+        return normalize_ownership_records(records)
+    except Pd2LifecycleHashError as error:
+        raise Pd2CollectorError(str(error)) from error
+
+
+def _parse_equery_paths(output: str) -> tuple[str, ...]:
+    lines = tuple(line.strip() for line in output.splitlines() if line.strip())
+    _require(lines and all(line.startswith("/usr/") for line in lines),
+             "equery_output_invalid")
+    _require(len(set(lines)) == len(lines), "equery_output_invalid")
+    return tuple(sorted(lines))
+
+
+def _installed_kind_matches(record: dict[str, str]) -> bool:
+    path = Path(record["path"])
+    try:
+        metadata = path.lstat()
+    except OSError:
+        return False
+    return ((record["kind"] == "regular" and stat.S_ISREG(metadata.st_mode)) or
+            (record["kind"] == "directory" and stat.S_ISDIR(metadata.st_mode)) or
+            (record["kind"] == "symlink" and stat.S_ISLNK(metadata.st_mode)))
+
+
+def capture_portage_install_metadata(
+        source: dict[str, Any], use_test: bool, vdb_directory: Path = VDB_DIRECTORY,
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+        kind_matches: Callable[[dict[str, str]], bool] = _installed_kind_matches,
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    """Cross-check VDB, equery, source ebuild, USE state, and installed paths."""
+
+    _require(vdb_directory.is_absolute() and vdb_directory.is_dir() and
+             not vdb_directory.is_symlink(), "vdb_directory_invalid")
+    ebuild = vdb_directory / "prismdrake-9999.ebuild"
+    use_file = vdb_directory / "USE"
+    repository_file = vdb_directory / "repository"
+    contents_file = vdb_directory / "CONTENTS"
+    _require(_require_sha256(hash_file(ebuild)) == source["ebuild_sha256"],
+             "vdb_ebuild_mismatch")
+    try:
+        repository = _read_bounded_regular(repository_file).decode("utf-8").strip()
+    except UnicodeError as error:
+        raise Pd2CollectorError("vdb_repository_invalid") from error
+    _require(repository == source["repository_name"], "vdb_repository_mismatch")
+    try:
+        use_flags = set(_read_bounded_regular(use_file).decode("utf-8").split())
+    except UnicodeError as error:
+        raise Pd2CollectorError("vdb_use_invalid") from error
+    _require(("test" in use_flags) is use_test, "vdb_use_test_mismatch")
+    contents_payload = _read_bounded_regular(contents_file, MAX_CAPTURE_FILE_BYTES)
+    ownership_records = _parse_vdb_contents(contents_payload)
+    equery_paths = _parse_equery_paths(command_runner(
+        [str(EQUERY_PATH), "-q", "files", f"={PACKAGE_VERSIONED_ATOM}"], None,
+    ))
+    _require(equery_paths == tuple(record["path"] for record in ownership_records),
+             "equery_vdb_ownership_mismatch")
+    _require(all(kind_matches(record) for record in ownership_records),
+             "installed_owned_path_invalid")
+    return ({
+        "atom": PACKAGE_VERSIONED_ATOM,
+        "repository": repository,
+        "ebuild_sha256": source["ebuild_sha256"],
+        "use_test": use_test,
+        "contents_sha256": hashlib.sha256(contents_payload).hexdigest(),
+    }, ownership_records)
+
+
 def _binding(attestation: dict[str, Any]) -> dict[str, str]:
     validate_attestation_document(attestation)
     return {
@@ -613,15 +720,22 @@ def capture_direct_linkage(
 
 
 def capture_ordinary_reinstall(
-        attestation: dict[str, Any], owned_paths: list[dict[str, str]],
+        attestation: dict[str, Any], vdb_directory: Path = VDB_DIRECTORY,
         hash_file: Callable[[Path], str] = sha256_regular_file,
         is_executable: Callable[[Path], bool] = _default_is_executable,
         provenance_loader: Callable[[Path, str], dict[str, Any]] = load_build_provenance,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+        kind_matches: Callable[[dict[str, str]], bool] = _installed_kind_matches,
 ) -> dict[str, Any]:
     """Recapture exact executable, ownership, and provenance bytes after reinstall."""
 
     binding = _binding(attestation)
-    ownership_records = normalize_ownership_records(owned_paths)
+    vdb, ownership_records = capture_portage_install_metadata(
+        attestation["source"], False, vdb_directory, hash_file, command_runner,
+        kind_matches,
+    )
+    _require(vdb["contents_sha256"] == attestation["installed"]["vdb"]["contents_sha256"],
+             "ordinary_reinstall_vdb_contents_mismatch")
     regular_records = regular_ownership_records(ownership_records)
     ownership = {
         "tool": "equery",
@@ -649,6 +763,7 @@ def capture_ordinary_reinstall(
         "provenance": "portage_installed",
         "use_test": False,
         "result": "passed",
+        "vdb": vdb,
         "executables": executables,
         "ownership": ownership,
     }
@@ -699,23 +814,24 @@ def capture_installed_demonstration(
 
 
 def capture_preflight_attestation(
-        source_checkout: Path, source_bundle: Path, owned_paths: list[dict[str, str]],
-        controlled_fixture: Path, build_provenance: Path = BUILD_PROVENANCE_PATH,
+        source_checkout: Path, source_bundle: Path, controlled_fixture: Path,
+        build_provenance: Path = BUILD_PROVENANCE_PATH,
+        vdb_directory: Path = VDB_DIRECTORY,
         hash_file: Callable[[Path], str] = sha256_regular_file,
         is_executable: Callable[[Path], bool] = _default_is_executable,
         command_runner: Callable[[list[str], Path | None], str] = run_checked,
         provenance_loader: Callable[[Path, str], dict[str, Any]] = load_build_provenance,
+        kind_matches: Callable[[dict[str, str]], bool] = _installed_kind_matches,
 ) -> dict[str, Any]:
     """Verify source and inspect the complete installed and harness boundary."""
 
     source = verify_exact_source(
         source_checkout, source_bundle, hash_file=hash_file, command_runner=command_runner,
     )
-    try:
-        ownership_records = normalize_ownership_records(owned_paths)
-        regular_records = regular_ownership_records(ownership_records)
-    except Pd2LifecycleHashError as error:
-        raise Pd2CollectorError(str(error)) from error
+    vdb, ownership_records = capture_portage_install_metadata(
+        source, True, vdb_directory, hash_file, command_runner, kind_matches,
+    )
+    regular_records = regular_ownership_records(ownership_records)
     executable_paths = tuple(Path(path) for path in INSTALLED_EXECUTABLE_PATHS)
     _require(all(is_executable(path) for path in executable_paths),
              "installed_executable_invalid")
@@ -749,6 +865,7 @@ def capture_preflight_attestation(
             "artifact_sha256": artifact_hash,
             "provenance": "portage_installed",
             "data_prefix": "/usr/share/prismdrake",
+            "vdb": vdb,
             "build_provenance": build_provenance_record,
             "executables": executables,
             "ownership": {
@@ -846,7 +963,6 @@ def main(argv: list[str] | None = None) -> int:
     preflight = subparsers.add_parser("preflight")
     preflight.add_argument("--source-checkout", type=Path, required=True)
     preflight.add_argument("--source-bundle", type=Path, required=True)
-    preflight.add_argument("--owned-paths", type=Path, required=True)
     preflight.add_argument("--controlled-window-fixture", type=Path, required=True)
     preflight.add_argument("--build-provenance", type=Path,
                            default=BUILD_PROVENANCE_PATH)
@@ -874,7 +990,6 @@ def main(argv: list[str] | None = None) -> int:
     linkage.add_argument("--output", type=Path, required=True)
     reinstall = subparsers.add_parser("reinstall")
     reinstall.add_argument("--attestation", type=Path, required=True)
-    reinstall.add_argument("--owned-paths", type=Path, required=True)
     reinstall.add_argument("--output", type=Path, required=True)
     demonstration = subparsers.add_parser("demonstration")
     demonstration.add_argument("--attestation", type=Path, required=True)
@@ -892,10 +1007,8 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "preflight":
-            owned_paths = load_capture_json(arguments.owned_paths)
-            _require(isinstance(owned_paths, list), "capture_json_shape_invalid")
             document = capture_preflight_attestation(
-                arguments.source_checkout, arguments.source_bundle, owned_paths,
+                arguments.source_checkout, arguments.source_bundle,
                 arguments.controlled_window_fixture, arguments.build_provenance,
             )
         elif arguments.command == "preservation":
@@ -919,9 +1032,7 @@ def main(argv: list[str] | None = None) -> int:
             document = capture_direct_linkage(attestation, SCANELF_PATH)
         elif arguments.command == "reinstall":
             attestation = load_attestation(arguments.attestation)
-            owned_paths = load_capture_json(arguments.owned_paths)
-            _require(isinstance(owned_paths, list), "capture_json_shape_invalid")
-            document = capture_ordinary_reinstall(attestation, owned_paths)
+            document = capture_ordinary_reinstall(attestation)
         elif arguments.command == "demonstration":
             attestation = load_attestation(arguments.attestation)
             document = capture_installed_demonstration(

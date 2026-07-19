@@ -202,6 +202,8 @@ def validate_evidence_document(document: Any) -> None:
     initial = document["initial_install"]
     _require_binding(initial, revision, ebuild_hash, artifact_hash)
     executable_hashes = _validate_executables(initial["executables"])
+    _require(initial["vdb"]["ebuild_sha256"] == ebuild_hash and
+             initial["vdb"]["use_test"] is True, "initial_vdb_binding_mismatch")
     try:
         _require(canonical_executable_sha256(initial["executables"]) == artifact_hash,
                  "artifact_sha256_mismatch")
@@ -291,6 +293,11 @@ def validate_evidence_document(document: Any) -> None:
     reinstall = document["ordinary_reinstall"]
     _require_binding(reinstall, revision, ebuild_hash, artifact_hash)
     _validate_executables(reinstall["executables"])
+    _require(reinstall["vdb"]["ebuild_sha256"] == ebuild_hash and
+             reinstall["vdb"]["use_test"] is False,
+             "ordinary_reinstall_vdb_binding_mismatch")
+    _require(reinstall["vdb"]["contents_sha256"] == initial["vdb"]["contents_sha256"],
+             "ordinary_reinstall_vdb_contents_mismatch")
     _require(reinstall["executables"] == initial["executables"],
              "ordinary_reinstall_executable_mismatch")
     reinstall_ownership = reinstall["ownership"]
@@ -424,6 +431,10 @@ def example_evidence_document() -> dict[str, Any]:
             "provenance": "portage_installed",
             "use_test": False,
             "result": "passed",
+            "vdb": {
+                **copy.deepcopy(initial["vdb"]),
+                "use_test": False,
+            },
             "executables": copy.deepcopy(initial["executables"]),
             "ownership": copy.deepcopy(ownership),
         },

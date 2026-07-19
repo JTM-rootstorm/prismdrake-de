@@ -208,6 +208,9 @@ def validate_attestation_document(document: Any) -> None:
     build_provenance = installed["build_provenance"]
     _require(build_provenance["source_revision"] == revision,
              "build_provenance_revision_mismatch")
+    vdb = installed["vdb"]
+    _require(vdb["ebuild_sha256"] == ebuild_hash and vdb["use_test"] is True,
+             "vdb_binding_mismatch")
     for record in (tested, installed):
         _require(record["source_revision"] == revision, "source_revision_mismatch")
         _require(record["ebuild_sha256"] == ebuild_hash, "ebuild_sha256_mismatch")
@@ -317,6 +320,13 @@ def example_attestation_document() -> dict[str, Any]:
                 "path": "/usr/share/prismdrake/build-provenance.json",
                 "sha256": "6" * 64,
                 "source_revision": revision,
+            },
+            "vdb": {
+                "atom": PACKAGE_VERSIONED_ATOM,
+                "repository": "prismdrake-local",
+                "ebuild_sha256": ebuild_hash,
+                "use_test": True,
+                "contents_sha256": "5" * 64,
             },
             "executables": executables,
             "ownership": {

@@ -13,7 +13,7 @@
     "installed": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source_revision", "ebuild_sha256", "artifact_sha256", "provenance", "data_prefix", "build_provenance", "executables", "ownership"],
+      "required": ["source_revision", "ebuild_sha256", "artifact_sha256", "provenance", "data_prefix", "build_provenance", "vdb", "executables", "ownership"],
       "properties": {
         "source_revision": { "$ref": "#/$defs/revision" },
         "ebuild_sha256": { "$ref": "#/$defs/sha256" },
@@ -21,6 +21,7 @@
         "provenance": { "const": "portage_installed" },
         "data_prefix": { "const": "/usr/share/prismdrake" },
         "build_provenance": { "$ref": "#/$defs/build_provenance" },
+        "vdb": { "$ref": "#/$defs/vdb_install" },
         "executables": {
           "type": "array",
           "minItems": 5,
@@ -58,6 +59,18 @@
         "path": { "const": "/usr/share/prismdrake/build-provenance.json" },
         "sha256": { "$ref": "#/$defs/sha256" },
         "source_revision": { "$ref": "#/$defs/revision" }
+      }
+    },
+    "vdb_install": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atom", "repository", "ebuild_sha256", "use_test", "contents_sha256"],
+      "properties": {
+        "atom": { "const": "x11-misc/prismdrake-9999" },
+        "repository": { "const": "prismdrake-local" },
+        "ebuild_sha256": { "$ref": "#/$defs/sha256" },
+        "use_test": { "const": true },
+        "contents_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "harness_file": {

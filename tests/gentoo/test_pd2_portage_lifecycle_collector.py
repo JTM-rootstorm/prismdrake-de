@@ -18,7 +18,6 @@ import pd2_portage_lifecycle_collector as collector
 
 from pd2_installed_artifact_attestation import (
     INSTALLED_EXECUTABLE_PATHS,
-    REQUIRED_INSTALLED_FILE_GROUPS,
     example_attestation_document,
 )
 from pd2_harness_manifest import HARNESS_RELATIVE_PATHS
@@ -48,6 +47,31 @@ from pd2_portage_lifecycle_evidence import (
 
 
 class Pd2LifecycleCollectorTests(unittest.TestCase):
+    @staticmethod
+    def create_vdb(root: Path, attestation: dict, use_test: bool) -> tuple[Path, bytes]:
+        vdb = root / "vdb"
+        vdb.mkdir()
+        (vdb / "prismdrake-9999.ebuild").write_bytes(b"ebuild")
+        (vdb / "repository").write_text("prismdrake-local\n", encoding="utf-8")
+        (vdb / "USE").write_text("test qt6\n" if use_test else "qt6\n", encoding="utf-8")
+        lines = []
+        for record in attestation["installed"]["ownership"]["paths"]:
+            if record["kind"] == "directory":
+                lines.append(f"dir {record['path']}")
+            elif record["kind"] == "symlink":
+                lines.append(f"sym {record['path']} -> target 1")
+            else:
+                lines.append(f"obj {record['path']} {'1' * 64} 1")
+        contents = ("\n".join(lines) + "\n").encode("utf-8")
+        (vdb / "CONTENTS").write_bytes(contents)
+        return vdb, contents
+
+    @staticmethod
+    def equery_output(attestation: dict) -> str:
+        return "\n".join(
+            item["path"] for item in attestation["installed"]["ownership"]["paths"]
+        ) + "\n"
+
     def test_captures_five_executables_and_complete_owned_path_set(self) -> None:
         fixture = example_attestation_document()
         with tempfile.TemporaryDirectory() as temporary:
@@ -57,6 +81,10 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             bundle = root / "source.bundle"
             bundle.touch()
             controlled_fixture = root / "fixture"
+            vdb, contents = self.create_vdb(root, fixture, True)
+            fixture["installed"]["vdb"]["contents_sha256"] = hashlib.sha256(
+                contents
+            ).hexdigest()
             hashes = {item["path"]: item["sha256"]
                       for item in fixture["installed"]["executables"]}
             hashes.update({str(checkout / relative): "7" * 64
@@ -65,6 +93,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             hashes[str(bundle)] = "9" * 64
             hashes[str(controlled_fixture)] = "8" * 64
             hashes[str(BUILD_PROVENANCE_PATH)] = "6" * 64
+            hashes[str(vdb / "prismdrake-9999.ebuild")] = "a" * 64
             revision = fixture["source"]["revision"]
 
             def runner(command: list[str], cwd: Path | None) -> str:
@@ -73,50 +102,46 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                     return revision + "\n"
                 if "status" in command or "verify" in command:
                     return ""
+                if command[0] == "/usr/bin/equery":
+                    return self.equery_output(fixture)
                 return f"{revision} HEAD\n"
 
             document = capture_preflight_attestation(
-                checkout, bundle,
-                copy.deepcopy(fixture["installed"]["ownership"]["paths"]),
-                controlled_fixture,
+                checkout, bundle, controlled_fixture,
+                vdb_directory=vdb,
                 hash_file=lambda path: hashes[str(path)],
                 is_executable=lambda path: str(path) in INSTALLED_EXECUTABLE_PATHS,
                 command_runner=runner,
                 provenance_loader=lambda path, value: {
                     "schema_version": 1, "source_revision": value},
+                kind_matches=lambda record: True,
             )
         self.assertEqual(document, fixture)
         self.assertEqual(document["installed"]["ownership"]["path_count"],
                          len(document["installed"]["ownership"]["paths"]))
 
-    def test_preflight_fails_closed_on_ownership_and_executable_drift(self) -> None:
+    def test_preflight_fails_closed_on_vdb_use_and_ownership_drift(self) -> None:
         fixture = example_attestation_document()
-        hashes = {item["path"]: item["sha256"]
-                  for item in fixture["installed"]["executables"]}
-        # Source verification and manifest coverage are exercised independently;
-        # this case isolates installed ownership/executable drift.
-        for mutation, executable_check in (
-            (lambda paths: paths.pop(0), lambda path: True),
-            (lambda paths: paths[0].update({"path": "/home/user/private"}),
-             lambda path: True),
-            (lambda paths: next(
-                item for item in paths
-                if item["path"] == REQUIRED_INSTALLED_FILE_GROUPS[0][0]
-            ).update({"path": "/usr/share/prismdrake/unexpected-resource"}),
-             lambda path: True),
-            (lambda paths: None,
-             lambda path: str(path) != INSTALLED_EXECUTABLE_PATHS[2]),
-        ):
-            with self.subTest(mutation=mutation):
-                owned = copy.deepcopy(fixture["installed"]["ownership"]["paths"])
-                mutation(owned)
-                with self.assertRaises(Pd2CollectorError):
-                    # An ownership failure occurs before source/file observers.
-                    capture_preflight_attestation(
-                        Path("/missing"), Path("/missing.bundle"), owned,
-                        Path("/fixture"), hash_file=lambda path: hashes[str(path)],
-                        is_executable=executable_check,
-                    )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            vdb, _contents = self.create_vdb(root, fixture, False)
+            source = copy.deepcopy(fixture["source"])
+            with self.assertRaisesRegex(Pd2CollectorError, "^vdb_use_test_mismatch$"):
+                collector.capture_portage_install_metadata(
+                    source, True, vdb,
+                    hash_file=lambda path: source["ebuild_sha256"],
+                    command_runner=lambda command, cwd: self.equery_output(fixture),
+                    kind_matches=lambda record: True,
+                )
+            (vdb / "USE").write_text("test qt6\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^equery_vdb_ownership_mismatch$"):
+                collector.capture_portage_install_metadata(
+                    source, True, vdb,
+                    hash_file=lambda path: source["ebuild_sha256"],
+                    command_runner=lambda command, cwd: "/usr/bin/unowned\n",
+                    kind_matches=lambda record: True,
+                )
 
     def test_captures_only_equal_user_state_kind_and_hashes(self) -> None:
         before = {kind: Path(f"/before/{kind}") for kind in USER_DATA_KINDS}
@@ -371,14 +396,22 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
         self.assertEqual(tuple(item["path"] for item in linkage["entries"]),
                          INSTALLED_EXECUTABLE_PATHS)
 
-        reinstall = capture_ordinary_reinstall(
-            attestation,
-            copy.deepcopy(attestation["installed"]["ownership"]["paths"]),
-            hash_file=lambda path: hashes[str(path)],
-            is_executable=lambda path: str(path) in INSTALLED_EXECUTABLE_PATHS,
-            provenance_loader=lambda path, revision: {
-                "schema_version": 1, "source_revision": revision},
-        )
+        with tempfile.TemporaryDirectory() as temporary:
+            vdb, contents = self.create_vdb(Path(temporary), attestation, False)
+            contents_hash = hashlib.sha256(contents).hexdigest()
+            attestation["installed"]["vdb"]["contents_sha256"] = contents_hash
+            hashes[str(vdb / "prismdrake-9999.ebuild")] = \
+                attestation["source"]["ebuild_sha256"]
+            reinstall = capture_ordinary_reinstall(
+                attestation,
+                vdb_directory=vdb,
+                hash_file=lambda path: hashes[str(path)],
+                is_executable=lambda path: str(path) in INSTALLED_EXECUTABLE_PATHS,
+                provenance_loader=lambda path, revision: {
+                    "schema_version": 1, "source_revision": revision},
+                command_runner=lambda command, cwd: self.equery_output(attestation),
+                kind_matches=lambda record: True,
+            )
         self.assertEqual(reinstall["executables"],
                          attestation["installed"]["executables"])
         self.assertEqual(reinstall["ownership"], attestation["installed"]["ownership"])

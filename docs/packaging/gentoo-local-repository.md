@@ -143,15 +143,13 @@ dependencies, or unmask unrelated packages.
 
 The installed demonstration uses a staged evidence flow so it never depends on
 a result that it is itself expected to produce. After the `USE=test` install,
-create an exact `git bundle` from the clean source checkout and write a JSON
-array containing the complete Portage-owned `/usr` path set. Capture the
+create an exact `git bundle` from the clean source checkout. Capture the
 non-final, mode-0600 preflight attestation from absolute paths:
 
 ```bash
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py preflight \
   --source-checkout /absolute/clean/prismdrake-de \
   --source-bundle /absolute/private/evidence/prismdrake.bundle \
-  --owned-paths /absolute/private/evidence/owned-paths.json \
   --controlled-window-fixture /absolute/retained-test-build/tests/integration/prismdrake-controlled-window-fixture \
   --output /absolute/private/evidence/pd2-installed-preflight.json
 ```
@@ -159,10 +157,15 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py preflight \
 The preflight command requires a clean checkout, verifies that the bundle's
 sole `HEAD` is the checkout `HEAD`, hashes the ebuild from that checkout, and
 checks `/usr/share/prismdrake/build-provenance.json` against the same revision.
-It also measures the fixed `/usr/bin/prismdrake-*` set and rejects ownership
-that omits required packaged data. Its canonical harness manifest covers every
-imported live helper, validator, schema, and the controlled fixture binary.
-The demonstration recomputes that complete manifest before and after each run.
+It hashes the selected VDB ebuild under
+`/var/db/pkg/x11-misc/prismdrake-9999`, requires the `prismdrake-local`
+repository and actual `test` USE state, parses the VDB `CONTENTS` file, and
+cross-checks that complete path set against canonical `/usr/bin/equery` output
+and installed file kinds. It also measures the fixed
+`/usr/bin/prismdrake-*` set and rejects ownership that omits required packaged
+data. Its canonical harness manifest covers every imported live helper,
+validator, schema, and the controlled fixture binary. The demonstration
+recomputes that complete manifest before and after each run.
 
 Execute and normalize the retained package-test selection, the exact four
 outside-sandbox tests, installed linkage, and each demo through the collector:
@@ -232,7 +235,6 @@ installed bytes rather than writing reinstall success into a draft:
 ```bash
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py reinstall \
   --attestation /absolute/private/evidence/pd2-installed-preflight.json \
-  --owned-paths /absolute/private/evidence/reinstalled-owned-paths.json \
   --output /absolute/private/evidence/pd2-ordinary-reinstall.json
 
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
@@ -271,8 +273,11 @@ both version-one complete PD2 installed demonstrations, normalized linkage for
 all five executables, all four reviewed outside-sandbox tests, unmerge with
 byte-identical user configuration/state preservation, and an ordinary
 non-`USE=test` reinstall with the complete original ownership manifest.
-Unknown, partial, mismatched, private, build-tree, or caller-asserted installed
-data fails closed.
+The ordinary-reinstall collector repeats the VDB ebuild, repository, non-test
+USE state, `CONTENTS`, `equery`, installed-kind, provenance, executable, and
+ownership measurements directly; it cannot reuse a caller-provided ownership
+list. Unknown, partial, mismatched, private, build-tree, or caller-asserted
+installed data fails closed.
 
 ## Resolution and QA
 
