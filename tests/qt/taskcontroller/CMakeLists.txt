@@ -1,5 +1,6 @@
 add_executable(prismdrake-shell-task-controller-tests
-    TaskControllerCoreTests.cpp)
+    TaskControllerCoreTests.cpp
+    TaskIoWorkerTests.cpp)
 target_link_libraries(prismdrake-shell-task-controller-tests
     PRIVATE
         GTest::gtest_main

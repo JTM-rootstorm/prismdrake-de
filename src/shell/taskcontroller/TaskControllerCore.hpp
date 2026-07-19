@@ -105,6 +105,11 @@ class TaskControllerCore final {
     handleIntent(x11::TaskLifetimeId lifetime, x11::TaskModelGeneration originatingGeneration,
                  x11::TaskRequestAction action);
 
+    /// Terminates one asynchronously checked request whose X11 delivery failed.
+    /// A completion that has already been resolved by newer authoritative state
+    /// is ignored so a late worker reply cannot affect another request.
+    void rejectPendingDelivery(const x11::TaskRequestState &request);
+
     [[nodiscard]] std::shared_ptr<const x11::TaskModelSnapshot> currentSnapshot() const noexcept {
         return model_.current();
     }

@@ -2,7 +2,9 @@ add_library(prismdrake-shell-task-controller STATIC
     TaskController.cpp
     TaskController.hpp
     TaskControllerCore.cpp
-    TaskControllerCore.hpp)
+    TaskControllerCore.hpp
+    TaskIoWorker.cpp
+    TaskIoWorker.hpp)
 add_library(Prismdrake::shell-task-controller ALIAS
     prismdrake-shell-task-controller)
 

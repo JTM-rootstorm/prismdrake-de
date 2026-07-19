@@ -69,6 +69,8 @@ struct PropertyReplyView final {
 validatePropertyReply(PropertyReplyView reply, AtomId expectedType, const PropertySpec &spec);
 
 /// Bounded strict core-XCB property reader for one connection and its immutable atom cache.
+/// The reply-bearing call is blocking and therefore belongs on a bounded I/O
+/// worker, never a Qt GUI or X11 event-dispatch thread.
 class PropertyReader final {
   public:
     /// Reads with live arguments only and rejects an atom cache from another connection.

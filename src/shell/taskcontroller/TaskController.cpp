@@ -3,13 +3,16 @@
 #include <QCoreApplication>
 #include <QMetaObject>
 #include <QObject>
-#include <QSocketNotifier>
 #include <QThread>
 #include <QTimer>
 
 #include <algorithm>
 #include <exception>
+#include <map>
+#include <string>
 #include <utility>
+
+#include <sys/socket.h>
 
 namespace prismdrake::shell::taskcontroller {
 namespace {
@@ -43,6 +46,109 @@ using foundation::Result;
             "Stop startup without publishing a partial task controller."};
 }
 
+[[nodiscard]] Result<void> staleWorkerTarget() {
+    return Result<void>::failure(
+        {ErrorCode::cancelled, "The checked task request target is stale on the X11 worker.",
+         "Wait for the latest authoritative task snapshot before retrying."});
+}
+
+class X11TaskIoOperations final : public TaskIoOperations {
+  public:
+    [[nodiscard]] static Result<std::unique_ptr<TaskIoOperations>> create(std::string display) {
+        auto connection = x11::X11Connection::connect(display);
+        if (!connection) {
+            return Result<std::unique_ptr<TaskIoOperations>>::failure(connection.error());
+        }
+        auto events = x11::RootEventStream::create(connection.value());
+        if (!events) {
+            return Result<std::unique_ptr<TaskIoOperations>>::failure(events.error());
+        }
+        auto source = x11::EwmhTaskSource::create(connection.value());
+        if (!source) {
+            return Result<std::unique_ptr<TaskIoOperations>>::failure(source.error());
+        }
+        return Result<std::unique_ptr<TaskIoOperations>>::success(std::unique_ptr<TaskIoOperations>(
+            new X11TaskIoOperations(std::move(connection).value(), std::move(events).value(),
+                                    std::move(source).value())));
+    }
+
+    Result<x11::TaskModelObservation>
+    refresh(std::span<const x11::WindowId> invalidatedWindows) override {
+        requests_.reset();
+        for (const auto window : invalidatedWindows) {
+            source_.invalidateClient(window);
+        }
+        auto observation = source_.refresh(connection_);
+        if (!observation) {
+            return Result<x11::TaskModelObservation>::failure(observation.error());
+        }
+        auto requests = x11::EwmhWindowRequests::create(connection_);
+        if (!requests) {
+            return Result<x11::TaskModelObservation>::failure(requests.error());
+        }
+        observed_incarnations_.clear();
+        for (const auto &window : observation.value().windows) {
+            observed_incarnations_.insert_or_assign(window.window.value(), window.incarnation);
+        }
+        requests_ = std::move(requests).value();
+        return observation;
+    }
+
+    Result<void> request(const x11::TaskRequestState &request,
+                         std::optional<x11::WindowId> currentlyActive) override {
+        const auto found = observed_incarnations_.find(request.window().value());
+        if (!requests_ || found == observed_incarnations_.end() ||
+            found->second != request.incarnation()) {
+            return staleWorkerTarget();
+        }
+        switch (request.action()) {
+        case x11::TaskRequestAction::activate:
+            return requests_->activate(connection_, request.window(), 0U, currentlyActive);
+        case x11::TaskRequestAction::minimize:
+            return requests_->minimize(connection_, request.window());
+        case x11::TaskRequestAction::close:
+            return requests_->close(connection_, request.window(), 0U);
+        }
+        return Result<void>::failure(
+            {ErrorCode::invalid_argument, "The typed task request action is invalid.",
+             "Issue only activate, minimize, or close through TaskPresentationModel."});
+    }
+
+    [[nodiscard]] int eventFileDescriptor() const noexcept override {
+        return connection_.eventFileDescriptor();
+    }
+
+    Result<TaskEventRefreshPlan> drainEvents() override {
+        auto batch = events_.drain();
+        if (!batch) {
+            return Result<TaskEventRefreshPlan>::failure(batch.error());
+        }
+        if (!connection_.healthy()) {
+            return Result<TaskEventRefreshPlan>::failure(lostConnection());
+        }
+        return planTaskEventRefresh(batch.value().events);
+    }
+
+    void cancelWaits() noexcept override {
+        const int descriptor = connection_.eventFileDescriptor();
+        if (descriptor >= 0) {
+            (void)shutdown(descriptor, SHUT_RDWR);
+        }
+    }
+
+  private:
+    X11TaskIoOperations(x11::X11Connection connection, x11::RootEventStream events,
+                        x11::EwmhTaskSource source)
+        : connection_(std::move(connection)), events_(std::move(events)),
+          source_(std::move(source)) {}
+
+    x11::X11Connection connection_;
+    x11::RootEventStream events_;
+    x11::EwmhTaskSource source_;
+    std::optional<x11::EwmhWindowRequests> requests_;
+    std::map<x11::WindowId::Value, x11::WindowIncarnationId> observed_incarnations_;
+};
+
 } // namespace
 
 Result<std::unique_ptr<TaskController>>
@@ -57,29 +163,12 @@ TaskController::create(tasks::TaskPresentationModel &presentation, std::string_v
         return Result<std::unique_ptr<TaskController>>::failure(wrongThread());
     }
 
-    auto connection = x11::X11Connection::connect(display);
-    if (!connection) {
-        return Result<std::unique_ptr<TaskController>>::failure(connection.error());
-    }
-    auto events = x11::RootEventStream::create(connection.value());
-    if (!events) {
-        return Result<std::unique_ptr<TaskController>>::failure(events.error());
-    }
-    auto source = x11::EwmhTaskSource::create(connection.value());
-    if (!source) {
-        return Result<std::unique_ptr<TaskController>>::failure(source.error());
-    }
-
     std::unique_ptr<TaskController> controller;
     try {
-        controller = std::unique_ptr<TaskController>(new TaskController(
-            presentation, std::move(connection).value(), std::move(events).value(),
-            std::move(source).value(), std::nullopt, std::move(connectionLost),
-            std::move(recoverableFailure), std::move(outcome)));
+        controller = std::unique_ptr<TaskController>(
+            new TaskController(presentation, std::move(connectionLost),
+                               std::move(recoverableFailure), std::move(outcome)));
         controller->event_context_ = std::make_unique<QObject>();
-        controller->event_notifier_ = std::make_unique<QSocketNotifier>(
-            controller->connection_.eventFileDescriptor(), QSocketNotifier::Read,
-            controller->event_context_.get());
         controller->stabilization_timer_ =
             std::make_unique<QTimer>(controller->event_context_.get());
         controller->stabilization_timer_->setSingleShot(true);
@@ -87,28 +176,35 @@ TaskController::create(tasks::TaskPresentationModel &presentation, std::string_v
         return Result<std::unique_ptr<TaskController>>::failure(allocationFailure());
     }
 
-    QObject::connect(controller->event_notifier_.get(), &QSocketNotifier::activated,
-                     controller->event_context_.get(),
-                     [instance = controller.get()](QSocketDescriptor, QSocketNotifier::Type) {
-                         instance->drainEvents();
-                     });
     QObject::connect(controller->stabilization_timer_.get(), &QTimer::timeout,
                      controller->event_context_.get(),
                      [instance = controller.get()] { instance->retryTaskRefresh(); });
+    const std::string displayName{display};
+    auto worker = TaskIoWorker::create(
+        *controller->event_context_,
+        [displayName] { return X11TaskIoOperations::create(displayName); },
+        [instance = controller.get()](std::uint64_t token,
+                                      Result<x11::TaskModelObservation> result) {
+            instance->handleRefreshCompletion(token, std::move(result));
+        },
+        [instance = controller.get()](x11::TaskRequestState request, Result<void> result) {
+            instance->handleRequestCompletion(std::move(request), std::move(result));
+        },
+        [instance = controller.get()](Result<TaskEventRefreshPlan> result) {
+            instance->handleEventCompletion(std::move(result));
+        });
+    if (!worker) {
+        return Result<std::unique_ptr<TaskController>>::failure(worker.error());
+    }
+    controller->io_worker_ = std::move(worker).value();
     auto initialized = controller->refreshTasks();
     if (!initialized) {
-        if (!controller->connection_.healthy()) {
-            return Result<std::unique_ptr<TaskController>>::failure(initialized.error());
-        }
-        controller->handleRefreshFailure(initialized.error());
+        return Result<std::unique_ptr<TaskController>>::failure(initialized.error());
     }
     return Result<std::unique_ptr<TaskController>>::success(std::move(controller));
 }
 
 TaskController::TaskController(tasks::TaskPresentationModel &presentation,
-                               x11::X11Connection connection, x11::RootEventStream events,
-                               x11::EwmhTaskSource source,
-                               std::optional<x11::EwmhWindowRequests> requests,
                                ConnectionLostCallback connectionLost,
                                FailureCallback recoverableFailure, OutcomeCallback outcome)
     : presentation_(presentation), connection_lost_(std::move(connectionLost)),
@@ -117,139 +213,141 @@ TaskController::TaskController(tasks::TaskPresentationModel &presentation,
           presentation,
           [this](const x11::TaskRequestState &request) { return dispatchCheckedRequest(request); },
           std::move(outcome), recoverable_failure_),
-      connection_(std::move(connection)), events_(std::move(events)), source_(std::move(source)),
-      requests_(std::move(requests)) {}
+      requested_refresh_token_(0U) {}
 
 TaskController::~TaskController() {
     if (stabilization_timer_) {
         stabilization_timer_->stop();
     }
-    if (event_notifier_) {
-        event_notifier_->setEnabled(false);
-    }
+    io_worker_.reset();
     stabilization_timer_.reset();
-    event_notifier_.reset();
     event_context_.reset();
 }
 
-Result<void> TaskController::refreshTasks() {
+Result<void> TaskController::refreshTasks(std::vector<x11::WindowId> invalidatedWindows) {
     if (terminated_) {
         return Result<void>::failure(terminatedController());
     }
-    // Any refresh hint can represent WM replacement. Disable the cached request path until a
-    // matching complete observation and fresh capability check both succeed.
-    requests_.reset();
-    auto observation = source_.refresh(connection_);
-    if (!observation) {
-        return Result<void>::failure(observation.error());
+    if (!io_worker_ || next_refresh_token_ == 0U) {
+        return Result<void>::failure(allocationFailure());
     }
-    auto published = core_.publishObservation(observation.value());
-    if (!published) {
-        return Result<void>::failure(published.error());
+    const auto token = next_refresh_token_++;
+    requested_refresh_token_ = token;
+    refresh_pending_ = true;
+    auto submitted = io_worker_->submitRefresh(token, std::move(invalidatedWindows));
+    if (!submitted) {
+        refresh_pending_ = false;
+        return submitted;
     }
-    auto requests = x11::EwmhWindowRequests::create(connection_);
-    if (!requests) {
-        return Result<void>::failure(requests.error());
-    }
-    requests_ = std::move(requests).value();
-    return Result<void>::success();
+    return submitted;
 }
 
 Result<void> TaskController::dispatchCheckedRequest(const x11::TaskRequestState &request) {
-    if (terminated_ || !connection_.healthy()) {
+    if (terminated_) {
         return Result<void>::failure(terminatedController());
     }
     const auto snapshot = core_.currentSnapshot();
     const bool stabilizationPending = stabilization_timer_ && stabilization_timer_->isActive();
-    if (!snapshot || !request.canDispatch(*snapshot) ||
-        !taskRequestPathCanDispatch(requests_.has_value(), stabilizationPending)) {
+    if (!snapshot || !request.canDispatch(*snapshot) || refresh_pending_ ||
+        !taskRequestPathCanDispatch(applied_refresh_token_ != 0U, stabilizationPending)) {
         return Result<void>::failure(
             {ErrorCode::cancelled, "The checked task request path is not current.",
              "Wait for a complete authoritative task refresh before retrying."});
     }
 
-    switch (request.action()) {
-    case x11::TaskRequestAction::activate: {
-        const auto active = std::ranges::find_if(
-            snapshot->tasks(), [](const x11::TaskRecord &task) { return task.active(); });
-        const auto activeWindow = active == snapshot->tasks().end()
-                                      ? std::optional<x11::WindowId>{}
-                                      : std::optional<x11::WindowId>{active->window()};
-        return requests_->activate(connection_, request.window(), 0U, activeWindow);
-    }
-    case x11::TaskRequestAction::minimize:
-        return requests_->minimize(connection_, request.window());
-    case x11::TaskRequestAction::close:
-        return requests_->close(connection_, request.window(), 0U);
-    }
-    return Result<void>::failure(
-        {ErrorCode::invalid_argument, "The typed task request action is invalid.",
-         "Issue only activate, minimize, or close through TaskPresentationModel."});
-}
-
-void TaskController::drainEvents() {
-    drain_scheduled_ = false;
-    if (terminated_) {
-        return;
-    }
-    auto batch = events_.drain();
-    if (!batch) {
-        if (!connection_.healthy()) {
-            terminateForConnectionLoss(batch.error());
-        } else {
-            reportRecoverable(batch.error());
-        }
-        return;
-    }
-    if (!connection_.healthy()) {
-        terminateForConnectionLoss(lostConnection());
-        return;
-    }
-
-    auto plan = planTaskEventRefresh(batch.value().events);
-    if (!plan) {
-        reportRecoverable(plan.error());
-        return;
-    }
-    for (const auto window : plan.value().invalidatedWindows) {
-        source_.invalidateClient(window);
-    }
-    bool refreshAttempted = false;
-    const bool stabilizationPending = stabilization_timer_ && stabilization_timer_->isActive();
-    if (taskRefreshShouldRunImmediately(plan.value().refreshRequired, stabilizationPending)) {
-        stabilization_policy_.beginRealEventEpoch();
-        refreshAttempted = true;
-        auto refreshed = refreshTasks();
-        if (!refreshed) {
-            if (!connection_.healthy()) {
-                terminateForConnectionLoss(refreshed.error());
-                return;
-            }
-            handleRefreshFailure(refreshed.error());
-        } else {
-            resetStabilization();
-        }
-    }
-    if (taskEventFollowUpRequired(refreshAttempted, batch.value().examinationLimitReached)) {
-        scheduleDrain();
-    }
+    const auto active = std::ranges::find_if(
+        snapshot->tasks(), [](const x11::TaskRecord &task) { return task.active(); });
+    const auto activeWindow = active == snapshot->tasks().end()
+                                  ? std::optional<x11::WindowId>{}
+                                  : std::optional<x11::WindowId>{active->window()};
+    return io_worker_->submitRequest(applied_refresh_token_, request, activeWindow);
 }
 
 void TaskController::retryTaskRefresh() {
     if (terminated_) {
         return;
     }
-    auto refreshed = refreshTasks();
+    auto invalidations = std::move(deferred_invalidations_);
+    deferred_invalidations_.clear();
+    auto refreshed = refreshTasks(std::move(invalidations));
     if (!refreshed) {
-        if (!connection_.healthy()) {
+        if (refreshed.error().code == ErrorCode::io_error) {
             terminateForConnectionLoss(refreshed.error());
             return;
         }
         handleRefreshFailure(refreshed.error());
+    }
+}
+
+void TaskController::handleRefreshCompletion(std::uint64_t token,
+                                             Result<x11::TaskModelObservation> result) {
+    if (terminated_ || token != requested_refresh_token_) {
         return;
     }
+    refresh_pending_ = false;
+    if (!result) {
+        if (result.error().code == ErrorCode::io_error) {
+            terminateForConnectionLoss(result.error());
+            return;
+        }
+        handleRefreshFailure(result.error());
+        return;
+    }
+    auto published = core_.publishObservation(result.value());
+    if (!published) {
+        handleRefreshFailure(published.error());
+        return;
+    }
+    applied_refresh_token_ = token;
     resetStabilization();
-    scheduleDrain();
+}
+
+void TaskController::handleRequestCompletion(x11::TaskRequestState request, Result<void> result) {
+    if (terminated_ || result) {
+        return;
+    }
+    core_.rejectPendingDelivery(request);
+    if (result.error().code == ErrorCode::io_error) {
+        terminateForConnectionLoss(result.error());
+        return;
+    }
+    reportRecoverable(result.error());
+}
+
+void TaskController::handleEventCompletion(Result<TaskEventRefreshPlan> result) {
+    if (terminated_) {
+        return;
+    }
+    if (!result) {
+        if (result.error().code == ErrorCode::io_error) {
+            terminateForConnectionLoss(result.error());
+        } else {
+            reportRecoverable(result.error());
+        }
+        return;
+    }
+    auto &plan = result.value();
+    for (const auto window : plan.invalidatedWindows) {
+        const auto duplicate = std::ranges::find(deferred_invalidations_, window);
+        if (duplicate == deferred_invalidations_.end()) {
+            deferred_invalidations_.push_back(window);
+        }
+    }
+    const bool stabilizationPending = stabilization_timer_ && stabilization_timer_->isActive();
+    if (!taskRefreshShouldRunImmediately(plan.refreshRequired, stabilizationPending)) {
+        return;
+    }
+    stabilization_policy_.beginRealEventEpoch();
+    auto invalidations = std::move(deferred_invalidations_);
+    deferred_invalidations_.clear();
+    auto refreshed = refreshTasks(std::move(invalidations));
+    if (!refreshed) {
+        if (refreshed.error().code == ErrorCode::io_error) {
+            terminateForConnectionLoss(refreshed.error());
+        } else {
+            handleRefreshFailure(refreshed.error());
+        }
+    }
 }
 
 void TaskController::handleRefreshFailure(const foundation::Error &error) {
@@ -275,15 +373,6 @@ void TaskController::resetStabilization() noexcept {
     stabilization_policy_.reset();
 }
 
-void TaskController::scheduleDrain() {
-    if (drain_scheduled_ || terminated_) {
-        return;
-    }
-    drain_scheduled_ = true;
-    QMetaObject::invokeMethod(
-        event_context_.get(), [this] { drainEvents(); }, Qt::QueuedConnection);
-}
-
 void TaskController::reportRecoverable(const foundation::Error &error) const {
     if (recoverable_failure_) {
         recoverable_failure_(error);
@@ -295,11 +384,9 @@ void TaskController::terminateForConnectionLoss(const foundation::Error &error) 
         return;
     }
     terminated_ = true;
-    drain_scheduled_ = false;
+    refresh_pending_ = false;
+    deferred_invalidations_.clear();
     resetStabilization();
-    if (event_notifier_) {
-        event_notifier_->setEnabled(false);
-    }
     auto callback = connection_lost_;
     QMetaObject::invokeMethod(
         &presentation_, [callback = std::move(callback), error] { callback(error); },

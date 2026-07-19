@@ -5,6 +5,7 @@
 #include "Result.hpp"
 #include "RootEventStream.hpp"
 #include "TaskControllerCore.hpp"
+#include "TaskIoWorker.hpp"
 #include "X11Connection.hpp"
 
 #include <QMetaObject>
@@ -13,8 +14,8 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <vector>
 
-class QSocketNotifier;
 class QTimer;
 class QObject;
 
@@ -54,17 +55,18 @@ class TaskController final {
     }
 
   private:
-    TaskController(tasks::TaskPresentationModel &presentation, x11::X11Connection connection,
-                   x11::RootEventStream events, x11::EwmhTaskSource source,
-                   std::optional<x11::EwmhWindowRequests> requests,
+    TaskController(tasks::TaskPresentationModel &presentation,
                    ConnectionLostCallback connectionLost, FailureCallback recoverableFailure,
                    OutcomeCallback outcome);
 
-    [[nodiscard]] foundation::Result<void> refreshTasks();
+    [[nodiscard]] foundation::Result<void>
+    refreshTasks(std::vector<x11::WindowId> invalidatedWindows = {});
     [[nodiscard]] foundation::Result<void>
     dispatchCheckedRequest(const x11::TaskRequestState &request);
-    void drainEvents();
-    void scheduleDrain();
+    void handleRefreshCompletion(std::uint64_t token,
+                                 foundation::Result<x11::TaskModelObservation> result);
+    void handleRequestCompletion(x11::TaskRequestState request, foundation::Result<void> result);
+    void handleEventCompletion(foundation::Result<TaskEventRefreshPlan> result);
     void retryTaskRefresh();
     void handleRefreshFailure(const foundation::Error &error);
     void resetStabilization() noexcept;
@@ -75,15 +77,15 @@ class TaskController final {
     ConnectionLostCallback connection_lost_;
     FailureCallback recoverable_failure_;
     TaskControllerCore core_;
-    x11::X11Connection connection_;
-    x11::RootEventStream events_;
-    x11::EwmhTaskSource source_;
-    std::optional<x11::EwmhWindowRequests> requests_;
     std::unique_ptr<QObject> event_context_;
-    std::unique_ptr<QSocketNotifier> event_notifier_;
+    std::unique_ptr<TaskIoWorker> io_worker_;
     std::unique_ptr<QTimer> stabilization_timer_;
     TaskSnapshotStabilizationPolicy stabilization_policy_;
-    bool drain_scheduled_{false};
+    std::uint64_t next_refresh_token_{1U};
+    std::uint64_t requested_refresh_token_{0U};
+    std::uint64_t applied_refresh_token_{0U};
+    std::vector<x11::WindowId> deferred_invalidations_;
+    bool refresh_pending_{false};
     bool terminated_{false};
 };
 

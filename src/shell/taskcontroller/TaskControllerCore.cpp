@@ -205,6 +205,19 @@ Result<void> TaskControllerCore::handleIntent(x11::TaskLifetimeId lifetime,
     return Result<void>::success();
 }
 
+void TaskControllerCore::rejectPendingDelivery(const x11::TaskRequestState &completed) {
+    const auto found = std::ranges::find_if(pending_, [&completed](const auto &pending) {
+        return pending.lifetime() == completed.lifetime() &&
+               pending.action() == completed.action() &&
+               pending.issuedGeneration() == completed.issuedGeneration();
+    });
+    if (found == pending_.end()) {
+        return;
+    }
+    reportOutcome(*found, x11::TaskRequestOutcome::deliveryRejected);
+    pending_.erase(found);
+}
+
 void TaskControllerCore::reportOutcome(const x11::TaskRequestState &request,
                                        x11::TaskRequestOutcome outcome) const {
     if (outcome_) {

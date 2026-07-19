@@ -505,7 +505,7 @@ TEST(TaskControllerX11IntegrationTest, RejectsCheckedRequestWhileStaleSnapshotSt
         [&recoverable](const foundation::Error &error) { recoverable.push_back(error); },
         [&outcomes](const TaskRequestUpdate &update) { outcomes.push_back(update); });
     ASSERT_TRUE(controller);
-    ASSERT_EQ(presentation.rowCount(), 1);
+    ASSERT_TRUE(waitForRows(presentation, 1, 1000));
     ASSERT_TRUE(owner.withdraw());
     runEventLoopFor(5);
 
