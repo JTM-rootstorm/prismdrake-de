@@ -178,7 +178,6 @@ class FakeOperations:
         self.xorg_query_survives_stop = False
         self.shell_crashes = 0
         self.safe_mode_published = True
-        self.compositor_owned = False
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
         child = FakeChild(1000 + len(self.children))
@@ -250,14 +249,6 @@ class FakeOperations:
         if "_NET_SUPPORTING_WM_CHECK" in command:
             return CommandResult(
                 0, b"_NET_SUPPORTING_WM_CHECK(WINDOW): window id # 0x400001\n"
-            )
-        if command[-1] == "_NET_WM_CM_S0":
-            if self.compositor_owned:
-                return CommandResult(
-                    0, b"_NET_WM_CM_S0(WINDOW): window id # 0x700001\n"
-                )
-            return CommandResult(
-                0, b"_NET_WM_CM_S0:  no such atom on any window.\n"
             )
         if command[-1] == "_NET_CLIENT_LIST_STACKING":
             values = b", ".join(f"0x{window:x}".encode("ascii") for window in self.surface_list)
@@ -1373,7 +1364,7 @@ class LivePortTests(unittest.TestCase):
                     port.cleanup("failure_replay"), Observation(True, True)
                 )
 
-    def test_uncomposited_blur_and_corrupt_file_fallbacks_use_private_live_state(self) -> None:
+    def test_fresh_display_blur_and_corrupt_file_fallbacks_use_private_live_state(self) -> None:
         for identifier in (
             "run_without_compositor",
             "run_with_missing_blur_capability",
@@ -1402,19 +1393,6 @@ class LivePortTests(unittest.TestCase):
 
         with self.assertRaisesRegex(HarnessError, "^desktop_wallpaper_surface_invalid$"):
             port.run_step("failure_replay", "start_with_invalid_wallpaper")
-        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
-
-    def test_uncomposited_fallback_rejects_a_live_compositor_selection_owner(self) -> None:
-        operations = FakeOperations()
-        operations.compositor_owned = True
-        port = LiveXorgHarnessPort(
-            config(installed_paths()), operations, FakeAccessibility(operations)
-        )
-
-        with self.assertRaisesRegex(
-            HarnessError, "^unexpected_compositor_selection_owner$"
-        ):
-            port.run_step("failure_replay", "run_without_compositor")
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
 
     def test_malformed_pin_recovery_requires_a_valid_private_replacement(self) -> None:

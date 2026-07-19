@@ -1237,10 +1237,10 @@ class LiveXorgHarnessPort:
                 raise HarnessError("prismdrake_child_changed_during_window_manager_restart")
         elif identifier == "run_without_compositor":
             self._prepare_restart_state()
-            self._require_uncomposited_fallback_surfaces()
+            self._require_fresh_display_fallback_surfaces()
         elif identifier == "run_with_missing_blur_capability":
             self._prepare_restart_state()
-            self._require_uncomposited_fallback_surfaces()
+            self._require_fresh_display_fallback_surfaces()
             self._require_configuration_value(
                 b'blur_quality = "balanced"\n', "blur_preference_observation_invalid"
             )
@@ -1649,15 +1649,10 @@ class LiveXorgHarnessPort:
         }:
             raise HarnessError("malformed_pin_state_recovery_invalid")
 
-    def _require_uncomposited_fallback_surfaces(self) -> None:
-        compositor = self._run_x11(
-            (str(self._config.xprop), "-root", "_NET_WM_CM_S0")
-        )
-        if compositor.returncode != 0 or re.fullmatch(
-            rb"_NET_WM_CM_S0:  (?:no such atom on any window\.|not found\.)\n?",
-            compositor.stdout,
-        ) is None:
-            raise HarnessError("unexpected_compositor_selection_owner")
+    def _require_fresh_display_fallback_surfaces(self) -> None:
+        # This attests the harness's fresh-display process construction.  It
+        # deliberately does not claim to observe the X compositing-manager
+        # selection owner; that requires GetSelectionOwner, not a root property.
         ownership = self.capture_process_ownership()
         if set(ownership) != {
             "xorg_dummy_server",
@@ -1665,7 +1660,7 @@ class LiveXorgHarnessPort:
             "isolated_session_bus",
             "prismdrake_session",
         }:
-            raise HarnessError("uncomposited_process_ownership_invalid")
+            raise HarnessError("fresh_display_process_ownership_invalid")
         self._component_identities()
         self._require_desktop_wallpaper_surfaces()
         self._require_panel_surfaces()
