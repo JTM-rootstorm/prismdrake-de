@@ -89,9 +89,31 @@ class DockProperties:
 class LiveSession:
     session_pid: int
     settingsd_pid: int
+    notifyd_pid: int
     shell_pid: int
     runtime_directory: Path
     environment: dict[str, str]
+
+
+def isolated_session_environment(
+    temporary_root: Path,
+) -> tuple[dict[str, str], Path]:
+    """Create the private mutable XDG boundary used by one startup trial."""
+    directories = {
+        "XDG_RUNTIME_DIR": temporary_root / "runtime",
+        "XDG_CONFIG_HOME": temporary_root / "config",
+        "XDG_DATA_HOME": temporary_root / "data",
+        "XDG_STATE_HOME": temporary_root / "state",
+        "XDG_CACHE_HOME": temporary_root / "cache",
+    }
+    for directory in directories.values():
+        directory.mkdir(mode=0o700)
+        directory.chmod(0o700)
+    environment = os.environ.copy()
+    environment.update({name: str(path) for name, path in directories.items()})
+    environment["LANG"] = "C.UTF-8"
+    environment["LC_ALL"] = "C.UTF-8"
+    return environment, directories["XDG_RUNTIME_DIR"]
 
 
 def observer_ready_event(payload: bytes) -> bool:
@@ -163,6 +185,7 @@ def parse_arguments() -> object:
     parser = ClosedArgumentParser(add_help=False)
     parser.add_argument("--session", required=True, type=executable)
     parser.add_argument("--settingsd", required=True, type=executable)
+    parser.add_argument("--notifyd", required=True, type=executable)
     parser.add_argument("--shell", required=True, type=executable)
     parser.add_argument("--xev", required=True, type=executable)
     parser.add_argument("--xprop", required=True, type=executable)
@@ -377,6 +400,7 @@ def validate_mapped_dock_inventory(
 def bind_inventory_dock(
     session_pid: int,
     settingsd_executable: Path,
+    notifyd_executable: Path,
     shell_executable: Path,
     xprop: Path,
     environment: dict[str, str],
@@ -385,8 +409,8 @@ def bind_inventory_dock(
     if not mapped_docks:
         return None
     if len(mapped_docks) != 1:
-        _settingsd_pid, expected_shell_pid = supervised_component_pids(
-            session_pid, settingsd_executable, shell_executable
+        _settingsd_pid, _notifyd_pid, expected_shell_pid = supervised_component_pids(
+            session_pid, settingsd_executable, notifyd_executable, shell_executable
         )
         validate_mapped_dock_inventory(mapped_docks, expected_shell_pid)
     dock = mapped_docks[0]
@@ -459,10 +483,17 @@ def bind_dock_to_shell(
 
 
 def supervised_component_pids(
-    session_pid: int, expected_settingsd: Path, expected_shell: Path
-) -> tuple[int, int]:
+    session_pid: int,
+    expected_settingsd: Path,
+    expected_notifyd: Path,
+    expected_shell: Path,
+) -> tuple[int, int, int]:
     children = direct_child_pids(session_pid)
-    matches: dict[Path, list[int]] = {expected_settingsd: [], expected_shell: []}
+    matches: dict[Path, list[int]] = {
+        expected_settingsd: [],
+        expected_notifyd: [],
+        expected_shell: [],
+    }
     for child in children:
         for expected in matches:
             try:
@@ -471,10 +502,16 @@ def supervised_component_pids(
             except OSError:
                 continue
     settingsd = matches[expected_settingsd]
+    notifyd = matches[expected_notifyd]
     shell = matches[expected_shell]
-    if len(settingsd) != 1 or len(shell) != 1 or children != {settingsd[0], shell[0]}:
+    if (
+        len(settingsd) != 1
+        or len(notifyd) != 1
+        or len(shell) != 1
+        or children != {settingsd[0], notifyd[0], shell[0]}
+    ):
         raise CollectorError("supervised_component_tree_invalid")
-    return settingsd[0], shell[0]
+    return settingsd[0], notifyd[0], shell[0]
 
 
 def verify_dock_shell_identity(
@@ -588,15 +625,10 @@ def collect(
     if "DISPLAY" not in os.environ or "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
         raise CollectorError("isolated_display_or_bus_missing")
     with tempfile.TemporaryDirectory(prefix="prismdrake-startup-evidence-") as temporary:
-        runtime = Path(temporary)
-        runtime.chmod(0o700)
+        environment, runtime = isolated_session_environment(Path(temporary))
         observer = InotifyRuntimeTree(runtime)
         selector = selectors.DefaultSelector()
         selector.register(observer.fd, selectors.EVENT_READ, "inotify")
-        environment = os.environ.copy()
-        environment["XDG_RUNTIME_DIR"] = str(runtime)
-        environment["LANG"] = "C.UTF-8"
-        environment["LC_ALL"] = "C.UTF-8"
         xev: subprocess.Popen[bytes] | None = None
         session: subprocess.Popen[bytes] | None = None
         session_pidfd: int | None = None
@@ -632,6 +664,8 @@ def collect(
                         str(options.session),
                         "--settingsd",
                         str(options.settingsd),
+                        "--notifyd",
+                        str(options.notifyd),
                         "--shell",
                         str(options.shell),
                     ],
@@ -688,6 +722,7 @@ def collect(
                             binding = bind_inventory_dock(
                                 session.pid,
                                 options.settingsd,
+                                options.notifyd,
                                 options.shell,
                                 options.xprop,
                                 environment,
@@ -705,8 +740,8 @@ def collect(
                 )
                 mapped_docks = enumerate_mapped_docks(options.xprop, environment)
                 validate_mapped_dock_inventory(mapped_docks, dock_shell_pid)
-                settingsd_pid, shell_pid = supervised_component_pids(
-                    session.pid, options.settingsd, options.shell
+                settingsd_pid, notifyd_pid, shell_pid = supervised_component_pids(
+                    session.pid, options.settingsd, options.notifyd, options.shell
                 )
                 if shell_pid != dock_shell_pid:
                     raise CollectorError("mapped_dock_not_supervised_shell")
@@ -715,6 +750,7 @@ def collect(
                         LiveSession(
                             session.pid,
                             settingsd_pid,
+                            notifyd_pid,
                             shell_pid,
                             runtime,
                             environment.copy(),

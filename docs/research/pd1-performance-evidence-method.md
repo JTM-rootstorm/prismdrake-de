@@ -207,17 +207,18 @@ trial proceeds only when the complete managed set contains exactly the one
 owned dock. All `xprop` stdout is streamed into a fixed 64 KiB buffer; overflow,
 invalid ASCII, timeout, or a malformed inventory fails closed.
 
-Build the three production executables, then run one fresh trial with:
+Build the four production executables, then run one fresh trial with:
 
 ```bash
 cmake --build build/performance-gcc --target \
-  prismdrake-session prismdrake-settingsd prismdrake-shell
+  prismdrake-session prismdrake-settingsd prismdrake-notifyd prismdrake-shell
 dbus-run-session -- python3 tests/integration/run_with_xvfb.py \
   --openbox "$(command -v openbox)" --xprop "$(command -v xprop)" \
   "$(command -v Xvfb)" "$(command -v python3)" -- \
   "$PWD/tests/performance/collect_startup_to_panel.py" \
   --session "$PWD/build/performance-gcc/src/session/prismdrake-session" \
   --settingsd "$PWD/build/performance-gcc/src/settingsd/prismdrake-settingsd" \
+  --notifyd "$PWD/build/performance-gcc/src/notifyd/prismdrake-notifyd" \
   --shell "$PWD/build/performance-gcc/src/shell/runtime/prismdrake-shell" \
   --xev "$(command -v xev)" --xprop "$(command -v xprop)" \
   --stdbuf "$(command -v stdbuf)" \
@@ -228,7 +229,10 @@ dbus-run-session -- python3 tests/integration/run_with_xvfb.py \
 Repeat the complete command, including the outer D-Bus and Xvfb/Openbox setup,
 for each independent sample. The collector fails closed on timeout, multiple
 session instances, safe mode, diagnostics, invalid dock properties, early exit,
-or unbounded shutdown. It emits no PIDs, XIDs, paths, or diagnostic payloads.
+or unbounded shutdown. Each trial uses fresh private runtime, configuration,
+data, state, and cache directories, so accepted XDG-backed state cannot read or
+mutate an ambient user profile. It emits no PIDs, XIDs, paths, or diagnostic
+payloads.
 The live validation wrapper forwards an exact fixed collector failure identifier
 but replaces malformed, unknown, multiline, or otherwise open stderr with its
 own `collector_failed` identifier.
@@ -257,20 +261,21 @@ events, mark the metric blocked. Do not substitute timer polling, CPU
 percentage, context switches, or wakeup estimates and label them as wakeups.
 
 `collect_idle_wakeups.py` performs the five-second settling interval itself,
-verifies each supplied PID resolves to the exact expected executable, captures
-all three roles concurrently, and rejects a changed thread set. It repeats the
+verifies all four supplied process identities resolve to the exact expected
+executables, captures the three budgeted roles concurrently, and rejects a
+changed measured thread set. It repeats the
 exact executable checks after settling and after collection, and terminates and
 reaps every already-started `perf` process group on every exit path. Each perf
 instance starts in a new session; the collector is a child subreaper so the
 bounded TERM/KILL cleanup also adopts and reaps the `sleep` workload child. It
-holds pidfds for all three Prismdrake processes across settling and capture,
+holds pidfds for all four Prismdrake processes across settling and capture,
 checking liveness plus the exact `/proc` executable at every boundary. Invoke it
 only through the bounded same-tree workflow below. The workflow launches one
 supervised session, validates its ready marker and sole owned mapped dock, then
 runs the idle collector before shutting that exact tree down. The idle collector
-independently requires settingsd and shell to be the session's complete direct
-child set and revalidates the endpoint before settling, before capture, and
-after capture:
+independently requires settingsd, notifyd, and shell to be the session's
+complete direct-child set and revalidates the endpoint before settling, before
+capture, and after capture:
 
 ```bash
 dbus-run-session -- python3 tests/integration/run_with_xvfb.py \
@@ -280,6 +285,7 @@ dbus-run-session -- python3 tests/integration/run_with_xvfb.py \
   "$PWD/tests/performance/collect_live_session_performance.py" \
   --session "$PWD/build/performance-gcc/src/session/prismdrake-session" \
   --settingsd "$PWD/build/performance-gcc/src/settingsd/prismdrake-settingsd" \
+  --notifyd "$PWD/build/performance-gcc/src/notifyd/prismdrake-notifyd" \
   --shell "$PWD/build/performance-gcc/src/shell/runtime/prismdrake-shell" \
   --xev "$(command -v xev)" --xprop "$(command -v xprop)" \
   --stdbuf "$(command -v stdbuf)" \

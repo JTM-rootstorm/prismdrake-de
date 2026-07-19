@@ -209,6 +209,7 @@ if(prismdrake_performance_xvfb AND prismdrake_performance_openbox AND
             --
             --session "$<TARGET_FILE:prismdrake-session>"
             --settingsd "$<TARGET_FILE:prismdrake-settingsd>"
+            --notifyd "$<TARGET_FILE:prismdrake-notifyd>"
             --shell "$<TARGET_FILE:prismdrake-shell>"
             --xev "${prismdrake_performance_xev}"
             --xprop "${prismdrake_performance_xprop}"

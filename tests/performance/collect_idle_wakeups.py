@@ -33,6 +33,7 @@ from collector_common import (
 
 PERF_LINE = re.compile(r"^([0-9]+);[^;]*;(sched:sched_wakeup(?:_new)?);.*$")
 ROLES = ("session", "settingsd", "shell")
+IDENTITY_ROLES = ("session", "settingsd", "notifyd", "shell")
 MAXIMUM_THREADS_PER_COMPONENT = 256
 PR_SET_CHILD_SUBREAPER = 36
 COLLECTOR_SHUTDOWN_SECONDS = 2
@@ -44,9 +45,11 @@ def parse_arguments() -> object:
     parser.add_argument("--sleep", required=True, type=executable)
     parser.add_argument("--session-pid", required=True)
     parser.add_argument("--settingsd-pid", required=True)
+    parser.add_argument("--notifyd-pid", required=True)
     parser.add_argument("--shell-pid", required=True)
     parser.add_argument("--session-executable", required=True, type=executable)
     parser.add_argument("--settingsd-executable", required=True, type=executable)
+    parser.add_argument("--notifyd-executable", required=True, type=executable)
     parser.add_argument("--shell-executable", required=True, type=executable)
     parser.add_argument("--xprop", required=True, type=executable)
     parser.add_argument("--runtime-directory", required=True)
@@ -57,10 +60,10 @@ def parse_arguments() -> object:
     options.duration_seconds = positive_integer(options.duration_seconds, 300)
     if options.duration_seconds != 60 and os.environ.get("PRISMDRAKE_PERFORMANCE_TESTING") != "1":
         raise CollectorError("invalid_duration")
-    for role in ROLES:
+    for role in IDENTITY_ROLES:
         value = positive_integer(getattr(options, f"{role}_pid"), 2**31 - 1)
         setattr(options, f"{role}_pid", value)
-    pids = [getattr(options, f"{role}_pid") for role in ROLES]
+    pids = [getattr(options, f"{role}_pid") for role in IDENTITY_ROLES]
     if len(set(pids)) != len(pids):
         raise CollectorError("duplicate_component_pid")
     runtime = Path(options.runtime_directory)
@@ -79,7 +82,7 @@ def verify_executable(pid: int, expected: Path) -> None:
 
 
 def verify_components(options: object) -> None:
-    for role in ROLES:
+    for role in IDENTITY_ROLES:
         verify_executable(
             getattr(options, f"{role}_pid"), getattr(options, f"{role}_executable")
         )
@@ -94,7 +97,7 @@ def pidfd_alive(descriptor: int) -> bool:
 def open_component_pidfds(options: object) -> dict[str, int]:
     descriptors: dict[str, int] = {}
     try:
-        for role in ROLES:
+        for role in IDENTITY_ROLES:
             descriptors[role] = os.pidfd_open(getattr(options, f"{role}_pid"), 0)
     except OSError as error:
         close_pidfds(descriptors)
@@ -111,7 +114,7 @@ def close_pidfds(descriptors: dict[str, int]) -> None:
 
 
 def verify_identity_boundary(options: object, descriptors: dict[str, int]) -> None:
-    for role in ROLES:
+    for role in IDENTITY_ROLES:
         if not pidfd_alive(descriptors[role]):
             raise CollectorError("component_identity_changed")
     verify_components(options)
@@ -121,7 +124,7 @@ def verify_supervised_startup_endpoint(options: object) -> None:
     if "DISPLAY" not in os.environ or "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
         raise CollectorError("isolated_display_or_bus_missing")
     children = direct_child_pids(options.session_pid)
-    if children != {options.settingsd_pid, options.shell_pid}:
+    if children != {options.settingsd_pid, options.notifyd_pid, options.shell_pid}:
         raise CollectorError("supervised_component_tree_invalid")
     observer = InotifyRuntimeTree(options.runtime_directory)
     try:

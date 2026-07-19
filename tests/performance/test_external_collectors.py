@@ -44,12 +44,49 @@ class CommonContractTests(unittest.TestCase):
 
 
 class StartupCollectorTests(unittest.TestCase):
+    def test_startup_trial_isolates_every_mutable_xdg_user_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary_root = Path(directory)
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "XDG_RUNTIME_DIR": "/ambient/runtime",
+                    "XDG_CONFIG_HOME": "/ambient/config",
+                    "XDG_DATA_HOME": "/ambient/data",
+                    "XDG_STATE_HOME": "/ambient/state",
+                    "XDG_CACHE_HOME": "/ambient/cache",
+                },
+            ):
+                environment, runtime = (
+                    collect_startup_to_panel.isolated_session_environment(
+                        temporary_root
+                    )
+                )
+
+            expected = {
+                "XDG_RUNTIME_DIR": temporary_root / "runtime",
+                "XDG_CONFIG_HOME": temporary_root / "config",
+                "XDG_DATA_HOME": temporary_root / "data",
+                "XDG_STATE_HOME": temporary_root / "state",
+                "XDG_CACHE_HOME": temporary_root / "cache",
+            }
+            self.assertEqual(runtime, expected["XDG_RUNTIME_DIR"])
+            for name, path in expected.items():
+                with self.subTest(name=name):
+                    self.assertEqual(environment[name], str(path))
+                    self.assertTrue(path.is_dir())
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(environment["LANG"], "C.UTF-8")
+            self.assertEqual(environment["LC_ALL"], "C.UTF-8")
+
     def test_startup_deadline_is_exactly_the_full_supervisor_readiness_bound(self) -> None:
         arguments = [
             "collect_startup_to_panel.py",
             "--session",
             "/bin/true",
             "--settingsd",
+            "/bin/true",
+            "--notifyd",
             "/bin/true",
             "--shell",
             "/bin/true",
@@ -196,6 +233,7 @@ class StartupCollectorTests(unittest.TestCase):
                     Path("/bin/true"),
                     Path("/bin/true"),
                     Path("/bin/true"),
+                    Path("/bin/true"),
                     {},
                 ),
                 (123, 77),
@@ -254,6 +292,38 @@ class StartupCollectorTests(unittest.TestCase):
                 collect_startup_to_panel.bind_dock_to_shell(
                     100, dock, Path("/bin/true")
                 )
+
+    def test_supervised_tree_requires_settings_notify_and_shell_children(self) -> None:
+        expected_by_pid = {
+            11: Path("/opt/prismdrake-settingsd"),
+            12: Path("/opt/prismdrake-notifyd"),
+            13: Path("/opt/prismdrake-shell"),
+        }
+
+        def same_executable(actual: Path, expected: Path) -> bool:
+            return expected_by_pid[int(actual.parent.name)] == expected
+
+        with (
+            mock.patch.object(
+                collect_startup_to_panel,
+                "direct_child_pids",
+                return_value={11, 12, 13},
+            ),
+            mock.patch.object(
+                collect_startup_to_panel.os.path,
+                "samefile",
+                side_effect=same_executable,
+            ),
+        ):
+            self.assertEqual(
+                collect_startup_to_panel.supervised_component_pids(
+                    10,
+                    expected_by_pid[11],
+                    expected_by_pid[12],
+                    expected_by_pid[13],
+                ),
+                (11, 12, 13),
+            )
 
     def test_observer_readiness_requires_exact_property_notify(self) -> None:
         self.assertFalse(
@@ -331,7 +401,7 @@ class IdleCollectorTests(unittest.TestCase):
         self.assertEqual(command.count("pid == 12 || pid == 34"), 2)
 
     def test_pidfd_guard_rejects_identity_loss_at_a_boundary(self) -> None:
-        descriptors = {"session": 20, "settingsd": 21, "shell": 22}
+        descriptors = {"session": 20, "settingsd": 21, "notifyd": 22, "shell": 23}
         with (
             mock.patch.object(
                 collect_idle_wakeups, "pidfd_alive", side_effect=[True, False]
@@ -355,7 +425,7 @@ class IdleCollectorTests(unittest.TestCase):
             mock.patch.object(
                 collect_idle_wakeups,
                 "direct_child_pids",
-                return_value={11, 12, 13},
+                return_value={11, 12, 13, 14},
             ),
         ):
             with self.assertRaisesRegex(
@@ -371,7 +441,12 @@ class IdleCollectorTests(unittest.TestCase):
             mock.patch.object(
                 collect_idle_wakeups,
                 "open_component_pidfds",
-                return_value={"session": 20, "settingsd": 21, "shell": 22},
+                return_value={
+                    "session": 20,
+                    "settingsd": 21,
+                    "notifyd": 22,
+                    "shell": 23,
+                },
             ),
             mock.patch.object(collect_idle_wakeups, "verify_identity_boundary"),
             mock.patch.object(
@@ -402,7 +477,12 @@ class IdleCollectorTests(unittest.TestCase):
             mock.patch.object(
                 collect_idle_wakeups,
                 "open_component_pidfds",
-                return_value={"session": 20, "settingsd": 21, "shell": 22},
+                return_value={
+                    "session": 20,
+                    "settingsd": 21,
+                    "notifyd": 22,
+                    "shell": 23,
+                },
             ),
             mock.patch.object(collect_idle_wakeups, "verify_identity_boundary"),
             mock.patch.object(
@@ -432,7 +512,12 @@ class IdleCollectorTests(unittest.TestCase):
             mock.patch.object(
                 collect_idle_wakeups,
                 "open_component_pidfds",
-                return_value={"session": 20, "settingsd": 21, "shell": 22},
+                return_value={
+                    "session": 20,
+                    "settingsd": 21,
+                    "notifyd": 22,
+                    "shell": 23,
+                },
             ),
             mock.patch.object(collect_idle_wakeups, "verify_identity_boundary"),
             mock.patch.object(
@@ -459,9 +544,11 @@ class IdleCollectorTests(unittest.TestCase):
             sleep=Path("/bin/true"),
             session_pid=10,
             settingsd_pid=11,
-            shell_pid=12,
+            notifyd_pid=12,
+            shell_pid=13,
             session_executable=Path("/bin/true"),
             settingsd_executable=Path("/bin/true"),
+            notifyd_executable=Path("/bin/true"),
             shell_executable=Path("/bin/true"),
             revision="0" * 40,
             environment_id="contract-test",
@@ -484,7 +571,12 @@ class IdleCollectorTests(unittest.TestCase):
             mock.patch.object(
                 collect_idle_wakeups,
                 "open_component_pidfds",
-                return_value={"session": 20, "settingsd": 21, "shell": 22},
+                return_value={
+                    "session": 20,
+                    "settingsd": 21,
+                    "notifyd": 22,
+                    "shell": 23,
+                },
             ),
             mock.patch.object(
                 collect_idle_wakeups, "verify_identity_boundary"
@@ -505,7 +597,7 @@ class IdleCollectorTests(unittest.TestCase):
         self.assertEqual(verify.call_count, 5)
         self.assertEqual(endpoint.call_count, 5)
         close_pidfds.assert_called_once_with(
-            {"session": 20, "settingsd": 21, "shell": 22}
+            {"session": 20, "settingsd": 21, "notifyd": 22, "shell": 23}
         )
         self.assertTrue(all(call.kwargs["start_new_session"] for call in popen.call_args_list))
         self.assertFalse(document["method"]["contract_eligible"])
@@ -598,6 +690,7 @@ class LiveWorkflowTests(unittest.TestCase):
         options = SimpleNamespace(
             session=Path("/bin/true"),
             settingsd=Path("/bin/true"),
+            notifyd=Path("/bin/true"),
             shell=Path("/bin/true"),
             xev=Path("/bin/true"),
             xprop=Path("/bin/true"),
@@ -610,7 +703,7 @@ class LiveWorkflowTests(unittest.TestCase):
             idle_output=Path("/tmp/idle.json"),
         )
         live = collect_startup_to_panel.LiveSession(
-            10, 11, 12, Path("/tmp/runtime"), {"DISPLAY": ":99"}
+            10, 11, 12, 13, Path("/tmp/runtime"), {"DISPLAY": ":99"}
         )
 
         startup_options = []
@@ -637,10 +730,17 @@ class LiveWorkflowTests(unittest.TestCase):
             collect_live_session_performance.run(options)
         idle_options = idle_collect.call_args.args[0]
         self.assertEqual(
-            (idle_options.session_pid, idle_options.settingsd_pid, idle_options.shell_pid),
-            (10, 11, 12),
+            (
+                idle_options.session_pid,
+                idle_options.settingsd_pid,
+                idle_options.notifyd_pid,
+                idle_options.shell_pid,
+            ),
+            (10, 11, 12, 13),
         )
         self.assertEqual(idle_options.runtime_directory, Path("/tmp/runtime"))
+        self.assertEqual(idle_options.notifyd_executable, Path("/bin/true"))
+        self.assertEqual(startup_options[0].notifyd, Path("/bin/true"))
         self.assertEqual(startup_options[0].timeout_seconds, 10)
         self.assertEqual(write_artifact.call_count, 2)
 

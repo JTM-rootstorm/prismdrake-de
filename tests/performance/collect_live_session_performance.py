@@ -30,7 +30,17 @@ def artifact_path(value: str) -> Path:
 
 def parse_arguments() -> object:
     parser = ClosedArgumentParser(add_help=False)
-    for name in ("session", "settingsd", "shell", "xev", "xprop", "stdbuf", "perf", "sleep"):
+    for name in (
+        "session",
+        "settingsd",
+        "notifyd",
+        "shell",
+        "xev",
+        "xprop",
+        "stdbuf",
+        "perf",
+        "sleep",
+    ):
         parser.add_argument(f"--{name}", required=True, type=executable)
     parser.add_argument("--revision", required=True, type=revision)
     parser.add_argument("--environment-id", required=True, type=environment_id)
@@ -61,9 +71,11 @@ def run(options: object) -> None:
             sleep=options.sleep,
             session_pid=live.session_pid,
             settingsd_pid=live.settingsd_pid,
+            notifyd_pid=live.notifyd_pid,
             shell_pid=live.shell_pid,
             session_executable=options.session,
             settingsd_executable=options.settingsd,
+            notifyd_executable=options.notifyd,
             shell_executable=options.shell,
             xprop=options.xprop,
             runtime_directory=live.runtime_directory,
