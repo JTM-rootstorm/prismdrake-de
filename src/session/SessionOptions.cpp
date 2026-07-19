@@ -92,6 +92,35 @@ validateExecutablePath(const std::filesystem::path &path, PathSource source) {
     return Result<std::filesystem::path>::success(normalized);
 }
 
+[[nodiscard]] Result<std::filesystem::path>
+validateNotificationDefaultPath(const std::filesystem::path &path) {
+    if (path.empty()) {
+        return Result<std::filesystem::path>::success({});
+    }
+
+    const auto native = path.native();
+    if (native.size() > maximumSessionExecutablePathBytes || containsNullByte(native) ||
+        !path.is_absolute()) {
+        return invalidDefault<std::filesystem::path>(
+            "The notification service executable location is invalid.",
+            "Install the packaged notification service at one bounded absolute path.");
+    }
+
+    const auto normalized = path.lexically_normal();
+    if (normalized.empty() || !normalized.is_absolute() || !normalized.has_filename() ||
+        normalized == normalized.root_path()) {
+        return invalidDefault<std::filesystem::path>(
+            "The notification service executable location is invalid.",
+            "Install the packaged notification service at one bounded absolute path.");
+    }
+
+    struct stat status = {};
+    if (::stat(normalized.c_str(), &status) != 0 && (errno == ENOENT || errno == ENOTDIR)) {
+        return Result<std::filesystem::path>::success(normalized);
+    }
+    return validateExecutablePath(normalized, PathSource::compiled_default);
+}
+
 [[nodiscard]] Result<SessionAction> selectAction(SessionAction current, SessionAction requested) {
     if (current != SessionAction::run || requested == SessionAction::run) {
         return invalidUsage<SessionAction>("Conflicting command-line actions were provided.",
@@ -176,13 +205,7 @@ Result<SessionOptions> parseSessionOptions(std::span<const std::string_view> arg
         return Result<SessionOptions>::success(SessionOptions{action, std::nullopt});
     }
     if (!notifyd) {
-        if (pathDefaults.notifydExecutable.empty()) {
-            return invalidUsage<SessionOptions>(
-                "The notification service executable was not specified.",
-                "Specify --notifyd with an absolute executable path.");
-        }
-        auto validated =
-            validateExecutablePath(pathDefaults.notifydExecutable, PathSource::compiled_default);
+        auto validated = validateNotificationDefaultPath(pathDefaults.notifydExecutable);
         if (!validated) {
             return Result<SessionOptions>::failure(validated.error());
         }

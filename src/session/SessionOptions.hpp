@@ -30,7 +30,11 @@ struct SessionPathDefaults final {
     std::filesystem::path shellExecutable;
 };
 
-/// Validated absolute component paths required to start a development session.
+/// Component paths used to start a development session. Critical paths are
+/// validated absolute executables. The bounded absolute notification-service
+/// default may be absent, and an empty path is its explicit packaged-unavailable
+/// marker; neither case is resolved through PATH and both degrade through
+/// supervision.
 struct SessionRuntimeOptions final {
     std::filesystem::path settingsdExecutable;
     std::filesystem::path notifydExecutable;

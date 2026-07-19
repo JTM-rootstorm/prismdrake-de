@@ -76,7 +76,7 @@ TEST(SessionOptionsTest, ExplicitExecutablesOverrideDefaultsIndependently) {
               std::filesystem::path{"/usr/bin/false"}.lexically_normal());
 }
 
-TEST(SessionOptionsTest, RequiresAllRuntimeExecutablesWhenDefaultsAreUnavailable) {
+TEST(SessionOptionsTest, RequiresCriticalRuntimeExecutablesWhenDefaultsAreUnavailable) {
     EXPECT_FALSE(parseSessionOptions({}));
 
     const std::array onlySettingsd{std::string_view{"--settingsd"}, std::string_view{"/bin/true"}};
@@ -87,6 +87,14 @@ TEST(SessionOptionsTest, RequiresAllRuntimeExecutablesWhenDefaultsAreUnavailable
 
     const std::array onlyNotifyd{std::string_view{"--notifyd"}, std::string_view{"/bin/true"}};
     EXPECT_FALSE(parseSessionOptions(onlyNotifyd));
+
+    const std::array criticalComponents{std::string_view{"--settingsd"},
+                                        std::string_view{"/bin/true"}, std::string_view{"--shell"},
+                                        std::string_view{"/bin/false"}};
+    const auto withoutNotifyd = parseSessionOptions(criticalComponents);
+    ASSERT_TRUE(withoutNotifyd);
+    ASSERT_TRUE(withoutNotifyd.value().runtime);
+    EXPECT_TRUE(withoutNotifyd.value().runtime->notifydExecutable.empty());
 }
 
 TEST(SessionOptionsTest, AcceptsEachRuntimeExecutableExactlyOnceInEitherOrder) {
@@ -162,6 +170,14 @@ TEST(SessionOptionsTest, RejectsInvalidUnavailableAndNonExecutablePathsWithoutEc
     EXPECT_EQ(missingResult.error().message.find(missingSentinel), std::string::npos);
     EXPECT_EQ(missingResult.error().recovery.find(missingSentinel), std::string::npos);
 
+    constexpr std::string_view missingNotifydSentinel = "/private/sentinel-notifyd-does-not-exist";
+    const std::array missingNotifyd{std::string_view{"--notifyd"}, missingNotifydSentinel};
+    const auto missingNotifydResult = parseSessionOptions(missingNotifyd, executableDefaults);
+    ASSERT_FALSE(missingNotifydResult);
+    EXPECT_EQ(missingNotifydResult.error().message.find(missingNotifydSentinel), std::string::npos);
+    EXPECT_EQ(missingNotifydResult.error().recovery.find(missingNotifydSentinel),
+              std::string::npos);
+
     const std::array directory{std::string_view{"--shell"}, std::string_view{"/tmp"}};
     EXPECT_FALSE(parseSessionOptions(directory, executableDefaults));
 
@@ -176,6 +192,19 @@ TEST(SessionOptionsTest, RejectsInvalidUnavailableAndNonExecutablePathsWithoutEc
     const std::array oversizedArguments{std::string_view{"--settingsd"},
                                         std::string_view{oversizedPath}};
     EXPECT_FALSE(parseSessionOptions(oversizedArguments, executableDefaults));
+}
+
+TEST(SessionOptionsTest, MissingPackagedNotificationExecutableDefersToDegradedSupervision) {
+    constexpr std::string_view missingNotifyd = "/private/prismdrake-notifyd-does-not-exist";
+    const SessionPathDefaults missingNotificationDefaults{"/bin/true", missingNotifyd,
+                                                          "/bin/false"};
+
+    const auto options = parseSessionOptions({}, missingNotificationDefaults);
+
+    ASSERT_TRUE(options);
+    ASSERT_TRUE(options.value().runtime);
+    EXPECT_EQ(options.value().runtime->notifydExecutable,
+              std::filesystem::path{missingNotifyd}.lexically_normal());
 }
 
 TEST(SessionOptionsTest, RejectsInvalidCompiledDefaultsWithoutEchoingThem) {
