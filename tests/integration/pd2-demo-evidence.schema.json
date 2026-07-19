@@ -99,6 +99,7 @@
         "installed_artifacts_only",
         "capture_mode",
         "tier_c_without_compositor",
+        "tier_c_assertions",
         "glasswyrm_native_protocols",
         "secure_session_claim",
         "production_ready_claim"
@@ -107,6 +108,15 @@
         "installed_artifacts_only": { "const": true },
         "capture_mode": { "const": "live_installed_observations_required" },
         "tier_c_without_compositor": { "const": true },
+        "tier_c_assertions": {
+          "const": [
+            "opaque_materials",
+            "no_shell_side_capture",
+            "no_blur_attempt",
+            "complete_keyboard_operation",
+            "readable_text_and_visible_focus"
+          ]
+        },
         "glasswyrm_native_protocols": { "const": false },
         "secure_session_claim": { "const": false },
         "production_ready_claim": { "const": false }

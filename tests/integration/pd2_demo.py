@@ -20,7 +20,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, NoReturn, Protocol
 
 
 SCHEMA_VERSION = 1
@@ -95,13 +95,13 @@ FAILURE_SCENARIOS = (
     "restart_settingsd",
     "restart_notifyd",
     "restart_shell",
-    "replace_window_manager",
+    "replace_or_restart_window_manager",
     "run_without_compositor",
-    "run_without_blur_capability",
+    "run_with_missing_blur_capability",
     "start_with_invalid_wallpaper",
     "start_with_malformed_pin_state",
     "start_with_malformed_persistent_history",
-    "start_with_conflicting_notification_owner",
+    "start_when_another_notification_owner_exists",
     "lose_x_server",
     "enter_and_exit_safe_mode",
 )
@@ -115,6 +115,13 @@ TIER_C_STEPS = (
     "notification_center",
     "quick_settings",
     "logout",
+)
+TIER_C_ASSERTIONS = (
+    "opaque_materials",
+    "no_shell_side_capture",
+    "no_blur_attempt",
+    "complete_keyboard_operation",
+    "readable_text_and_visible_focus",
 )
 
 PHASES = ("installed_workflow", "failure_replay", "tier_c_replay")
@@ -164,13 +171,21 @@ class Observation:
 class HarnessPort(Protocol):
     """Injected owner of all live X11, D-Bus, process, and fixture operations."""
 
-    def installed_executable_hashes(self) -> Mapping[str, str]: ...
+    def installed_executable_hashes(self) -> Mapping[str, str]:
+        """Hash verified executable files from the Portage-installed package."""
+        ...
 
-    def run_step(self, phase: str, identifier: str) -> Observation: ...
+    def run_step(self, phase: str, identifier: str) -> Observation:
+        """Observe one named predicate, including every Tier C assertion per surface."""
+        ...
 
-    def capture_process_ownership(self) -> Mapping[str, object]: ...
+    def capture_process_ownership(self) -> Mapping[str, object]:
+        """Return distinct opaque identities for the isolated process owners."""
+        ...
 
-    def cleanup(self, phase: str) -> Observation: ...
+    def cleanup(self, phase: str) -> Observation:
+        """Confirm no isolated-run Prismdrake, fixture, WM, bus, or X process remains."""
+        ...
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -303,7 +318,7 @@ def _string_values(value: Any) -> list[str]:
     return []
 
 
-def _raise_backend_failure(error: Exception) -> None:
+def _raise_backend_failure(error: Exception) -> NoReturn:
     if isinstance(error, HarnessError):
         raise error
     raise HarnessError("backend_operation_failed") from error
@@ -337,7 +352,11 @@ def run_harness(source_revision: str, port: HarnessPort) -> dict[str, Any]:
 
     require(re.fullmatch(r"[0-9a-f]{40}", source_revision) is not None,
             "source_revision_invalid")
-    executables = _validate_executables(port.installed_executable_hashes())
+    try:
+        executable_values = port.installed_executable_hashes()
+    except Exception as error:
+        _raise_backend_failure(error)
+    executables = _validate_executables(executable_values)
 
     workflow_results: list[dict[str, Any]] = []
     workflow_failure: Exception | None = None
@@ -400,6 +419,7 @@ def run_harness(source_revision: str, port: HarnessPort) -> dict[str, Any]:
             "installed_artifacts_only": True,
             "capture_mode": "live_installed_observations_required",
             "tier_c_without_compositor": True,
+            "tier_c_assertions": list(TIER_C_ASSERTIONS),
             "glasswyrm_native_protocols": False,
             "secure_session_claim": False,
             "production_ready_claim": False,
@@ -513,6 +533,7 @@ def validate_evidence(document: Any) -> None:
         "installed_artifacts_only": True,
         "capture_mode": "live_installed_observations_required",
         "tier_c_without_compositor": True,
+        "tier_c_assertions": list(TIER_C_ASSERTIONS),
         "glasswyrm_native_protocols": False,
         "secure_session_claim": False,
         "production_ready_claim": False,
