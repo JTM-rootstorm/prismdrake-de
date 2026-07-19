@@ -60,6 +60,41 @@ TEST(DesktopSurfaceControllerTest, RejectsIncompleteScaleAndStaleWallpaperAtomic
     EXPECT_EQ(controller.current(), retained);
 }
 
+TEST(DesktopSurfaceControllerTest, AcceptsIdempotentTopologyAndRejectsEqualGenerationConflicts) {
+    test::RegistryHarness initialRegistry;
+    test::RegistryHarness duplicateRegistry;
+    test::RegistryHarness geometryConflictRegistry;
+    const std::array scales{OutputScaleObservation{"LEFT-1", 1.0},
+                            OutputScaleObservation{"RIGHT-1", 1.0}};
+    DesktopSurfaceController controller;
+    const auto initialWallpaper = test::solidWallpaper(3U);
+    auto initial = controller.prepare(initialRegistry.observe(7U), scales, initialWallpaper);
+    ASSERT_TRUE(initial);
+    controller.commit(std::move(initial).value());
+    const auto retained = controller.current();
+
+    const auto duplicatePlacements = duplicateRegistry.observe(7U);
+    auto duplicate = controller.prepare(duplicatePlacements, scales, initialWallpaper);
+    ASSERT_TRUE(duplicate) << duplicate.error().message;
+    EXPECT_EQ(duplicate.value().snapshot()->topologyGeneration(), 7U);
+
+    const std::array conflictingScales{OutputScaleObservation{"LEFT-1", 1.25},
+                                       OutputScaleObservation{"RIGHT-1", 1.0}};
+    EXPECT_FALSE(
+        controller.prepare(duplicatePlacements, conflictingScales, test::solidWallpaper(4U)));
+
+    const auto conflictingGeometry =
+        geometryConflictRegistry.observe(7U, true, outputs::LogicalRect{12, 0, 500U, 768U});
+    EXPECT_FALSE(controller.prepare(conflictingGeometry, scales, test::solidWallpaper(4U)));
+    EXPECT_EQ(controller.current(), retained);
+
+    auto wallpaperOnly = controller.prepare(duplicatePlacements, scales, test::solidWallpaper(4U));
+    ASSERT_TRUE(wallpaperOnly) << wallpaperOnly.error().message;
+    controller.commit(std::move(wallpaperOnly).value());
+    EXPECT_EQ(controller.current()->topologyGeneration(), 7U);
+    EXPECT_EQ(controller.current()->wallpaper()->generation, 4U);
+}
+
 TEST(DesktopSurfaceControllerTest, RetainsSafeWallpaperAcrossSettingsLossAndOutputRemoval) {
     test::RegistryHarness registry;
     const auto firstPlacements = registry.observe(1U);

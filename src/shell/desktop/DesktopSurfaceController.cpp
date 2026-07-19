@@ -41,6 +41,20 @@ findScale(std::span<const OutputScaleObservation> scales, std::string_view outpu
     return right <= std::numeric_limits<int>::max() && bottom <= std::numeric_limits<int>::max();
 }
 
+[[nodiscard]] bool sameTopology(const DesktopSurfaceSnapshot &current,
+                                std::span<const DesktopSurfaceState> candidate) noexcept {
+    const auto committed = current.surfaces();
+    if (committed.size() != candidate.size()) {
+        return false;
+    }
+    return std::equal(committed.begin(), committed.end(), candidate.begin(),
+                      [](const auto &left, const auto &right) {
+                          return left.outputName == right.outputName &&
+                                 left.logicalGeometry == right.logicalGeometry &&
+                                 left.devicePixelRatio == right.devicePixelRatio;
+                      });
+}
+
 } // namespace
 
 Result<DesktopSurfaceUpdate> DesktopSurfaceController::prepare(
@@ -99,6 +113,11 @@ Result<DesktopSurfaceUpdate> DesktopSurfaceController::prepare(
                             QRect{geometry.x, geometry.y, static_cast<int>(geometry.width),
                                   static_cast<int>(geometry.height)},
                             scale->devicePixelRatio, std::move(layout)});
+    }
+
+    if (current_ && registry.topologyGeneration() == current_->topologyGeneration() &&
+        !sameTopology(*current_, surfaces)) {
+        return invalidPublication<DesktopSurfaceUpdate>();
     }
 
     auto snapshot = std::shared_ptr<const DesktopSurfaceSnapshot>{new DesktopSurfaceSnapshot(
