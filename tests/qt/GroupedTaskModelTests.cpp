@@ -171,8 +171,8 @@ input(const std::shared_ptr<const x11::TaskModelSnapshot> &tasks,
       const std::shared_ptr<const PinStateSnapshot> &pins, config::GroupingMode grouping,
       double width = 1000.0, std::uint64_t widthGeneration = 1U,
       std::uint64_t settingsGeneration = 1U) {
-    return {tasks, associations, catalog, pins, grouping, width, 44.0, 4.0, settingsGeneration,
-            widthGeneration};
+    return {tasks, associations,       catalog,        pins, grouping, width, 44.0,
+            4.0,   settingsGeneration, widthGeneration};
 }
 
 TEST(GroupedTaskModelTest, AlwaysCombinesPinsRunningApplicationsAndUnknownLifetimes) {
@@ -402,12 +402,12 @@ TEST(GroupedTaskPresentationModelTest, AcceptsReplacementSettingsOwnerGeneration
     const auto associationState = associations(fixtures);
     const auto catalogState = catalog({{"editor.desktop", "Editor"}});
     const auto pinState = pins({});
-    const auto previous = buildGroupedTasks(
-        input(taskState, associationState, catalogState, pinState, config::GroupingMode::always,
-              1000.0, 1U, 3U));
-    const auto replacement = buildGroupedTasks(
-        input(taskState, associationState, catalogState, pinState, config::GroupingMode::always,
-              1000.0, 2U, 1U));
+    const auto previous =
+        buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                config::GroupingMode::always, 1000.0, 1U, 3U));
+    const auto replacement =
+        buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                config::GroupingMode::always, 1000.0, 2U, 1U));
     ASSERT_TRUE(previous);
     ASSERT_TRUE(replacement);
 

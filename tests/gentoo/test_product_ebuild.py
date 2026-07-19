@@ -257,12 +257,19 @@ class PackagingGuideContractTests(unittest.TestCase):
     def test_pd2_lifecycle_commands_use_current_collectors_and_driver(self) -> None:
         for command in (
             "pd2_portage_lifecycle_collector.py preflight",
+            "pd2_portage_lifecycle_collector.py package-test",
+            "pd2_portage_lifecycle_collector.py sandbox-tests",
+            "pd2_portage_lifecycle_collector.py linkage",
+            "pd2_portage_lifecycle_collector.py demonstration",
+            "pd2_portage_lifecycle_collector.py reinstall",
             "pd2_portage_lifecycle_collector.py preservation",
             "pd2_portage_lifecycle_collector.py unmerge",
             "pd2_portage_lifecycle_collector.py finalize",
             "pd2_portage_lifecycle_evidence.py",
             "--owned-paths",
-            "--driver tests/integration/pd2_demo.py",
+            "--source-checkout /absolute/clean/prismdrake-de",
+            "--source-bundle /absolute/private/evidence/prismdrake.bundle",
+            "--controlled-window-fixture /absolute/retained-test-build/",
         ):
             with self.subTest(command=command):
                 self.assertIn(command, self.source)

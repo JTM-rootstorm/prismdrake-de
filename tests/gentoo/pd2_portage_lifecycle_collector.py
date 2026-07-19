@@ -35,12 +35,15 @@ from pd2_harness_manifest import capture_harness_manifest
 from pd2_lifecycle_hashes import (
     Pd2LifecycleHashError,
     canonical_executable_sha256,
+    canonical_linkage_sha256,
     canonical_ownership_sha256,
     canonical_regular_ownership_sha256,
     normalize_ownership_records,
     regular_ownership_records,
 )
 from pd2_portage_lifecycle_evidence import (
+    EXCLUDED_TESTS,
+    EXCLUSION_REASONS,
     MAX_EVIDENCE_BYTES,
     Pd2EvidenceError,
     USER_DATA_KINDS,
@@ -56,6 +59,7 @@ EBUILD_RELATIVE_PATH = Path(
     "packaging/gentoo/repository/x11-misc/prismdrake/prismdrake-9999.ebuild"
 )
 BUILD_PROVENANCE_PATH = Path("/usr/share/prismdrake/build-provenance.json")
+EXCLUSION_REGEX = "^(?:" + "|".join(re.escape(name) for name in EXCLUDED_TESTS) + ")$"
 
 
 class Pd2CollectorError(RuntimeError):
@@ -270,6 +274,245 @@ def load_build_provenance(path: Path, revision: str) -> dict[str, Any]:
     return provenance
 
 
+def _binding(attestation: dict[str, Any]) -> dict[str, str]:
+    validate_attestation_document(attestation)
+    return {
+        "source_revision": attestation["source"]["revision"],
+        "ebuild_sha256": attestation["source"]["ebuild_sha256"],
+        "artifact_sha256": attestation["tested_artifact"]["artifact_sha256"],
+    }
+
+
+def _parse_command_json(payload: str) -> Any:
+    _require(0 < len(payload.encode("utf-8")) <= MAX_COMMAND_OUTPUT_BYTES,
+             "observer_output_invalid")
+    try:
+        return json.loads(
+            payload,
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_constant,
+            parse_float=_parse_finite_float,
+        )
+    except (ValueError, json.JSONDecodeError) as error:
+        raise Pd2CollectorError("observer_output_invalid") from error
+
+
+def verify_test_build(
+        build_directory: Path, revision: str,
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+) -> None:
+    """Bind a retained CTest tree to its configured source revision."""
+
+    _require(build_directory.is_absolute() and build_directory.is_dir() and
+             not build_directory.is_symlink(), "test_build_invalid")
+    cache = build_directory / "CMakeCache.txt"
+    _require_sha256(hash_file(cache))
+    try:
+        lines = cache.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        raise Pd2CollectorError("test_build_cache_invalid") from error
+    matches = [line.partition("=")[2] for line in lines if line.startswith(
+        "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL=")]
+    _require(matches == [revision], "test_build_revision_mismatch")
+
+
+def _ctest_names(
+        ctest: Path, build_directory: Path, command_runner: Callable[[list[str], Path | None], str],
+        exclude: bool,
+) -> tuple[str, ...]:
+    command = [str(ctest), "--test-dir", str(build_directory), "--show-only=json-v1"]
+    if exclude:
+        command.extend(("--exclude-regex", EXCLUSION_REGEX))
+    document = _parse_command_json(command_runner(command, None))
+    _require(isinstance(document, dict) and isinstance(document.get("tests"), list),
+             "ctest_inventory_invalid")
+    names = tuple(item.get("name") for item in document["tests"] if isinstance(item, dict))
+    _require(len(names) == len(document["tests"]) and
+             all(isinstance(name, str) for name in names), "ctest_inventory_invalid")
+    return names
+
+
+def capture_package_test(
+        attestation: dict[str, Any], build_directory: Path, controlled_fixture: Path,
+        ctest: Path = Path("/usr/bin/ctest"),
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+) -> dict[str, Any]:
+    """Inventory and execute the exact package-test CTest selection."""
+
+    binding = _binding(attestation)
+    verify_test_build(build_directory, binding["source_revision"], hash_file)
+    _require(hash_file(controlled_fixture) ==
+             attestation["demo_harness"]["controlled_fixture_sha256"],
+             "controlled_fixture_hash_mismatch")
+    all_names = _ctest_names(ctest, build_directory, command_runner, False)
+    included_names = _ctest_names(ctest, build_directory, command_runner, True)
+    excluded = tuple(name for name in all_names if name not in set(included_names))
+    _require(excluded == EXCLUDED_TESTS, "package_test_exclusions_mismatch")
+    _require(len(included_names) > 0, "package_test_empty")
+    command_runner([
+        str(ctest), "--test-dir", str(build_directory), "--output-on-failure",
+        "--parallel", "1", "--no-tests=error", "--exclude-regex", EXCLUSION_REGEX,
+    ], None)
+    return {
+        **binding,
+        "features_test": True,
+        "result": "passed",
+        "executed_test_count": len(included_names),
+        "excluded_tests": list(EXCLUDED_TESTS),
+    }
+
+
+def capture_sandbox_exclusions(
+        attestation: dict[str, Any], build_directory: Path,
+        ctest: Path = Path("/usr/bin/ctest"),
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+) -> list[dict[str, Any]]:
+    """Execute the exact four excluded tests with their required repetition."""
+
+    binding = _binding(attestation)
+    verify_test_build(build_directory, binding["source_revision"], hash_file)
+    all_names = set(_ctest_names(ctest, build_directory, command_runner, False))
+    _require(set(EXCLUDED_TESTS) <= all_names, "sandbox_exclusion_test_missing")
+    records = []
+    for index, (test_id, reason) in enumerate(zip(EXCLUDED_TESTS, EXCLUSION_REASONS)):
+        attempts = 1 if index < 2 else 5
+        for _ in range(attempts):
+            command_runner([
+                str(ctest), "--test-dir", str(build_directory), "--output-on-failure",
+                "--no-tests=error", "--tests-regex", f"^{re.escape(test_id)}$",
+            ], None)
+        records.append({
+            "test_id": test_id,
+            "reason": reason,
+            **binding,
+            "execution_context": "outside_portage_sandbox",
+            "result": "passed",
+            "attempts": attempts,
+            "passes": attempts,
+        })
+    return records
+
+
+def capture_direct_linkage(
+        attestation: dict[str, Any], scanelf: Path = Path("/usr/bin/scanelf"),
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+) -> dict[str, Any]:
+    """Run scanelf over the attested five executable byte identities."""
+
+    binding = _binding(attestation)
+    expected = {item["path"]: item["sha256"]
+                for item in attestation["installed"]["executables"]}
+    paths = [Path(path) for path in INSTALLED_EXECUTABLE_PATHS]
+    _require(all(hash_file(path) == expected[str(path)] for path in paths),
+             "linkage_executable_hash_mismatch")
+    output = command_runner(
+        [str(scanelf), "-BF", "%F;%n", *(str(path) for path in paths)], None,
+    )
+    parsed: dict[str, list[str]] = {}
+    for line in output.splitlines():
+        path, separator, needed = line.partition(";")
+        _require(bool(separator) and path in expected and path not in parsed,
+                 "scanelf_output_invalid")
+        libraries = sorted(item for item in needed.split(",") if item)
+        _require(bool(libraries), "scanelf_output_invalid")
+        parsed[path] = libraries
+    _require(tuple(parsed) == INSTALLED_EXECUTABLE_PATHS, "scanelf_output_invalid")
+    entries = [{"path": path, "executable_sha256": expected[path], "needed": parsed[path]}
+               for path in INSTALLED_EXECUTABLE_PATHS]
+    return {
+        **binding,
+        "tool": "scanelf",
+        "capture_sha256": canonical_linkage_sha256(entries),
+        "entries": entries,
+    }
+
+
+def capture_ordinary_reinstall(
+        attestation: dict[str, Any], owned_paths: list[dict[str, str]],
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+        is_executable: Callable[[Path], bool] = _default_is_executable,
+        provenance_loader: Callable[[Path, str], dict[str, Any]] = load_build_provenance,
+) -> dict[str, Any]:
+    """Recapture exact executable, ownership, and provenance bytes after reinstall."""
+
+    binding = _binding(attestation)
+    ownership_records = normalize_ownership_records(owned_paths)
+    regular_records = regular_ownership_records(ownership_records)
+    ownership = {
+        "tool": "equery",
+        "owner_atom": PACKAGE_VERSIONED_ATOM,
+        "path_count": len(ownership_records),
+        "regular_path_count": len(regular_records),
+        "path_set_sha256": canonical_ownership_sha256(ownership_records),
+        "regular_path_set_sha256": canonical_regular_ownership_sha256(ownership_records),
+        "paths": ownership_records,
+    }
+    paths = tuple(Path(path) for path in INSTALLED_EXECUTABLE_PATHS)
+    _require(all(is_executable(path) for path in paths), "installed_executable_invalid")
+    executables = [{"path": str(path), "sha256": hash_file(path),
+                    "regular_executable": True} for path in paths]
+    provenance_loader(BUILD_PROVENANCE_PATH, binding["source_revision"])
+    _require(hash_file(BUILD_PROVENANCE_PATH) ==
+             attestation["installed"]["build_provenance"]["sha256"],
+             "build_provenance_hash_mismatch")
+    _require(executables == attestation["installed"]["executables"],
+             "ordinary_reinstall_executable_mismatch")
+    _require(ownership == attestation["installed"]["ownership"],
+             "ordinary_reinstall_ownership_mismatch")
+    return {
+        **binding,
+        "provenance": "portage_installed",
+        "use_test": False,
+        "result": "passed",
+        "executables": executables,
+        "ownership": ownership,
+    }
+
+
+def capture_installed_demonstration(
+        attestation: dict[str, Any], phase: str, evidence_path: Path,
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+) -> dict[str, Any]:
+    """Validate and normalize one demo output against attested executable bytes."""
+
+    _require(phase in ("initial_install", "ordinary_reinstall"),
+             "demonstration_phase_invalid")
+    binding = _binding(attestation)
+    document = load_capture_json(evidence_path)
+    integration_path = str(Path(__file__).resolve().parents[1] / "integration")
+    if integration_path not in sys.path:
+        sys.path.insert(0, integration_path)
+    from pd2_demo import validate_evidence as validate_demo  # pylint: disable=import-outside-toplevel
+
+    try:
+        validate_demo(document)
+    except RuntimeError as error:
+        raise Pd2CollectorError("demonstration_evidence_invalid") from error
+    _require(document["source_revision"] == binding["source_revision"],
+             "demonstration_source_revision_mismatch")
+    expected = {
+        Path(item["path"]).name: item["sha256"]
+        for item in attestation["installed"]["executables"]
+    }
+    observed = {item["name"]: item["sha256"]
+                for item in document["installed_executables"]}
+    _require(observed == expected, "demonstration_executable_hash_mismatch")
+    return {
+        "phase": phase,
+        **binding,
+        "result": "passed",
+        "complete": True,
+        "evidence_kind": "pd2_installed_multi_output_failure_demonstration",
+        "evidence_schema_version": 1,
+        "evidence_sha256": hash_file(evidence_path),
+        "normalized_results_sha256": document["normalized_results_sha256"],
+        "harness_manifest_sha256": attestation["demo_harness"]["manifest_sha256"],
+    }
+
+
 def capture_preflight_attestation(
         source_checkout: Path, source_bundle: Path, owned_paths: list[dict[str, str]],
         controlled_fixture: Path, build_provenance: Path = BUILD_PROVENANCE_PATH,
@@ -429,6 +672,31 @@ def main(argv: list[str] | None = None) -> int:
             preservation.add_argument(f"--{phase}-{kind.replace('_', '-')}",
                                       type=Path, required=True)
     preservation.add_argument("--output", type=Path, required=True)
+    package_test = subparsers.add_parser("package-test")
+    package_test.add_argument("--attestation", type=Path, required=True)
+    package_test.add_argument("--test-build", type=Path, required=True)
+    package_test.add_argument("--controlled-window-fixture", type=Path, required=True)
+    package_test.add_argument("--ctest", type=Path, default=Path("/usr/bin/ctest"))
+    package_test.add_argument("--output", type=Path, required=True)
+    sandbox_tests = subparsers.add_parser("sandbox-tests")
+    sandbox_tests.add_argument("--attestation", type=Path, required=True)
+    sandbox_tests.add_argument("--test-build", type=Path, required=True)
+    sandbox_tests.add_argument("--ctest", type=Path, default=Path("/usr/bin/ctest"))
+    sandbox_tests.add_argument("--output", type=Path, required=True)
+    linkage = subparsers.add_parser("linkage")
+    linkage.add_argument("--attestation", type=Path, required=True)
+    linkage.add_argument("--scanelf", type=Path, default=Path("/usr/bin/scanelf"))
+    linkage.add_argument("--output", type=Path, required=True)
+    reinstall = subparsers.add_parser("reinstall")
+    reinstall.add_argument("--attestation", type=Path, required=True)
+    reinstall.add_argument("--owned-paths", type=Path, required=True)
+    reinstall.add_argument("--output", type=Path, required=True)
+    demonstration = subparsers.add_parser("demonstration")
+    demonstration.add_argument("--attestation", type=Path, required=True)
+    demonstration.add_argument("--phase", choices=("initial_install", "ordinary_reinstall"),
+                               required=True)
+    demonstration.add_argument("--evidence", type=Path, required=True)
+    demonstration.add_argument("--output", type=Path, required=True)
     unmerge = subparsers.add_parser("unmerge")
     unmerge.add_argument("--attestation", type=Path, required=True)
     unmerge.add_argument("--output", type=Path, required=True)
@@ -449,6 +717,30 @@ def main(argv: list[str] | None = None) -> int:
             before = {kind: getattr(arguments, f"before_{kind}") for kind in USER_DATA_KINDS}
             after = {kind: getattr(arguments, f"after_{kind}") for kind in USER_DATA_KINDS}
             document = {"user_data": capture_user_state_preservation(before, after)}
+        elif arguments.command == "package-test":
+            attestation = load_attestation(arguments.attestation)
+            document = capture_package_test(
+                attestation, arguments.test_build, arguments.controlled_window_fixture,
+                arguments.ctest,
+            )
+        elif arguments.command == "sandbox-tests":
+            attestation = load_attestation(arguments.attestation)
+            document = {"sandbox_exclusions": capture_sandbox_exclusions(
+                attestation, arguments.test_build, arguments.ctest,
+            )}
+        elif arguments.command == "linkage":
+            attestation = load_attestation(arguments.attestation)
+            document = capture_direct_linkage(attestation, arguments.scanelf)
+        elif arguments.command == "reinstall":
+            attestation = load_attestation(arguments.attestation)
+            owned_paths = load_capture_json(arguments.owned_paths)
+            _require(isinstance(owned_paths, list), "capture_json_shape_invalid")
+            document = capture_ordinary_reinstall(attestation, owned_paths)
+        elif arguments.command == "demonstration":
+            attestation = load_attestation(arguments.attestation)
+            document = capture_installed_demonstration(
+                attestation, arguments.phase, arguments.evidence,
+            )
         elif arguments.command == "unmerge":
             attestation = load_attestation(arguments.attestation)
             validate_attestation_document(attestation)

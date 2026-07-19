@@ -43,7 +43,7 @@ class CMakeInstallContractTests(unittest.TestCase):
 
     def test_runtime_data_manifest_is_complete_and_bounded(self) -> None:
         blocks = install_blocks(ROOT_CMAKE.read_text(encoding="utf-8"))
-        self.assertEqual(len(blocks), 6)
+        self.assertEqual(len(blocks), 7)
         self.assertTrue(all("COMPONENT Runtime" in block for block in blocks))
 
         schemas = {
@@ -81,6 +81,12 @@ class CMakeInstallContractTests(unittest.TestCase):
         )
 
         manifest = "\n".join(blocks)
+        self.assertIn(
+            '"${CMAKE_CURRENT_BINARY_DIR}/build-provenance.json"', manifest
+        )
+        self.assertIn(
+            'DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake"', manifest
+        )
         self.assertIn("data/defaults/config.toml", manifest)
         self.assertIn("data/xsessions/prismdrake.desktop", manifest)
         for profile in ("accessibility", "base", "forge", "lustre"):

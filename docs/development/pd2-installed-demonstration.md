@@ -44,8 +44,10 @@ Run from an exact source checkout matching the installed package. Complete the
 `USE=test` Portage install and capture the non-final installed-artifact
 attestation first, as documented in the
 [Gentoo package lifecycle](../packaging/gentoo-local-repository.md#product-lifecycle-evidence-contract).
-The attestation must bind the same source revision, ebuild, driver, executable
-set, installed ownership set, and packaged data that the demonstration uses.
+The attestation must bind the same clean source revision and bundle `HEAD`,
+ebuild bytes, complete harness manifest, controlled fixture, executable set,
+installed build-provenance file, ownership set, and packaged data that the
+demonstration uses.
 
 The required installed observer boundary includes Xorg dummy, Openbox,
 `dbus-daemon`, `xrandr`, `xprop`, `xwininfo`, `xdotool`, `xwd`, AT-SPI with
@@ -72,8 +74,9 @@ python3 tests/integration/pd2_demo.py \
   --validate-evidence /absolute/private/evidence/pd2-installed-demonstration.json
 ```
 
-The live command checks the installed executable hashes both before and after
-the run. It refuses a source/attestation mismatch, missing installed executable,
+The live command checks installed executable hashes and the canonical harness
+manifest both before and after the run. It refuses a source/attestation
+mismatch, changed helper/schema/fixture, missing installed executable,
 unreviewed observer path, pre-existing output file, unsafe output parent,
 non-private result, or incomplete cleanup.
 

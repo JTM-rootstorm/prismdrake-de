@@ -143,25 +143,58 @@ dependencies, or unmask unrelated packages.
 
 The installed demonstration uses a staged evidence flow so it never depends on
 a result that it is itself expected to produce. After the `USE=test` install,
-write a normalized source object and a JSON array containing the complete
-Portage-owned `/usr` path set. Capture the non-final, mode-0600 preflight
-attestation from the exact matching source driver:
+create an exact `git bundle` from the clean source checkout and write a JSON
+array containing the complete Portage-owned `/usr` path set. Capture the
+non-final, mode-0600 preflight attestation from absolute paths:
 
 ```bash
 python3 tests/gentoo/pd2_portage_lifecycle_collector.py preflight \
-  --source /absolute/private/evidence/source.json \
+  --source-checkout /absolute/clean/prismdrake-de \
+  --source-bundle /absolute/private/evidence/prismdrake.bundle \
   --owned-paths /absolute/private/evidence/owned-paths.json \
-  --driver tests/integration/pd2_demo.py \
+  --controlled-window-fixture /absolute/retained-test-build/tests/integration/prismdrake-controlled-window-fixture \
   --output /absolute/private/evidence/pd2-installed-preflight.json
 ```
 
-The preflight command measures the fixed `/usr/bin/prismdrake-*` executable
-set itself and rejects an ownership capture that omits a required packaged
-default, theme, schema, interface, translation catalog, X session entry, or
-reviewed document. The demonstration validates the attestation before and after
-one complete cleaned run so executable or driver drift fails closed at both
-boundaries. It is not final lifecycle evidence and cannot claim the unmerge or
-reinstall passed.
+The preflight command requires a clean checkout, verifies that the bundle's
+sole `HEAD` is the checkout `HEAD`, hashes the ebuild from that checkout, and
+checks `/usr/share/prismdrake/build-provenance.json` against the same revision.
+It also measures the fixed `/usr/bin/prismdrake-*` set and rejects ownership
+that omits required packaged data. Its canonical harness manifest covers every
+imported live helper, validator, schema, and the controlled fixture binary.
+The demonstration recomputes that complete manifest before and after each run.
+
+Execute and normalize the retained package-test selection, the exact four
+outside-sandbox tests, installed linkage, and each demo through the collector:
+
+```bash
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py package-test \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --test-build /absolute/retained-test-build \
+  --controlled-window-fixture /absolute/retained-test-build/tests/integration/prismdrake-controlled-window-fixture \
+  --output /absolute/private/evidence/pd2-package-test.json
+
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py sandbox-tests \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --test-build /absolute/retained-test-build \
+  --output /absolute/private/evidence/pd2-sandbox-tests.json
+
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py linkage \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --output /absolute/private/evidence/pd2-linkage.json
+
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --phase initial_install \
+  --evidence /absolute/private/evidence/pd2-installed-demonstration.json \
+  --output /absolute/private/evidence/pd2-initial-demonstration.json
+```
+
+The CTest collectors verify the retained build's configured source revision;
+the package selection is inventoried before execution so exactly the four
+reviewed tests are excluded. The outside-sandbox collector executes the two
+exact-environment tests once and both Openbox tests five times. Linkage is
+measured by `scanelf` only after the five executable hashes match preflight.
 
 After unmerge, capture both package-file absence and byte-identical preservation
 of the three user-owned state files. These commands only inspect supplied paths;
@@ -180,6 +213,22 @@ python3 tests/gentoo/pd2_portage_lifecycle_collector.py preservation \
   --after-pins /absolute/private/evidence/after/pins.json \
   --after-notification-history /absolute/private/evidence/after/notification-history.json \
   --output /absolute/private/evidence/pd2-user-state-preservation.json
+```
+
+After the ordinary non-`USE=test` reinstall, recapture complete ownership and
+installed bytes rather than writing reinstall success into a draft:
+
+```bash
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py reinstall \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --owned-paths /absolute/private/evidence/reinstalled-owned-paths.json \
+  --output /absolute/private/evidence/pd2-ordinary-reinstall.json
+
+python3 tests/gentoo/pd2_portage_lifecycle_collector.py demonstration \
+  --attestation /absolute/private/evidence/pd2-installed-preflight.json \
+  --phase ordinary_reinstall \
+  --evidence /absolute/private/evidence/pd2-reinstalled-demonstration.json \
+  --output /absolute/private/evidence/pd2-reinstalled-demonstration-record.json
 ```
 
 After every phase has actually completed, finalize a draft that already

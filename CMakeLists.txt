@@ -79,7 +79,8 @@ configure_file(
     @ONLY)
 install(
     FILES "${CMAKE_CURRENT_BINARY_DIR}/build-provenance.json"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake")
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/prismdrake"
+    COMPONENT Runtime)
 
 add_library(prismdrake-cpp-policy INTERFACE)
 add_library(Prismdrake::cpp-policy ALIAS prismdrake-cpp-policy)

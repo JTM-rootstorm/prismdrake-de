@@ -288,9 +288,9 @@ Result<void> WallpaperLoader::load(WallpaperRequest request, QObject *context,
                  "Submit a generation newer than the current wallpaper settings."});
         }
         state->latestGeneration = request.generation;
-        state->pending = std::make_unique<State::Pending>(State::Pending{
-            state->ownerEpoch, std::move(request), QPointer<QObject>{context},
-            std::move(completion)});
+        state->pending = std::make_unique<State::Pending>(
+            State::Pending{state->ownerEpoch, std::move(request), QPointer<QObject>{context},
+                           std::move(completion)});
         if (!state->workerScheduled) {
             state->workerScheduled = true;
             startWorker = true;
@@ -350,8 +350,7 @@ Result<void> WallpaperLoader::load(WallpaperRequest request, QObject *context,
             }
             QMetaObject::invokeMethod(
                 work->context,
-                [state, ownerEpoch, guard = work->context,
-                 completion = std::move(work->completion),
+                [state, ownerEpoch, guard = work->context, completion = std::move(work->completion),
                  snapshot = std::move(snapshot)]() mutable {
                     if (!guard) {
                         return;

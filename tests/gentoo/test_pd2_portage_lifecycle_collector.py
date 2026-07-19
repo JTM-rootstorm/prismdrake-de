@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import stat
+import sys
 import tempfile
 import unittest
 
@@ -22,6 +23,11 @@ from pd2_portage_lifecycle_collector import (
     Pd2CollectorError,
     atomic_write_json,
     capture_preflight_attestation,
+    capture_direct_linkage,
+    capture_installed_demonstration,
+    capture_ordinary_reinstall,
+    capture_package_test,
+    capture_sandbox_exclusions,
     capture_unmerge_absence,
     capture_user_state_preservation,
     finalize_lifecycle,
@@ -30,6 +36,7 @@ from pd2_portage_lifecycle_collector import (
     verify_exact_source,
 )
 from pd2_portage_lifecycle_evidence import (
+    EXCLUDED_TESTS,
     USER_DATA_KINDS,
     example_evidence_document,
 )
@@ -247,6 +254,120 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             with self.assertRaisesRegex(Pd2CollectorError,
                                         "^source_checkout_not_clean$"):
                 verify_exact_source(checkout, bundle, hash_file, dirty)
+
+    def test_executes_exact_package_and_outside_sandbox_ctest_selections(self) -> None:
+        attestation = example_attestation_document()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            build = root / "build"
+            build.mkdir()
+            (build / "CMakeCache.txt").write_text(
+                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
+                f"{attestation['source']['revision']}\n",
+                encoding="utf-8",
+            )
+            fixture = root / "fixture"
+            fixture.write_bytes(b"fixture")
+            ordinary = "ContractTest.Ordinary"
+            all_names = (ordinary, *EXCLUDED_TESTS)
+            calls: list[list[str]] = []
+
+            def runner(command: list[str], cwd: Path | None) -> str:
+                del cwd
+                calls.append(command)
+                if "--show-only=json-v1" in command:
+                    selected = (ordinary,) if "--exclude-regex" in command else all_names
+                    return json.dumps({"tests": [{"name": name} for name in selected]})
+                return ""
+
+            def hash_file(path: Path) -> str:
+                if path == fixture:
+                    return attestation["demo_harness"]["controlled_fixture_sha256"]
+                return "1" * 64
+
+            package = capture_package_test(
+                attestation, build, fixture, hash_file=hash_file, command_runner=runner,
+            )
+            self.assertEqual(package["executed_test_count"], 1)
+            self.assertEqual(tuple(package["excluded_tests"]), EXCLUDED_TESTS)
+            self.assertIn("--exclude-regex", calls[-1])
+
+            calls.clear()
+            exclusions = capture_sandbox_exclusions(
+                attestation, build, hash_file=hash_file, command_runner=runner,
+            )
+            self.assertEqual([item["attempts"] for item in exclusions], [1, 1, 5, 5])
+            executions = [call for call in calls if "--tests-regex" in call]
+            self.assertEqual(len(executions), 12)
+
+    def test_scanelf_and_reinstall_are_bound_to_attested_bytes(self) -> None:
+        attestation = example_attestation_document()
+        hashes = {item["path"]: item["sha256"]
+                  for item in attestation["installed"]["executables"]}
+        hashes[str(BUILD_PROVENANCE_PATH)] = \
+            attestation["installed"]["build_provenance"]["sha256"]
+        scanelf_output = "\n".join(
+            f"{path};libstdc++.so.6{',libtomlplusplus.so.3' if index == 1 else ''}"
+            for index, path in enumerate(INSTALLED_EXECUTABLE_PATHS)
+        ) + "\n"
+        linkage = capture_direct_linkage(
+            attestation,
+            hash_file=lambda path: hashes[str(path)],
+            command_runner=lambda command, cwd: scanelf_output,
+        )
+        self.assertEqual(tuple(item["path"] for item in linkage["entries"]),
+                         INSTALLED_EXECUTABLE_PATHS)
+
+        reinstall = capture_ordinary_reinstall(
+            attestation,
+            copy.deepcopy(attestation["installed"]["ownership"]["paths"]),
+            hash_file=lambda path: hashes[str(path)],
+            is_executable=lambda path: str(path) in INSTALLED_EXECUTABLE_PATHS,
+            provenance_loader=lambda path, revision: {
+                "schema_version": 1, "source_revision": revision},
+        )
+        self.assertEqual(reinstall["executables"],
+                         attestation["installed"]["executables"])
+        self.assertEqual(reinstall["ownership"], attestation["installed"]["ownership"])
+
+    def test_normalizes_demo_output_from_attested_executable_hashes(self) -> None:
+        integration_path = str(Path(__file__).resolve().parents[1] / "integration")
+        if integration_path not in sys.path:
+            sys.path.insert(0, integration_path)
+        import pd2_demo  # pylint: disable=import-outside-toplevel
+
+        attestation = example_attestation_document()
+        executable_hashes = {
+            Path(item["path"]).name: item["sha256"]
+            for item in attestation["installed"]["executables"]
+        }
+
+        class Port:
+            def installed_executable_hashes(self):
+                return executable_hashes
+
+            def capture_process_ownership(self):
+                return {role: object() for role in pd2_demo.PROCESS_ROLES}
+
+            def run_step(self, phase, identifier):
+                del phase, identifier
+                return pd2_demo.Observation(True, True)
+
+            def cleanup(self, phase):
+                del phase
+                return pd2_demo.Observation(True, True)
+
+        evidence = pd2_demo.run_harness(attestation["source"]["revision"], Port())
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "demo.json"
+            path.write_text(json.dumps(evidence), encoding="utf-8")
+            capture = capture_installed_demonstration(
+                attestation, "initial_install", path,
+            )
+        self.assertEqual(capture["normalized_results_sha256"],
+                         evidence["normalized_results_sha256"])
+        self.assertEqual(capture["harness_manifest_sha256"],
+                         attestation["demo_harness"]["manifest_sha256"])
 
 
 if __name__ == "__main__":
