@@ -572,11 +572,18 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             build = root / "build"
             source.mkdir()
             build.mkdir()
+            revision = "1" * 40
+            (build / "CMakeCache.txt").write_text(
+                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
+                f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
+                encoding="utf-8",
+            )
             contract = source / collector.CTEST_INVENTORY_RELATIVE_PATH
             contract.parent.mkdir(parents=True)
             inventory = [{
                 "name": "ContractTest.Ordinary",
-                "command": [str(build / "test-command"), f"--source={source}"],
+                "command": [str(build / "test-command"), f"--source={source}",
+                            "--revision", revision],
                 "properties": [
                     {"name": "WORKING_DIRECTORY", "value": str(build / "tests")},
                     {"name": "ENVIRONMENT", "value": [f"SOURCE={source}"]},
@@ -641,7 +648,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 source, build, diagnostic_only, lambda _path: "1" * 64,
             )
 
-    def test_ctest_contract_normalizes_exact_source_and_build_roots(self) -> None:
+    def test_ctest_contract_normalizes_exact_source_build_roots_and_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source_a = root / "a/source"
@@ -651,16 +658,32 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             for path in (source_a, build_a, source_b, build_b):
                 path.mkdir(parents=True)
 
-            def inventory(source: Path, build: Path) -> list[dict]:
+            revision_a = "1" * 40
+            revision_b = "2" * 40
+            for source, build, revision in (
+                    (source_a, build_a, revision_a),
+                    (source_b, build_b, revision_b)):
+                (build / "CMakeCache.txt").write_text(
+                    "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
+                    f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
+                    encoding="utf-8",
+                )
+
+            def inventory(source: Path, build: Path, revision: str) -> list[dict]:
                 return [{
                     "name": "ContractTest.Ordinary",
-                    "command": [str(build / "test-command"), f"--source={source}"],
+                    "command": [str(build / "test-command"), f"--source={source}",
+                                "--revision", revision],
                     "properties": [
                         {"name": "WORKING_DIRECTORY", "value": str(build / "tests")},
                         {"name": "ENVIRONMENT", "value": [f"SOURCE={source}"]},
                         {
                             "name": "UNKNOWN_NESTED_PROPERTY",
-                            "value": {"source": str(source), "build": [str(build)]},
+                            "value": {
+                                "source": str(source),
+                                "build": [str(build)],
+                                "revision": revision,
+                            },
                         },
                         {
                             "name": "DEF_SOURCE_LINE",
@@ -671,12 +694,95 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
 
             self.assertEqual(
                 collector._canonical_ctest_inventory_sha256(
-                    inventory(source_a, build_a), build_a, source_a,
+                    inventory(source_a, build_a, revision_a), build_a, source_a,
                 ),
                 collector._canonical_ctest_inventory_sha256(
-                    inventory(source_b, build_b), build_b, source_b,
+                    inventory(source_b, build_b, revision_b), build_b, source_b,
                 ),
             )
+
+            changed_command = inventory(source_b, build_b, revision_b)
+            changed_command[0]["command"].append("--changed")
+            self.assertNotEqual(
+                collector._canonical_ctest_inventory_sha256(
+                    inventory(source_a, build_a, revision_a), build_a, source_a,
+                ),
+                collector._canonical_ctest_inventory_sha256(
+                    changed_command, build_b, source_b,
+                ),
+            )
+
+            changed_property = inventory(source_b, build_b, revision_b)
+            changed_property[0]["properties"][2]["value"]["extra"] = True
+            self.assertNotEqual(
+                collector._canonical_ctest_inventory_sha256(
+                    inventory(source_a, build_a, revision_a), build_a, source_a,
+                ),
+                collector._canonical_ctest_inventory_sha256(
+                    changed_property, build_b, source_b,
+                ),
+            )
+
+            first_revision_hash = collector._canonical_ctest_inventory_sha256(
+                inventory(source_a, build_a, revision_a), build_a, source_a,
+            )
+            (build_a / "CMakeCache.txt").write_text(
+                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
+                f"{revision_b}\nCMAKE_HOME_DIRECTORY:INTERNAL={source_a}\n",
+                encoding="utf-8",
+            )
+            second_revision_hash = collector._canonical_ctest_inventory_sha256(
+                inventory(source_a, build_a, revision_b), build_a, source_a,
+            )
+            self.assertEqual(first_revision_hash, second_revision_hash)
+
+    def test_ctest_contract_rejects_missing_malformed_or_forged_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            build = root / "build"
+            source.mkdir()
+            build.mkdir()
+            inventory = [{"name": "ContractTest.Ordinary", "command": ["/bin/true"]}]
+            cache = build / "CMakeCache.txt"
+
+            cache.write_text(
+                f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(Pd2CollectorError,
+                                        "^test_build_revision_invalid$"):
+                collector._canonical_ctest_inventory_sha256(
+                    inventory, build, source,
+                )
+
+            cache.write_text(
+                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL=NOT-A-REVISION\n"
+                f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(Pd2CollectorError,
+                                        "^test_build_revision_invalid$"):
+                collector._canonical_ctest_inventory_sha256(
+                    inventory, build, source,
+                )
+
+            revision = "3" * 40
+            cache.write_text(
+                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
+                f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
+                encoding="utf-8",
+            )
+            forged = [{
+                "name": "ContractTest.Ordinary",
+                "command": ["/bin/true", "${REVISION}"],
+            }]
+            with self.assertRaisesRegex(
+                    Pd2CollectorError,
+                    "^ctest_inventory_revision_placeholder_invalid$"):
+                collector._canonical_ctest_inventory_sha256(
+                    forged, build, source,
+                )
 
     def test_command_output_is_bounded_while_child_runs(self) -> None:
         with mock.patch.object(collector, "MAX_COMMAND_OUTPUT_BYTES", 1024):

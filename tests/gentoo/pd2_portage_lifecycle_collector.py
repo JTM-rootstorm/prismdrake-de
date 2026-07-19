@@ -647,12 +647,11 @@ def _is_within(path: Path, root: Path) -> bool:
         return False
 
 
-def verify_test_build(
-        build_directory: Path, source_checkout: Path, revision: str,
+def _configured_test_build_revision(
+        build_directory: Path, source_checkout: Path,
         hash_file: Callable[[Path], str] = sha256_regular_file,
-        command_runner: Callable[[list[str], Path | None], str] = run_checked,
-) -> None:
-    """Bind a retained CTest tree to one exact clean source checkout."""
+) -> str:
+    """Read one exact lifecycle revision from a source-bound CMake cache."""
 
     _require(build_directory.is_absolute() and build_directory.is_dir() and
              not build_directory.is_symlink(), "test_build_invalid")
@@ -668,8 +667,24 @@ def verify_test_build(
         "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL=")]
     source_matches = [line.partition("=")[2] for line in lines if line.startswith(
         "CMAKE_HOME_DIRECTORY:INTERNAL=")]
-    _require(revision_matches == [revision], "test_build_revision_mismatch")
     _require(source_matches == [str(source_checkout)], "test_build_source_mismatch")
+    _require(len(revision_matches) == 1 and
+             re.fullmatch(r"[0-9a-f]{40}", revision_matches[0]) is not None,
+             "test_build_revision_invalid")
+    return revision_matches[0]
+
+
+def verify_test_build(
+        build_directory: Path, source_checkout: Path, revision: str,
+        hash_file: Callable[[Path], str] = sha256_regular_file,
+        command_runner: Callable[[list[str], Path | None], str] = run_checked,
+) -> None:
+    """Bind a retained CTest tree to one exact clean source checkout."""
+
+    configured_revision = _configured_test_build_revision(
+        build_directory, source_checkout, hash_file,
+    )
+    _require(configured_revision == revision, "test_build_revision_mismatch")
     observed_revision = command_runner(
         ["/usr/bin/git", "rev-parse", "--verify", "HEAD"], source_checkout,
     ).strip()
@@ -715,18 +730,27 @@ def _canonical_ctest_inventory_sha256(
 ) -> str:
     """Hash ordered CTest commands and behavior properties independent of roots."""
 
+    configured_revision = _configured_test_build_revision(
+        build_directory, source_checkout,
+    )
     try:
         build_root = str(build_directory.resolve(strict=True))
         source_root = str(source_checkout.resolve(strict=True))
     except (OSError, RuntimeError) as error:
         raise Pd2CollectorError("ctest_inventory_root_invalid") from error
     replacements = sorted(
-        ((build_root, "${BUILD}"), (source_root, "${SOURCE}")),
+        (
+            (build_root, "${BUILD}"),
+            (source_root, "${SOURCE}"),
+            (configured_revision, "${REVISION}"),
+        ),
         key=lambda item: len(item[0]), reverse=True,
     )
 
     def normalize(value: Any) -> Any:
         if isinstance(value, str):
+            _require("${REVISION}" not in value,
+                     "ctest_inventory_revision_placeholder_invalid")
             for root, token in replacements:
                 value = value.replace(root, token)
             return value

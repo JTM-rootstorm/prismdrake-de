@@ -338,8 +338,9 @@ The CTest collectors require the retained build's exact clean source directory
 and configured revision, compare the complete ordered inventory to
 `tests/gentoo/pd2-ctest-inventory-v1.json`, and bind the source-owned contract
 to every ordered test name, command, and CTest behavior property. Exact source
-and build roots are normalized before hashing so disposable paths do not change
-the contract; diagnostic source-line and backtrace metadata is excluded.
+and build roots and the single source-bound configured revision are normalized
+before hashing so disposable paths and a later exact revision do not change the
+reviewed contract; diagnostic source-line and backtrace metadata is excluded.
 Unknown or newly introduced behavior properties therefore require an explicit
 contract review. The collectors additionally hash project-owned command files
 and the controlled fixture, then parse CTest JUnit output. A disabled, failed,
