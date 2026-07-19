@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace prismdrake::x11 {
@@ -14,6 +16,7 @@ namespace prismdrake::x11 {
 inline constexpr std::size_t maximumTopologyOutputs = 64U;
 inline constexpr std::size_t maximumTopologyCrtcs = 64U;
 inline constexpr std::size_t maximumTopologyModes = 4096U;
+inline constexpr std::size_t maximumOutputNameBytes = 255U;
 /// Aggregate ceiling for each future wire-level RandR reply consumed by this policy layer.
 inline constexpr std::size_t maximumTopologyReplyBytes = 1024U * 1024U;
 inline constexpr double pd1OutputScale = 1.0;
@@ -105,6 +108,9 @@ struct OutputCandidate final {
     std::int64_t yPx;
     std::uint64_t widthPx;
     std::uint64_t heightPx;
+    /// Stable RandR output name. Empty is accepted only for legacy synthetic
+    /// observations that do not participate in screen reconciliation.
+    std::string name{};
 };
 
 /// Complete decoded input to the display-free topology validator and selector.
@@ -122,9 +128,14 @@ struct ActiveOutput final {
     OutputId outputId;
     CrtcId crtcId;
     OutputGeometry geometry;
+    std::string name;
 
     friend bool operator==(const ActiveOutput &, const ActiveOutput &) = default;
 };
+
+/// Output names are copied from the bounded RandR reply and restricted to
+/// well-formed control-free UTF-8 before they become shell placement identity.
+[[nodiscard]] bool isStableOutputName(std::string_view name) noexcept;
 
 enum class OutputSelectionReason : std::uint8_t {
     randrPrimary,

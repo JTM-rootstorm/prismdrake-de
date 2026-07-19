@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -314,6 +315,7 @@ struct OutputInfoData final {
     std::uint8_t connection;
     std::uint32_t crtc;
     std::vector<std::uint32_t> modes;
+    std::string name;
 };
 
 [[nodiscard]] Result<OutputInfoData> readOutputInfo(xcb_connection_t *native, std::uint32_t output,
@@ -353,15 +355,21 @@ struct OutputInfoData final {
     std::vector<std::uint32_t> crtcs;
     std::vector<std::uint32_t> modes;
     std::vector<std::uint32_t> clones;
+    const auto *nameBytes = xcb_randr_get_output_info_name(reply.get());
+    if (nameBytes == nullptr || reply->name_len == 0U) {
+        return malformedReply<OutputInfoData>();
+    }
+    std::string name{reinterpret_cast<const char *>(nameBytes), reply->name_len};
     if (!copyWireList(xcb_randr_get_output_info_crtcs(reply.get()), reply->num_crtcs, crtcs) ||
         !copyWireList(xcb_randr_get_output_info_modes(reply.get()), reply->num_modes, modes) ||
         !copyWireList(xcb_randr_get_output_info_clones(reply.get()), reply->num_clones, clones) ||
         !randrOutputInfoListsAreValid({reply->crtc, crtcs, modes, clones},
-                                      {resources.crtcs, resources.outputs, resources.modes})) {
+                                      {resources.crtcs, resources.outputs, resources.modes}) ||
+        !isStableOutputName(name)) {
         return malformedReply<OutputInfoData>();
     }
     return Result<OutputInfoData>::success(
-        OutputInfoData{reply->connection, reply->crtc, std::move(modes)});
+        OutputInfoData{reply->connection, reply->crtc, std::move(modes), std::move(name)});
 }
 
 struct CrtcInfoData final {
@@ -495,7 +503,7 @@ struct TopologyData final {
         }
         activeOutputs.push_back(OutputCandidate{output.value(), crtc.value(), crtcInfo.value().x,
                                                 crtcInfo.value().y, crtcInfo.value().width,
-                                                crtcInfo.value().height});
+                                                crtcInfo.value().height, outputInfo.value().name});
     }
 
     std::optional<OutputId> primary;

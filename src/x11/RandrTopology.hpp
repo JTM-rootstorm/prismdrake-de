@@ -20,7 +20,7 @@ inline constexpr std::uint32_t requiredRandrMajorVersion = 1U;
 inline constexpr std::uint32_t requiredRandrMinorVersion = 2U;
 inline constexpr std::uint32_t primaryOutputRandrMinorVersion = 3U;
 inline constexpr std::uint32_t resourceChangeRandrMinorVersion = 4U;
-inline constexpr std::size_t maximumRandrOutputNameBytes = 255U;
+inline constexpr std::size_t maximumRandrOutputNameBytes = maximumOutputNameBytes;
 
 inline constexpr std::uint16_t randrScreenChangeMask = 1U;
 inline constexpr std::uint16_t randrCrtcChangeMask = 2U;
@@ -66,8 +66,8 @@ struct RandrEventFields final {
     std::uint8_t notifySubCode;
 };
 
-/// Copied identifier lists from one GetOutputInfo reply. No output name bytes
-/// are retained or exposed by the topology protocol.
+/// Copied identifier lists from one GetOutputInfo reply. Output names are
+/// validated and copied separately before publication.
 struct RandrOutputInfoListsView final {
     std::uint32_t activeCrtc;
     std::span<std::uint32_t> allowedCrtcs;

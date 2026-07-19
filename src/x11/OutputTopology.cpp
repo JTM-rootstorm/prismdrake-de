@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 
@@ -65,6 +66,50 @@ template <typename Identifier>
 }
 
 } // namespace
+
+bool isStableOutputName(std::string_view name) noexcept {
+    if (name.empty() || name.size() > maximumOutputNameBytes) {
+        return false;
+    }
+    std::size_t index = 0U;
+    while (index < name.size()) {
+        const auto first = static_cast<unsigned char>(name[index]);
+        std::uint32_t codepoint = 0U;
+        std::size_t continuationCount = 0U;
+        if (first <= 0x7fU) {
+            codepoint = first;
+        } else if (first >= 0xc2U && first <= 0xdfU) {
+            codepoint = first & 0x1fU;
+            continuationCount = 1U;
+        } else if (first >= 0xe0U && first <= 0xefU) {
+            codepoint = first & 0x0fU;
+            continuationCount = 2U;
+        } else if (first >= 0xf0U && first <= 0xf4U) {
+            codepoint = first & 0x07U;
+            continuationCount = 3U;
+        } else {
+            return false;
+        }
+        if (continuationCount > name.size() - index - 1U) {
+            return false;
+        }
+        for (std::size_t continuation = 0U; continuation < continuationCount; ++continuation) {
+            const auto byte = static_cast<unsigned char>(name[index + continuation + 1U]);
+            if ((byte & 0xc0U) != 0x80U) {
+                return false;
+            }
+            codepoint = (codepoint << 6U) | (byte & 0x3fU);
+        }
+        if ((continuationCount == 2U && codepoint < 0x800U) ||
+            (continuationCount == 3U && codepoint < 0x10000U) ||
+            (codepoint >= 0xd800U && codepoint <= 0xdfffU) || codepoint > 0x10ffffU ||
+            codepoint <= 0x1fU || (codepoint >= 0x7fU && codepoint <= 0x9fU)) {
+            return false;
+        }
+        index += continuationCount + 1U;
+    }
+    return true;
+}
 
 Result<OutputId> OutputId::fromProtocol(Value value) {
     if (value == 0U) {
@@ -149,6 +194,13 @@ Result<OutputTopologySnapshot> buildOutputTopology(const OutputTopologyObservati
     std::vector<std::pair<CrtcId, OutputGeometry>> crtcGeometries;
     crtcGeometries.reserve(observation.activeOutputs.size());
     for (const auto &candidate : observation.activeOutputs) {
+        if ((!candidate.name.empty() && !isStableOutputName(candidate.name)) ||
+            (!candidate.name.empty() && std::find_if(activeOutputs.begin(), activeOutputs.end(),
+                                                     [&candidate](const auto &item) {
+                                                         return item.name == candidate.name;
+                                                     }) != activeOutputs.end())) {
+            return invalidTopology();
+        }
         if (std::find_if(activeOutputs.begin(), activeOutputs.end(),
                          [&candidate](const auto &item) {
                              return item.outputId == candidate.outputId;
@@ -170,7 +222,7 @@ Result<OutputTopologySnapshot> buildOutputTopology(const OutputTopologyObservati
             crtcGeometries.emplace_back(candidate.crtcId, geometry.value());
         }
         activeOutputs.push_back(
-            ActiveOutput{candidate.outputId, candidate.crtcId, geometry.value()});
+            ActiveOutput{candidate.outputId, candidate.crtcId, geometry.value(), candidate.name});
     }
     if (crtcGeometries.size() > observation.resourceCrtcCount) {
         return invalidTopology();
