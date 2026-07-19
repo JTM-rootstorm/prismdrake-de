@@ -161,6 +161,15 @@ set_tests_properties(Pd2LiveNotificationWorkflowContractTest PROPERTIES
     TIMEOUT 10)
 
 add_test(
+    NAME Pd2NotificationFailureReplayContractTest
+    COMMAND
+        "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_notification_failure_replay.py")
+set_tests_properties(Pd2NotificationFailureReplayContractTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    TIMEOUT 10)
+
+add_test(
     NAME Pd2LiveSettingsWorkflowContractTest
     COMMAND
         "${Python3_EXECUTABLE}"
