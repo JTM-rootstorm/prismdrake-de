@@ -19,6 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pd2_live_xorg as live_xorg  # noqa: E402
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation  # noqa: E402
 from pd2_live_notification_workflow import WorkflowResult  # noqa: E402
+from pd2_live_lifecycle_workflow import (  # noqa: E402
+    STEP_CATEGORIES as LIFECYCLE_STEP_CATEGORIES,
+    WorkflowResult as LifecycleWorkflowResult,
+)
 from pd2_live_settings_workflow import (  # noqa: E402
     RESULT_CATEGORIES as SETTINGS_RESULT_CATEGORIES,
     SettingsWorkflowResult,
@@ -615,6 +619,15 @@ class FakeNotificationWorkflow:
         return self._run("clear_history")
 
 
+class FakeLifecycleWorkflow:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def run_step(self, identifier: str) -> LifecycleWorkflowResult:
+        self.calls.append(identifier)
+        return LifecycleWorkflowResult(LIFECYCLE_STEP_CATEGORIES[identifier])
+
+
 class FakeClosable:
     def __init__(self) -> None:
         self.close_calls = 0
@@ -1061,6 +1074,25 @@ class NotificationFailureReplayAdapterTests(unittest.TestCase):
 
 
 class LivePortTests(unittest.TestCase):
+    def test_routes_installed_lifecycle_steps_but_reserves_cleanup_for_adapter(self) -> None:
+        port = LiveXorgHarnessPort(config(), FakeOperations())
+        workflow = FakeLifecycleWorkflow()
+        port._lifecycle_workflow = workflow  # noqa: SLF001 - injected hermetic port
+
+        identifiers = tuple(LIFECYCLE_STEP_CATEGORIES)[:-1]
+        for identifier in identifiers:
+            self.assertEqual(
+                port.run_step("installed_workflow", identifier),
+                Observation(True, True),
+            )
+        self.assertEqual(workflow.calls, list(identifiers))
+        with self.assertRaisesRegex(
+            HarnessError, "^lifecycle_cleanup_step_is_adapter_owned$"
+        ):
+            port.run_step(
+                "installed_workflow", "verify_clean_test_environment_cleanup"
+            )
+
     def test_starts_real_adapter_commands_and_observes_two_output_topology(self) -> None:
         operations = FakeOperations()
         port = LiveXorgHarnessPort(config(), operations)
