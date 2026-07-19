@@ -86,7 +86,15 @@ exact source revision, reference-environment identity, and `pd2-live-v1`
 method identity. The collector rejects missing or mismatched bindings, stale
 reviewed-skip policy, observer diagnostics, incomplete cleanup, and Qt below
 6.11. It validates the complete contract before atomically creating a private
-mode-0600 artifact.
+mode-0600 artifact. Publication is create-only: a retained or concurrently
+created artifact is never replaced.
+
+Before invoking an observer, the collector uses the fixed system Git executable
+to require that its own repository is the clean checkout at the requested
+revision. Every observer executable must resolve to a nonsymlinked file inside
+that checkout. Evidence inputs and outputs therefore belong outside the source
+checkout; placing them in the checkout would intentionally fail the cleanliness
+attestation.
 
 The command requires exact environment, performance, accessibility,
 internationalization, and cleanup observer executables. Search catalog sizes,
@@ -142,7 +150,7 @@ measurements from four sources:
 - the production asset runner supplies icon decode, exact-key cache hit, and
   wallpaper decode-to-context-thread publication timing; and
 - the assembled scheduler series supplies repeated whole-minute received
-  wakeup totals across the exact session, settingsd, and shell roles.
+  wakeup totals across the exact session, settingsd, notifyd, and shell roles.
 
 The installed demonstration artifact is authoritative for exact source
 revision, installed executable hashes, workflow postconditions, and cleanup.
@@ -160,10 +168,10 @@ installed-demonstration artifact for the same revision:
 python3 tests/performance/pd2_runtime_performance.py \
   --source-revision "$(git rev-parse HEAD)" \
   --environment-id gentoo-amd64-qemu-system \
-  --installed-demo-evidence "$PWD/pd2-installed-demo.json" \
+  --installed-demo-evidence "/absolute/private/evidence/pd2-installed-demo.json" \
   --controlled-window-fixture "$PWD/build/gcc-debug/tests/integration/prismdrake-controlled-window-fixture" \
   --iterations 3 \
-  --output "$PWD/pd2-runtime-performance.json"
+  --output "/absolute/private/evidence/pd2-runtime-performance.json"
 ```
 
 Collect the strict 60-second idle artifact through the same-tree workflow in
@@ -175,10 +183,10 @@ paths, PIDs, thread IDs, XIDs, or diagnostic payloads:
 python3 tests/performance/pd2_idle_series.py \
   --source-revision "$(git rev-parse HEAD)" \
   --environment-id gentoo-amd64-qemu-system \
-  --input "$PWD/pd2-idle-1.json" \
-  --input "$PWD/pd2-idle-2.json" \
-  --input "$PWD/pd2-idle-3.json" \
-  --output "$PWD/pd2-idle-series.json"
+  --input "/absolute/private/evidence/pd2-idle-1.json" \
+  --input "/absolute/private/evidence/pd2-idle-2.json" \
+  --input "/absolute/private/evidence/pd2-idle-3.json" \
+  --output "/absolute/private/evidence/pd2-idle-series.json"
 ```
 
 Each input must be a distinct regular file from a separately collected trial,
@@ -206,9 +214,9 @@ env \
   PRISMDRAKE_PD2_BUILD_DIRECTORY="$PWD/build/gcc-debug" \
   PRISMDRAKE_PD2_PERFORMANCE_RUNNER="$PWD/build/gcc-debug/tests/performance/prismdrake-pd1-performance-evidence" \
   PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER="$PWD/build/gcc-debug/tests/performance/prismdrake-pd2-asset-performance" \
-  PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE="$PWD/pd2-runtime-performance.json" \
-  PRISMDRAKE_PD2_IDLE_SERIES="$PWD/pd2-idle-series.json" \
-  PRISMDRAKE_PD2_PD1_EVIDENCE="$PWD/pd1-performance.json" \
+  PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE="/absolute/private/evidence/pd2-runtime-performance.json" \
+  PRISMDRAKE_PD2_IDLE_SERIES="/absolute/private/evidence/pd2-idle-series.json" \
+  PRISMDRAKE_PD2_PD1_EVIDENCE="/absolute/private/evidence/pd1-performance.json" \
   python3 tests/performance/collect_pd2_live_evidence.py \
     --source-revision "$(git rev-parse HEAD)" \
     --environment-id gentoo-amd64-qemu-system \
@@ -218,16 +226,16 @@ env \
     --limitation "Reference VM measurements do not define release budgets" \
     --observer "$PWD/tests/performance/pd2_reference_observer.py" \
     --accessibility-observer "$PWD/tests/accessibility/pd2_accessibility_observer.py" \
-    --output "$PWD/pd2-performance-accessibility.json"
+    --output "/absolute/private/evidence/pd2-performance-accessibility.json"
 ```
 
 `PD1_REVISION` above is a placeholder for the exact lowercase PD1 evidence
 revision. The remaining documented observer dependencies and any reviewed
 accessibility skips must also be supplied for a complete live collection.
-The dedicated accessibility observer uses the VM's GI `Atspi` binding. The RTL
-and expanded-string routes pass only when CTest reports the complete exact
-five-test and six-test selections respectively; a partial or broadened regex
-selection fails closed.
+The dedicated accessibility observer uses the VM's GI `Atspi` binding. Qt
+translation routing, RTL, and expanded-string routes pass only when CTest
+reports their complete exact five-test, five-test, and six-test selections
+respectively; a partial or broadened regex selection fails closed.
 The CTest, translated-fragment, model, and asset routes read the build's
 configured source revision and source directory from `CMakeCache.txt`, then
 require that directory to be a clean Git checkout at the requested revision.
