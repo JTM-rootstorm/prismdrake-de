@@ -10,6 +10,7 @@ FocusScope {
     required property var presentation
     required property var themeGeneration
     property real maximumHistoryHeight: 640
+    property int layoutDirection: Qt.locale().textDirection
     readonly property bool serviceAvailable: presentation !== null
         && presentation !== undefined
         && presentation.serviceAvailable
@@ -61,6 +62,8 @@ FocusScope {
     implicitWidth: 460
     implicitHeight: Math.min(content.implicitHeight, maximumHistoryHeight)
     activeFocusOnTab: true
+    LayoutMirroring.enabled: layoutDirection === Qt.RightToLeft
+    LayoutMirroring.childrenInherit: true
     Accessible.role: Accessible.Pane
     Accessible.name: qsTr("Notification center")
     Accessible.description: qsTr("Notification history and do not disturb controls")
@@ -128,6 +131,12 @@ FocusScope {
                     && root.presentation.effectiveDoNotDisturb
                 enabled: root.serviceAvailable
                 activeFocusOnTab: false
+                implicitHeight: Math.max(root.themeGeneration.notification.minimumTargetSize,
+                                         implicitContentHeight)
+                implicitWidth: Math.max(root.themeGeneration.notification.minimumTargetSize,
+                                        implicitContentWidth)
+                Layout.minimumHeight: root.themeGeneration.notification.minimumTargetSize
+                Layout.minimumWidth: root.themeGeneration.notification.minimumTargetSize
                 Accessible.role: Accessible.CheckBox
                 Accessible.name: text
                 Accessible.description: qsTr("Suppress non-critical transient notifications")
@@ -159,6 +168,17 @@ FocusScope {
                     root.closeAndReturnFocus()
                     event.accepted = true
                 }
+                Keys.onUpPressed: function(event) {
+                    root.focusExitBackward()
+                    event.accepted = true
+                }
+                Keys.onDownPressed: function(event) {
+                    if (clearButton.visible)
+                        clearButton.forceActiveFocus(Qt.TabFocusReason)
+                    else
+                        root.focusHistory(true)
+                    event.accepted = true
+                }
             }
 
             Button {
@@ -171,6 +191,12 @@ FocusScope {
                 enabled: visible
                 text: qsTr("Clear")
                 activeFocusOnTab: false
+                implicitHeight: Math.max(root.themeGeneration.notification.minimumTargetSize,
+                                         implicitContentHeight)
+                implicitWidth: Math.max(root.themeGeneration.notification.minimumTargetSize,
+                                        implicitContentWidth)
+                Layout.minimumHeight: root.themeGeneration.notification.minimumTargetSize
+                Layout.minimumWidth: root.themeGeneration.notification.minimumTargetSize
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("Clear notification history")
                 Accessible.description: qsTr("Remove retained notifications while preserving live notifications")
@@ -189,6 +215,14 @@ FocusScope {
                 }
                 Keys.onEscapePressed: function(event) {
                     root.closeAndReturnFocus()
+                    event.accepted = true
+                }
+                Keys.onUpPressed: function(event) {
+                    dndSwitch.forceActiveFocus(Qt.BacktabFocusReason)
+                    event.accepted = true
+                }
+                Keys.onDownPressed: function(event) {
+                    root.focusHistory(true)
                     event.accepted = true
                 }
             }

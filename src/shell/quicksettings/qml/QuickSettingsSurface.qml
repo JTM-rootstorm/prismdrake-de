@@ -9,6 +9,7 @@ FocusScope {
 
     required property var quickSettingsModel
     required property var themeGeneration
+    property int layoutDirection: Qt.locale().textDirection
 
     readonly property var tokens: themeGeneration.notification
     readonly property int focusableControlCount: 5
@@ -71,15 +72,37 @@ FocusScope {
         closeRequested()
     }
 
+    function accessibleAdapterDescription(adapter) {
+        return qsTr("%1 Current state: %2.")
+            .arg(adapter.description.length > 0 ? adapter.description : qsTr("No description."))
+            .arg(adapter.stateText.length > 0 ? adapter.stateText : qsTr("Unavailable"))
+    }
+
+    function handleVertical(index, direction, event) {
+        event.accepted = true
+        focusNextFrom(index, direction,
+                      direction > 0 ? Qt.TabFocusReason : Qt.BacktabFocusReason)
+    }
+
+    function handleHorizontal(index, visualDirection, event) {
+        const logicalDirection = layoutDirection === Qt.RightToLeft
+            ? -visualDirection : visualDirection
+        handleVertical(index, logicalDirection, event)
+    }
+
     Keys.priority: Keys.BeforeItem
     Keys.onEscapePressed: event => closeFromEscape(event)
 
     Accessible.role: Accessible.Pane
     Accessible.name: qsTr("Quick settings")
-    Accessible.description: qsTr("Prismdrake profile, notifications, session, and diagnostics")
+    Accessible.description: opaqueFallbackActive
+        ? qsTr("Prismdrake profile, notifications, session, and diagnostics. Opaque fallback is active.")
+        : qsTr("Prismdrake profile, notifications, session, and diagnostics.")
 
     implicitWidth: 380
     implicitHeight: contents.implicitHeight + 24
+    LayoutMirroring.enabled: layoutDirection === Qt.RightToLeft
+    LayoutMirroring.childrenInherit: true
 
     Rectangle {
         anchors.fill: parent
@@ -120,6 +143,7 @@ FocusScope {
                 id: lustreProfile
                 objectName: "quickSettingsLustreProfile"
                 Layout.fillWidth: true
+                Layout.minimumHeight: root.tokens.minimumTargetSize
                 implicitHeight: Math.max(root.tokens.minimumTargetSize, implicitContentHeight)
                 text: qsTr("Lustre")
                 checked: root.quickSettingsModel.profile.valueId === "lustre"
@@ -129,7 +153,8 @@ FocusScope {
 
                 Accessible.role: Accessible.RadioButton
                 Accessible.name: qsTr("Use Prismdrake Lustre")
-                Accessible.description: root.quickSettingsModel.profile.description
+                Accessible.description: root.accessibleAdapterDescription(
+                                            root.quickSettingsModel.profile)
                 Accessible.checked: checked
                 Accessible.focusable: enabled
                 Accessible.focused: activeFocus
@@ -139,6 +164,10 @@ FocusScope {
                 Keys.onTabPressed: event => root.handleForward(0, event)
                 Keys.onBacktabPressed: event => root.handleBackward(0, event)
                 Keys.onEscapePressed: event => root.closeFromEscape(event)
+                Keys.onUpPressed: event => root.handleVertical(0, -1, event)
+                Keys.onDownPressed: event => root.handleVertical(0, 1, event)
+                Keys.onLeftPressed: event => root.handleHorizontal(0, -1, event)
+                Keys.onRightPressed: event => root.handleHorizontal(0, 1, event)
                 onClicked: root.quickSettingsModel.requestLustreProfile()
             }
 
@@ -146,6 +175,7 @@ FocusScope {
                 id: forgeProfile
                 objectName: "quickSettingsForgeProfile"
                 Layout.fillWidth: true
+                Layout.minimumHeight: root.tokens.minimumTargetSize
                 implicitHeight: Math.max(root.tokens.minimumTargetSize, implicitContentHeight)
                 text: qsTr("Forge")
                 checked: root.quickSettingsModel.profile.valueId === "forge"
@@ -155,7 +185,8 @@ FocusScope {
 
                 Accessible.role: Accessible.RadioButton
                 Accessible.name: qsTr("Use Prismdrake Forge")
-                Accessible.description: root.quickSettingsModel.profile.description
+                Accessible.description: root.accessibleAdapterDescription(
+                                            root.quickSettingsModel.profile)
                 Accessible.checked: checked
                 Accessible.focusable: enabled
                 Accessible.focused: activeFocus
@@ -165,11 +196,17 @@ FocusScope {
                 Keys.onTabPressed: event => root.handleForward(1, event)
                 Keys.onBacktabPressed: event => root.handleBackward(1, event)
                 Keys.onEscapePressed: event => root.closeFromEscape(event)
+                Keys.onUpPressed: event => root.handleVertical(1, -1, event)
+                Keys.onDownPressed: event => root.handleVertical(1, 1, event)
+                Keys.onLeftPressed: event => root.handleHorizontal(1, -1, event)
+                Keys.onRightPressed: event => root.handleHorizontal(1, 1, event)
                 onClicked: root.quickSettingsModel.requestForgeProfile()
             }
         }
 
         Label {
+            id: profileDescription
+            objectName: "quickSettingsProfileDescription"
             Layout.fillWidth: true
             text: root.quickSettingsModel.profile.description
             color: root.quickSettingsModel.profile.failed
@@ -183,6 +220,7 @@ FocusScope {
             id: doNotDisturb
             objectName: "quickSettingsDoNotDisturb"
             Layout.fillWidth: true
+            Layout.minimumHeight: root.tokens.minimumTargetSize
             implicitHeight: Math.max(root.tokens.minimumTargetSize, implicitContentHeight)
             text: qsTr("Do not disturb")
             checked: root.quickSettingsModel.doNotDisturb.checked
@@ -192,7 +230,8 @@ FocusScope {
 
             Accessible.role: Accessible.CheckBox
             Accessible.name: qsTr("Do not disturb")
-            Accessible.description: root.quickSettingsModel.doNotDisturb.description
+            Accessible.description: root.accessibleAdapterDescription(
+                                        root.quickSettingsModel.doNotDisturb)
             Accessible.checked: checked
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
@@ -202,10 +241,14 @@ FocusScope {
             Keys.onTabPressed: event => root.handleForward(2, event)
             Keys.onBacktabPressed: event => root.handleBackward(2, event)
             Keys.onEscapePressed: event => root.closeFromEscape(event)
+            Keys.onUpPressed: event => root.handleVertical(2, -1, event)
+            Keys.onDownPressed: event => root.handleVertical(2, 1, event)
             onClicked: root.quickSettingsModel.requestDoNotDisturb(checked)
         }
 
         Label {
+            id: doNotDisturbDescription
+            objectName: "quickSettingsDoNotDisturbDescription"
             Layout.fillWidth: true
             text: root.quickSettingsModel.doNotDisturb.description
             color: root.quickSettingsModel.doNotDisturb.failed
@@ -219,6 +262,7 @@ FocusScope {
             id: notificationCenter
             objectName: "quickSettingsNotificationCenter"
             Layout.fillWidth: true
+            Layout.minimumHeight: root.tokens.minimumTargetSize
             implicitHeight: Math.max(root.tokens.minimumTargetSize, implicitContentHeight)
             text: qsTr("Open notification center")
             enabled: root.quickSettingsModel.notificationCenter.interactive
@@ -227,7 +271,8 @@ FocusScope {
 
             Accessible.role: Accessible.Button
             Accessible.name: text
-            Accessible.description: root.quickSettingsModel.notificationCenter.description
+            Accessible.description: root.accessibleAdapterDescription(
+                                        root.quickSettingsModel.notificationCenter)
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
             Accessible.onPressAction: clicked()
@@ -236,6 +281,8 @@ FocusScope {
             Keys.onTabPressed: event => root.handleForward(3, event)
             Keys.onBacktabPressed: event => root.handleBackward(3, event)
             Keys.onEscapePressed: event => root.closeFromEscape(event)
+            Keys.onUpPressed: event => root.handleVertical(3, -1, event)
+            Keys.onDownPressed: event => root.handleVertical(3, 1, event)
             onClicked: root.quickSettingsModel.requestNotificationCenter()
         }
 
@@ -243,6 +290,7 @@ FocusScope {
             id: logout
             objectName: "quickSettingsLogout"
             Layout.fillWidth: true
+            Layout.minimumHeight: root.tokens.minimumTargetSize
             implicitHeight: Math.max(root.tokens.minimumTargetSize, implicitContentHeight)
             text: qsTr("Log out")
             enabled: root.quickSettingsModel.logout.interactive
@@ -251,7 +299,8 @@ FocusScope {
 
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("Request logout")
-            Accessible.description: root.quickSettingsModel.logout.description
+            Accessible.description: root.accessibleAdapterDescription(
+                                        root.quickSettingsModel.logout)
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
             Accessible.onPressAction: clicked()
@@ -260,6 +309,8 @@ FocusScope {
             Keys.onTabPressed: event => root.handleForward(4, event)
             Keys.onBacktabPressed: event => root.handleBackward(4, event)
             Keys.onEscapePressed: event => root.closeFromEscape(event)
+            Keys.onUpPressed: event => root.handleVertical(4, -1, event)
+            Keys.onDownPressed: event => root.handleVertical(4, 1, event)
             onClicked: root.quickSettingsModel.requestLogout()
         }
 
@@ -275,7 +326,8 @@ FocusScope {
             Accessible.role: Accessible.StaticText
             Accessible.name: qsTr("Diagnostics summary: %1")
                                 .arg(root.quickSettingsModel.diagnostics.stateText)
-            Accessible.description: root.quickSettingsModel.diagnostics.description
+            Accessible.description: root.accessibleAdapterDescription(
+                                        root.quickSettingsModel.diagnostics)
 
             ColumnLayout {
                 id: diagnosticsColumn

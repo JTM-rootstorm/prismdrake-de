@@ -9,6 +9,7 @@ Item {
 
     required property var presentation
     required property NotificationPresentationTokens tokens
+    property int layoutDirection: Qt.locale().textDirection
 
     readonly property bool hasPresentation: presentation !== null
         && presentation !== undefined
@@ -41,15 +42,12 @@ Item {
             return qsTr("Normal priority")
         }
     }
-    readonly property string accessibleDescription: {
-        let parts = []
-        if (presentationApplicationName.length > 0)
-            parts.push(presentationApplicationName)
-        parts.push(urgencyLabel)
-        if (presentationBody.length > 0)
-            parts.push(presentationBody)
-        return parts.join(". ")
-    }
+    readonly property string accessibleDescription:
+        qsTr("Application: %1. Priority: %2. Message: %3.")
+            .arg(presentationApplicationName.length > 0
+                 ? presentationApplicationName : qsTr("Not provided"))
+            .arg(urgencyLabel)
+            .arg(presentationBody.length > 0 ? presentationBody : qsTr("Not provided"))
 
     signal focusExitForward
     signal focusExitBackward
@@ -161,6 +159,8 @@ Item {
     implicitWidth: 420
     implicitHeight: content.implicitHeight + tokens.cardPadding * 2
     activeFocusOnTab: true
+    LayoutMirroring.enabled: layoutDirection === Qt.RightToLeft
+    LayoutMirroring.childrenInherit: true
     Accessible.role: Accessible.Notification
     Accessible.name: presentationSummary
     Accessible.description: accessibleDescription
@@ -180,6 +180,14 @@ Item {
             presentation.requestDismissal()
             event.accepted = true
         }
+    }
+    Keys.onUpPressed: function(event) {
+        root.focusExitBackward()
+        event.accepted = true
+    }
+    Keys.onDownPressed: function(event) {
+        root.focusExitForward()
+        event.accepted = true
     }
 
     Rectangle {
@@ -312,6 +320,8 @@ Item {
                     implicitHeight: root.tokens.minimumTargetSize
                     implicitWidth: Math.max(root.tokens.minimumTargetSize,
                                             contentItem.implicitWidth + leftPadding + rightPadding)
+                    Layout.minimumHeight: root.tokens.minimumTargetSize
+                    Layout.minimumWidth: root.tokens.minimumTargetSize
                     leftPadding: 12
                     rightPadding: 12
                     Accessible.role: Accessible.Button
@@ -319,6 +329,7 @@ Item {
                     Accessible.description: qsTr("Notification action for %1").arg(root.presentationSummary)
                     Accessible.focusable: enabled
                     Accessible.focused: activeFocus
+                    Accessible.pressed: down
                     Accessible.onPressAction: {
                         if (actionButton.enabled)
                             actionButton.clicked()
@@ -333,6 +344,24 @@ Item {
                     }
                     Keys.onBacktabPressed: function(event) {
                         root.moveFocusFrom(actionButton, -1)
+                        event.accepted = true
+                    }
+                    Keys.onLeftPressed: function(event) {
+                        root.moveFocusFrom(actionButton,
+                                           root.layoutDirection === Qt.RightToLeft ? 1 : -1)
+                        event.accepted = true
+                    }
+                    Keys.onRightPressed: function(event) {
+                        root.moveFocusFrom(actionButton,
+                                           root.layoutDirection === Qt.RightToLeft ? -1 : 1)
+                        event.accepted = true
+                    }
+                    Keys.onUpPressed: function(event) {
+                        root.focusExitBackward()
+                        event.accepted = true
+                    }
+                    Keys.onDownPressed: function(event) {
+                        root.focusExitForward()
                         event.accepted = true
                     }
                     Keys.onEscapePressed: function(event) {
@@ -380,11 +409,14 @@ Item {
                 activeFocusOnTab: false
                 implicitHeight: root.tokens.minimumTargetSize
                 implicitWidth: Math.max(root.tokens.minimumTargetSize, contentItem.implicitWidth + 24)
+                Layout.minimumHeight: root.tokens.minimumTargetSize
+                Layout.minimumWidth: root.tokens.minimumTargetSize
                 Accessible.role: Accessible.Button
                 Accessible.name: text
                 Accessible.description: qsTr("Dismiss %1").arg(root.presentationSummary)
                 Accessible.focusable: visible
                 Accessible.focused: activeFocus
+                Accessible.pressed: down
                 Accessible.onPressAction: dismissButton.clicked()
                 onClicked: {
                     if (root.presentationDismissible)
@@ -396,6 +428,24 @@ Item {
                 }
                 Keys.onBacktabPressed: function(event) {
                     root.moveFocusFrom(dismissButton, -1)
+                    event.accepted = true
+                }
+                Keys.onLeftPressed: function(event) {
+                    root.moveFocusFrom(dismissButton,
+                                       root.layoutDirection === Qt.RightToLeft ? 1 : -1)
+                    event.accepted = true
+                }
+                Keys.onRightPressed: function(event) {
+                    root.moveFocusFrom(dismissButton,
+                                       root.layoutDirection === Qt.RightToLeft ? -1 : 1)
+                    event.accepted = true
+                }
+                Keys.onUpPressed: function(event) {
+                    root.focusExitBackward()
+                    event.accepted = true
+                }
+                Keys.onDownPressed: function(event) {
+                    root.focusExitForward()
                     event.accepted = true
                 }
                 Keys.onEscapePressed: function(event) {

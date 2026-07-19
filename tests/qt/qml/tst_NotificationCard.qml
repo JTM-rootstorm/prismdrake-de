@@ -94,6 +94,9 @@ TestCase {
         tokens: tokens
     }
 
+    SignalSpy { id: forwardSpy; target: card; signalName: "focusExitForward" }
+    SignalSpy { id: backwardSpy; target: card; signalName: "focusExitBackward" }
+
     function initTestCase() {
         actionModel.append({"action": firstAction, "label": firstAction.label})
         actionModel.append({"action": disabledAction, "label": disabledAction.label})
@@ -109,6 +112,13 @@ TestCase {
         tokens.opaqueFallbackActive = false
         tokens.highContrast = false
         tokens.surfaceColor = "#2c3956"
+        tokens.minimumTargetSize = 48
+        tokens.bodyFontPixels = 14
+        card.layoutDirection = Qt.LeftToRight
+        cardFixture.summary = "<b>Literal summary</b>"
+        cardFixture.body = "Literal <script>body</script> & text"
+        forwardSpy.clear()
+        backwardSpy.clear()
         card.focusCard()
         tryCompare(card, "activeFocus", true)
     }
@@ -182,6 +192,45 @@ TestCase {
         tryCompare(action2, "activeFocus", true)
         keyClick(Qt.Key_Escape)
         compare(dismissRequests, 1)
+    }
+
+    function test_arrowTraversalAndRightToLeftMirroring() {
+        keyClick(Qt.Key_Down)
+        compare(forwardSpy.count, 1)
+        keyClick(Qt.Key_Up)
+        compare(backwardSpy.count, 1)
+
+        card.layoutDirection = Qt.RightToLeft
+        compare(card.LayoutMirroring.enabled, true)
+        const action0 = findChild(card, "notificationAction0")
+        const action2 = findChild(card, "notificationAction2")
+        action0.forceActiveFocus(Qt.OtherFocusReason)
+        keyClick(Qt.Key_Left)
+        tryCompare(action2, "activeFocus", true)
+        keyClick(Qt.Key_Right)
+        tryCompare(action0, "activeFocus", true)
+    }
+
+    function test_pseudoLocalizedLongTextAndScaledTargetsRemainUsable() {
+        let pseudo = "[!! "
+        for (let index = 0; index < 80; ++index)
+            pseudo += "Dragon "
+        pseudo += "!!]"
+        cardFixture.summary = pseudo
+        cardFixture.body = pseudo
+        tokens.bodyFontPixels = 22
+        tokens.minimumTargetSize = 56
+        wait(0)
+
+        const summary = findChild(card, "notificationSummary")
+        const body = findChild(card, "notificationBody")
+        const action = findChild(card, "notificationAction0")
+        compare(summary.text, pseudo)
+        compare(body.text, pseudo)
+        compare(summary.wrapMode, Text.Wrap)
+        compare(body.wrapMode, Text.Wrap)
+        verify(action.implicitHeight >= 56)
+        verify(card.Accessible.description.indexOf(pseudo) >= 0)
     }
 
     function test_sameComponentAcceptsForgeResolvedTokens() {

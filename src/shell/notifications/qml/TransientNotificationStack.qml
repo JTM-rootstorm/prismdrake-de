@@ -7,6 +7,7 @@ FocusScope {
 
     required property var presentation
     required property var themeGeneration
+    property int layoutDirection: Qt.locale().textDirection
     readonly property int count: transientSurface.count
 
     signal focusExitForward
@@ -19,6 +20,8 @@ FocusScope {
     implicitWidth: transientSurface.implicitWidth
     implicitHeight: transientSurface.implicitHeight
     activeFocusOnTab: false
+    LayoutMirroring.enabled: layoutDirection === Qt.RightToLeft
+    LayoutMirroring.childrenInherit: true
     Accessible.role: Accessible.Notification
     Accessible.name: qsTr("Transient notifications")
     Accessible.description: qsTr("Newest notifications on the active output")

@@ -65,6 +65,13 @@ TestCase {
 
     function init() {
         notificationCenterFixture.reset()
+        center.layoutDirection = Qt.LeftToRight
+        transients.layoutDirection = Qt.LeftToRight
+        themeGeneration.notification.minimumTargetSize = 48
+        themeGeneration.notification.bodyFontPixels = 14
+        themeGeneration.notification.highContrast = false
+        themeGeneration.notification.reducedMotion = false
+        themeGeneration.notification.fallbackActive = true
         closeSpy.clear()
         returnSpy.clear()
         tryCompare(transients, "count", 0)
@@ -98,6 +105,11 @@ TestCase {
         tryCompare(dnd, "activeFocus", true)
         compare(dnd.Accessible.name, "Do not disturb")
 
+        keyClick(Qt.Key_Down)
+        tryCompare(clear, "activeFocus", true)
+        keyClick(Qt.Key_Up)
+        tryCompare(dnd, "activeFocus", true)
+
         keyClick(Qt.Key_Tab)
         tryCompare(clear, "activeFocus", true)
         compare(clear.Accessible.name, "Clear notification history")
@@ -118,6 +130,29 @@ TestCase {
         compare(dndStatus.visible, false)
         verify(center.Accessible.description.length > 0)
         compare(transients.Accessible.name, "Transient notifications")
+    }
+
+    function test_rtlFallbackContrastAndScaledTargetsUsePublishedThemeInputs() {
+        verify(notificationCenterFixture.publish(1))
+        center.layoutDirection = Qt.RightToLeft
+        transients.layoutDirection = Qt.RightToLeft
+        themeGeneration.notification.highContrast = true
+        themeGeneration.notification.reducedMotion = true
+        themeGeneration.notification.minimumTargetSize = 56
+        themeGeneration.notification.bodyFontPixels = 22
+        wait(0)
+
+        compare(center.LayoutMirroring.enabled, true)
+        compare(transients.LayoutMirroring.enabled, true)
+        const dnd = findChild(center, "notificationCenterDoNotDisturb")
+        const clear = findChild(center, "notificationCenterClearHistory")
+        const card = findChild(center, "notificationCardBackground").parent
+        verify(dnd.height >= 56)
+        verify(clear.height >= 56)
+        compare(card.effectiveMotionDuration, 0)
+        compare(card.tokens.highContrast, true)
+        compare(card.tokens.opaqueFallbackActive, true)
+        compare(card.tokens.bodyFontPixels, 22)
     }
 }
 

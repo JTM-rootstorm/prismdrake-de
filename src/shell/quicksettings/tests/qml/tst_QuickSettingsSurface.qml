@@ -122,17 +122,26 @@ TestCase {
         profileAdapter.failed = false
         profileAdapter.valueId = "lustre"
         profileAdapter.description = "Choose the active Prismdrake profile."
+        profileAdapter.stateText = "Available"
         dndAdapter.interactive = true
         dndAdapter.pending = false
         dndAdapter.failed = false
         dndAdapter.checked = false
         dndAdapter.description = "Normal notifications may be presented."
+        dndAdapter.stateText = "Disabled"
         centerAdapter.interactive = true
         centerAdapter.pending = false
         centerAdapter.failed = false
+        centerAdapter.description = "Open notification history and controls."
+        centerAdapter.stateText = "Available"
         logoutAdapter.interactive = true
         logoutAdapter.pending = false
         logoutAdapter.failed = false
+        logoutAdapter.description = "Request a confirmed session logout."
+        logoutAdapter.stateText = "Available"
+        notificationTokens.minimumTargetSize = 48
+        notificationTokens.bodyFontPixels = 14
+        surface.layoutDirection = Qt.LeftToRight
         closeSpy.clear()
         forwardSpy.clear()
         backwardSpy.clear()
@@ -227,5 +236,46 @@ TestCase {
         dndAdapter.checked = false
         wait(0)
         compare(dndRequests, 0)
+    }
+
+    function test_arrowTraversalAndRightToLeftProfileOrder() {
+        surface.focusFirstControl()
+        keyClick(Qt.Key_Down)
+        compare(surface.controlAt(1).activeFocus, true)
+        keyClick(Qt.Key_Up)
+        compare(surface.controlAt(0).activeFocus, true)
+        keyClick(Qt.Key_Up)
+        compare(backwardSpy.count, 1)
+
+        surface.layoutDirection = Qt.RightToLeft
+        compare(surface.LayoutMirroring.enabled, true)
+        surface.focusFirstControl()
+        keyClick(Qt.Key_Left)
+        compare(surface.controlAt(1).activeFocus, true)
+        keyClick(Qt.Key_Right)
+        compare(surface.controlAt(0).activeFocus, true)
+    }
+
+    function test_pseudoLocalizedLongDescriptionAndScaledTargets() {
+        let pseudo = "[!! "
+        for (let index = 0; index < 80; ++index)
+            pseudo += "Dragon "
+        pseudo += "!!]"
+        profileAdapter.description = pseudo
+        logoutAdapter.description = pseudo
+        logoutAdapter.stateText = "[!! Available !!]"
+        notificationTokens.minimumTargetSize = 56
+        notificationTokens.bodyFontPixels = 22
+        wait(0)
+
+        const logoutControl = surface.controlAt(4)
+        verify(logoutControl.implicitHeight >= 56)
+        verify(logoutControl.Accessible.description.indexOf(pseudo) >= 0)
+        verify(logoutControl.Accessible.description.indexOf("[!! Available !!]") >= 0)
+        const profileDescription = findChild(surface, "quickSettingsProfileDescription")
+        compare(profileDescription.text, pseudo)
+        compare(profileDescription.wrapMode, Text.Wrap)
+        compare(profileDescription.font.pixelSize, 22)
+        verify(surface.Accessible.description.indexOf("Opaque fallback") >= 0)
     }
 }
