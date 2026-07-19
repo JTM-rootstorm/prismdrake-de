@@ -950,7 +950,11 @@ class NotificationSurfaceAdapterTests(unittest.TestCase):
             "Transient notifications": [True],
         }
         accessibility.states = {"Do not disturb": [True]}
-        accessibility.absent = {"Transient notifications": [True]}
+        accessibility.absent = {
+            "Notification center": [True],
+            "Transient notifications": [True],
+        }
+        dismissed: list[str] = []
         environment = {
             "DISPLAY": ":140",
             "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/private-bus",
@@ -961,16 +965,20 @@ class NotificationSurfaceAdapterTests(unittest.TestCase):
             lambda: environment,
             operations.monotonic,
             operations.pause,
+            lambda: dismissed.append("Escape"),
         )
 
         adapter.invoke_live_action(0.2)
         adapter.observe_center(0.2)
         adapter.observe_do_not_disturb(True, 0.2)
+        adapter.dismiss_center(0.2)
         adapter.observe_transient(False, 0.2)
         adapter.observe_transient(True, 0.2)
 
+        self.assertEqual(dismissed, ["Escape"])
         self.assertEqual(accessibility.invoked, ["Review"])
         self.assertIn(("CHECKED", "Do not disturb"), accessibility.calls)
+        self.assertIn(("absent", "Notification center"), accessibility.calls)
         self.assertIn(("absent", "Transient notifications"), accessibility.calls)
         self.assertIn(("visible", "Transient notifications"), accessibility.calls)
 
@@ -986,6 +994,7 @@ class NotificationSurfaceAdapterTests(unittest.TestCase):
             },
             operations.monotonic,
             operations.pause,
+            lambda: None,
         )
 
         with self.assertRaisesRegex(

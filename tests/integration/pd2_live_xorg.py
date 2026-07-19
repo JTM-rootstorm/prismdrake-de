@@ -688,12 +688,14 @@ class LiveNotificationSurfaceAdapter:
         environment: Callable[[], Mapping[str, str]],
         monotonic: Callable[[], float],
         pause: Callable[[float], None],
+        dismiss_center: Callable[[], None],
     ) -> None:
         self._accessibility = accessibility
         self._shell_identity = shell_identity
         self._environment = environment
         self._monotonic = monotonic
         self._pause = pause
+        self._dismiss_center = dismiss_center
 
     def _wait(
         self, predicate: Callable[[int, Mapping[str, str]], bool], timeout: float,
@@ -750,6 +752,16 @@ class LiveNotificationSurfaceAdapter:
             ),
             timeout_seconds,
             "notification_surface_dnd_timeout",
+        )
+
+    def dismiss_center(self, timeout_seconds: float) -> None:
+        self._dismiss_center()
+        self._wait(
+            lambda pid, environment: self._accessibility.observe_absent(
+                pid, self._CENTER, environment
+            ),
+            timeout_seconds,
+            "notification_surface_center_dismissal_timeout",
         )
 
     def observe_transient(self, present: bool, timeout_seconds: float) -> None:
@@ -1908,6 +1920,7 @@ class LiveXorgHarnessPort:
             self.probe_environment,
             self._operations.monotonic,
             self._operations.pause,
+            lambda: self._xdotool("key", "--clearmodifiers", "Escape"),
         )
         try:
             epoch = self._notification_epoch_factory(environment, endpoint, surface)

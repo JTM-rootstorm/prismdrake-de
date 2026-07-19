@@ -185,6 +185,9 @@ class FakeSurface:
     ) -> None:
         self._call("dnd", enabled, timeout_seconds)
 
+    def dismiss_center(self, timeout_seconds: float) -> None:
+        self._call("dismiss_center", timeout_seconds)
+
     def observe_transient(self, present: bool, timeout_seconds: float) -> None:
         self._call("transient", present, timeout_seconds)
 
@@ -273,6 +276,7 @@ class InstalledNotificationWorkflowTests(unittest.TestCase):
                 ("action", ACTION_TIMEOUT_SECONDS),
                 ("center", SURFACE_TIMEOUT_SECONDS),
                 ("dnd", True, SURFACE_TIMEOUT_SECONDS),
+                ("dismiss_center", SURFACE_TIMEOUT_SECONDS),
                 ("transient", False, SURFACE_TIMEOUT_SECONDS),
                 ("transient", True, SURFACE_TIMEOUT_SECONDS),
             ],
@@ -365,6 +369,14 @@ class InstalledNotificationWorkflowTests(unittest.TestCase):
         self.assert_category(
             "notification_workflow_transient_absence_failed",
             absent_flow.create_suppressed_normal,
+        )
+
+        dismissal_flow, _sender, _dbus, dismissal_surface = workflow()
+        run_through(dismissal_flow, 5)
+        dismissal_surface.failure = "dismiss_center"
+        self.assert_category(
+            "notification_workflow_center_dismissal_failed",
+            dismissal_flow.create_suppressed_normal,
         )
 
         callback_flow, callback_sender, _dbus, _surface = workflow()

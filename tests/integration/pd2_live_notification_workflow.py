@@ -98,6 +98,8 @@ class NotificationSurfacePort(Protocol):
         self, enabled: bool, timeout_seconds: float
     ) -> None: ...
 
+    def dismiss_center(self, timeout_seconds: float) -> None: ...
+
     def observe_transient(self, present: bool, timeout_seconds: float) -> None: ...
 
 
@@ -543,6 +545,10 @@ class InstalledNotificationWorkflow:
     def create_suppressed_normal(self) -> WorkflowResult:
         self._require_step(5)
         before = self._required_state()
+        self._run(
+            "notification_workflow_center_dismissal_failed",
+            lambda: self._surface.dismiss_center(SURFACE_TIMEOUT_SECONDS),
+        )
         token, sender_result = self._run(
             "notification_workflow_sender_failed", self._sender.create_normal
         )
