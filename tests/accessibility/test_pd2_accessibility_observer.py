@@ -429,6 +429,33 @@ class AccessibilityObserverTests(unittest.TestCase):
         self.assertEqual(result["status"], "skipped")
         self.assertTrue(result["reviewed"])
         self.assertEqual(result["reason_code"], "dependency_unavailable")
+        self.assertIn("Orca", result["reason"])
+
+    def test_speech_backends_alone_do_not_claim_a_screen_reader(self) -> None:
+        speech_backends = {Path("/usr/bin/spd-say"), Path("/usr/bin/espeak-ng")}
+        with mock.patch.object(
+            Path,
+            "is_file",
+            new=lambda path: path in speech_backends,
+        ):
+            result = observer.global_result("screen_reader_workflow")
+        self.assertEqual(result["status"], "skipped")
+        self.assertTrue(result["reviewed"])
+        self.assertEqual(result["reason_code"], "dependency_unavailable")
+
+    def test_orca_presence_requires_a_reliable_workflow_adapter(self) -> None:
+        with (
+            mock.patch.object(
+                Path,
+                "is_file",
+                new=lambda path: path == Path("/usr/bin/orca"),
+            ),
+            self.assertRaisesRegex(
+                observer.AccessibilityObserverError,
+                "^screen_reader_workflow_adapter_unimplemented$",
+            ),
+        ):
+            observer.global_result("screen_reader_workflow")
 
     def test_installed_evidence_is_validated_and_revision_bound(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

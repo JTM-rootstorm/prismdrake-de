@@ -1034,12 +1034,11 @@ def global_result(global_check: str) -> dict[str, Any]:
     require(global_check in {"live_atspi", "screen_reader_workflow"},
             "accessibility_probe_invalid")
     if global_check == "screen_reader_workflow":
-        tools = (Path("/usr/bin/orca"), Path("/usr/bin/spd-say"), Path("/usr/bin/espeak-ng"))
-        require(not any(path.is_file() for path in tools),
-                "screen_reader_dependency_state_unexpected")
+        require(not Path("/usr/bin/orca").is_file(),
+                "screen_reader_workflow_adapter_unimplemented")
         return reviewed_skip(
             "dependency_unavailable",
-            "The reference environment does not provide reviewed screen reader tooling",
+            "The reference environment does not provide the reviewed Orca screen reader",
         )
     require_gi_atspi()
     document = installed_evidence()

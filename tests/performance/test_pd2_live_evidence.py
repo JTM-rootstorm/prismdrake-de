@@ -177,10 +177,7 @@ class LiveCollectorTests(unittest.TestCase):
             policy["accessibility.desktop_surface_exclusion.accessible_name"],
             "not_applicable",
         )
-        self.assertEqual(
-            policy["accessibility.pinned_task.state_expanded"],
-            "live_adapter_unimplemented",
-        )
+        self.assertNotIn("accessibility.pinned_task.state_expanded", policy)
         self.assertEqual(
             policy["accessibility.screen_reader_workflow"],
             "dependency_unavailable",
