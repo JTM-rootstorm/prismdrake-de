@@ -27,6 +27,13 @@ class PinStateStore final {
   public:
     [[nodiscard]] static foundation::Result<PinStateStore> open(std::filesystem::path stateFile);
 
+    /// Opens the Accepted pin-state location below the Prismdrake XDG state directory.
+    ///
+    /// The Prismdrake and shell directories are created when absent and must remain
+    /// private, current-user-owned, non-symlink directories.
+    [[nodiscard]] static foundation::Result<PinStateStore>
+    openInStateDirectory(std::filesystem::path prismdrakeStateDirectory);
+
     PinStateStore(const PinStateStore &) = delete;
     PinStateStore &operator=(const PinStateStore &) = delete;
     PinStateStore(PinStateStore &&) noexcept = default;

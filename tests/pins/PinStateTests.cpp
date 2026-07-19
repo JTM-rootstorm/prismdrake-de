@@ -56,6 +56,32 @@ class TemporaryState final {
     std::filesystem::path root_;
 };
 
+class TemporaryXdgState final {
+  public:
+    TemporaryXdgState() {
+        std::string pattern = "/tmp/prismdrake-pin-xdg-tests.XXXXXX";
+        char *created = ::mkdtemp(pattern.data());
+        if (created == nullptr) {
+            throw std::runtime_error{"Could not create the pin-state XDG fixture."};
+        }
+        root_ = created;
+    }
+
+    ~TemporaryXdgState() {
+        std::error_code ignored;
+        std::filesystem::remove_all(root_, ignored);
+    }
+
+    [[nodiscard]] std::filesystem::path prismdrake() const { return root_ / "prismdrake"; }
+    [[nodiscard]] std::filesystem::path shell() const { return prismdrake() / "shell"; }
+    [[nodiscard]] std::filesystem::path file() const {
+        return shell() / "pinned-applications-v1.json";
+    }
+
+  private:
+    std::filesystem::path root_;
+};
+
 [[nodiscard]] launcher::DesktopFileId pin(std::string value) {
     auto result = launcher::deriveDesktopFileId(value);
     EXPECT_TRUE(result);
@@ -87,6 +113,54 @@ TEST(PinStateTest, MissingStateStartsEmptyAndAtomicWriteSurvivesRestart) {
     ASSERT_EQ(restarted.value().current()->pins.size(), 2U);
     EXPECT_EQ(restarted.value().current()->pins[0].value(), "org.prismdrake.Control.desktop");
     EXPECT_EQ(restarted.value().current()->pins[1].value(), "org.prismdrake.Terminal.desktop");
+}
+
+TEST(PinStateTest, CanonicalXdgOpenCreatesPrivateLayoutAndPersistsOnlyThere) {
+    TemporaryXdgState state;
+    auto opened = PinStateStore::openInStateDirectory(state.prismdrake());
+    ASSERT_TRUE(opened);
+    auto store = std::move(opened).value();
+    EXPECT_EQ(store.current()->loadStatus, PinStateLoadStatus::missing);
+
+    struct stat metadata = {};
+    ASSERT_EQ(::lstat(state.prismdrake().c_str(), &metadata), 0);
+    EXPECT_TRUE(S_ISDIR(metadata.st_mode));
+    EXPECT_EQ(metadata.st_mode & 0777U, 0700U);
+    ASSERT_EQ(::lstat(state.shell().c_str(), &metadata), 0);
+    EXPECT_TRUE(S_ISDIR(metadata.st_mode));
+    EXPECT_EQ(metadata.st_mode & 0777U, 0700U);
+
+    ASSERT_TRUE(store.replace({pin("canonical.desktop")}));
+    EXPECT_TRUE(std::filesystem::is_regular_file(state.file()));
+    EXPECT_FALSE(std::filesystem::exists(state.prismdrake() / "pins.json"));
+    auto restarted = PinStateStore::openInStateDirectory(state.prismdrake());
+    ASSERT_TRUE(restarted);
+    ASSERT_EQ(restarted.value().current()->pins.size(), 1U);
+    EXPECT_EQ(restarted.value().current()->pins.front().value(), "canonical.desktop");
+}
+
+TEST(PinStateTest, CanonicalXdgOpenRejectsUnsafeOrNonCanonicalDirectories) {
+    TemporaryXdgState state;
+    ASSERT_TRUE(std::filesystem::create_directory(state.prismdrake()));
+    ASSERT_EQ(::chmod(state.prismdrake().c_str(), 0750U), 0);
+    auto insecure = PinStateStore::openInStateDirectory(state.prismdrake());
+    ASSERT_FALSE(insecure);
+    EXPECT_EQ(insecure.error().code, foundation::ErrorCode::permission_denied);
+
+    TemporaryXdgState nonCanonical;
+    auto rejected = PinStateStore::openInStateDirectory(nonCanonical.prismdrake().parent_path());
+    ASSERT_FALSE(rejected);
+    EXPECT_EQ(rejected.error().code, foundation::ErrorCode::invalid_argument);
+
+    TemporaryXdgState linked;
+    const auto target = linked.prismdrake().parent_path() / "target";
+    ASSERT_TRUE(std::filesystem::create_directory(target));
+    ASSERT_EQ(::chmod(target.c_str(), 0700U), 0);
+    ASSERT_EQ(::symlink(target.c_str(), linked.prismdrake().c_str()), 0);
+    auto symlink = PinStateStore::openInStateDirectory(linked.prismdrake());
+    ASSERT_FALSE(symlink);
+    EXPECT_EQ(symlink.error().code, foundation::ErrorCode::permission_denied);
+    EXPECT_TRUE(std::filesystem::is_symlink(linked.prismdrake()));
 }
 
 TEST(PinStateTest, DuplicateMutationPreservesPublishedAndOnDiskState) {

@@ -182,6 +182,26 @@ template <typename Value>
     return Result<void>::success();
 }
 
+[[nodiscard]] Result<void> ensurePrivateDirectory(const std::filesystem::path &path) {
+    if (::mkdir(path.c_str(), 0700) != 0 && errno != EEXIST) {
+        return Result<void>::failure(
+            {errno == EACCES || errno == EPERM ? ErrorCode::permission_denied
+                                                : ErrorCode::io_error,
+             "A private pin-state directory could not be created.",
+             "Review the XDG state-directory boundary."});
+    }
+
+    struct stat metadata = {};
+    if (::lstat(path.c_str(), &metadata) != 0 || !S_ISDIR(metadata.st_mode) ||
+        S_ISLNK(metadata.st_mode) || metadata.st_uid != ::geteuid() ||
+        (metadata.st_mode & 0777U) != 0700U) {
+        return Result<void>::failure(
+            {ErrorCode::permission_denied, "A private pin-state directory is unsafe.",
+             "Use a current-user-owned directory with mode 0700 and no symbolic links."});
+    }
+    return Result<void>::success();
+}
+
 [[nodiscard]] Result<std::string> readPrivateRegularFile(const std::filesystem::path &path) {
     const int rawDescriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW);
     if (rawDescriptor < 0) {
@@ -314,6 +334,30 @@ Result<PinStateStore> PinStateStore::open(std::filesystem::path stateFile) {
     std::shared_ptr<const PinStateSnapshot> snapshot =
         std::make_shared<const PinStateSnapshot>(PinStateSnapshot{1U, std::move(pins), status});
     return Result<PinStateStore>::success(PinStateStore{std::move(stateFile), std::move(snapshot)});
+}
+
+Result<PinStateStore>
+PinStateStore::openInStateDirectory(std::filesystem::path prismdrakeStateDirectory) {
+    const bool containsTraversal = std::ranges::any_of(
+        prismdrakeStateDirectory,
+        [](const std::filesystem::path &component) { return component == ".."; });
+    if (prismdrakeStateDirectory.empty() || !prismdrakeStateDirectory.is_absolute() ||
+        containsTraversal || prismdrakeStateDirectory.filename() != "prismdrake") {
+        return failure<PinStateStore>(ErrorCode::invalid_argument,
+                                      "The Prismdrake XDG state path is invalid.",
+                                      "Use the absolute Prismdrake XDG state directory.");
+    }
+
+    auto prismdrakeDirectory = ensurePrivateDirectory(prismdrakeStateDirectory);
+    if (!prismdrakeDirectory) {
+        return Result<PinStateStore>::failure(prismdrakeDirectory.error());
+    }
+    const auto shellDirectory = prismdrakeStateDirectory / "shell";
+    auto shell = ensurePrivateDirectory(shellDirectory);
+    if (!shell) {
+        return Result<PinStateStore>::failure(shell.error());
+    }
+    return open(shellDirectory / "pinned-applications-v1.json");
 }
 
 Result<std::shared_ptr<const PinStateSnapshot>>

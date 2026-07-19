@@ -131,7 +131,7 @@ Result<void> Pd2ShellRuntime::initialize() {
     if (!paths) {
         return Result<void>::failure(paths.error());
     }
-    auto pins = panel::PinStateStore::open(paths.value().stateDirectory / "pins.json");
+    auto pins = panel::PinStateStore::openInStateDirectory(paths.value().stateDirectory);
     if (!pins) {
         return Result<void>::failure(pins.error());
     }
