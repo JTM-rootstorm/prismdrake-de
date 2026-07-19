@@ -15,9 +15,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
@@ -163,6 +166,72 @@ class FakeApplicationActivator final : public LauncherApplicationActivator {
     std::optional<std::string> captured_action;
 };
 
+struct BlockingCollectorState final {
+    std::mutex mutex;
+    std::condition_variable condition;
+    std::vector<ApplicationWatchCandidates> results;
+    std::size_t calls{0U};
+    std::size_t releasedCalls{0U};
+    bool stopObserved{false};
+};
+
+class BlockingWatchCandidateCollector final : public ApplicationWatchCandidateCollector {
+  public:
+    explicit BlockingWatchCandidateCollector(std::shared_ptr<BlockingCollectorState> state)
+        : state_(std::move(state)) {}
+
+    foundation::Result<ApplicationWatchCandidates>
+    collect(const prismdrake::launcher::ApplicationPaths &, std::size_t,
+            std::stop_token stopToken) override {
+        std::unique_lock lock(state_->mutex);
+        const auto call = ++state_->calls;
+        state_->condition.notify_all();
+        std::stop_callback wake{stopToken, [state = state_] { state->condition.notify_all(); }};
+        state_->condition.wait(
+            lock, [&] { return stopToken.stop_requested() || state_->releasedCalls >= call; });
+        if (stopToken.stop_requested()) {
+            state_->stopObserved = true;
+            state_->condition.notify_all();
+            return foundation::Result<ApplicationWatchCandidates>::failure(
+                {ErrorCode::cancelled, "fixture collection stopped", "destroy the fixture"});
+        }
+        return foundation::Result<ApplicationWatchCandidates>::success(
+            state_->results.at(std::min(call - 1U, state_->results.size() - 1U)));
+    }
+
+  private:
+    std::shared_ptr<BlockingCollectorState> state_;
+};
+
+class DegradedWatchCandidateCollector final : public ApplicationWatchCandidateCollector {
+  public:
+    explicit DegradedWatchCandidateCollector(std::filesystem::path path) : path_(std::move(path)) {}
+
+    foundation::Result<ApplicationWatchCandidates>
+    collect(const prismdrake::launcher::ApplicationPaths &, std::size_t, std::stop_token) override {
+        ++calls;
+        return foundation::Result<ApplicationWatchCandidates>::success({{path_}, true});
+    }
+
+    std::atomic_size_t calls{0U};
+
+  private:
+    std::filesystem::path path_;
+};
+
+[[nodiscard]] std::size_t collectorCalls(const std::shared_ptr<BlockingCollectorState> &state) {
+    std::lock_guard lock(state->mutex);
+    return state->calls;
+}
+
+void releaseCollectorCall(const std::shared_ptr<BlockingCollectorState> &state, std::size_t call) {
+    {
+        std::lock_guard lock(state->mutex);
+        state->releasedCalls = std::max(state->releasedCalls, call);
+    }
+    state->condition.notify_all();
+}
+
 class CapturingExecutor final : public LauncherProcessExecutor {
   public:
     foundation::Result<void> execute(const prismdrake::launcher::ProcessLaunchPlan &plan,
@@ -221,6 +290,7 @@ TEST(ApplicationRootMonitorTest, CoalescesDesktopEntryChangesAndRecoversRootRepl
         {32U, std::chrono::milliseconds{25}, std::chrono::milliseconds{25}});
     ASSERT_TRUE(monitor);
     QSignalSpy refresh(monitor.value().get(), &ApplicationRootMonitor::refreshRequested);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.value()->watchedPathCount(), 1, 1000);
 
     QFile first{root + QStringLiteral("/one.desktop")};
     ASSERT_TRUE(first.open(QIODevice::WriteOnly));
@@ -255,13 +325,13 @@ TEST(ApplicationRootMonitorTest, BoundsWatchCapacityAndExplicitlyRecoversExhaust
         ApplicationRootMonitor::create({{{root.toStdString()}}}, {1U, std::chrono::milliseconds{20},
                                                                   std::chrono::milliseconds{20}});
     ASSERT_TRUE(monitor);
-    EXPECT_TRUE(monitor.value()->degraded());
-    EXPECT_EQ(monitor.value()->watchedPathCount(), 1);
+    QTRY_VERIFY_WITH_TIMEOUT(monitor.value()->degraded(), 1000);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.value()->watchedPathCount(), 1, 1000);
 
     ASSERT_TRUE(QDir{root + QStringLiteral("/nested")}.removeRecursively());
     monitor.value()->requestRecovery();
-    EXPECT_FALSE(monitor.value()->degraded());
-    EXPECT_EQ(monitor.value()->watchedPathCount(), 1);
+    QTRY_VERIFY_WITH_TIMEOUT(!monitor.value()->degraded(), 1000);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.value()->watchedPathCount(), 1, 1000);
 }
 
 TEST(ApplicationRootMonitorTest, PrioritizesEveryRootBeforeRecursiveDescendants) {
@@ -276,12 +346,81 @@ TEST(ApplicationRootMonitorTest, PrioritizesEveryRootBeforeRecursiveDescendants)
         {{{firstRoot.toStdString(), secondRoot.toStdString()}}},
         {2U, std::chrono::milliseconds{20}, std::chrono::milliseconds{20}});
     ASSERT_TRUE(monitor);
-    EXPECT_TRUE(monitor.value()->degraded());
-    EXPECT_EQ(monitor.value()->watchedPathCount(), 2);
+    QTRY_VERIFY_WITH_TIMEOUT(monitor.value()->degraded(), 1000);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.value()->watchedPathCount(), 2, 1000);
     QSignalSpy refresh(monitor.value().get(), &ApplicationRootMonitor::refreshRequested);
 
     ASSERT_TRUE(QDir{secondRoot}.removeRecursively());
     QTRY_COMPARE_WITH_TIMEOUT(refresh.count(), 1, 1000);
+}
+
+TEST(ApplicationRootMonitorTest, BlockedCollectionKeepsOwnerEventLoopResponsiveAndStopsSafely) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const auto root = temporary.filePath(QStringLiteral("applications")).toStdString();
+    ASSERT_TRUE(QDir{}.mkpath(QString::fromStdString(root)));
+    auto state = std::make_shared<BlockingCollectorState>();
+    state->results.push_back({{{root}}, false});
+    auto monitor = ApplicationRootMonitor::create(
+        {{{root}}}, {8U, std::chrono::milliseconds{10}, std::chrono::milliseconds{10}}, nullptr,
+        std::make_unique<BlockingWatchCandidateCollector>(state));
+    ASSERT_TRUE(monitor);
+    QTRY_COMPARE_WITH_TIMEOUT(collectorCalls(state), 1U, 1000);
+
+    bool ownerEventHandled = false;
+    QTimer::singleShot(0, [&ownerEventHandled] { ownerEventHandled = true; });
+    QTRY_VERIFY_WITH_TIMEOUT(ownerEventHandled, 1000);
+    EXPECT_EQ(monitor.value()->watchedPathCount(), 0);
+
+    monitor.value().reset();
+    std::lock_guard lock(state->mutex);
+    EXPECT_TRUE(state->stopObserved);
+}
+
+TEST(ApplicationRootMonitorTest, DiscardsBlockedStaleCollectionBeforeMutatingOwnerWatcher) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const auto root = temporary.filePath(QStringLiteral("applications")).toStdString();
+    ASSERT_TRUE(QDir{}.mkpath(QString::fromStdString(root)));
+    auto state = std::make_shared<BlockingCollectorState>();
+    state->results = {{{{root}}, true}, {{{root}}, false}};
+    auto monitor = ApplicationRootMonitor::create(
+        {{{root}}}, {8U, std::chrono::milliseconds{10}, std::chrono::milliseconds{10}}, nullptr,
+        std::make_unique<BlockingWatchCandidateCollector>(state));
+    ASSERT_TRUE(monitor);
+    QSignalSpy degraded(monitor.value().get(), &ApplicationRootMonitor::degradedChanged);
+    QTRY_COMPARE_WITH_TIMEOUT(collectorCalls(state), 1U, 1000);
+
+    monitor.value()->requestRecovery();
+    releaseCollectorCall(state, 1U);
+    QTRY_COMPARE_WITH_TIMEOUT(collectorCalls(state), 2U, 1000);
+    QCoreApplication::processEvents();
+    EXPECT_FALSE(monitor.value()->degraded());
+    EXPECT_EQ(monitor.value()->watchedPathCount(), 0);
+    EXPECT_EQ(degraded.count(), 0);
+
+    releaseCollectorCall(state, 2U);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.value()->watchedPathCount(), 1, 1000);
+    EXPECT_FALSE(monitor.value()->degraded());
+    EXPECT_EQ(degraded.count(), 0);
+}
+
+TEST(ApplicationRootMonitorTest, PerformsExactlyThreeAutomaticRecoveryAttempts) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const auto root = temporary.filePath(QStringLiteral("applications")).toStdString();
+    ASSERT_TRUE(QDir{}.mkpath(QString::fromStdString(root)));
+    auto collector = std::make_unique<DegradedWatchCandidateCollector>(root);
+    auto *collectorPointer = collector.get();
+    auto monitor = ApplicationRootMonitor::create(
+        {{{root}}}, {8U, std::chrono::milliseconds{10}, std::chrono::milliseconds{5}}, nullptr,
+        std::move(collector));
+    ASSERT_TRUE(monitor);
+
+    QTRY_COMPARE_WITH_TIMEOUT(collectorPointer->calls.load(), 4U, 1000);
+    QTest::qWait(150);
+    EXPECT_EQ(collectorPointer->calls.load(), 4U);
+    EXPECT_TRUE(monitor.value()->degraded());
 }
 
 TEST(LauncherControllerTest, MonitorMutationStartsAReplacementCatalogGeneration) {
