@@ -4,6 +4,15 @@ add_test(
         "${CMAKE_CURRENT_SOURCE_DIR}/test_live_atspi.py")
 set_tests_properties(AccessibilityEvidenceContractTest PROPERTIES TIMEOUT 10)
 
+add_test(
+    NAME Pd2AccessibilityReferenceObserverTest
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_pd2_accessibility_observer.py")
+set_tests_properties(Pd2AccessibilityReferenceObserverTest PROPERTIES
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1"
+    LABELS "accessibility;contract"
+    TIMEOUT 20)
+
 find_program(PRISMDRAKE_ATSPI_DBUS_RUN_SESSION_EXECUTABLE NAMES dbus-run-session)
 find_program(PRISMDRAKE_ATSPI_GDBUS_EXECUTABLE NAMES gdbus)
 find_program(PRISMDRAKE_ATSPI_OPENBOX_EXECUTABLE NAMES openbox)
