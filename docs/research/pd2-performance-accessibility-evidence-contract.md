@@ -232,6 +232,7 @@ env \
     --pd1-reference-revision "$PRISMDRAKE_PD1_REVISION" \
     --pd1-evidence-id pd1-reviewed-reference \
     --search-catalog-size 16 --search-catalog-size 64 \
+    --reviewed-accessibility-profile pd2-reference-v1 \
     --limitation "Reference VM measurements do not define release budgets" \
     --observer "$PWD/tests/performance/pd2_reference_observer.py" \
     --accessibility-observer "$PWD/tests/accessibility/pd2_accessibility_observer.py" \
@@ -244,7 +245,16 @@ makes WP16 preflight, package test, and the initial WP14 demonstration
 prerequisites of WP15 collection; unmerge and ordinary reinstall may follow
 after WP15. The command derives the exact lowercase PD1 revision from the bound
 PD1 artifact instead of relying on a copied placeholder. Any reviewed
-accessibility skip remains an explicit collector argument.
+accessibility skip is selected through the tracked `pd2-reference-v1` review
+profile. That profile expands to one exact key and reason code for every
+source-classified not-applicable or unimplemented matrix cell plus the reviewed
+screen-reader dependency skip. Explicit `--reviewed-skip` arguments remain
+available for unrelated environment-specific skips and cannot duplicate a
+profile key.
+The all-not-applicable desktop row is additionally gated by the source-bound
+`Accessible.ignored` QML contract and the installed Tier C desktop step's exact
+`tier_c_desktop_accessibility_excluded` AT-SPI proof; a static source marker or
+generic desktop-step success alone is insufficient.
 The dedicated accessibility observer uses the VM's GI `Atspi` binding. Qt
 translation routing, RTL, and expanded-string routes pass only when CTest
 reports their complete exact five-test, five-test, and six-test selections
@@ -270,8 +280,19 @@ exercised on the reference VM. A genuinely unavailable dependency or
 unautomatable state may be represented only by an exact reviewed skip declared
 before collection. A skip does not satisfy the corresponding WP15 exit claim.
 
-The dedicated accessibility observer maps 48 matrix checks. Its description,
-Backtab, output-migration focus, and service-restart focus claims require the
-exact corresponding records from the 48-step installed workflow. Restart
-claims require the settingsd, notifyd, and shell focus-recovery records; generic
-process-restart success is not accepted as accessibility evidence.
+The dedicated accessibility observer classifies all 364 cells explicitly: 49
+use exact installed or Tier C observations, 98 use named QML CTest targets, 134
+are reviewed not-applicable semantics, and 83 remain reviewed unimplemented
+evidence gaps. The latter are visible skips and do not satisfy an exit claim.
+Its description, Backtab, output-migration focus, and service-restart focus
+claims require the exact corresponding records from the 48-step installed
+workflow. Restart claims require the settingsd, notifyd, and shell
+focus-recovery records; generic process-restart success is not accepted as
+accessibility evidence.
+
+The CTest-backed cells require the collector-owned package-test stage: its
+source-owned exact inventory, complete ordered JUnit result, one documented
+non-root ownership skip, and zero disabled or unrun tests must all match. The
+stage source revision and tracked ebuild digest must match the clean checkout,
+and its canonical five-executable artifact digest must match the validated
+installed demonstration. A passing unrelated build cannot satisfy the matrix.

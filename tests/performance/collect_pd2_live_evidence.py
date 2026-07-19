@@ -52,6 +52,7 @@ OBSERVER_ENVIRONMENT_KEYS = (
     "PRISMDRAKE_PD2_IDLE_SERIES",
     "PRISMDRAKE_PD2_PD1_EVIDENCE",
     "PRISMDRAKE_PD2_INSTALLED_DEMO_EVIDENCE",
+    "PRISMDRAKE_PD2_PACKAGE_TEST_EVIDENCE",
 )
 
 
@@ -94,6 +95,10 @@ def parse_arguments() -> object:
         type=lambda value: positive_integer(value, 1_000_000),
     )
     parser.add_argument("--reviewed-skip", action="append", default=[], type=reviewed_skip)
+    parser.add_argument(
+        "--reviewed-accessibility-profile",
+        choices=("pd2-reference-v1",),
+    )
     parser.add_argument("--limitation", action="append", required=True, type=safe_text)
     parser.add_argument("--observer", type=executable)
     parser.add_argument("--environment-observer", type=executable)
@@ -103,6 +108,32 @@ def parse_arguments() -> object:
     parser.add_argument("--cleanup-observer", type=executable)
     parser.add_argument("--output", required=True, type=output_path)
     return parser.parse_args()
+
+
+def accessibility_reviewed_skips(profile: str | None) -> dict[str, str]:
+    """Load one tracked, fail-closed review policy for the 364-cell matrix."""
+
+    if profile is None:
+        return {}
+    if profile != "pd2-reference-v1":
+        raise CollectorError("reviewed_accessibility_profile_invalid")
+    accessibility = ROOT / "tests" / "accessibility"
+    if str(accessibility) not in sys.path:
+        sys.path.insert(0, str(accessibility))
+    try:
+        import pd2_accessibility_observer as observer  # pylint: disable=import-outside-toplevel
+    except (ImportError, RuntimeError) as error:
+        raise CollectorError("reviewed_accessibility_profile_invalid") from error
+    policy = {
+        f"accessibility.{surface}.{check}": "not_applicable"
+        for surface, check in observer.NOT_APPLICABLE
+    }
+    policy.update({
+        f"accessibility.{surface}.{check}": "live_adapter_unimplemented"
+        for surface, check in observer.UNIMPLEMENTED
+    })
+    policy["accessibility.screen_reader_workflow"] = "dependency_unavailable"
+    return policy
 
 
 def build_observer_environment(options: object) -> dict[str, str]:
@@ -226,9 +257,16 @@ def attest_source_and_observers(
 
 
 def run(options: object) -> None:
-    skips = dict(options.reviewed_skip)
-    if len(skips) != len(options.reviewed_skip):
+    profile_skips = accessibility_reviewed_skips(
+        options.reviewed_accessibility_profile
+    )
+    explicit_skips = dict(options.reviewed_skip)
+    if (
+        len(explicit_skips) != len(options.reviewed_skip)
+        or set(explicit_skips) & set(profile_skips)
+    ):
         raise CollectorError("duplicate_reviewed_skip")
+    skips = {**profile_skips, **explicit_skips}
     config = LiveCollectionConfig(
         source_revision=options.source_revision,
         reference_environment_id=options.environment_id,

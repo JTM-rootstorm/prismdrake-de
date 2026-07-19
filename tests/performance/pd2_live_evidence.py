@@ -265,17 +265,58 @@ def _collect_performance(
 def _collect_accessibility(
     port: LiveEvidencePort, config: LiveCollectionConfig
 ) -> dict[str, Any]:
-    matrix = []
-    for surface in SURFACES:
-        checks = {
-            check: _copy_result(
-                port.accessibility(surface, check),
-                config,
-                f"accessibility.{surface}.{check}",
+    batch_operation = getattr(port, "accessibility_matrix", None)
+    if callable(batch_operation):
+        batch = batch_operation()
+        _require(batch.binding == config.binding, "live_observation_binding_mismatch")
+        _require(
+            isinstance(batch.result, Mapping) and set(batch.result) == {"matrix"},
+            "accessibility_batch_invalid",
+        )
+        raw_matrix = batch.result.get("matrix")
+        _require(
+            isinstance(raw_matrix, list)
+            and len(raw_matrix) == len(SURFACES)
+            and all(isinstance(entry, Mapping) for entry in raw_matrix),
+            "accessibility_batch_invalid",
+        )
+        _require(
+            [entry.get("surface") for entry in raw_matrix] == list(SURFACES),
+            "accessibility_batch_invalid",
+        )
+        matrix = []
+        for entry, surface in zip(raw_matrix, SURFACES):
+            _require(
+                isinstance(entry, Mapping) and set(entry) == {"surface", "checks"},
+                "accessibility_batch_invalid",
             )
-            for check in MATRIX_CHECKS
-        }
-        matrix.append({"surface": surface, "checks": checks})
+            raw_checks = entry.get("checks")
+            _require(
+                isinstance(raw_checks, Mapping)
+                and list(raw_checks) == list(MATRIX_CHECKS),
+                "accessibility_batch_invalid",
+            )
+            checks = {
+                check: _copy_result(
+                    BoundResult(batch.binding, raw_checks[check]),
+                    config,
+                    f"accessibility.{surface}.{check}",
+                )
+                for check in MATRIX_CHECKS
+            }
+            matrix.append({"surface": surface, "checks": checks})
+    else:
+        matrix = []
+        for surface in SURFACES:
+            checks = {
+                check: _copy_result(
+                    port.accessibility(surface, check),
+                    config,
+                    f"accessibility.{surface}.{check}",
+                )
+                for check in MATRIX_CHECKS
+            }
+            matrix.append({"surface": surface, "checks": checks})
     return {
         "matrix": matrix,
         "live_atspi": _copy_result(
@@ -561,6 +602,9 @@ class CommandLiveEvidencePort:
             self._commands.accessibility,
             ("--surface", surface, "--check", check),
         )
+
+    def accessibility_matrix(self) -> BoundResult:
+        return self._run(self._commands.accessibility, ("--matrix",))
 
     def live_atspi(self) -> BoundResult:
         return self._run(self._commands.accessibility, ("--global", "live_atspi"))

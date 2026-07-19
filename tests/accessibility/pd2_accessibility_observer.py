@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import stat
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -133,6 +135,9 @@ OBSERVED: dict[tuple[str, str], EvidenceRequirement] = {
     ("transient_notification", "accessible_role"): requirement(
         ("tier_c_replay", "notification")
     ),
+    ("transient_notification", "enter_activation"): requirement(
+        ("tier_c_replay", "notification")
+    ),
     ("notification_center", "enter_activation"): requirement(
         ("tier_c_replay", "notification_center")
     ),
@@ -215,32 +220,248 @@ OBSERVED: dict[tuple[str, str], EvidenceRequirement] = {
     ),
 }
 
-NOT_APPLICABLE = {
-    ("panel", "state_selected"),
-    ("panel", "state_urgent"),
-    ("panel", "state_minimized"),
-    ("panel", "state_checked"),
-    ("panel", "state_expanded"),
-    ("desktop_surface_exclusion", "accessible_name"),
-    ("desktop_surface_exclusion", "accessible_role"),
-    ("desktop_surface_exclusion", "accessible_description"),
-    ("desktop_surface_exclusion", "state_selected"),
-    ("desktop_surface_exclusion", "state_active"),
-    ("desktop_surface_exclusion", "state_urgent"),
-    ("desktop_surface_exclusion", "state_minimized"),
-    ("desktop_surface_exclusion", "state_disabled"),
-    ("desktop_surface_exclusion", "state_unavailable"),
-    ("desktop_surface_exclusion", "state_checked"),
-    ("desktop_surface_exclusion", "state_expanded"),
-    ("transient_notification", "state_selected"),
-    ("transient_notification", "state_minimized"),
-    ("transient_notification", "state_checked"),
-    ("transient_notification", "state_expanded"),
-    ("logout_confirmation", "state_selected"),
-    ("logout_confirmation", "state_urgent"),
-    ("logout_confirmation", "state_minimized"),
-    ("logout_confirmation", "state_checked"),
+CTEST_CHECKS: dict[str, tuple[str, frozenset[str]]] = {
+    "panel": (
+        "PanelSurfaceQmlTest",
+        frozenset({
+            "minimum_target_size", "high_contrast", "reduced_motion",
+            "disabled_transparency", "rtl_smoke",
+        }),
+    ),
+    "pinned_task": (
+        "PanelSurfaceQmlTest",
+        frozenset({
+            "tab_backtab", "arrow_navigation", "enter_activation",
+            "space_activation", "escape_recovery", "menu_key", "shift_f10",
+            "accessible_name", "accessible_role", "accessible_description",
+            "state_focused", "state_checked", "minimum_target_size",
+        }),
+    ),
+    "running_task": (
+        "PanelSurfaceQmlTest",
+        frozenset({
+            "tab_backtab", "arrow_navigation", "enter_activation",
+            "space_activation", "accessible_description", "state_checked",
+            "minimum_target_size", "high_contrast", "reduced_motion",
+            "disabled_transparency",
+            "rtl_smoke",
+        }),
+    ),
+    "grouped_task": (
+        "PanelSurfaceQmlTest",
+        frozenset({
+            "enter_activation", "escape_recovery", "accessible_description",
+            "minimum_target_size",
+        }),
+    ),
+    "group_popup": (
+        "PanelSurfaceQmlTest",
+        frozenset({
+            "arrow_navigation", "enter_activation", "escape_recovery", "menu_key",
+            "accessible_name", "accessible_role", "accessible_description",
+            "minimum_target_size", "rtl_smoke",
+        }),
+    ),
+    "launcher": (
+        "LauncherSurfaceQmlTest",
+        frozenset({
+            "tab_backtab", "arrow_navigation", "enter_activation",
+            "escape_recovery", "accessible_description", "minimum_target_size",
+            "reduced_motion", "disabled_transparency", "rtl_smoke",
+        }),
+    ),
+    "launcher_results": (
+        "LauncherSurfaceQmlTest",
+        frozenset({
+            "tab_backtab", "accessible_description", "state_selected",
+            "state_checked", "minimum_target_size", "reduced_motion",
+            "disabled_transparency", "rtl_smoke", "long_string_layout",
+        }),
+    ),
+    "transient_notification": (
+        "NotificationCardQmlTest",
+        frozenset({
+            "tab_backtab", "arrow_navigation", "space_activation",
+            "escape_recovery", "accessible_description", "state_focused",
+            "minimum_target_size", "high_contrast",
+            "reduced_motion", "disabled_transparency", "rtl_smoke",
+            "long_string_layout",
+        }),
+    ),
+    "notification_center": (
+        "NotificationCenterQmlTest",
+        frozenset({
+            "tab_backtab", "arrow_navigation", "escape_recovery",
+            "accessible_description", "minimum_target_size", "high_contrast",
+            "reduced_motion", "disabled_transparency", "rtl_smoke",
+        }),
+    ),
+    "quick_settings": (
+        "QuickSettingsSurfaceQmlTest",
+        frozenset({
+            "arrow_navigation", "escape_recovery", "minimum_target_size",
+            "disabled_transparency",
+            "text_scale", "rtl_smoke", "long_string_layout",
+        }),
+    ),
+    "logout_confirmation": (
+        "QuickSettingsSurfaceQmlTest",
+        frozenset({
+            "tab_backtab", "arrow_navigation", "space_activation", "escape_recovery",
+            "accessible_description", "state_disabled", "minimum_target_size", "text_scale",
+            "rtl_smoke", "long_string_layout",
+        }),
+    ),
 }
+
+CTEST_OBSERVED = {
+    (surface, check): test_name
+    for surface, (test_name, checks) in CTEST_CHECKS.items()
+    for check in checks
+    if (surface, check) not in OBSERVED
+}
+
+NOT_APPLICABLE_CHECKS = {
+    "panel": frozenset({
+        "escape_recovery", "menu_key", "shift_f10", "state_selected",
+        "state_active", "state_urgent", "state_minimized", "state_disabled",
+        "state_unavailable", "state_checked", "state_expanded",
+    }),
+    "pinned_task": frozenset({
+        "state_selected", "state_unavailable",
+    }),
+    "running_task": frozenset({"state_selected", "state_unavailable"}),
+    "grouped_task": frozenset({"state_selected", "state_unavailable"}),
+    "group_popup": frozenset({
+        "state_checked", "state_unavailable", "state_expanded",
+    }),
+    "launcher": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_urgent", "state_minimized", "state_disabled", "state_checked",
+        "state_expanded",
+    }),
+    "launcher_results": frozenset({
+        "state_active", "state_urgent", "state_minimized", "state_unavailable",
+    }),
+    "desktop_surface_exclusion": frozenset(MATRIX_CHECKS),
+    "transient_notification": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_minimized", "state_unavailable", "state_checked", "state_expanded",
+    }),
+    "notification_center": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_urgent", "state_minimized", "state_expanded",
+    }),
+    "quick_settings": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_urgent", "state_minimized", "state_expanded",
+    }),
+    "logout_confirmation": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_urgent", "state_minimized", "state_unavailable", "state_checked",
+        "state_expanded",
+    }),
+    "output_migration": frozenset({
+        "accessible_description", "arrow_navigation", "disabled_transparency",
+        "enter_activation", "escape_recovery", "high_contrast",
+        "long_string_layout", "menu_key", "minimum_target_size",
+        "reduced_motion", "rtl_smoke", "shift_f10", "space_activation",
+        "state_active", "state_checked", "state_disabled", "state_expanded",
+        "state_minimized", "state_selected", "state_unavailable", "state_urgent",
+        "text_scale",
+    }),
+    "service_restart_focus_recovery": frozenset({
+        "accessible_description", "arrow_navigation", "disabled_transparency",
+        "enter_activation", "escape_recovery", "high_contrast",
+        "long_string_layout", "menu_key", "minimum_target_size",
+        "reduced_motion", "rtl_smoke", "shift_f10", "space_activation",
+        "state_active", "state_checked", "state_disabled", "state_expanded",
+        "state_minimized", "state_selected", "state_unavailable", "state_urgent",
+        "text_scale",
+    }),
+}
+
+NOT_APPLICABLE = {
+    (surface, check): (
+        f"The {surface.replace('_', ' ')} evidence object does not define "
+        f"{check.replace('_', ' ')} semantics"
+    )
+    for surface, checks in NOT_APPLICABLE_CHECKS.items()
+    for check in checks
+}
+
+_MATRIX_KEYS = {
+    (surface, check) for surface in SURFACES for check in MATRIX_CHECKS
+}
+UNIMPLEMENTED_CHECKS = {
+    "panel": frozenset({
+        "arrow_navigation", "enter_activation", "long_string_layout",
+        "space_activation", "text_scale",
+    }),
+    "pinned_task": frozenset({
+        "disabled_transparency", "high_contrast", "long_string_layout",
+        "reduced_motion", "rtl_smoke", "state_active", "state_disabled",
+        "state_expanded", "state_minimized", "state_urgent", "text_scale",
+    }),
+    "running_task": frozenset({
+        "long_string_layout", "state_active", "state_disabled", "state_expanded",
+        "state_minimized", "state_urgent", "text_scale",
+    }),
+    "grouped_task": frozenset({
+        "arrow_navigation", "disabled_transparency", "high_contrast",
+        "long_string_layout", "menu_key", "reduced_motion", "rtl_smoke",
+        "shift_f10", "space_activation", "state_active", "state_checked",
+        "state_disabled", "state_expanded", "state_focused", "state_minimized",
+        "state_urgent", "tab_backtab", "text_scale",
+    }),
+    "group_popup": frozenset({
+        "disabled_transparency", "high_contrast", "long_string_layout",
+        "reduced_motion", "shift_f10", "space_activation", "state_active",
+        "state_disabled", "state_focused", "state_minimized", "state_selected",
+        "state_urgent", "tab_backtab", "text_scale",
+    }),
+    "launcher": frozenset({
+        "high_contrast", "long_string_layout", "space_activation",
+        "state_unavailable", "text_scale",
+    }),
+    "launcher_results": frozenset({
+        "high_contrast", "menu_key", "space_activation", "state_disabled",
+        "state_expanded", "state_focused", "text_scale",
+    }),
+    "desktop_surface_exclusion": frozenset(),
+    "transient_notification": frozenset({
+        "state_disabled", "state_urgent", "text_scale",
+    }),
+    "notification_center": frozenset({
+        "long_string_layout", "space_activation", "state_disabled",
+        "state_unavailable", "text_scale",
+    }),
+    "quick_settings": frozenset({
+        "enter_activation", "high_contrast", "reduced_motion", "state_disabled",
+        "state_unavailable",
+    }),
+    "logout_confirmation": frozenset({
+        "disabled_transparency", "high_contrast", "reduced_motion",
+    }),
+    "output_migration": frozenset(),
+    "service_restart_focus_recovery": frozenset(),
+}
+UNIMPLEMENTED = {
+    (surface, check)
+    for surface, checks in UNIMPLEMENTED_CHECKS.items()
+    for check in checks
+}
+if (
+    set(OBSERVED) & set(CTEST_OBSERVED)
+    or set(OBSERVED) & set(NOT_APPLICABLE)
+    or set(CTEST_OBSERVED) & set(NOT_APPLICABLE)
+    or set(OBSERVED) & set(UNIMPLEMENTED)
+    or set(CTEST_OBSERVED) & set(UNIMPLEMENTED)
+    or set(NOT_APPLICABLE) & set(UNIMPLEMENTED)
+    or set(OBSERVED) | set(CTEST_OBSERVED) | set(NOT_APPLICABLE)
+       | set(UNIMPLEMENTED) != _MATRIX_KEYS
+):
+    raise RuntimeError("accessibility_coverage_map_invalid")
 
 
 class AccessibilityObserverError(RuntimeError):
@@ -256,6 +477,20 @@ class ClosedArgumentParser(argparse.ArgumentParser):
 def require(condition: bool, identifier: str) -> None:
     if not condition:
         raise AccessibilityObserverError(identifier)
+
+
+def duplicate_safe_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def reject_constant(value: str) -> NoReturn:
+    del value
+    raise ValueError("non-finite JSON number")
 
 
 def binding() -> dict[str, str]:
@@ -336,40 +571,258 @@ def reviewed_skip(code: str, reason: str) -> dict[str, Any]:
     }
 
 
-def passed() -> dict[str, str]:
+def passed(
+    method: str = "Validated source bound installed GI AT SPI lifecycle evidence",
+) -> dict[str, str]:
     return {
         "status": "passed",
-        "method": "Validated source bound installed GI AT SPI lifecycle evidence",
+        "method": method,
     }
 
 
-def accessibility_result(surface: str, check: str) -> dict[str, Any]:
+def read_regular_file(path: Path, maximum: int, mode: int | None = None) -> bytes:
+    """Read one bounded regular file without following its final component."""
+
+    require(path.is_absolute() and not path.is_symlink(), "evidence_file_invalid")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise AccessibilityObserverError("evidence_file_unavailable") from error
+    try:
+        before = os.fstat(descriptor)
+        require(
+            stat.S_ISREG(before.st_mode)
+            and 0 < before.st_size <= maximum
+            and (mode is None or stat.S_IMODE(before.st_mode) == mode),
+            "evidence_file_invalid",
+        )
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(64 * 1024, maximum + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            require(total <= maximum, "evidence_file_invalid")
+        after = os.fstat(descriptor)
+        require(
+            total == before.st_size
+            and after.st_size == before.st_size
+            and after.st_mtime_ns == before.st_mtime_ns,
+            "evidence_file_changed",
+        )
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def require_desktop_exclusion_contract(document: Mapping[str, Any]) -> None:
+    """Bind the all-N/A desktop row to the deliberate AT-SPI exclusion."""
+
+    qml_path = ROOT / "src" / "shell" / "desktop" / "DesktopSurface.qml"
+    workflow_path = ROOT / "tests" / "integration" / "pd2_tier_c_workflow.py"
+    adapter_path = ROOT / "tests" / "integration" / "pd2_live_xorg.py"
+    try:
+        qml_source = read_regular_file(qml_path, 16_384).decode("utf-8")
+        workflow_source = read_regular_file(workflow_path, 524_288).decode("utf-8")
+        adapter_source = read_regular_file(adapter_path, 524_288).decode("utf-8")
+    except UnicodeError as error:
+        raise AccessibilityObserverError("desktop_exclusion_contract_invalid") from error
+    require(
+        qml_source.count("Accessible.ignored: true") == 1
+        and 'Accessible.name: qsTr("Desktop wallpaper")' in qml_source
+        and workflow_source.count('"tier_c_desktop_accessibility_excluded"') >= 2
+        and adapter_source.count('TierCPortResult("tier_c_desktop_accessibility_excluded")')
+        == 1
+        and "desktop" in _result_ids(document)["tier_c_replay"],
+        "desktop_exclusion_contract_invalid",
+    )
+
+
+def installed_artifact_sha256(document: Mapping[str, Any]) -> str:
+    """Derive the lifecycle collector's canonical five-executable identity."""
+
+    records = document.get("installed_executables")
+    require(isinstance(records, Sequence), "installed_demo_evidence_invalid")
+    normalized: list[dict[str, str]] = []
+    for record in records:
+        require(
+            isinstance(record, Mapping)
+            and set(record) == {"name", "sha256"}
+            and isinstance(record["name"], str)
+            and isinstance(record["sha256"], str)
+            and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is not None,
+            "installed_demo_evidence_invalid",
+        )
+        normalized.append({
+            "path": f"/usr/bin/{record['name']}",
+            "sha256": record["sha256"],
+        })
+    require(
+        [record["name"] for record in records] == [
+            "prismdrake-session", "prismdrake-settingsd", "prismdrake-notifyd",
+            "prismdrake-shell", "prismdrake-shellctl",
+        ],
+        "installed_demo_evidence_invalid",
+    )
+    payload = json.dumps(
+        normalized, allow_nan=False, ensure_ascii=True,
+        separators=(",", ":"), sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def package_test_evidence() -> Mapping[str, Any]:
+    """Validate the exact-inventory/JUnit package-test stage once per matrix."""
+
+    configured = os.environ.get("PRISMDRAKE_PD2_PACKAGE_TEST_EVIDENCE", "")
+    path = Path(configured)
+    require(
+        bool(configured) and path.is_absolute(),
+        "package_test_evidence_unavailable",
+    )
+    try:
+        raw = read_regular_file(path, 524_288, 0o600)
+        document = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=duplicate_safe_object,
+            parse_constant=reject_constant,
+        )
+    except (OSError, UnicodeError, ValueError) as error:
+        raise AccessibilityObserverError("package_test_evidence_invalid") from error
+    require(
+        isinstance(document, dict) and set(document) == {
+            "schema_version", "stage_kind", "package_test",
+        } and document["schema_version"] == 1
+        and document["stage_kind"] == "pd2_package_test",
+        "package_test_evidence_invalid",
+    )
+    package = document["package_test"]
+    required_fields = {
+        "source_revision", "ebuild_sha256", "artifact_sha256", "features_test",
+        "result", "selected_test_count", "executed_test_count",
+        "passed_test_count", "skipped_test_count", "skipped_tests",
+        "disabled_test_count", "not_run_test_count", "test_manifest_sha256",
+        "inventory_contract_sha256", "excluded_tests",
+    }
+    require(isinstance(package, dict) and set(package) == required_fields,
+            "package_test_evidence_invalid")
+    inventory_path = ROOT / "tests" / "gentoo" / "pd2-ctest-inventory-v1.json"
+    ebuild_path = (
+        ROOT / "packaging" / "gentoo" / "repository" / "x11-misc"
+        / "prismdrake" / "prismdrake-9999.ebuild"
+    )
+    try:
+        inventory_raw = inventory_path.read_bytes()
+        inventory = json.loads(
+            inventory_raw.decode("utf-8"),
+            object_pairs_hook=duplicate_safe_object,
+            parse_constant=reject_constant,
+        )
+    except (OSError, UnicodeError, ValueError) as error:
+        raise AccessibilityObserverError("ctest_inventory_contract_invalid") from error
+    excluded = inventory.get("excluded_tests") if isinstance(inventory, dict) else None
+    exact_count = inventory.get("exact_test_count") if isinstance(inventory, dict) else None
+    selected_count = (
+        exact_count - len(excluded)
+        if isinstance(exact_count, int) and isinstance(excluded, list)
+        else -1
+    )
+    sha_pattern = re.compile(r"[0-9a-f]{64}")
+    require(
+        package["source_revision"] == binding()["source_revision"]
+        and package["ebuild_sha256"]
+        == hashlib.sha256(read_regular_file(ebuild_path, 524_288)).hexdigest()
+        and package["features_test"] is True and package["result"] == "passed"
+        and package["selected_test_count"] == selected_count
+        and package["executed_test_count"] == selected_count
+        and package["passed_test_count"] == selected_count - 1
+        and package["skipped_test_count"] == 1
+        and package["skipped_tests"] == [{
+            "test_id": "AtomicFileTest.RejectsDestinationOwnedByAnotherUser",
+            "reason": "requires_root_ownership_transition",
+        }]
+        and package["disabled_test_count"] == 0
+        and package["not_run_test_count"] == 0
+        and package["excluded_tests"] == excluded
+        and package["inventory_contract_sha256"]
+        == hashlib.sha256(inventory_raw).hexdigest()
+        and all(
+            isinstance(package[field], str)
+            and sha_pattern.fullmatch(package[field]) is not None
+            for field in (
+                "ebuild_sha256", "artifact_sha256", "test_manifest_sha256",
+                "inventory_contract_sha256",
+            )
+        ),
+        "package_test_evidence_invalid",
+    )
+    return package
+
+
+def accessibility_result(
+    surface: str, check: str, package_test: Mapping[str, Any] | None = None,
+    installed_document: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     require(surface in SURFACES and check in MATRIX_CHECKS, "accessibility_probe_invalid")
-    require_gi_atspi()
-    document = installed_evidence()
+    if installed_document is None:
+        require_gi_atspi()
+        document = installed_evidence()
+    else:
+        document = installed_document
     key = (surface, check)
-    if surface == "service_restart_focus_recovery" and key not in OBSERVED:
-        return reviewed_skip(
-            "live_adapter_unimplemented",
-            "Installed lifecycle evidence does not observe post restart keyboard focus",
+    required = OBSERVED.get(key)
+    if required is not None:
+        observed = _result_ids(document)
+        require(
+            all(identifier in observed[phase] for phase, identifier in required),
+            "installed_demo_observation_missing",
+        )
+        return passed()
+    ctest_name = CTEST_OBSERVED.get(key)
+    if ctest_name is not None:
+        require(package_test is not None, "package_test_evidence_unavailable")
+        require(
+            ctest_name in {value[0] for value in CTEST_CHECKS.values()},
+            "accessibility_ctest_contract_invalid",
+        )
+        return passed(
+            f"Exact source inventory and passing JUnit include {ctest_name}"
         )
     if key in NOT_APPLICABLE:
-        return reviewed_skip(
-            "not_applicable",
-            "The named semantic object does not expose this state or property",
-        )
-    required = OBSERVED.get(key)
-    if required is None:
-        return reviewed_skip(
-            "live_adapter_unimplemented",
-            "Installed lifecycle evidence does not observe this exact matrix check",
-        )
-    observed = _result_ids(document)
-    require(
-        all(identifier in observed[phase] for phase, identifier in required),
-        "installed_demo_observation_missing",
+        return reviewed_skip("not_applicable", NOT_APPLICABLE[key])
+    require(key in UNIMPLEMENTED, "accessibility_coverage_map_incomplete")
+    return reviewed_skip(
+        "live_adapter_unimplemented",
+        "This applicable matrix cell lacks exact installed or source-bound QML evidence",
     )
-    return passed()
+
+
+def matrix_result() -> dict[str, Any]:
+    """Resolve the complete matrix with one package-test validation."""
+
+    require_gi_atspi()
+    document = installed_evidence()
+    package = package_test_evidence()
+    require_desktop_exclusion_contract(document)
+    require(
+        package["artifact_sha256"] == installed_artifact_sha256(document),
+        "package_test_artifact_mismatch",
+    )
+    return {
+        "matrix": [
+            {
+                "surface": surface,
+                "checks": {
+                    check: accessibility_result(surface, check, package, document)
+                    for check in MATRIX_CHECKS
+                },
+            }
+            for surface in SURFACES
+        ]
+    }
 
 
 def global_result(global_check: str) -> dict[str, Any]:
@@ -408,10 +861,14 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--surface")
     parser.add_argument("--check")
     parser.add_argument("--global", dest="global_check")
+    parser.add_argument("--matrix", action="store_true")
     options = parser.parse_args()
     require(
-        (options.global_check is not None)
-        != (options.surface is not None and options.check is not None),
+        sum((
+            options.global_check is not None,
+            options.surface is not None and options.check is not None,
+            options.matrix,
+        )) == 1,
         "arguments_invalid",
     )
     return options
@@ -420,11 +877,12 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> int:
     try:
         options = parse_arguments()
-        result = (
-            global_result(options.global_check)
-            if options.global_check is not None
-            else accessibility_result(options.surface, options.check)
-        )
+        if options.matrix:
+            result = matrix_result()
+        elif options.global_check is not None:
+            result = global_result(options.global_check)
+        else:
+            result = accessibility_result(options.surface, options.check)
         print(
             json.dumps(
                 {"binding": binding(), "result": result},

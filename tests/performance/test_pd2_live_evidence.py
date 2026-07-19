@@ -17,6 +17,7 @@ from unittest import mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from collector_common import CollectorError  # noqa: E402
 from pd2_evidence_contract import (  # noqa: E402
     INTERNATIONALIZATION_CHECKS,
     MATRIX_CHECKS,
@@ -36,6 +37,7 @@ from pd2_live_evidence import (  # noqa: E402
     write_evidence,
 )
 from collect_pd2_live_evidence import (  # noqa: E402
+    accessibility_reviewed_skips,
     attest_source_and_observers,
     build_observer_environment,
     observer_commands,
@@ -124,6 +126,27 @@ class FakeLivePort:
         )
 
 
+class BatchLivePort(FakeLivePort):
+    def accessibility_matrix(self) -> BoundResult:
+        return BoundResult(
+            self.binding,
+            {
+                "matrix": [
+                    {
+                        "surface": surface,
+                        "checks": {
+                            check: self.results.get(
+                                f"accessibility.{surface}.{check}", passed()
+                            )
+                            for check in MATRIX_CHECKS
+                        },
+                    }
+                    for surface in SURFACES
+                ]
+            },
+        )
+
+
 def config(reviewed_skips: Mapping[str, str] | None = None) -> LiveCollectionConfig:
     return LiveCollectionConfig(
         source_revision=REVISION,
@@ -140,6 +163,80 @@ def config(reviewed_skips: Mapping[str, str] | None = None) -> LiveCollectionCon
 
 
 class LiveCollectorTests(unittest.TestCase):
+    def test_reviewed_accessibility_profile_is_exact_and_tracked(self) -> None:
+        accessibility = Path(__file__).resolve().parents[1] / "accessibility"
+        if str(accessibility) not in sys.path:
+            sys.path.insert(0, str(accessibility))
+        import pd2_accessibility_observer as observer
+
+        policy = accessibility_reviewed_skips("pd2-reference-v1")
+        self.assertEqual(
+            len(policy), len(observer.NOT_APPLICABLE) + len(observer.UNIMPLEMENTED) + 1
+        )
+        self.assertEqual(
+            policy["accessibility.desktop_surface_exclusion.accessible_name"],
+            "not_applicable",
+        )
+        self.assertEqual(
+            policy["accessibility.pinned_task.state_expanded"],
+            "live_adapter_unimplemented",
+        )
+        self.assertEqual(
+            policy["accessibility.screen_reader_workflow"],
+            "dependency_unavailable",
+        )
+        self.assertEqual(accessibility_reviewed_skips(None), {})
+        with self.assertRaisesRegex(
+            CollectorError, "^reviewed_accessibility_profile_invalid$"
+        ):
+            accessibility_reviewed_skips("unknown")
+
+    def test_collects_one_bound_accessibility_batch(self) -> None:
+        port = BatchLivePort()
+        document = collect_evidence(config(), port)
+        validate_evidence_document(document)
+        self.assertEqual(port.accessibility_calls, [])
+        self.assertEqual(len(document["accessibility"]["matrix"]), 14)
+
+    def test_batch_rejects_missing_or_reordered_surface(self) -> None:
+        port = BatchLivePort()
+        original = port.accessibility_matrix
+
+        def reordered() -> BoundResult:
+            result = original()
+            matrix = list(result.result["matrix"])
+            matrix[0], matrix[1] = matrix[1], matrix[0]
+            return BoundResult(result.binding, {"matrix": matrix})
+
+        port.accessibility_matrix = reordered  # type: ignore[method-assign]
+        with self.assertRaisesRegex(EvidenceError, "^accessibility_batch_invalid$"):
+            collect_evidence(config(), port)
+
+    def test_batch_rejects_extra_fields_and_trailing_rows(self) -> None:
+        for mutation in ("extra_field", "row_field", "trailing_row"):
+            with self.subTest(mutation=mutation):
+                port = BatchLivePort()
+                original = port.accessibility_matrix
+
+                def invalid() -> BoundResult:
+                    result = original()
+                    document = dict(result.result)
+                    if mutation == "extra_field":
+                        document["private"] = "must not survive"
+                    elif mutation == "row_field":
+                        matrix = [dict(entry) for entry in document["matrix"]]
+                        matrix[0]["unexpected"] = True
+                        document["matrix"] = matrix
+                    else:
+                        document["matrix"] = [*document["matrix"], "ignored"]
+                    return BoundResult(result.binding, document)
+
+                port.accessibility_matrix = invalid  # type: ignore[method-assign]
+                with self.assertRaisesRegex(
+                    EvidenceError, "^accessibility_batch_invalid$"
+                ):
+                    collect_evidence(config(), port)
+
     def test_collects_all_fifteen_groups_and_full_accessibility_matrix(self) -> None:
         port = FakeLivePort()
         document = collect_evidence(config(), port)

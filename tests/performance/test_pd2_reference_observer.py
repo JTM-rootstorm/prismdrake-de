@@ -14,6 +14,8 @@ from unittest import mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "accessibility"))
+import pd2_accessibility_observer as accessibility_observer  # noqa: E402
 import pd2_reference_observer as observer  # noqa: E402
 import pd2_runtime_performance as runtime_performance  # noqa: E402
 
@@ -163,6 +165,12 @@ def idle_document(samples: list[int]) -> dict[str, object]:
 
 
 class ReferenceObserverTests(unittest.TestCase):
+    def test_fallback_not_applicable_policy_matches_dedicated_observer(self) -> None:
+        self.assertEqual(
+            observer.NOT_APPLICABLE_ACCESSIBILITY,
+            set(accessibility_observer.NOT_APPLICABLE),
+        )
+
     def test_build_runner_must_resolve_to_exact_configured_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             build = Path(temporary)

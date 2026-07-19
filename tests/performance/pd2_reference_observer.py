@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 from typing import Any, NoReturn, Sequence
 
+from pd2_evidence_contract import MATRIX_CHECKS
+
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_INPUT_BYTES = 524_288
@@ -112,29 +114,67 @@ I18N_EXACT_TESTS = {
 
 # These combinations have no corresponding state on the named semantic object.
 # The collector still requires the operator to list every returned skip.
+NOT_APPLICABLE_ACCESSIBILITY_CHECKS = {
+    "panel": frozenset({
+        "escape_recovery", "menu_key", "shift_f10", "state_selected",
+        "state_active", "state_urgent", "state_minimized", "state_disabled",
+        "state_unavailable", "state_checked", "state_expanded",
+    }),
+    "pinned_task": frozenset({"state_selected", "state_unavailable"}),
+    "running_task": frozenset({"state_selected", "state_unavailable"}),
+    "grouped_task": frozenset({"state_selected", "state_unavailable"}),
+    "group_popup": frozenset({
+        "state_checked", "state_unavailable", "state_expanded",
+    }),
+    "launcher": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_urgent", "state_minimized", "state_disabled", "state_checked",
+        "state_expanded",
+    }),
+    "launcher_results": frozenset({
+        "state_active", "state_urgent", "state_minimized", "state_unavailable",
+    }),
+    "desktop_surface_exclusion": frozenset(MATRIX_CHECKS),
+    "transient_notification": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_minimized", "state_unavailable", "state_checked", "state_expanded",
+    }),
+    "notification_center": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_urgent", "state_minimized", "state_expanded",
+    }),
+    "quick_settings": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_urgent", "state_minimized", "state_expanded",
+    }),
+    "logout_confirmation": frozenset({
+        "menu_key", "shift_f10", "state_selected", "state_active",
+        "state_urgent", "state_minimized", "state_unavailable", "state_checked",
+        "state_expanded",
+    }),
+    "output_migration": frozenset({
+        "accessible_description", "arrow_navigation", "disabled_transparency",
+        "enter_activation", "escape_recovery", "high_contrast",
+        "long_string_layout", "menu_key", "minimum_target_size",
+        "reduced_motion", "rtl_smoke", "shift_f10", "space_activation",
+        "state_active", "state_checked", "state_disabled", "state_expanded",
+        "state_minimized", "state_selected", "state_unavailable", "state_urgent",
+        "text_scale",
+    }),
+    "service_restart_focus_recovery": frozenset({
+        "accessible_description", "arrow_navigation", "disabled_transparency",
+        "enter_activation", "escape_recovery", "high_contrast",
+        "long_string_layout", "menu_key", "minimum_target_size",
+        "reduced_motion", "rtl_smoke", "shift_f10", "space_activation",
+        "state_active", "state_checked", "state_disabled", "state_expanded",
+        "state_minimized", "state_selected", "state_unavailable", "state_urgent",
+        "text_scale",
+    }),
+}
 NOT_APPLICABLE_ACCESSIBILITY = {
-    ("panel", "state_selected"),
-    ("panel", "state_urgent"),
-    ("panel", "state_minimized"),
-    ("panel", "state_checked"),
-    ("panel", "state_expanded"),
-    ("desktop_surface_exclusion", "state_selected"),
-    ("desktop_surface_exclusion", "state_active"),
-    ("desktop_surface_exclusion", "state_urgent"),
-    ("desktop_surface_exclusion", "state_minimized"),
-    ("desktop_surface_exclusion", "state_disabled"),
-    ("desktop_surface_exclusion", "state_unavailable"),
-    ("desktop_surface_exclusion", "state_checked"),
-    ("desktop_surface_exclusion", "state_expanded"),
-    ("transient_notification", "state_selected"),
-    ("transient_notification", "state_minimized"),
-    ("transient_notification", "state_checked"),
-    ("transient_notification", "state_expanded"),
-    ("logout_confirmation", "state_selected"),
-    ("logout_confirmation", "state_urgent"),
-    ("logout_confirmation", "state_minimized"),
-    ("logout_confirmation", "state_checked"),
-    ("logout_confirmation", "state_expanded"),
+    (surface, check)
+    for surface, checks in NOT_APPLICABLE_ACCESSIBILITY_CHECKS.items()
+    for check in checks
 }
 
 

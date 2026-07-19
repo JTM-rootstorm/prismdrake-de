@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import stat
 import sys
@@ -62,7 +63,7 @@ class AccessibilityObserverTests(unittest.TestCase):
             mock.patch.object(observer, "require_gi_atspi", return_value=object()),
             mock.patch.object(observer, "installed_evidence", return_value=self.document),
         ):
-            return observer.accessibility_result(surface, check)
+            return observer.accessibility_result(surface, check, {})
 
     def test_dispatches_the_exact_fourteen_by_twenty_six_matrix(self) -> None:
         results = {
@@ -71,11 +72,15 @@ class AccessibilityObserverTests(unittest.TestCase):
             for check in observer.MATRIX_CHECKS
         }
         self.assertEqual(len(results), 14 * 26)
-        self.assertEqual(len(observer.OBSERVED), 48)
+        self.assertEqual(len(observer.OBSERVED), 49)
         self.assertTrue(
             all(result["status"] in {"passed", "skipped"} for result in results.values())
         )
         self.assertEqual(results[("running_task", "state_active")]["status"], "skipped")
+        self.assertEqual(
+            results[("running_task", "state_active")]["reason_code"],
+            "live_adapter_unimplemented",
+        )
         self.assertEqual(
             results[("running_task", "escape_recovery")]["status"], "passed"
         )
@@ -98,8 +103,7 @@ class AccessibilityObserverTests(unittest.TestCase):
             result = self.observed("service_restart_focus_recovery", check)
             self.assertEqual(result["status"], "skipped")
             self.assertTrue(result["reviewed"])
-            self.assertEqual(result["reason_code"], "live_adapter_unimplemented")
-            self.assertIn("post restart keyboard focus", result["reason"])
+            self.assertEqual(result["reason_code"], "not_applicable")
         self.assertEqual(
             self.observed("service_restart_focus_recovery", "accessible_name")[
                 "status"
@@ -172,30 +176,175 @@ class AccessibilityObserverTests(unittest.TestCase):
                 ):
                     observer.accessibility_result(surface, check)
 
-    def test_downgrades_indirect_or_non_atspi_state_inferences(self) -> None:
-        downgraded = (
-            ("pinned_task", "accessible_name"),
-            ("pinned_task", "arrow_navigation"),
-            ("running_task", "state_active"),
-            ("running_task", "state_minimized"),
-            ("grouped_task", "state_expanded"),
-            ("group_popup", "accessible_role"),
-            ("launcher", "state_expanded"),
-            ("launcher_results", "state_focused"),
-            ("launcher_results", "state_selected"),
-            ("transient_notification", "enter_activation"),
-            ("transient_notification", "state_urgent"),
-            ("notification_center", "state_expanded"),
-            ("quick_settings", "state_expanded"),
-            ("logout_confirmation", "state_expanded"),
+    def test_complete_matrix_has_one_explicit_evidence_class_per_cell(self) -> None:
+        matrix = {
+            (surface, check)
+            for surface in observer.SURFACES
+            for check in observer.MATRIX_CHECKS
+        }
+        live = set(observer.OBSERVED)
+        ctest = set(observer.CTEST_OBSERVED)
+        not_applicable = set(observer.NOT_APPLICABLE)
+        unimplemented = set(observer.UNIMPLEMENTED)
+        self.assertEqual(live | ctest | not_applicable | unimplemented, matrix)
+        self.assertFalse(live & ctest)
+        self.assertFalse(live & not_applicable)
+        self.assertFalse(live & unimplemented)
+        self.assertFalse(ctest & not_applicable)
+        self.assertFalse(ctest & unimplemented)
+        self.assertFalse(not_applicable & unimplemented)
+        self.assertNotIn("live_adapter_unimplemented", {
+            result["reason_code"]
+            for key in not_applicable
+            if (result := self.observed(*key))["status"] == "skipped"
+        })
+        for key in unimplemented:
+            self.assertEqual(
+                self.observed(*key)["reason_code"], "live_adapter_unimplemented"
+            )
+
+    def test_batch_matrix_validates_shared_inputs_once(self) -> None:
+        with (
+            mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
+            mock.patch.object(observer, "require_gi_atspi", return_value=object()),
+            mock.patch.object(observer, "installed_evidence", return_value=self.document),
+            mock.patch.object(
+                observer,
+                "package_test_evidence",
+                return_value={
+                    "artifact_sha256": observer.installed_artifact_sha256(self.document)
+                },
+            ) as package,
+            mock.patch.object(observer, "require_desktop_exclusion_contract") as desktop,
+        ):
+            result = observer.matrix_result()
+        self.assertEqual(len(result["matrix"]), 14)
+        self.assertTrue(all(len(entry["checks"]) == 26 for entry in result["matrix"]))
+        package.assert_called_once_with()
+        desktop.assert_called_once_with(self.document)
+
+        with (
+            mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
+            mock.patch.object(observer, "require_gi_atspi", return_value=object()),
+            mock.patch.object(observer, "installed_evidence", return_value=self.document),
+            mock.patch.object(
+                observer,
+                "package_test_evidence",
+                return_value={"artifact_sha256": "0" * 64},
+            ),
+            mock.patch.object(observer, "require_desktop_exclusion_contract"),
+            self.assertRaisesRegex(
+                observer.AccessibilityObserverError,
+                "^package_test_artifact_mismatch$",
+            ),
+        ):
+            observer.matrix_result()
+
+    def test_package_stage_binds_exact_inventory_and_complete_junit_counts(self) -> None:
+        inventory_path = (
+            ACCESSIBILITY.parents[1] / "tests" / "gentoo"
+            / "pd2-ctest-inventory-v1.json"
         )
-        for surface, check in downgraded:
-            with self.subTest(surface=surface, check=check):
-                result = self.observed(surface, check)
-                self.assertEqual(result["status"], "skipped")
-                self.assertEqual(
-                    result["reason_code"], "live_adapter_unimplemented"
-                )
+        inventory_raw = inventory_path.read_bytes()
+        inventory = json.loads(inventory_raw)
+        ebuild = (
+            ACCESSIBILITY.parents[1] / "packaging" / "gentoo" / "repository"
+            / "x11-misc" / "prismdrake" / "prismdrake-9999.ebuild"
+        )
+        selected = inventory["exact_test_count"] - len(inventory["excluded_tests"])
+        package = {
+            "source_revision": REVISION,
+            "ebuild_sha256": hashlib.sha256(ebuild.read_bytes()).hexdigest(),
+            "artifact_sha256": "2" * 64,
+            "features_test": True,
+            "result": "passed",
+            "selected_test_count": selected,
+            "executed_test_count": selected,
+            "passed_test_count": selected - 1,
+            "skipped_test_count": 1,
+            "skipped_tests": [{
+                "test_id": "AtomicFileTest.RejectsDestinationOwnedByAnotherUser",
+                "reason": "requires_root_ownership_transition",
+            }],
+            "disabled_test_count": 0,
+            "not_run_test_count": 0,
+            "test_manifest_sha256": "3" * 64,
+            "inventory_contract_sha256": hashlib.sha256(inventory_raw).hexdigest(),
+            "excluded_tests": inventory["excluded_tests"],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "package.json"
+            path.write_text(json.dumps({
+                "schema_version": 1,
+                "stage_kind": "pd2_package_test",
+                "package_test": package,
+            }), encoding="utf-8")
+            path.chmod(0o600)
+            environment = {
+                **BINDING_ENVIRONMENT,
+                "PRISMDRAKE_PD2_PACKAGE_TEST_EVIDENCE": str(path),
+            }
+            with mock.patch.dict(os.environ, environment, clear=True):
+                self.assertEqual(observer.package_test_evidence(), package)
+
+            for field, value in (
+                ("ebuild_sha256", "4" * 64),
+                ("executed_test_count", selected - 1),
+                ("passed_test_count", selected),
+                ("inventory_contract_sha256", "4" * 64),
+            ):
+                mutated = dict(package)
+                mutated[field] = value
+                path.write_text(json.dumps({
+                    "schema_version": 1,
+                    "stage_kind": "pd2_package_test",
+                    "package_test": mutated,
+                }), encoding="utf-8")
+                with (
+                    self.subTest(field=field),
+                    mock.patch.dict(os.environ, environment, clear=True),
+                    self.assertRaisesRegex(
+                        observer.AccessibilityObserverError,
+                        "^package_test_evidence_invalid$",
+                    ),
+                ):
+                    observer.package_test_evidence()
+
+            path.chmod(0o644)
+            with (
+                mock.patch.dict(os.environ, environment, clear=True),
+                self.assertRaisesRegex(
+                    observer.AccessibilityObserverError,
+                    "^evidence_file_invalid$",
+                ),
+            ):
+                observer.package_test_evidence()
+
+            path.write_text(
+                '{"schema_version":1,"schema_version":1,'
+                '"stage_kind":"pd2_package_test","package_test":{}}',
+                encoding="utf-8",
+            )
+            path.chmod(0o600)
+            with (
+                mock.patch.dict(os.environ, environment, clear=True),
+                self.assertRaisesRegex(
+                    observer.AccessibilityObserverError,
+                    "^package_test_evidence_invalid$",
+                ),
+            ):
+                observer.package_test_evidence()
+
+    def test_desktop_exclusion_is_bound_to_exact_qml_contract(self) -> None:
+        observer.require_desktop_exclusion_contract(self.document)
+        with (
+            mock.patch.object(observer, "read_regular_file", return_value=b"Item {}\n"),
+            self.assertRaisesRegex(
+                observer.AccessibilityObserverError,
+                "^desktop_exclusion_contract_invalid$",
+            ),
+        ):
+            observer.require_desktop_exclusion_contract(self.document)
 
     def test_live_atspi_requires_all_installed_tier_c_observations(self) -> None:
         with (
