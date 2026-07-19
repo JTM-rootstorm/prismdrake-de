@@ -233,6 +233,18 @@ Result<void> ShellRuntimeComposition::present(composition::SurfaceFamily family,
     return commit(std::move(candidate), std::move(transition));
 }
 
+Result<void> ShellRuntimeComposition::toggle(composition::SurfaceFamily family,
+                                             std::string_view outputName,
+                                             composition::FocusOrigin origin) {
+    auto output = requestedOutput(outputName);
+    if (!output) {
+        return Result<void>::failure(output.error());
+    }
+    auto candidate = composition_;
+    auto transition = candidate.toggle(family, std::move(output).value(), std::move(origin));
+    return commit(std::move(candidate), std::move(transition));
+}
+
 Result<void> ShellRuntimeComposition::dismiss(composition::SurfaceFamily family) {
     auto candidate = composition_;
     auto transition = candidate.dismiss(family);

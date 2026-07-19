@@ -19,7 +19,14 @@ from typing import Any, Callable
 APPLICATION_NAME = "prismdrake-shell"
 LAUNCHER_TITLE = "Prismdrake Launcher"
 FIXTURE_RESULT_NAME = "Prismdrake Evidence App"
-DIAGNOSTICS_NAME = "Prismdrake Lustre, generation 1"
+NOTIFICATION_CENTER_NAME = "Open notification center"
+QUICK_SETTINGS_NAME = "Open quick settings"
+KNOWN_PANEL_CONTROL_NAMES = (
+    "Open applications",
+    "Prismdrake Lustre, generation 1",
+    NOTIFICATION_CENTER_NAME,
+    QUICK_SETTINGS_NAME,
+)
 PHASE_IDS = (
     "panel_initial",
     "launcher_search_focus",
@@ -35,17 +42,17 @@ PHASE_FOCUS = (
     FIXTURE_RESULT_NAME,
     "Search applications",
     "Open applications",
-    DIAGNOSTICS_NAME,
+    NOTIFICATION_CENTER_NAME,
     "Open applications",
 )
 PHASE_CONTROL_NAMES = (
-    ("Open applications", DIAGNOSTICS_NAME),
+    ("Open applications", NOTIFICATION_CENTER_NAME, QUICK_SETTINGS_NAME),
     ("Applications", "Search applications", FIXTURE_RESULT_NAME),
     ("Search applications", FIXTURE_RESULT_NAME),
     ("Search applications", FIXTURE_RESULT_NAME),
-    ("Open applications", DIAGNOSTICS_NAME),
-    ("Open applications", DIAGNOSTICS_NAME),
-    ("Open applications", DIAGNOSTICS_NAME),
+    ("Open applications", NOTIFICATION_CENTER_NAME, QUICK_SETTINGS_NAME),
+    ("Open applications", NOTIFICATION_CENTER_NAME, QUICK_SETTINGS_NAME),
+    ("Open applications", NOTIFICATION_CENTER_NAME, QUICK_SETTINGS_NAME),
 )
 TOP_LEVEL_KEYS = {"application", "environment", "fixture", "phases", "schema_version"}
 CONTROL_KEYS = {"actions", "description", "name", "role", "states"}
@@ -55,12 +62,14 @@ EXPECTED_DESCRIPTIONS = {
         "Application launcher",
         "Application launcher. Opaque fallback active",
     },
-    DIAGNOSTICS_NAME: {
-        "Theme diagnostics",
-        "Theme diagnostics. Opaque fallback active",
-    },
+    NOTIFICATION_CENTER_NAME: {"Show notification history on this panel's output"},
+    QUICK_SETTINGS_NAME: {"Show shell and notification controls on this panel's output"},
     "Open applications": {"Open the application launcher"},
-    FIXTURE_RESULT_NAME: {"Evidence utility. Deterministic accessibility fixture."},
+    FIXTURE_RESULT_NAME: {
+        "Evidence utility. Deterministic accessibility fixture.",
+        "Generic name: Evidence utility. Description: Deterministic accessibility fixture. "
+        "Terminal required: No. Pinned: No. Actions menu available: Yes.",
+    },
     "Search applications": {"Search applications (up to 256 characters)"},
 }
 
@@ -156,9 +165,13 @@ def example_evidence_document() -> dict[str, Any]:
 
     descriptions = {
         "Applications": "Application launcher",
-        DIAGNOSTICS_NAME: "Theme diagnostics",
+        NOTIFICATION_CENTER_NAME: "Show notification history on this panel's output",
+        QUICK_SETTINGS_NAME: "Show shell and notification controls on this panel's output",
         "Open applications": "Open the application launcher",
-        FIXTURE_RESULT_NAME: "Evidence utility. Deterministic accessibility fixture.",
+        FIXTURE_RESULT_NAME: (
+            "Generic name: Evidence utility. Description: Deterministic accessibility fixture. "
+            "Terminal required: No. Pinned: No. Actions menu available: Yes."
+        ),
         "Search applications": "Search applications (up to 256 characters)",
     }
     roles = {
@@ -396,12 +409,30 @@ def _find_unique(atspi: Any, nodes: list[Any], name: str, expected_role: str) ->
     matches = [
         node
         for node in nodes
-        if (node.get_name() or "") == name and _role_matches(atspi, node, expected_role)
+        if (node.get_name() or "") == name
+        and _role_matches(atspi, node, expected_role)
+        and _has_state(node, atspi.StateType.SHOWING)
+        and _has_state(node, atspi.StateType.VISIBLE)
     ]
-    _require(
-        len(matches) == 1,
-        f"expected exactly one {expected_role} accessible control named {name!r}",
-    )
+    if len(matches) != 1:
+        presence = ",".join(
+            f"{candidate}={int(any((node.get_name() or '') == candidate for node in nodes))}"
+            for candidate in KNOWN_PANEL_CONTROL_NAMES
+        )
+        named_roles = ",".join(
+            sorted(
+                {
+                    (node.get_role_name() or "unknown")[:32]
+                    for node in nodes
+                    if (node.get_name() or "") == name
+                }
+            )
+        )
+        raise EvidenceError(
+            f"expected exactly one {expected_role} accessible control named {name!r}; "
+            f"match_count={min(len(matches), 17)}; "
+            f"known panel controls: {presence}; observed roles: {named_roles or 'none'}"
+        )
     return matches[0]
 
 
@@ -811,6 +842,29 @@ def _focus_and_send_key(
     _require(sent.returncode == 0, f"keyboard injection failed for {key}")
 
 
+def _focus_accessible_and_send_key(
+    atspi: Any, xdotool: Path, key: str, window: str, expected_process_id: int, node: Any
+) -> None:
+    _require(
+        _window_process_matches(xdotool, window, expected_process_id),
+        "keyboard target ownership changed",
+    )
+    focused = _run_checked([str(xdotool), "windowfocus", "--sync", window])
+    _require(focused.returncode == 0, "keyboard target focus request failed")
+    observed = _run_checked([str(xdotool), "getwindowfocus"])
+    _require(
+        observed.returncode == 0 and observed.stdout.strip() == window,
+        "keyboard target focus did not converge",
+    )
+    _require(_grab_focus(node), "accessible keyboard target focus request was rejected")
+    _wait_until(
+        lambda: _has_state(node, atspi.StateType.FOCUSED),
+        "accessible keyboard target focus",
+    )
+    sent = _run_checked([str(xdotool), "key", "--clearmodifiers", key])
+    _require(sent.returncode == 0, f"keyboard injection failed for {key}")
+
+
 def _phase(atspi: Any, phase_id: str, focused: str | None,
            specs: tuple[tuple[str, str], ...]) -> dict[str, Any]:
     observed: dict[str, Any] | None = None
@@ -943,7 +997,8 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
         _wait_until(lambda: _find_application(Atspi), "the Prismdrake AT-SPI application")
         panel_specs = (
             ("Open applications", "push_button"),
-            (DIAGNOSTICS_NAME, "push_button"),
+            (NOTIFICATION_CENTER_NAME, "push_button"),
+            (QUICK_SETTINGS_NAME, "push_button"),
         )
         launcher_specs = (
             ("Applications", "pane"),
@@ -991,9 +1046,25 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
         phases.append(_phase(Atspi, PHASE_IDS[3], PHASE_FOCUS[3], result_specs))
         _focus_and_send_key(arguments.xdotool, "Escape", launcher, shell.pid)
         phases.append(_phase(Atspi, PHASE_IDS[4], PHASE_FOCUS[4], panel_specs))
-        _focus_and_send_key(arguments.xdotool, "Tab", panel, shell.pid)
+        panel = _wait_until(panel_window, "the restored Prismdrake panel window")
+        panel_launcher = _find_unique(
+            Atspi, _walk(_find_application(Atspi)), "Open applications", "push_button"
+        )
+        _focus_accessible_and_send_key(
+            Atspi, arguments.xdotool, "Tab", panel, shell.pid, panel_launcher
+        )
         phases.append(_phase(Atspi, PHASE_IDS[5], PHASE_FOCUS[5], panel_specs))
-        _focus_and_send_key(arguments.xdotool, "shift+Tab", panel, shell.pid)
+        notification_center_control = _find_unique(
+            Atspi, _walk(_find_application(Atspi)), NOTIFICATION_CENTER_NAME, "push_button"
+        )
+        _focus_accessible_and_send_key(
+            Atspi,
+            arguments.xdotool,
+            "shift+Tab",
+            panel,
+            shell.pid,
+            notification_center_control,
+        )
         phases.append(_phase(Atspi, PHASE_IDS[6], PHASE_FOCUS[6], panel_specs))
 
         evidence = {

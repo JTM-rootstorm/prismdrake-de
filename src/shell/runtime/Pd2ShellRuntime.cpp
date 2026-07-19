@@ -842,9 +842,28 @@ QScreen *Pd2ShellRuntime::screen(std::string_view outputName) {
 }
 
 void Pd2ShellRuntime::panelLauncherRequested() {
-    const auto output = sender() ? sender()->property("outputName").toString() : QString{};
-    static_cast<void>(
-        composition_.request(control::ShellAction::toggle_launcher, output.toStdString()));
+    const auto outputValue = sender() ? sender()->property("outputName").toString() : QString{};
+    auto output = composition::OutputName::create(outputValue.toStdString());
+    auto id = composition::FocusControlId::create("launcher-button");
+    if (!output) {
+        report("panel launcher origin", output.error());
+        return;
+    }
+    if (!id) {
+        report("panel launcher origin", id.error());
+        return;
+    }
+    auto origin = composition::FocusOrigin::control(
+        output.value(), composition::FocusControlRole::panelLauncher, id.value());
+    if (!origin) {
+        report("panel launcher origin", origin.error());
+        return;
+    }
+    auto toggled = composition_.toggle(composition::SurfaceFamily::launcher,
+                                       outputValue.toStdString(), std::move(origin).value());
+    if (!toggled) {
+        report("panel launcher", toggled.error());
+    }
 }
 
 void Pd2ShellRuntime::panelNotificationCenterRequested(const QString &outputName) {
@@ -1031,6 +1050,9 @@ Pd2ShellRuntime::restoreControlFocus(const composition::FocusOrigin &origin) {
             return control::ShellRequestFailure::internal;
         }
         return control::ShellRequestFailure::none;
+    }
+    if (*origin.role() == composition::FocusControlRole::panelLauncher) {
+        return focusPanel(*origin.output());
     }
     auto *panel = panels_->view(origin.output()->value());
     if (!panel || !panel->rootObject()) {

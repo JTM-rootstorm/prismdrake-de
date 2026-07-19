@@ -50,6 +50,9 @@ class ShellRuntimeComposition final : public control::ShellPresentationPort,
     [[nodiscard]] foundation::Result<void> present(composition::SurfaceFamily family,
                                                    std::string_view outputName,
                                                    composition::FocusOrigin origin);
+    [[nodiscard]] foundation::Result<void> toggle(composition::SurfaceFamily family,
+                                                  std::string_view outputName,
+                                                  composition::FocusOrigin origin);
     [[nodiscard]] foundation::Result<void> dismiss(composition::SurfaceFamily family);
     [[nodiscard]] foundation::Result<void> escape();
 

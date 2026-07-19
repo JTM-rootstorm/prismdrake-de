@@ -22,6 +22,42 @@ from live_atspi import (
 
 
 class AccessibilityEvidenceContractTests(unittest.TestCase):
+    def test_accessible_lookup_ignores_duplicate_controls_on_hidden_surfaces(self) -> None:
+        showing = object()
+        visible = object()
+        push_button = object()
+        atspi = SimpleNamespace(
+            Role=SimpleNamespace(
+                ENTRY=object(),
+                TEXT=object(),
+                FILLER=object(),
+                PANEL=object(),
+                PUSH_BUTTON=push_button,
+            ),
+            StateType=SimpleNamespace(SHOWING=showing, VISIBLE=visible),
+        )
+
+        def node(is_showing: bool) -> mock.Mock:
+            control = mock.Mock()
+            control.get_name.return_value = "Open notification center"
+            control.get_role.return_value = push_button
+            control.get_state_set.return_value.contains.side_effect = (
+                lambda state: is_showing if state in (showing, visible) else False
+            )
+            return control
+
+        displayed = node(True)
+        hidden = node(False)
+        self.assertIs(
+            live_atspi._find_unique(
+                atspi,
+                [displayed, hidden],
+                "Open notification center",
+                "push_button",
+            ),
+            displayed,
+        )
+
     def test_keyboard_xtest_requires_exact_owned_focused_window(self) -> None:
         owner = SimpleNamespace(returncode=0, stdout="42\n")
         focus = SimpleNamespace(returncode=0, stdout="")
@@ -61,6 +97,48 @@ class AccessibilityEvidenceContractTests(unittest.TestCase):
                 with mock.patch.object(live_atspi, "_run_checked", side_effect=results):
                     with self.assertRaisesRegex(EvidenceError, message):
                         live_atspi._focus_and_send_key(xdotool, "Tab", "17", 42)
+
+    def test_keyboard_xtest_reacquires_accessible_panel_target(self) -> None:
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        focus = SimpleNamespace(returncode=0, stdout="")
+        observed = SimpleNamespace(returncode=0, stdout="17\n")
+        sent = SimpleNamespace(returncode=0, stdout="")
+        node = mock.Mock()
+        node.get_component_iface.return_value.grab_focus.return_value = True
+        node.get_state_set.return_value.contains.return_value = True
+        atspi = SimpleNamespace(StateType=SimpleNamespace(FOCUSED=1))
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[owner, focus, observed, sent]
+        ) as run_checked:
+            live_atspi._focus_accessible_and_send_key(
+                atspi, Path("/usr/bin/xdotool"), "Tab", "17", 42, node
+            )
+        self.assertEqual(
+            run_checked.call_args_list,
+            [
+                mock.call(["/usr/bin/xdotool", "getwindowpid", "17"]),
+                mock.call(["/usr/bin/xdotool", "windowfocus", "--sync", "17"]),
+                mock.call(["/usr/bin/xdotool", "getwindowfocus"]),
+                mock.call(["/usr/bin/xdotool", "key", "--clearmodifiers", "Tab"]),
+            ],
+        )
+        node.get_component_iface.return_value.grab_focus.assert_called_once_with()
+
+    def test_keyboard_xtest_rejects_panel_target_when_accessible_grab_fails(self) -> None:
+        owner = SimpleNamespace(returncode=0, stdout="42\n")
+        focus = SimpleNamespace(returncode=0, stdout="")
+        observed = SimpleNamespace(returncode=0, stdout="17\n")
+        node = mock.Mock()
+        node.get_component_iface.return_value.grab_focus.return_value = False
+        atspi = SimpleNamespace(StateType=SimpleNamespace(FOCUSED=1))
+        with mock.patch.object(
+            live_atspi, "_run_checked", side_effect=[owner, focus, observed]
+        ) as run_checked:
+            with self.assertRaisesRegex(EvidenceError, "accessible.*rejected"):
+                live_atspi._focus_accessible_and_send_key(
+                    atspi, Path("/usr/bin/xdotool"), "Tab", "17", 42, node
+                )
+        self.assertEqual(run_checked.call_count, 3)
 
     def test_probe_converts_command_failures_to_categorical_status(self) -> None:
         with mock.patch.object(

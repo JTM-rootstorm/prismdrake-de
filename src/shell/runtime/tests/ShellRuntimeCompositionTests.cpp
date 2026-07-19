@@ -265,6 +265,36 @@ TEST(ShellRuntimeCompositionTest, LauncherActionMenuRetainsParentAndRestoresExac
     EXPECT_EQ(std::get<composition::RestoreControlFocusIntent>(*restore).origin, origin);
 }
 
+TEST(ShellRuntimeCompositionTest, PanelLauncherTogglePreservesExactEscapeFocusOrigin) {
+    PresentationPort port;
+    ShellRuntimeComposition runtime{port};
+    TopologyHarness topology;
+
+    ASSERT_TRUE(runtime.observeOutputs(topology.observe(1U)));
+    ASSERT_TRUE(runtime.observeSettingsOwner(authority(10U, 1U)));
+    auto output = composition::OutputName::create("LEFT-1").value();
+    auto controlId = composition::FocusControlId::create("launcher-button").value();
+    auto origin = composition::FocusOrigin::control(
+                      output, composition::FocusControlRole::panelLauncher, controlId)
+                      .value();
+
+    ASSERT_TRUE(runtime.toggle(SurfaceFamily::launcher, "LEFT-1", origin));
+    ASSERT_EQ(runtime.state().activeSurfaces().size(), 1U);
+    EXPECT_EQ(runtime.state().activeSurfaces().front().origin, origin);
+
+    ASSERT_TRUE(runtime.escape());
+    ASSERT_TRUE(runtime.state().activeSurfaces().empty());
+    const auto &escapeBatch = port.batches.back();
+    const auto restored = std::ranges::find_if(escapeBatch, [](const auto &intent) {
+        return std::holds_alternative<composition::RestoreControlFocusIntent>(intent);
+    });
+    ASSERT_NE(restored, escapeBatch.end());
+    EXPECT_EQ(std::get<composition::RestoreControlFocusIntent>(*restored).origin, origin);
+    EXPECT_FALSE(std::ranges::any_of(escapeBatch, [](const auto &intent) {
+        return std::holds_alternative<composition::ReleaseFocusToWindowManagerIntent>(intent);
+    }));
+}
+
 TEST(ShellRuntimeCompositionTest, LauncherMenuBlocksLowerPrioritySiblingUntilLogoutPreemptsStack) {
     PresentationPort port;
     ShellRuntimeComposition runtime{port};
