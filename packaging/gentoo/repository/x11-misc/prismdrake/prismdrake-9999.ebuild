@@ -41,6 +41,7 @@ DEPEND="
 	dev-cpp/tomlplusplus
 	>=dev-qt/qtbase-6.11:6[X,accessibility,dbus,gui,opengl]
 	>=dev-qt/qtdeclarative-6.11:6[accessibility,opengl]
+	>=dev-qt/qtsvg-6.11:6
 	sys-libs/basu
 	x11-libs/libxcb
 "
@@ -48,6 +49,7 @@ RDEPEND="
 	dev-cpp/tomlplusplus
 	>=dev-qt/qtbase-6.11:6[X,accessibility,dbus,gui,opengl]
 	>=dev-qt/qtdeclarative-6.11:6[accessibility,opengl]
+	>=dev-qt/qtsvg-6.11:6
 	sys-apps/dbus
 	sys-libs/basu
 	x11-libs/libxcb
@@ -114,10 +116,18 @@ src_test() {
 
 src_install() {
 	cmake_src_install
-	dodoc README.md
+	dodoc \
+		README.md \
+		docs/architecture/component-model.md \
+		docs/architecture/process-model.md \
+		docs/architecture/shell-control.md \
+		interfaces/README.md
 }
 
 pkg_postinst() {
-	elog "This live package installs the Experimental Prismdrake PD2 core desktop shell."
+	elog "This live package installs five Experimental PD2 executables:"
+	elog "prismdrake-session, prismdrake-settingsd, prismdrake-notifyd,"
+	elog "prismdrake-shell, and prismdrake-shellctl."
+	elog "Settings1, NotificationCenter1, Shell1, and Session1 remain Experimental."
 	elog "It is a development prototype, not a daily-use desktop environment."
 }

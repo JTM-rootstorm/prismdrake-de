@@ -6,10 +6,12 @@
     <name>JT</name>
   </maintainer>
   <longdescription>
-    Builds and installs the Experimental Prismdrake PD2 core desktop shell,
-    settings service, init-neutral session supervisor, packaged defaults,
-    themes, schemas, D-Bus interface contracts, and X session entry. This
-    package remains a bounded development prototype and not a production
+    Builds and installs the five Experimental Prismdrake PD2 executables:
+    prismdrake-session, prismdrake-settingsd, prismdrake-notifyd,
+    prismdrake-shell, and prismdrake-shellctl. The package also installs the
+    packaged defaults, themes, schemas, X session entry, and the Experimental
+    Settings1, NotificationCenter1, Shell1, and Session1 D-Bus interface
+    contracts. It remains a bounded development prototype and not a production
     desktop release.
   </longdescription>
   <upstream>
