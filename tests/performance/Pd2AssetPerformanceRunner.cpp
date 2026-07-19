@@ -88,16 +88,14 @@ class TemporaryDirectory final {
         return false;
     }
     return std::ranges::all_of(value, [](char character) {
-        return (character >= 'a' && character <= 'z') ||
-               (character >= '0' && character <= '9') || character == '.' ||
-               character == '_' || character == '-';
+        return (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') ||
+               character == '.' || character == '_' || character == '-';
     });
 }
 
 [[nodiscard]] std::optional<std::size_t> parseCount(std::string_view value) {
     std::size_t parsed = 0U;
-    const auto [end, error] =
-        std::from_chars(value.data(), value.data() + value.size(), parsed);
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
     if (error != std::errc{} || end != value.data() + value.size()) {
         return std::nullopt;
     }
@@ -162,8 +160,7 @@ class TemporaryDirectory final {
     QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
     const auto started = Clock::now();
     auto queued = resolver.resolve(
-        iconRequest(path), &context,
-        [&](prismdrake::icons::IconResolution resolution) {
+        iconRequest(path), &context, [&](prismdrake::icons::IconResolution resolution) {
             finished = Clock::now();
             completed = true;
             valid = resolution.source == prismdrake::icons::IconResolutionSource::absolutePath &&
@@ -198,15 +195,16 @@ class TemporaryDirectory final {
     Clock::time_point finished;
     QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
     const auto started = Clock::now();
-    auto queued = loader.load(
-        wallpaperRequest(path), &context,
-        [&](std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> snapshot) {
-            finished = Clock::now();
-            completed = true;
-            valid = snapshot && snapshot->hasImage() && snapshot->sourceSize == QSize{1600, 900} &&
-                    QThread::currentThread() == context.thread();
-            loop.quit();
-        });
+    auto queued =
+        loader.load(wallpaperRequest(path), &context,
+                    [&](std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot> snapshot) {
+                        finished = Clock::now();
+                        completed = true;
+                        valid = snapshot && snapshot->hasImage() &&
+                                snapshot->sourceSize == QSize{1600, 900} &&
+                                QThread::currentThread() == context.thread();
+                        loop.quit();
+                    });
     if (!queued) {
         fail("wallpaper_request_failed");
     }
