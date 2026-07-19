@@ -60,16 +60,21 @@ REQUIRED_INSTALLED_RESOURCE_PATHS = (
 )
 _REQUIRED_DOCUMENT_RELATIVE_PATHS = (
     "README.md",
+    "index.md",
     "architecture/component-model.md",
     "architecture/configuration.md",
     "architecture/dependency-policy.md",
     "architecture/notification-service.md",
+    "architecture/pd2-core-shell.md",
     "architecture/pd2-state-ownership.md",
     "architecture/process-model.md",
     "architecture/shell-control.md",
     "architecture/surface-placement.md",
+    "build/building.md",
     "build/dependencies.md",
     "build/testing.md",
+    "development/accessibility-testing.md",
+    "development/pd2-installed-demonstration.md",
     "packaging/gentoo-local-repository.md",
     "interfaces/README.md",
 )
