@@ -252,11 +252,12 @@ enables the upstream install-path contract. Its runtime dependency set contains
 only the libraries and broker required by the five installed Experimental
 executables. Qt SVG is a direct shell dependency at the project-wide Qt 6.11
 floor; unused Qt image-format plugins and libnotify are not declared.
-GoogleTest, Python, Xvfb, Openbox, X11 inspection/input tools,
-AT-SPI/PyGObject inspection support, fontconfig, and the fixed test font remain
-conditional `USE=test` build dependencies. This complete gate prevents a clean
-reference-VM package test from silently registering the live startup or AT-SPI
-lanes as skipped merely because their evidence tooling was absent.
+GoogleTest, Python, Xvfb, the Xorg dummy driver, Openbox, X11 RandR,
+inspection and input tools, the hicolor icon fixture, AT-SPI/PyGObject
+inspection support, fontconfig, and the fixed test font remain conditional
+`USE=test` build dependencies. This complete gate prevents a clean reference-VM
+package test from silently registering the live startup, multi-output, icon, or
+AT-SPI lanes as skipped merely because their evidence tooling was absent.
 
 The ebuild derives `SOURCE_DATE_EPOCH` from the exact checked-out Git revision
 before every configure or compile phase. Qt's resource compiler otherwise
