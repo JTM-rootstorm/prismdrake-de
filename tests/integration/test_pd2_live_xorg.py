@@ -1451,14 +1451,26 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                argv[-3:] == ("--addmode", "DUMMY1", "1600x900")
+                argv[-13:] == (
+                    "--newmode", "1600x900-pd2-secondary", "118.25",
+                    "1600", "1696", "1856", "2112",
+                    "900", "903", "908", "934", "-hsync", "+vsync",
+                )
+                for argv, _env in operations.run_calls
+            )
+        )
+        self.assertTrue(
+            any(
+                argv[-3:] == (
+                    "--addmode", "DUMMY1", "1600x900-pd2-secondary",
+                )
                 for argv, _env in operations.run_calls
             )
         )
         self.assertTrue(
             any(
                 argv[-6:] == (
-                    "--output", "DUMMY1", "--mode", "1600x900",
+                    "--output", "DUMMY1", "--mode", "1600x900-pd2-secondary",
                     "--pos", "1600x0",
                 )
                 for argv, _env in operations.run_calls

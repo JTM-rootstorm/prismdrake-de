@@ -106,6 +106,7 @@ MAX_PROCESS_SCAN_ENTRIES = 32_768
 MAX_PROCESS_ANCESTRY_DEPTH = 64
 MAX_SURFACE_WINDOWS = 64
 OUTPUT_MODE = "1600x900"
+SECONDARY_OUTPUT_MODE = "1600x900-pd2-secondary"
 OUTPUT_WIDTH = 1600
 OUTPUT_HEIGHT = 900
 PANEL_HEIGHT = 48
@@ -4143,9 +4144,14 @@ class LiveXorgHarnessPort:
         )
 
     def _enable_secondary(self) -> None:
-        self._xrandr("--addmode", SECONDARY_OUTPUT, OUTPUT_MODE)
         self._xrandr(
-            "--output", SECONDARY_OUTPUT, "--mode", OUTPUT_MODE,
+            "--newmode", SECONDARY_OUTPUT_MODE, "118.25",
+            "1600", "1696", "1856", "2112",
+            "900", "903", "908", "934", "-hsync", "+vsync",
+        )
+        self._xrandr("--addmode", SECONDARY_OUTPUT, SECONDARY_OUTPUT_MODE)
+        self._xrandr(
+            "--output", SECONDARY_OUTPUT, "--mode", SECONDARY_OUTPUT_MODE,
             "--pos", "1600x0",
         )
 
