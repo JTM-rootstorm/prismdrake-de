@@ -234,6 +234,23 @@ def configured_regular_file(name: str) -> Path:
     return path
 
 
+def configured_build_executable(name: str, relative: Path) -> Path:
+    """Require one injected runner at its exact source-configured build location."""
+
+    build, _source = configured_build_context()
+    executable = configured_path(name)
+    try:
+        expected = (build / relative).resolve(strict=True)
+        observed = executable.resolve(strict=True)
+    except OSError as error:
+        raise ObserverError("build_runner_binding_invalid") from error
+    require(
+        not executable.is_symlink() and observed == expected,
+        "build_runner_binding_invalid",
+    )
+    return executable
+
+
 def attest_source_checkout(
     source: Path, *, git_executable: Path | None = None
 ) -> None:
@@ -537,14 +554,16 @@ def reviewed_skip(reason_code: str, reason: str) -> dict[str, Any]:
 
 
 def model_performance_result(probe: tuple[str, int | None]) -> dict[str, Any]:
-    configured_build_context()
     current_revision = binding()["source_revision"]
     baseline_revision = required_environment(
         "PRISMDRAKE_PD2_PD1_REFERENCE_REVISION", REVISION
     )
     baseline = load_json(configured_regular_file("PRISMDRAKE_PD2_PD1_EVIDENCE"))
     validate_performance_document(baseline, baseline_revision)
-    runner = configured_path("PRISMDRAKE_PD2_PERFORMANCE_RUNNER")
+    runner = configured_build_executable(
+        "PRISMDRAKE_PD2_PERFORMANCE_RUNNER",
+        Path("tests/performance/prismdrake-pd1-performance-evidence"),
+    )
     completed = run_command(
         (
             str(runner), "--revision", current_revision,
@@ -607,9 +626,11 @@ def runtime_performance_result(name: str) -> dict[str, Any]:
 
 
 def asset_performance_result(name: str) -> dict[str, Any]:
-    configured_build_context()
     current_binding = binding()
-    runner = configured_path("PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER")
+    runner = configured_build_executable(
+        "PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER",
+        Path("tests/performance/prismdrake-pd2-asset-performance"),
+    )
     document = parse_command_json(
         run_command(
             (

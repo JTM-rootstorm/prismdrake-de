@@ -392,6 +392,9 @@ class CommandAdapterTests(unittest.TestCase):
                 "PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE": "/evidence/runtime.json",
                 "PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER": "/runner/assets",
                 "PRISMDRAKE_PD2_IDLE_SERIES": "/evidence/idle.json",
+                "PRISMDRAKE_PD2_CTEST": "/untrusted/ctest",
+                "PRISMDRAKE_PD2_QMAKE": "/untrusted/qmake",
+                "PRISMDRAKE_PD2_XPROP": "/untrusted/xprop",
                 "UNRELATED_SECRET": "must-not-propagate",
             },
             clear=True,
@@ -417,6 +420,9 @@ class CommandAdapterTests(unittest.TestCase):
             environment["PRISMDRAKE_PD2_IDLE_SERIES"], "/evidence/idle.json"
         )
         self.assertNotIn("UNRELATED_SECRET", environment)
+        self.assertNotIn("PRISMDRAKE_PD2_CTEST", environment)
+        self.assertNotIn("PRISMDRAKE_PD2_QMAKE", environment)
+        self.assertNotIn("PRISMDRAKE_PD2_XPROP", environment)
 
     def test_collector_attests_clean_source_and_rejects_external_observer(self) -> None:
         commands = ObserverCommands(*([Path(__file__).resolve()] * 5))

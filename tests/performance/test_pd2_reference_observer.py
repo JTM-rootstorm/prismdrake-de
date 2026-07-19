@@ -163,6 +163,46 @@ def idle_document(samples: list[int]) -> dict[str, object]:
 
 
 class ReferenceObserverTests(unittest.TestCase):
+    def test_build_runner_must_resolve_to_exact_configured_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            build = Path(temporary)
+            expected = build / "tests" / "performance" / "runner"
+            expected.parent.mkdir(parents=True)
+            expected.write_bytes(b"runner")
+            expected.chmod(0o700)
+            with (
+                mock.patch.object(
+                    observer,
+                    "configured_build_context",
+                    return_value=(build, Path("/source")),
+                ),
+                mock.patch.object(observer, "configured_path", return_value=expected),
+            ):
+                self.assertEqual(
+                    observer.configured_build_executable(
+                        "RUNNER", Path("tests/performance/runner")
+                    ),
+                    expected,
+                )
+
+            external = build / "external"
+            external.write_bytes(b"runner")
+            external.chmod(0o700)
+            with (
+                mock.patch.object(
+                    observer,
+                    "configured_build_context",
+                    return_value=(build, Path("/source")),
+                ),
+                mock.patch.object(observer, "configured_path", return_value=external),
+                self.assertRaisesRegex(
+                    observer.ObserverError, "^build_runner_binding_invalid$"
+                ),
+            ):
+                observer.configured_build_executable(
+                    "RUNNER", Path("tests/performance/runner")
+                )
+
     def test_cli_emits_exact_bound_reviewed_skip_without_runtime_values(self) -> None:
         executable = Path(observer.__file__).resolve()
         environment = {**BINDING_ENVIRONMENT}
@@ -394,10 +434,11 @@ class ReferenceObserverTests(unittest.TestCase):
             ),
             mock.patch.object(observer, "load_json", return_value=baseline),
             mock.patch.object(
-                observer, "configured_path", return_value=Path("/runner")
+                observer,
+                "configured_build_executable",
+                return_value=Path("/runner"),
             ),
             mock.patch.object(observer, "validate_performance_document"),
-            mock.patch.object(observer, "configured_build_context"),
             mock.patch.object(
                 observer,
                 "run_command",
@@ -430,8 +471,11 @@ class ReferenceObserverTests(unittest.TestCase):
         asset = asset_document([1_000_000, 2_000_000, 3_000_000])
         with (
             mock.patch.dict(os.environ, BINDING_ENVIRONMENT, clear=True),
-            mock.patch.object(observer, "configured_path", return_value=Path("/runner")),
-            mock.patch.object(observer, "configured_build_context"),
+            mock.patch.object(
+                observer,
+                "configured_build_executable",
+                return_value=Path("/runner"),
+            ),
             mock.patch.object(
                 observer,
                 "run_command",
