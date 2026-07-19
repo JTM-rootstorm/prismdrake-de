@@ -40,8 +40,8 @@
         "controlled_fixture_sha256": { "$ref": "#/$defs/sha256" },
         "files": {
           "type": "array",
-          "minItems": 19,
-          "maxItems": 19,
+          "minItems": 21,
+          "maxItems": 21,
           "items": { "$ref": "#/$defs/harness_file" }
         }
       }
@@ -65,7 +65,7 @@
       "additionalProperties": false,
       "required": ["path", "sha256"],
       "properties": {
-        "path": { "type": "string", "minLength": 8, "maxLength": 128, "pattern": "^(tests|tools)/[A-Za-z0-9_.+/-]+$" },
+        "path": { "type": "string", "minLength": 8, "maxLength": 128, "pattern": "^(schemas|tests|tools)/[A-Za-z0-9_.+/-]+$" },
         "sha256": { "$ref": "#/$defs/sha256" }
       }
     },

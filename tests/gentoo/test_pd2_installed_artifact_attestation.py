@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
@@ -101,6 +102,31 @@ class Pd2InstalledAttestationTests(unittest.TestCase):
                     inspect(child)
 
         inspect(schema)
+
+    def test_manifest_covers_every_literal_committed_schema_dependency(self) -> None:
+        manifest = set(HARNESS_RELATIVE_PATHS)
+        dependencies: set[str] = set()
+        for relative in HARNESS_RELATIVE_PATHS:
+            if not relative.startswith("tests/integration/") or not relative.endswith(".py"):
+                continue
+            source = (Path(__file__).resolve().parents[2] / relative).read_text(
+                encoding="utf-8"
+            )
+            dependencies.update(
+                f"schemas/{name}"
+                for name in re.findall(
+                    r'["\'](prismdrake-[A-Za-z0-9_.+-]+\.schema\.json)["\']',
+                    source,
+                )
+            )
+        self.assertEqual(
+            dependencies,
+            {
+                "schemas/prismdrake-notification-state.schema.json",
+                "schemas/prismdrake-runtime-snapshot.schema.json",
+            },
+        )
+        self.assertLessEqual(dependencies, manifest)
 
     def test_rejects_missing_reordered_or_unowned_executable(self) -> None:
         mutations = (

@@ -11,6 +11,8 @@ from typing import Any
 
 
 HARNESS_RELATIVE_PATHS = (
+    "schemas/prismdrake-notification-state.schema.json",
+    "schemas/prismdrake-runtime-snapshot.schema.json",
     "tests/gentoo/pd2-installed-artifact-attestation.schema.json",
     "tests/gentoo/pd2_harness_manifest.py",
     "tests/gentoo/pd2_installed_artifact_attestation.py",
