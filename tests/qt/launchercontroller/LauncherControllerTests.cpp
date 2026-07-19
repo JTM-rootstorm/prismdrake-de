@@ -1,15 +1,21 @@
 #include "LauncherController.hpp"
 
+#include "ApplicationRootMonitor.hpp"
 #include "DesktopFileId.hpp"
 
 #include <gtest/gtest.h>
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QThread>
 
 #include <atomic>
+#include <chrono>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -142,17 +148,20 @@ class CapturingExecutor final : public LauncherProcessExecutor {
     std::vector<prismdrake::launcher::ProcessLaunchPlan> plans;
 };
 
-[[nodiscard]] LauncherControllerOptions options() {
+[[nodiscard]] LauncherControllerOptions
+options(std::filesystem::path applicationRoot = "/tmp/prismdrake-controller-missing-applications",
+        bool automaticMonitoring = false) {
     auto desktop = prismdrake::launcher::parseCurrentDesktopContext("Prismdrake");
     EXPECT_TRUE(desktop);
     prismdrake::launcher::ProcessLaunchContext launch{
         {"/bin:/usr/bin", "/"}, "/tmp", {"LANG=C"}, std::nullopt};
-    return {{{"/tmp/prismdrake-controller-missing-applications"}},
+    return {{{std::move(applicationRoot)}},
             {"C"},
             std::move(desktop).value(),
             {},
             {"/bin:/usr/bin", "/"},
-            std::move(launch)};
+            std::move(launch),
+            automaticMonitoring};
 }
 
 struct ControllerFixture final {
@@ -174,6 +183,80 @@ struct ControllerFixture final {
 void publishInitial(ControllerFixture &fixture) {
     ASSERT_TRUE(fixture.controller->refresh());
     QTRY_COMPARE_WITH_TIMEOUT(fixture.controller->presentationModel()->rowCount(), 2, 2000);
+}
+
+TEST(ApplicationRootMonitorTest, CoalescesDesktopEntryChangesAndRecoversRootReplacement) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const QString root = temporary.filePath(QStringLiteral("applications"));
+    ASSERT_TRUE(QDir{}.mkpath(root));
+    auto monitor = ApplicationRootMonitor::create(
+        {{{root.toStdString()}}},
+        {32U, std::chrono::milliseconds{25}, std::chrono::milliseconds{25}});
+    ASSERT_TRUE(monitor);
+    QSignalSpy refresh(monitor.value().get(), &ApplicationRootMonitor::refreshRequested);
+
+    QFile first{root + QStringLiteral("/one.desktop")};
+    ASSERT_TRUE(first.open(QIODevice::WriteOnly));
+    first.write("[Desktop Entry]\n");
+    first.close();
+    QFile second{root + QStringLiteral("/two.desktop")};
+    ASSERT_TRUE(second.open(QIODevice::WriteOnly));
+    second.write("[Desktop Entry]\n");
+    second.close();
+    QTRY_COMPARE_WITH_TIMEOUT(refresh.count(), 1, 1000);
+
+    refresh.clear();
+    ASSERT_TRUE(QDir{root}.removeRecursively());
+    QTRY_COMPARE_WITH_TIMEOUT(refresh.count(), 1, 1000);
+    refresh.clear();
+    ASSERT_TRUE(QDir{}.mkpath(root));
+    QTRY_COMPARE_WITH_TIMEOUT(refresh.count(), 1, 1000);
+    EXPECT_FALSE(monitor.value()->degraded());
+}
+
+TEST(ApplicationRootMonitorTest, BoundsWatchCapacityAndExplicitlyRecoversExhaustion) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const QString root = temporary.filePath(QStringLiteral("applications"));
+    ASSERT_TRUE(QDir{}.mkpath(root + QStringLiteral("/nested")));
+    QFile desktop{root + QStringLiteral("/nested/tool.desktop")};
+    ASSERT_TRUE(desktop.open(QIODevice::WriteOnly));
+    desktop.write("[Desktop Entry]\n");
+    desktop.close();
+
+    auto monitor =
+        ApplicationRootMonitor::create({{{root.toStdString()}}}, {1U, std::chrono::milliseconds{20},
+                                                                  std::chrono::milliseconds{20}});
+    ASSERT_TRUE(monitor);
+    EXPECT_TRUE(monitor.value()->degraded());
+    EXPECT_EQ(monitor.value()->watchedPathCount(), 1);
+
+    ASSERT_TRUE(QDir{root + QStringLiteral("/nested")}.removeRecursively());
+    monitor.value()->requestRecovery();
+    EXPECT_FALSE(monitor.value()->degraded());
+    EXPECT_EQ(monitor.value()->watchedPathCount(), 1);
+}
+
+TEST(LauncherControllerTest, MonitorMutationStartsAReplacementCatalogGeneration) {
+    QTemporaryDir temporary;
+    ASSERT_TRUE(temporary.isValid());
+    const QString root = temporary.filePath(QStringLiteral("applications"));
+    ASSERT_TRUE(QDir{}.mkpath(root));
+    auto index = std::make_unique<FakeIndexBackend>();
+    auto launch = std::make_unique<FakeLaunchBackend>();
+    auto *indexPointer = index.get();
+    auto created = LauncherController::create(options(root.toStdString(), true), std::move(index),
+                                              std::move(launch));
+    ASSERT_TRUE(created);
+    ASSERT_TRUE(created.value()->refresh());
+    QTRY_COMPARE_WITH_TIMEOUT(indexPointer->refresh_calls.load(), 1, 1000);
+
+    QFile desktop{root + QStringLiteral("/new.desktop")};
+    ASSERT_TRUE(desktop.open(QIODevice::WriteOnly));
+    desktop.write("[Desktop Entry]\n");
+    desktop.close();
+    QTRY_COMPARE_WITH_TIMEOUT(indexPointer->refresh_calls.load(), 2, 1500);
 }
 
 TEST(LauncherControllerTest, RefreshAndSearchRunOffOwnerThreadAndPublishCurrentResults) {

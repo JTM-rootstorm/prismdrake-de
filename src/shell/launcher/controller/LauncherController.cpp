@@ -358,20 +358,37 @@ LauncherController::create(LauncherControllerOptions options,
     if (!launchBackend) {
         launchBackend = makeDefaultLauncherLaunchBackend();
     }
-    return Result<std::unique_ptr<LauncherController>>::success(
-        std::unique_ptr<LauncherController>(new LauncherController(
-            std::move(options), std::move(indexBackend), std::move(launchBackend))));
+    std::unique_ptr<ApplicationRootMonitor> monitor;
+    if (options.automaticMonitoring) {
+        auto createdMonitor = ApplicationRootMonitor::create(options.applicationPaths);
+        if (!createdMonitor) {
+            return Result<std::unique_ptr<LauncherController>>::failure(createdMonitor.error());
+        }
+        monitor = std::move(createdMonitor).value();
+    }
+    return Result<std::unique_ptr<LauncherController>>::success(std::unique_ptr<LauncherController>(
+        new LauncherController(std::move(options), std::move(indexBackend),
+                               std::move(launchBackend), std::move(monitor))));
 }
 
 LauncherController::LauncherController(LauncherControllerOptions options,
                                        std::unique_ptr<LauncherIndexBackend> indexBackend,
-                                       std::unique_ptr<LauncherLaunchBackend> launchBackend)
+                                       std::unique_ptr<LauncherLaunchBackend> launchBackend,
+                                       std::unique_ptr<ApplicationRootMonitor> monitor)
     : options_(std::move(options)), presentation_(this),
       query_(std::move(prismdrake::launcher::parseApplicationSearchQuery({})).value()),
       implementation_(
-          std::make_unique<Impl>(*this, std::move(indexBackend), std::move(launchBackend))) {
+          std::make_unique<Impl>(*this, std::move(indexBackend), std::move(launchBackend))),
+      monitor_(std::move(monitor)) {
     connect(&presentation_, &LauncherPresentationModel::launchRequested, this,
             &LauncherController::handleLaunchIntent);
+    if (monitor_) {
+        monitor_->setParent(this);
+        connect(monitor_.get(), &ApplicationRootMonitor::refreshRequested, this,
+                [this] { static_cast<void>(beginRefresh()); });
+        connect(monitor_.get(), &ApplicationRootMonitor::degradedChanged, this,
+                &LauncherController::applicationMonitorDegraded);
+    }
 }
 
 LauncherController::~LauncherController() { implementation_->stop(); }
@@ -380,6 +397,13 @@ Result<void> LauncherController::refresh() {
     if (QThread::currentThread() != thread()) {
         return ownerThreadError();
     }
+    if (monitor_) {
+        monitor_->requestRecovery();
+    }
+    return beginRefresh();
+}
+
+Result<void> LauncherController::beginRefresh() {
     if (catalog_generation_ == std::numeric_limits<std::uint64_t>::max()) {
         return Result<void>::failure({ErrorCode::too_large, "launcher catalog generation exhausted",
                                       "restart the shell launcher controller"});

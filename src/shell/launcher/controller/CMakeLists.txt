@@ -1,4 +1,6 @@
 add_library(prismdrake-shell-launcher-controller STATIC
+    ApplicationRootMonitor.cpp
+    ApplicationRootMonitor.hpp
     LauncherController.cpp
     LauncherController.hpp)
 add_library(Prismdrake::shell-launcher-controller ALIAS

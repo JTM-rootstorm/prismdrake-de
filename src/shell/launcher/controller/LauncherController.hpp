@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ApplicationPaths.hpp"
+#include "ApplicationRootMonitor.hpp"
 #include "ApplicationSearch.hpp"
 #include "DesktopEntryParser.hpp"
 #include "DesktopEntryVisibility.hpp"
@@ -22,6 +23,7 @@ struct LauncherControllerOptions final {
     prismdrake::launcher::DesktopEntryDiscoveryLimits discoveryLimits;
     prismdrake::launcher::DesktopExecutableLookupContext executableLookup;
     prismdrake::launcher::ProcessLaunchContext launchContext;
+    bool automaticMonitoring{true};
 };
 
 class LauncherIndexBackend {
@@ -90,13 +92,15 @@ class LauncherController final : public QObject {
     void launchRejected();
     void launchCompleted();
     void launchFailed();
+    void applicationMonitorDegraded(bool degraded);
 
   private:
     class Impl;
 
     LauncherController(LauncherControllerOptions options,
                        std::unique_ptr<LauncherIndexBackend> indexBackend,
-                       std::unique_ptr<LauncherLaunchBackend> launchBackend);
+                       std::unique_ptr<LauncherLaunchBackend> launchBackend,
+                       std::unique_ptr<ApplicationRootMonitor> monitor);
 
     void handleLaunchIntent(const ApplicationLaunchIntent &intent);
     void handleRefreshCompletion(
@@ -108,6 +112,7 @@ class LauncherController final : public QObject {
         foundation::Result<std::shared_ptr<const prismdrake::launcher::ApplicationSearchSnapshot>>
             result);
     void handleLaunchCompletion(foundation::Result<void> result);
+    [[nodiscard]] foundation::Result<void> beginRefresh();
     void startCurrentSearch();
 
     LauncherControllerOptions options_;
@@ -115,6 +120,7 @@ class LauncherController final : public QObject {
     std::shared_ptr<const prismdrake::launcher::ApplicationCatalogSnapshot> catalog_;
     prismdrake::launcher::ApplicationSearchQuery query_;
     std::unique_ptr<Impl> implementation_;
+    std::unique_ptr<ApplicationRootMonitor> monitor_;
     std::uint64_t catalog_generation_{0U};
     std::uint64_t request_generation_{1U};
 };
