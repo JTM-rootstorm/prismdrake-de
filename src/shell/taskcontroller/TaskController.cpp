@@ -369,6 +369,7 @@ void TaskController::handleEventCompletion(Result<TaskEventRefreshPlan> result) 
 }
 
 void TaskController::handleRefreshFailure(const foundation::Error &error) {
+    applied_refresh_token_ = 0U;
     if (!x11::taskRefreshFailureCanStabilize(error)) {
         resetStabilization();
         reportRecoverable(error);

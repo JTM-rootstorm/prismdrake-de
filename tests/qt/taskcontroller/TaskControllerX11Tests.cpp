@@ -543,15 +543,22 @@ TEST(TaskControllerX11IntegrationTest, ConnectionLossCancelsRetryAndShutsDownExa
     ensureApplication();
     NestedXServer server;
     ASSERT_TRUE(server.start(xvfb));
+    const auto nestedDisplay = server.display();
+    ControlledEwmhOwner owner{nestedDisplay.c_str()};
+    ASSERT_TRUE(owner.healthy());
+    ASSERT_TRUE(owner.publish(false));
 
     tasks::TaskPresentationModel presentation;
     std::vector<foundation::Error> recoverable;
     std::vector<foundation::Error> shutdown;
     auto controller = TaskController::create(
-        presentation, server.display(),
+        presentation, nestedDisplay,
         [&shutdown](const foundation::Error &error) { shutdown.push_back(error); },
         [&recoverable](const foundation::Error &error) { recoverable.push_back(error); });
     ASSERT_TRUE(controller);
+    ASSERT_TRUE(waitForPublication(
+        presentation, [&controller] { return controller.value()->currentSnapshot() != nullptr; },
+        1000));
     server.stop();
     runEventLoopFor(1000);
 
@@ -580,9 +587,11 @@ TEST(TaskControllerX11IntegrationTest, StabilizesBackToBackOpenboxMapsAndRemoves
         [&recoverable](const foundation::Error &error) { recoverable.push_back(error); });
     ASSERT_TRUE(controller);
 
-    // Enter the dispatcher once before generating the burst so the owned XCB notifier is armed.
-    // This is test readiness, not a production delay or polling loop.
-    runEventLoopFor(1);
+    // Establish the worker's root-event subscription and first authoritative snapshot before the
+    // burst. A fixed dispatcher delay races asynchronous X11 setup on slower compiler builds.
+    ASSERT_TRUE(waitForPublication(
+        presentation, [&controller] { return controller.value()->currentSnapshot() != nullptr; },
+        3000));
 
     ControlledClients clients{display};
     ASSERT_TRUE(clients.healthy());
