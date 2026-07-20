@@ -17,7 +17,9 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <sys/eventfd.h>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 namespace prismdrake::shell::runtime {
@@ -64,6 +66,7 @@ class TopologyStormOperations final : public ShellOutputMonitorOperations {
     explicit TopologyStormOperations(std::shared_ptr<TopologyStormState> state)
         : state_(std::move(state)) {}
 
+    foundation::Result<void> initialize() override { return foundation::Result<void>::success(); }
     foundation::Result<x11::RandrTopologySnapshot> query() override {
         std::size_t query = 0U;
         {
@@ -79,8 +82,8 @@ class TopologyStormOperations final : public ShellOutputMonitorOperations {
         return foundation::Result<x11::RandrTopologySnapshot>::success(wireTopology(true));
     }
     [[nodiscard]] int eventFileDescriptor() const noexcept override { return -1; }
-    foundation::Result<bool> drainEvents() override {
-        return foundation::Result<bool>::success(false);
+    foundation::Result<ShellOutputMonitorEventDrain> drainEvents() override {
+        return foundation::Result<ShellOutputMonitorEventDrain>::success({false, false});
     }
     void cancelWaits() noexcept override {}
 
@@ -100,6 +103,7 @@ class BlockingQueryOperations final : public ShellOutputMonitorOperations {
     explicit BlockingQueryOperations(std::shared_ptr<BlockingQueryState> state)
         : state_(std::move(state)) {}
 
+    foundation::Result<void> initialize() override { return foundation::Result<void>::success(); }
     foundation::Result<x11::RandrTopologySnapshot> query() override {
         std::unique_lock lock{state_->mutex};
         state_->entered = true;
@@ -109,8 +113,8 @@ class BlockingQueryOperations final : public ShellOutputMonitorOperations {
             {foundation::ErrorCode::io_error, "injected cancelled query", "finish test"});
     }
     [[nodiscard]] int eventFileDescriptor() const noexcept override { return -1; }
-    foundation::Result<bool> drainEvents() override {
-        return foundation::Result<bool>::success(false);
+    foundation::Result<ShellOutputMonitorEventDrain> drainEvents() override {
+        return foundation::Result<ShellOutputMonitorEventDrain>::success({false, false});
     }
     void cancelWaits() noexcept override {
         {
@@ -122,6 +126,148 @@ class BlockingQueryOperations final : public ShellOutputMonitorOperations {
 
   private:
     std::shared_ptr<BlockingQueryState> state_;
+};
+
+struct BlockingInitializeState final {
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool entered{false};
+    bool cancelled{false};
+};
+
+class BlockingInitializeOperations final : public ShellOutputMonitorOperations {
+  public:
+    explicit BlockingInitializeOperations(std::shared_ptr<BlockingInitializeState> state)
+        : state_(std::move(state)) {}
+
+    foundation::Result<void> initialize() override {
+        std::unique_lock lock{state_->mutex};
+        state_->entered = true;
+        state_->changed.notify_all();
+        state_->changed.wait(lock, [this] { return state_->cancelled; });
+        return foundation::Result<void>::failure(
+            {foundation::ErrorCode::io_error, "injected cancelled setup", "finish test"});
+    }
+    foundation::Result<x11::RandrTopologySnapshot> query() override {
+        return foundation::Result<x11::RandrTopologySnapshot>::success(wireTopology(true));
+    }
+    [[nodiscard]] int eventFileDescriptor() const noexcept override { return -1; }
+    foundation::Result<ShellOutputMonitorEventDrain> drainEvents() override {
+        return foundation::Result<ShellOutputMonitorEventDrain>::success({false, false});
+    }
+    void cancelWaits() noexcept override {
+        {
+            std::scoped_lock lock{state_->mutex};
+            state_->cancelled = true;
+        }
+        state_->changed.notify_all();
+    }
+
+  private:
+    std::shared_ptr<BlockingInitializeState> state_;
+};
+
+struct FollowUpDrainState final {
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::size_t queries{0U};
+    std::size_t drains{0U};
+    int eventDescriptor{-1};
+};
+
+class FollowUpDrainOperations final : public ShellOutputMonitorOperations {
+  public:
+    explicit FollowUpDrainOperations(std::shared_ptr<FollowUpDrainState> state)
+        : state_(std::move(state)), event_descriptor_(::eventfd(0U, EFD_CLOEXEC | EFD_NONBLOCK)) {
+        std::scoped_lock lock{state_->mutex};
+        state_->eventDescriptor = event_descriptor_;
+    }
+    ~FollowUpDrainOperations() override {
+        {
+            std::scoped_lock lock{state_->mutex};
+            state_->eventDescriptor = -1;
+        }
+        if (event_descriptor_ >= 0) {
+            (void)::close(event_descriptor_);
+        }
+    }
+
+    foundation::Result<void> initialize() override {
+        if (event_descriptor_ < 0) {
+            return foundation::Result<void>::failure(
+                {foundation::ErrorCode::io_error, "injected event boundary failed", "finish test"});
+        }
+        return foundation::Result<void>::success();
+    }
+    foundation::Result<x11::RandrTopologySnapshot> query() override {
+        {
+            std::scoped_lock lock{state_->mutex};
+            ++state_->queries;
+        }
+        state_->changed.notify_all();
+        return foundation::Result<x11::RandrTopologySnapshot>::success(wireTopology(true));
+    }
+    [[nodiscard]] int eventFileDescriptor() const noexcept override { return event_descriptor_; }
+    foundation::Result<ShellOutputMonitorEventDrain> drainEvents() override {
+        std::uint64_t value = 0U;
+        while (::read(event_descriptor_, &value, sizeof(value)) > 0) {
+        }
+        std::size_t drain = 0U;
+        {
+            std::scoped_lock lock{state_->mutex};
+            drain = ++state_->drains;
+        }
+        state_->changed.notify_all();
+        if (drain == 2U) {
+            return foundation::Result<ShellOutputMonitorEventDrain>::success({false, true});
+        }
+        if (drain == 3U) {
+            return foundation::Result<ShellOutputMonitorEventDrain>::success({true, false});
+        }
+        return foundation::Result<ShellOutputMonitorEventDrain>::success({false, false});
+    }
+    void cancelWaits() noexcept override {}
+
+  private:
+    std::shared_ptr<FollowUpDrainState> state_;
+    int event_descriptor_;
+};
+
+struct QueryBufferedEventState final {
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::size_t queries{0U};
+    std::size_t drains{0U};
+};
+
+class QueryBufferedEventOperations final : public ShellOutputMonitorOperations {
+  public:
+    explicit QueryBufferedEventOperations(std::shared_ptr<QueryBufferedEventState> state)
+        : state_(std::move(state)) {}
+
+    foundation::Result<void> initialize() override { return foundation::Result<void>::success(); }
+    foundation::Result<x11::RandrTopologySnapshot> query() override {
+        {
+            std::scoped_lock lock{state_->mutex};
+            ++state_->queries;
+        }
+        state_->changed.notify_all();
+        return foundation::Result<x11::RandrTopologySnapshot>::success(wireTopology(true));
+    }
+    [[nodiscard]] int eventFileDescriptor() const noexcept override { return -1; }
+    foundation::Result<ShellOutputMonitorEventDrain> drainEvents() override {
+        std::size_t drain = 0U;
+        {
+            std::scoped_lock lock{state_->mutex};
+            drain = ++state_->drains;
+        }
+        state_->changed.notify_all();
+        return foundation::Result<ShellOutputMonitorEventDrain>::success({drain == 1U, false});
+    }
+    void cancelWaits() noexcept override {}
+
+  private:
+    std::shared_ptr<QueryBufferedEventState> state_;
 };
 
 TEST(ShellOutputMonitorTest, ObserverFailureKeepsTopologyAndPolicyRetryable) {
@@ -274,6 +420,92 @@ TEST(ShellOutputMonitorTest, TeardownInterruptsAStalledReplyBearingQuery) {
     const auto started = std::chrono::steady_clock::now();
     monitor.stop();
     EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::milliseconds{100});
+}
+
+TEST(ShellOutputMonitorTest, TeardownInterruptsStalledReplyBearingSetupAfterPublication) {
+    ASSERT_NE(QCoreApplication::instance(), nullptr);
+    auto state = std::make_shared<BlockingInitializeState>();
+    ShellOutputMonitor monitor{
+        [state] {
+            return foundation::Result<std::unique_ptr<ShellOutputMonitorOperations>>::success(
+                std::make_unique<BlockingInitializeOperations>(state));
+        },
+        [](const outputs::SurfaceRegistrySnapshot &) {
+            return foundation::Result<void>::success();
+        },
+        {}};
+    ASSERT_TRUE(monitor.start());
+    {
+        std::unique_lock lock{state->mutex};
+        ASSERT_TRUE(
+            state->changed.wait_for(lock, std::chrono::seconds{1}, [&] { return state->entered; }));
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    monitor.stop();
+    EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::milliseconds{100});
+}
+
+TEST(ShellOutputMonitorTest, ExaminationLimitDrainsBufferedFollowUpWithoutAnotherFdWake) {
+    ASSERT_NE(QCoreApplication::instance(), nullptr);
+    auto state = std::make_shared<FollowUpDrainState>();
+    ShellOutputMonitor monitor{
+        [state] {
+            return foundation::Result<std::unique_ptr<ShellOutputMonitorOperations>>::success(
+                std::make_unique<FollowUpDrainOperations>(state));
+        },
+        [](const outputs::SurfaceRegistrySnapshot &) {
+            return foundation::Result<void>::success();
+        },
+        {}};
+    ASSERT_TRUE(monitor.start());
+
+    int eventDescriptor = -1;
+    {
+        std::unique_lock lock{state->mutex};
+        ASSERT_TRUE(state->changed.wait_for(lock, std::chrono::seconds{1}, [&] {
+            return state->queries >= 1U && state->drains >= 1U;
+        }));
+        eventDescriptor = state->eventDescriptor;
+    }
+    ASSERT_GE(eventDescriptor, 0);
+    const std::uint64_t signal = 1U;
+    ASSERT_EQ(::write(eventDescriptor, &signal, sizeof(signal)),
+              static_cast<ssize_t>(sizeof(signal)));
+
+    {
+        std::unique_lock lock{state->mutex};
+        ASSERT_TRUE(state->changed.wait_for(lock, std::chrono::seconds{1}, [&] {
+            return state->drains >= 4U && state->queries >= 2U;
+        }));
+        EXPECT_EQ(state->drains, 4U);
+    }
+    monitor.stop();
+}
+
+TEST(ShellOutputMonitorTest, QueryBufferedEventDrainsWithoutAFileDescriptorWake) {
+    ASSERT_NE(QCoreApplication::instance(), nullptr);
+    auto state = std::make_shared<QueryBufferedEventState>();
+    ShellOutputMonitor monitor{
+        [state] {
+            return foundation::Result<std::unique_ptr<ShellOutputMonitorOperations>>::success(
+                std::make_unique<QueryBufferedEventOperations>(state));
+        },
+        [](const outputs::SurfaceRegistrySnapshot &) {
+            return foundation::Result<void>::success();
+        },
+        {}};
+    ASSERT_TRUE(monitor.start());
+
+    {
+        std::unique_lock lock{state->mutex};
+        ASSERT_TRUE(state->changed.wait_for(lock, std::chrono::seconds{1}, [&] {
+            return state->queries >= 2U && state->drains >= 2U;
+        }));
+        EXPECT_EQ(state->queries, 2U);
+        EXPECT_EQ(state->drains, 2U);
+    }
+    monitor.stop();
 }
 
 TEST(ShellOutputMonitorTest, StopAndStartReuseTheOperationsFactory) {

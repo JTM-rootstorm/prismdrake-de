@@ -56,36 +56,50 @@ class X11OutputMonitorOperations final : public ShellOutputMonitorOperations {
             return Result<std::unique_ptr<ShellOutputMonitorOperations>>::failure(
                 connection.error());
         }
-        auto randr = x11::RandrTopologyProtocol::negotiate(connection.value());
-        if (!randr) {
-            return Result<std::unique_ptr<ShellOutputMonitorOperations>>::failure(randr.error());
-        }
-        auto events = x11::RootEventStream::create(connection.value(), randr.value());
-        if (!events) {
-            return Result<std::unique_ptr<ShellOutputMonitorOperations>>::failure(events.error());
-        }
         return Result<std::unique_ptr<ShellOutputMonitorOperations>>::success(
-            std::unique_ptr<ShellOutputMonitorOperations>(new X11OutputMonitorOperations(
-                std::move(connection).value(), std::move(randr).value(),
-                std::move(events).value())));
+            std::unique_ptr<ShellOutputMonitorOperations>(
+                new X11OutputMonitorOperations(std::move(connection).value())));
     }
 
-    Result<x11::RandrTopologySnapshot> query() override { return randr_.query(connection_); }
+    Result<void> initialize() override {
+        auto randr = x11::RandrTopologyProtocol::negotiate(connection_);
+        if (!randr) {
+            return Result<void>::failure(randr.error());
+        }
+        auto events = x11::RootEventStream::create(connection_, randr.value());
+        if (!events) {
+            return Result<void>::failure(events.error());
+        }
+        randr_.emplace(std::move(randr).value());
+        events_.emplace(std::move(events).value());
+        return Result<void>::success();
+    }
+
+    Result<x11::RandrTopologySnapshot> query() override {
+        if (!randr_) {
+            return Result<x11::RandrTopologySnapshot>::failure(monitorError());
+        }
+        return randr_->query(connection_);
+    }
 
     [[nodiscard]] int eventFileDescriptor() const noexcept override {
         return connection_.eventFileDescriptor();
     }
 
-    Result<bool> drainEvents() override {
-        auto batch = events_.drain();
-        if (!batch) {
-            return Result<bool>::failure(batch.error());
+    Result<ShellOutputMonitorEventDrain> drainEvents() override {
+        if (!events_) {
+            return Result<ShellOutputMonitorEventDrain>::failure(monitorError());
         }
-        bool refresh = batch.value().examinationLimitReached;
+        auto batch = events_->drain();
+        if (!batch) {
+            return Result<ShellOutputMonitorEventDrain>::failure(batch.error());
+        }
+        bool refresh = false;
         for (const auto &event : batch.value().events) {
             refresh = refresh || needsRefresh(event);
         }
-        return Result<bool>::success(refresh);
+        return Result<ShellOutputMonitorEventDrain>::success(
+            {refresh, batch.value().examinationLimitReached});
     }
 
     void cancelWaits() noexcept override {
@@ -96,14 +110,12 @@ class X11OutputMonitorOperations final : public ShellOutputMonitorOperations {
     }
 
   private:
-    X11OutputMonitorOperations(x11::X11Connection connection, x11::RandrTopologyProtocol randr,
-                               x11::RootEventStream events)
-        : connection_(std::move(connection)), randr_(std::move(randr)), events_(std::move(events)) {
-    }
+    explicit X11OutputMonitorOperations(x11::X11Connection connection)
+        : connection_(std::move(connection)) {}
 
     x11::X11Connection connection_;
-    x11::RandrTopologyProtocol randr_;
-    x11::RootEventStream events_;
+    std::optional<x11::RandrTopologyProtocol> randr_;
+    std::optional<x11::RootEventStream> events_;
 };
 
 class OperationsGuard final {
@@ -201,7 +213,7 @@ Result<void> ShellOutputMonitor::start() {
     try {
         worker_ = std::jthread([this](std::stop_token token) { workerMain(token); });
     } catch (const std::exception &) {
-        QObject::disconnect(nullptr, nullptr, this, nullptr);
+        disconnectScreenObservers();
         if (auto state = publicationState()) {
             std::scoped_lock lock{state->mutex};
             state->stopping = true;
@@ -218,7 +230,7 @@ void ShellOutputMonitor::stop() noexcept {
     if (!running_.exchange(false)) {
         return;
     }
-    QObject::disconnect(nullptr, nullptr, this, nullptr);
+    disconnectScreenObservers();
     if (auto state = publicationState()) {
         std::scoped_lock lock{state->mutex};
         state->stopping = true;
@@ -300,6 +312,19 @@ void ShellOutputMonitor::observeScreen(QScreen &screen) {
             [this](qreal) { requestRefresh(); });
 }
 
+void ShellOutputMonitor::disconnectScreenObservers() noexcept {
+    auto *application = qobject_cast<QGuiApplication *>(QCoreApplication::instance());
+    if (application == nullptr) {
+        return;
+    }
+    QObject::disconnect(application, nullptr, this, nullptr);
+    for (auto *screen : QGuiApplication::screens()) {
+        if (screen != nullptr) {
+            QObject::disconnect(screen, nullptr, this, nullptr);
+        }
+    }
+}
+
 void ShellOutputMonitor::workerMain(std::stop_token stopToken) noexcept {
     auto operations = operations_factory_();
     if (!operations) {
@@ -309,14 +334,27 @@ void ShellOutputMonitor::workerMain(std::stop_token stopToken) noexcept {
         return;
     }
     OperationsGuard operationsGuard{operations_, operations_mutex_, operations.value().get()};
+    if (stopToken.stop_requested()) {
+        return;
+    }
+    auto initialized = operations.value()->initialize();
+    if (stopToken.stop_requested()) {
+        return;
+    }
+    if (!initialized) {
+        publishFailure(initialized.error(), true);
+        return;
+    }
 
     bool refresh = true;
+    bool drainFollowUp = true;
     while (!stopToken.stop_requested()) {
         if (refresh) {
             auto snapshot = operations.value()->query();
             if (stopToken.stop_requested()) {
                 return;
             }
+            drainFollowUp = true;
             if (!snapshot) {
                 const bool fatal = snapshot.error().code == ErrorCode::io_error;
                 publishFailure(snapshot.error(), fatal);
@@ -327,6 +365,25 @@ void ShellOutputMonitor::workerMain(std::stop_token stopToken) noexcept {
                 publishTopology(std::move(snapshot).value());
             }
             refresh = false;
+        }
+
+        if (drainFollowUp) {
+            auto drained = operations.value()->drainEvents();
+            if (stopToken.stop_requested()) {
+                return;
+            }
+            if (!drained) {
+                const bool fatal = drained.error().code == ErrorCode::io_error;
+                publishFailure(drained.error(), fatal);
+                if (fatal) {
+                    return;
+                }
+                drainFollowUp = false;
+            } else {
+                refresh = refresh || drained.value().refreshRequired;
+                drainFollowUp = drained.value().followUpRequired;
+            }
+            continue;
         }
 
         std::array<pollfd, 2> descriptors{{
@@ -363,7 +420,8 @@ void ShellOutputMonitor::workerMain(std::stop_token stopToken) noexcept {
                     return;
                 }
             } else {
-                refresh = refresh || drained.value();
+                refresh = refresh || drained.value().refreshRequired;
+                drainFollowUp = drained.value().followUpRequired;
             }
         }
     }

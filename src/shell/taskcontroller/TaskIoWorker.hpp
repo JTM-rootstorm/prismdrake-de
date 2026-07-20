@@ -21,17 +21,24 @@
 
 namespace prismdrake::shell::taskcontroller {
 
+struct TaskEventDrain final {
+    TaskEventRefreshPlan plan;
+    bool followUpRequired{false};
+};
+
 /// Blocking X11 operations owned exclusively by TaskIoWorker's worker thread.
 class TaskIoOperations {
   public:
     virtual ~TaskIoOperations() = default;
 
+    /// Performs reply-bearing setup after this object has been published to worker teardown.
+    [[nodiscard]] virtual foundation::Result<void> initialize() = 0;
     [[nodiscard]] virtual foundation::Result<x11::TaskModelObservation>
     refresh(std::span<const x11::WindowId> invalidatedWindows, bool invalidateAllClients) = 0;
     [[nodiscard]] virtual foundation::Result<void>
     request(const x11::TaskRequestState &request, std::optional<x11::WindowId> currentlyActive) = 0;
     [[nodiscard]] virtual int eventFileDescriptor() const noexcept = 0;
-    [[nodiscard]] virtual foundation::Result<TaskEventRefreshPlan> drainEvents() = 0;
+    [[nodiscard]] virtual foundation::Result<TaskEventDrain> drainEvents() = 0;
     virtual void cancelWaits() noexcept = 0;
 };
 

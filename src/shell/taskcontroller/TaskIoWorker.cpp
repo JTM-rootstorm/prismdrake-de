@@ -226,13 +226,29 @@ void TaskIoWorker::run(std::stop_token stopToken) {
     }
     OperationsGuard operationsGuard{operations_, operations_mutex_,
                                     operations ? operations.value().get() : nullptr};
+    if (stopToken.stop_requested()) {
+        return;
+    }
+    bool eventFollowUpRequired = false;
+    if (operations) {
+        auto initialized = operations.value()->initialize();
+        if (stopToken.stop_requested()) {
+            return;
+        }
+        if (!initialized) {
+            setupError = initialized.error();
+        } else {
+            eventFollowUpRequired = true;
+        }
+    }
     std::uint64_t currentRefreshToken = 0U;
 
     while (!stopToken.stop_requested()) {
         bool workQueued = false;
         {
             std::scoped_lock lock{mutex_};
-            workQueued = pending_refresh_.has_value() || !pending_requests_.empty();
+            workQueued =
+                pending_refresh_.has_value() || !pending_requests_.empty() || eventFollowUpRequired;
         }
         const int eventDescriptor = operations ? operations.value()->eventFileDescriptor() : -1;
         std::array<pollfd, 2U> descriptors{{
@@ -256,15 +272,25 @@ void TaskIoWorker::run(std::stop_token stopToken) {
             while (read(wake_descriptor_, &count, sizeof(count)) < 0 && errno == EINTR) {
             }
         }
-        if (descriptorCount > 1U && descriptors[1].revents != 0) {
-            if ((descriptors[1].revents & POLLIN) != 0) {
-                deliverEvent(operations.value()->drainEvents());
+        const bool eventReady = descriptorCount > 1U && (descriptors[1].revents & POLLIN) != 0;
+        if (eventFollowUpRequired || eventReady) {
+            eventFollowUpRequired = false;
+            auto drained = operations.value()->drainEvents();
+            if (drained) {
+                eventFollowUpRequired = drained.value().followUpRequired;
+                deliverEvent(
+                    Result<TaskEventRefreshPlan>::success(std::move(drained).value().plan));
             } else {
-                deliverEvent(Result<TaskEventRefreshPlan>::failure(
-                    {ErrorCode::io_error, "The task worker's X11 event descriptor failed.",
-                     "Exit the shell and rebuild all X11 state after reconnecting."}));
-                return;
+                deliverEvent(Result<TaskEventRefreshPlan>::failure(drained.error()));
+                if (drained.error().code == ErrorCode::io_error) {
+                    return;
+                }
             }
+        } else if (descriptorCount > 1U && descriptors[1].revents != 0) {
+            deliverEvent(Result<TaskEventRefreshPlan>::failure(
+                {ErrorCode::io_error, "The task worker's X11 event descriptor failed.",
+                 "Exit the shell and rebuild all X11 state after reconnecting."}));
+            return;
         }
 
         std::optional<RefreshJob> refresh;
@@ -291,6 +317,7 @@ void TaskIoWorker::run(std::stop_token stopToken) {
             }
             auto result = operations.value()->refresh(refresh->invalidatedWindows,
                                                       refresh->invalidateAllClients);
+            eventFollowUpRequired = taskEventFollowUpRequired(true, eventFollowUpRequired);
             if (result) {
                 currentRefreshToken = refresh->token;
             }
@@ -309,6 +336,7 @@ void TaskIoWorker::run(std::stop_token stopToken) {
             continue;
         }
         auto result = operations.value()->request(request->request, request->currentlyActive);
+        eventFollowUpRequired = true;
         deliverRequest(std::move(request->request), std::move(result));
     }
 }

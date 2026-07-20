@@ -59,17 +59,22 @@ class X11TaskIoOperations final : public TaskIoOperations {
         if (!connection) {
             return Result<std::unique_ptr<TaskIoOperations>>::failure(connection.error());
         }
-        auto events = x11::RootEventStream::create(connection.value());
-        if (!events) {
-            return Result<std::unique_ptr<TaskIoOperations>>::failure(events.error());
-        }
-        auto source = x11::EwmhTaskSource::create(connection.value());
-        if (!source) {
-            return Result<std::unique_ptr<TaskIoOperations>>::failure(source.error());
-        }
         return Result<std::unique_ptr<TaskIoOperations>>::success(std::unique_ptr<TaskIoOperations>(
-            new X11TaskIoOperations(std::move(connection).value(), std::move(events).value(),
-                                    std::move(source).value())));
+            new X11TaskIoOperations(std::move(connection).value())));
+    }
+
+    Result<void> initialize() override {
+        auto events = x11::RootEventStream::create(connection_);
+        if (!events) {
+            return Result<void>::failure(events.error());
+        }
+        auto source = x11::EwmhTaskSource::create(connection_);
+        if (!source) {
+            return Result<void>::failure(source.error());
+        }
+        events_.emplace(std::move(events).value());
+        source_.emplace(std::move(source).value());
+        return Result<void>::success();
     }
 
     Result<x11::TaskModelObservation> refresh(std::span<const x11::WindowId> invalidatedWindows,
@@ -125,15 +130,23 @@ class X11TaskIoOperations final : public TaskIoOperations {
         return connection_.eventFileDescriptor();
     }
 
-    Result<TaskEventRefreshPlan> drainEvents() override {
-        auto batch = events_.drain();
+    Result<TaskEventDrain> drainEvents() override {
+        if (!events_) {
+            return Result<TaskEventDrain>::failure(lostConnection());
+        }
+        auto batch = events_->drain();
         if (!batch) {
-            return Result<TaskEventRefreshPlan>::failure(batch.error());
+            return Result<TaskEventDrain>::failure(batch.error());
         }
         if (!connection_.healthy()) {
-            return Result<TaskEventRefreshPlan>::failure(lostConnection());
+            return Result<TaskEventDrain>::failure(lostConnection());
         }
-        return planTaskEventRefresh(batch.value().events);
+        auto plan = planTaskEventRefresh(batch.value().events);
+        if (!plan) {
+            return Result<TaskEventDrain>::failure(plan.error());
+        }
+        return Result<TaskEventDrain>::success(
+            {std::move(plan).value(), batch.value().examinationLimitReached});
     }
 
     void cancelWaits() noexcept override {
@@ -144,13 +157,11 @@ class X11TaskIoOperations final : public TaskIoOperations {
     }
 
   private:
-    X11TaskIoOperations(x11::X11Connection connection, x11::RootEventStream events,
-                        x11::EwmhTaskSource source)
-        : connection_(std::move(connection)), events_(std::move(events)),
-          source_(std::move(source)) {}
+    explicit X11TaskIoOperations(x11::X11Connection connection)
+        : connection_(std::move(connection)) {}
 
     x11::X11Connection connection_;
-    x11::RootEventStream events_;
+    std::optional<x11::RootEventStream> events_;
     std::optional<x11::EwmhTaskSource> source_;
     std::optional<x11::EwmhWindowRequests> requests_;
     std::map<x11::WindowId::Value, x11::WindowIncarnationId> observed_incarnations_;

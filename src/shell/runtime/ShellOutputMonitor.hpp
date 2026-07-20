@@ -20,14 +20,21 @@ class QScreen;
 
 namespace prismdrake::shell::runtime {
 
+struct ShellOutputMonitorEventDrain final {
+    bool refreshRequired;
+    bool followUpRequired;
+};
+
 /// Worker-owned reply-bearing RandR operations. The production implementation owns one X11
 /// connection; tests inject the same cancellation and event boundary without a display server.
 class ShellOutputMonitorOperations {
   public:
     virtual ~ShellOutputMonitorOperations() = default;
+    /// Performs reply-bearing setup after this object has been published to stop().
+    [[nodiscard]] virtual foundation::Result<void> initialize() = 0;
     [[nodiscard]] virtual foundation::Result<x11::RandrTopologySnapshot> query() = 0;
     [[nodiscard]] virtual int eventFileDescriptor() const noexcept = 0;
-    [[nodiscard]] virtual foundation::Result<bool> drainEvents() = 0;
+    [[nodiscard]] virtual foundation::Result<ShellOutputMonitorEventDrain> drainEvents() = 0;
     virtual void cancelWaits() noexcept = 0;
 };
 
@@ -40,6 +47,8 @@ class ShellOutputMonitor final : public QObject {
     using SnapshotObserver =
         std::function<foundation::Result<void>(const outputs::SurfaceRegistrySnapshot &)>;
     using FailureObserver = std::function<void(const foundation::Error &, bool fatal)>;
+    /// Creates only the connection-owning operations object. Reply-bearing protocol setup belongs
+    /// in ShellOutputMonitorOperations::initialize(), after stop() can reach cancelWaits().
     using OperationsFactory =
         std::function<foundation::Result<std::unique_ptr<ShellOutputMonitorOperations>>()>;
 
@@ -70,6 +79,7 @@ class ShellOutputMonitor final : public QObject {
     void publishFailure(foundation::Error error, bool fatal) noexcept;
     void applyTopology(x11::RandrTopologySnapshot snapshot);
     void observeScreen(QScreen &screen);
+    void disconnectScreenObservers() noexcept;
     void queuePublication(const std::shared_ptr<PublicationState> &state) noexcept;
     [[nodiscard]] std::shared_ptr<PublicationState> publicationState() const noexcept;
 
