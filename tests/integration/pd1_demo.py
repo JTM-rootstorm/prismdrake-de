@@ -220,6 +220,22 @@ def select_sole_owned_panel(panels: list[str], owner_process_id: int,
     return panels[0]
 
 
+def current_sole_owned_panel(xdotool: Path, expected: ProcessIdentity) -> str | None:
+    """Return the current sole panel only when it is owned by the live shell."""
+
+    panels = window_ids(xdotool, PANEL_TITLE)
+    if len(panels) != 1:
+        return None
+    result = run_checked([str(xdotool), "getwindowpid", panels[0]])
+    if (result.returncode != 0 or
+            re.fullmatch(r"[1-9]\d*\n?", result.stdout) is None):
+        return None
+    try:
+        return select_sole_owned_panel(panels, int(result.stdout.strip()), expected)
+    except DemoError:
+        return None
+
+
 def validate_session_log(log_text: str) -> None:
     shell_restart_event = ("component=prismdrake-shell severity=error "
                            "event=component_start_failed generation=none profile=none "
@@ -835,33 +851,48 @@ def send_focused_key(xdotool: Path, key: str) -> None:
 
 
 def require_shell_owner(atspi: Any, xdotool: Path, panel: str,
-                        shell_process_id: int) -> None:
-    require(shell_process_id > 1, "shell_process_identity_invalid")
-    require(window_process_id(xdotool, panel) == shell_process_id,
+                        shell_identity: ProcessIdentity) -> None:
+    require(shell_identity.process_id > 1 and shell_identity.start_time > 0 and
+            shell_identity.pidfd >= 0, "shell_process_identity_invalid")
+    require(window_process_id(xdotool, panel) == shell_identity.process_id and
+            process_identity_alive(shell_identity),
             "panel_owner_identity_invalid")
-    require(process_application_id(atspi) == shell_process_id,
+    require(process_application_id(atspi) == shell_identity.process_id,
             "atspi_owner_identity_invalid")
 
 
+def current_shell_panel(atspi: Any, xdotool: Path,
+                        shell_identity: ProcessIdentity) -> str | None:
+    panels = window_ids(xdotool, PANEL_TITLE)
+    if len(panels) != 1:
+        return None
+    require_shell_owner(atspi, xdotool, panels[0], shell_identity)
+    return panels[0]
+
+
 def send_focused_window_action_key(atspi: Any, xdotool: Path, expected_window: str,
-                                   shell_process_id: int, accessible_name: str,
+                                   shell_identity: ProcessIdentity, accessible_name: str,
                                    key: str) -> None:
-    require_shell_owner(atspi, xdotool, expected_window, shell_process_id)
+    require_shell_owner(atspi, xdotool, expected_window, shell_identity)
     require(focused_window_id(xdotool) == expected_window, "action_window_focus_lost")
     showing_focused_action_node(atspi, accessible_name)
     send_focused_key(xdotool, key)
 
 
 def send_focused_shell_action_key(atspi: Any, xdotool: Path, panel: str,
-                                  shell_process_id: int, accessible_name: str,
-                                  key: str) -> None:
-    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+                                  shell_identity: ProcessIdentity, accessible_name: str,
+                                  key: str) -> str:
+    panel = wait_until(
+        lambda: current_shell_panel(atspi, xdotool, shell_identity),
+        "shell_panel_owner_timeout",
+    )
     focused_window = focused_window_id(xdotool)
     if focused_window != panel:
-        require(window_process_id(xdotool, focused_window) == shell_process_id,
+        require(window_process_id(xdotool, focused_window) == shell_identity.process_id,
                 "action_shell_window_owner_invalid")
     showing_focused_action_node(atspi, accessible_name)
     send_focused_key(xdotool, key)
+    return panel
 
 
 def accept_first_result_from_focused_search(atspi: Any, xdotool: Path,
@@ -872,9 +903,12 @@ def accept_first_result_from_focused_search(atspi: Any, xdotool: Path,
 
 
 def focus_task_from_panel(atspi: Any, xdotool: Path, panel: str,
-                          shell_process_id: int, title: str) -> None:
+                          shell_identity: ProcessIdentity, title: str) -> str:
     require(title in APP_TITLES, "task_navigation_target_invalid")
-    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+    panel = wait_until(
+        lambda: current_shell_panel(atspi, xdotool, shell_identity),
+        "shell_panel_owner_timeout",
+    )
     require(press(atspi, "Open applications"), "launcher_press_rejected")
     launcher = wait_until(lambda: visible_window_id(xdotool, LAUNCHER_TITLE),
                           "launcher_window_timeout")
@@ -884,40 +918,55 @@ def focus_task_from_panel(atspi: Any, xdotool: Path, panel: str,
     send_focused_key(xdotool, "Escape")
     wait_until(lambda: visible_window_id(xdotool, LAUNCHER_TITLE) is None,
                "launcher_dismiss_timeout")
-    wait_until(lambda: focused_window_id(xdotool) == panel and
-               has_showing_focused_action(atspi, "Open applications"),
-               "panel_keyboard_return_timeout")
+
+    def focused_owned_panel() -> str | None:
+        current = current_shell_panel(atspi, xdotool, shell_identity)
+        if current is None or focused_window_id(xdotool) != current or not \
+                has_showing_focused_action(atspi, "Open applications"):
+            return None
+        return current
+
+    panel = wait_until(focused_owned_panel, "panel_keyboard_return_timeout")
 
     previous = "Open applications"
     for candidate in APP_TITLES[:APP_TITLES.index(title) + 1]:
+        panel = wait_until(
+            lambda: current_shell_panel(atspi, xdotool, shell_identity),
+            "shell_panel_owner_timeout",
+        )
         send_focused_window_action_key(
-            atspi, xdotool, panel, shell_process_id, previous, "Tab",
+            atspi, xdotool, panel, shell_identity, previous, "Tab",
         )
         wait_until(lambda candidate=candidate:
                    has_showing_focused_action(atspi, candidate),
                    "task_keyboard_focus_timeout")
         previous = candidate
+    return panel
 
 
 def open_task_context_menu(atspi: Any, xdotool: Path, panel: str,
-                           shell_process_id: int, title: str,
-                           expected_action: str = "Minimize") -> None:
+                           shell_identity: ProcessIdentity, title: str,
+                           expected_action: str = "Minimize") -> str:
     require(expected_action in {"Minimize", "Close"},
             "task_context_action_invalid")
-    focus_task_from_panel(atspi, xdotool, panel, shell_process_id, title)
+    panel = focus_task_from_panel(atspi, xdotool, panel, shell_identity, title)
     send_focused_window_action_key(
-        atspi, xdotool, panel, shell_process_id, title, "shift+F10",
+        atspi, xdotool, panel, shell_identity, title, "shift+F10",
     )
-    require_task_context_menu_focus(
-        atspi, xdotool, panel, shell_process_id, title, True, expected_action,
+    panel = require_task_context_menu_focus(
+        atspi, xdotool, panel, shell_identity, title, True, expected_action,
     )
+    return panel
 
 
 def require_task_context_menu_focus(atspi: Any, xdotool: Path, panel: str,
-                                    shell_process_id: int, title: str,
+                                    shell_identity: ProcessIdentity, title: str,
                                     require_keyboard_focus: bool,
-                                    expected_action: str = "Minimize") -> None:
-    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+                                    expected_action: str = "Minimize") -> str:
+    panel = wait_until(
+        lambda: current_shell_panel(atspi, xdotool, shell_identity),
+        "shell_panel_owner_timeout",
+    )
     action_name = f"{expected_action} {title}"
     try:
         wait_until(lambda: has_showing_focused_action(atspi, action_name),
@@ -951,8 +1000,9 @@ def require_task_context_menu_focus(atspi: Any, xdotool: Path, panel: str,
     if require_keyboard_focus:
         focused_window = focused_window_id(xdotool)
         require(focused_window == panel or
-                window_process_id(xdotool, focused_window) == shell_process_id,
+                window_process_id(xdotool, focused_window) == shell_identity.process_id,
                 "action_shell_window_owner_invalid")
+    return panel
 
 
 def task_screen_center(atspi: Any, xdotool: Path, panel: str,
@@ -981,42 +1031,53 @@ def task_screen_center(atspi: Any, xdotool: Path, panel: str,
 
 
 def open_task_context_menu_from_pointer(atspi: Any, xdotool: Path, panel: str,
-                                        shell_process_id: int, title: str) -> None:
-    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+                                        shell_identity: ProcessIdentity, title: str) -> str:
+    panel = wait_until(
+        lambda: current_shell_panel(atspi, xdotool, shell_identity),
+        "shell_panel_owner_timeout",
+    )
     center_x, center_y = task_screen_center(atspi, xdotool, panel, title)
     result = run_checked([
         str(xdotool), "mousemove", "--sync", str(center_x), str(center_y), "click", "3",
     ])
     require(result.returncode == 0, "pointer_context_injection_failed")
-    require_task_context_menu_focus(
-        atspi, xdotool, panel, shell_process_id, title, False,
+    return require_task_context_menu_focus(
+        atspi, xdotool, panel, shell_identity, title, False,
     )
 
 
 def minimize_task_from_context_menu(atspi: Any, xdotool: Path, panel: str,
-                                    shell_process_id: int, title: str) -> None:
-    open_task_context_menu(atspi, xdotool, panel, shell_process_id, title)
-    send_focused_shell_action_key(
-        atspi, xdotool, panel, shell_process_id, f"Minimize {title}", "space",
+                                    shell_identity: ProcessIdentity, title: str) -> str:
+    panel = open_task_context_menu(atspi, xdotool, panel, shell_identity, title)
+    panel = send_focused_shell_action_key(
+        atspi, xdotool, panel, shell_identity, f"Minimize {title}", "space",
     )
+    return panel
 
 
 def close_minimized_task_from_context_menu(atspi: Any, xdotool: Path, panel: str,
-                                           shell_process_id: int, title: str) -> None:
-    open_task_context_menu(
-        atspi, xdotool, panel, shell_process_id, title, "Close",
+                                           shell_identity: ProcessIdentity, title: str) -> str:
+    panel = open_task_context_menu(
+        atspi, xdotool, panel, shell_identity, title, "Close",
     )
-    send_focused_shell_action_key(
-        atspi, xdotool, panel, shell_process_id, f"Close {title}", "space",
+    panel = send_focused_shell_action_key(
+        atspi, xdotool, panel, shell_identity, f"Close {title}", "space",
     )
+    return panel
 
 
 def close_task_from_pointer_context_menu(atspi: Any, xdotool: Path, panel: str,
-                                         shell_process_id: int, title: str) -> None:
-    open_task_context_menu_from_pointer(atspi, xdotool, panel, shell_process_id, title)
-    require_shell_owner(atspi, xdotool, panel, shell_process_id)
+                                         shell_identity: ProcessIdentity, title: str) -> str:
+    panel = open_task_context_menu_from_pointer(
+        atspi, xdotool, panel, shell_identity, title,
+    )
+    panel = wait_until(
+        lambda: current_shell_panel(atspi, xdotool, shell_identity),
+        "shell_panel_owner_timeout",
+    )
     require(press_showing(atspi, f"Close {title}"),
             "task_close_accessible_action_rejected")
+    return panel
 
 
 def xprop_output(xprop: Path, target: list[str], name: str) -> str:
@@ -1318,13 +1379,19 @@ def run_session_child(arguments: argparse.Namespace) -> None:
             ]).stdout.strip() == first else None),
             "task_activation_timeout",
         )
-        initial_shell_process_id = process_application_id(Atspi)
+        initial_shell_identity = capture_process_identity(process_application_id(Atspi))
+        observation_identities.append(initial_shell_identity)
+        panel = wait_until(
+            lambda: current_sole_owned_panel(arguments.xdotool, initial_shell_identity),
+            "initial_panel_owner_timeout",
+        )
+        validate_panel_contract(arguments.xdotool, arguments.xprop, panel)
         require(task_has_generic_icon_semantics(Atspi, APP_TITLES[0]) and
                 task_has_generic_icon_semantics(Atspi, APP_TITLES[1]),
                 "task_generic_icon_semantics_invalid")
 
-        minimize_task_from_context_menu(
-            Atspi, arguments.xdotool, panel, initial_shell_process_id, APP_TITLES[0],
+        panel = minimize_task_from_context_menu(
+            Atspi, arguments.xdotool, panel, initial_shell_identity, APP_TITLES[0],
         )
         wait_until(
             lambda: (True if "_NET_WM_STATE_HIDDEN" in
@@ -1337,11 +1404,11 @@ def run_session_child(arguments: argparse.Namespace) -> None:
             "task_minimized_accessibility_timeout",
         )
 
-        focus_task_from_panel(
-            Atspi, arguments.xdotool, panel, initial_shell_process_id, APP_TITLES[0],
+        panel = focus_task_from_panel(
+            Atspi, arguments.xdotool, panel, initial_shell_identity, APP_TITLES[0],
         )
         send_focused_window_action_key(
-            Atspi, arguments.xdotool, panel, initial_shell_process_id,
+            Atspi, arguments.xdotool, panel, initial_shell_identity,
             APP_TITLES[0], "Return",
         )
         wait_until(
@@ -1370,6 +1437,11 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                     effective.get("transparency_disabled") is True,
                     "accessibility_override_lost")
 
+        panel = wait_until(
+            lambda: current_sole_owned_panel(arguments.xdotool, initial_shell_identity),
+            "profile_panel_owner_timeout",
+        )
+
         notification_connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         require(notification_connection is not None, "notification_connection_failed")
         notification_id = send_test_notification(notification_connection, Gio, GLib)
@@ -1381,8 +1453,8 @@ def run_session_child(arguments: argparse.Namespace) -> None:
         send_focused_key(arguments.xdotool, "Tab")
         wait_until(lambda: has_showing_focused_action(Atspi, "Acknowledge"),
                    "notification_focus_timeout")
-        send_focused_shell_action_key(
-            Atspi, arguments.xdotool, panel, initial_shell_process_id, "Acknowledge", "space",
+        panel = send_focused_shell_action_key(
+            Atspi, arguments.xdotool, panel, initial_shell_identity, "Acknowledge", "space",
         )
         close_test_notification(notification_connection, Gio, GLib, notification_id)
         wait_until(lambda: visible_window_id(arguments.xdotool, NOTIFICATION_TITLE) is None,
@@ -1392,7 +1464,6 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                 "notification_state_isolation_invalid")
 
         old_shell_identity = capture_process_identity(process_application_id(Atspi))
-        restarted_shell_process_id = 0
         try:
             signal.pidfd_send_signal(old_shell_identity.pidfd, signal.SIGKILL)
             wait_until(lambda: not process_identity_alive(old_shell_identity),
@@ -1416,22 +1487,10 @@ def run_session_child(arguments: argparse.Namespace) -> None:
         finally:
             os.close(old_shell_identity.pidfd)
 
-        def sole_owned_panel() -> str | None:
-            panels = window_ids(arguments.xdotool, PANEL_TITLE)
-            if len(panels) != 1:
-                return None
-            result = run_checked([str(arguments.xdotool), "getwindowpid", panels[0]])
-            if result.returncode != 0 or not result.stdout.strip().isdigit():
-                return None
-            try:
-                return select_sole_owned_panel(
-                    panels, int(result.stdout.strip()), new_shell_identity,
-                )
-            except DemoError:
-                return None
-
-        new_panel = wait_until(sole_owned_panel, "shell_restart_panel_timeout", timeout=12)
-        restarted_shell_process_id = new_shell_identity.process_id
+        new_panel = wait_until(
+            lambda: current_sole_owned_panel(arguments.xdotool, new_shell_identity),
+            "shell_restart_panel_timeout", timeout=12,
+        )
         require_normal_ready(prismdrake_runtime)
         restarted_snapshot = current_snapshot(arguments.gdbus)
         require(restarted_snapshot.get("generation") == 3, "restart_generation_invalid")
@@ -1507,7 +1566,10 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                  post_settings_restart["shell"].start_time) ==
                 (new_shell_identity.process_id, new_shell_identity.start_time),
                 "shell_replaced_during_settings_restart")
-        new_panel = wait_until(sole_owned_panel, "settings_restart_panel_timeout", timeout=12)
+        new_panel = wait_until(
+            lambda: current_sole_owned_panel(arguments.xdotool, new_shell_identity),
+            "settings_restart_panel_timeout", timeout=12,
+        )
         validate_panel_contract(arguments.xdotool, arguments.xprop, new_panel)
         wait_until(
             lambda: len(showing_named_action_nodes(Atspi, APP_TITLES[0], "Press")) == 1 and
@@ -1525,15 +1587,15 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                     for material in materials.values()), "opaque_fallback_invalid")
         thumbnail = recovered_snapshot["theme"]["thumbnail_presentation"]
 
-        close_task_from_pointer_context_menu(
-            Atspi, arguments.xdotool, new_panel, restarted_shell_process_id, APP_TITLES[1],
+        new_panel = close_task_from_pointer_context_menu(
+            Atspi, arguments.xdotool, new_panel, new_shell_identity, APP_TITLES[1],
         )
         wait_until(lambda: window_id(arguments.xdotool, APP_TITLES[1]) is None and
                    not named_action_nodes(Atspi, APP_TITLES[1], "Press") and
                    not process_identity_alive(detached_identities[1]),
                    "pointer_controlled_window_close_timeout")
-        minimize_task_from_context_menu(
-            Atspi, arguments.xdotool, new_panel, restarted_shell_process_id, APP_TITLES[0],
+        new_panel = minimize_task_from_context_menu(
+            Atspi, arguments.xdotool, new_panel, new_shell_identity, APP_TITLES[0],
         )
         wait_until(
             lambda: (True if "_NET_WM_STATE_HIDDEN" in
@@ -1545,8 +1607,8 @@ def run_session_child(arguments: argparse.Namespace) -> None:
                      task_accessible_description(Atspi, APP_TITLES[0]) else None),
             "task_cleanup_minimized_accessibility_timeout",
         )
-        close_minimized_task_from_context_menu(
-            Atspi, arguments.xdotool, new_panel, restarted_shell_process_id, APP_TITLES[0],
+        new_panel = close_minimized_task_from_context_menu(
+            Atspi, arguments.xdotool, new_panel, new_shell_identity, APP_TITLES[0],
         )
         try:
             wait_until(lambda: window_id(arguments.xdotool, APP_TITLES[0]) is None and

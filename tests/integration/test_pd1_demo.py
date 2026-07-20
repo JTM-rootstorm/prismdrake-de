@@ -20,6 +20,7 @@ from pd1_demo import (
     APP_TITLES,
     accept_first_result_from_focused_search,
     capture_exact_direct_children,
+    current_sole_owned_panel,
     DemoError,
     ProcessIdentity,
     capture_process_identity,
@@ -28,6 +29,7 @@ from pd1_demo import (
     close_test_notification,
     example_evidence,
     environment_has_marker,
+    focus_task_from_panel,
     focused_window_id,
     has_showing_focused_node,
     named_action_nodes,
@@ -497,6 +499,72 @@ class EvidenceContractTests(unittest.TestCase):
         finally:
             close_identities([identity])
 
+    def test_current_panel_rebinds_only_to_live_sole_shell_owner(self) -> None:
+        xdotool = Path("/usr/bin/xdotool")
+        identity = ProcessIdentity(42, 100, 102)
+        valid_result = mock.Mock(returncode=0, stdout="42\n")
+        with mock.patch.object(pd1_demo, "window_ids", return_value=["10"]), \
+                mock.patch.object(pd1_demo, "run_checked", return_value=valid_result) as runner, \
+                mock.patch.object(pd1_demo, "process_identity_alive", return_value=True):
+            self.assertEqual(current_sole_owned_panel(xdotool, identity), "10")
+        runner.assert_called_once_with([str(xdotool), "getwindowpid", "10"])
+
+        with mock.patch.object(pd1_demo, "window_ids", return_value=["10", "11"]), \
+                mock.patch.object(pd1_demo, "run_checked") as runner:
+            self.assertIsNone(current_sole_owned_panel(xdotool, identity))
+        runner.assert_not_called()
+
+        invalid_results = (
+            mock.Mock(returncode=1, stdout=""),
+            mock.Mock(returncode=0, stdout="42 extra\n"),
+            mock.Mock(returncode=0, stdout="43\n"),
+        )
+        for result in invalid_results:
+            with self.subTest(returncode=result.returncode, stdout=result.stdout), \
+                    mock.patch.object(pd1_demo, "window_ids", return_value=["10"]), \
+                    mock.patch.object(pd1_demo, "run_checked", return_value=result), \
+                    mock.patch.object(pd1_demo, "process_identity_alive", return_value=True):
+                self.assertIsNone(current_sole_owned_panel(xdotool, identity))
+
+        with mock.patch.object(pd1_demo, "window_ids", return_value=["10"]), \
+                mock.patch.object(pd1_demo, "run_checked", return_value=valid_result), \
+                mock.patch.object(pd1_demo, "process_identity_alive", return_value=False):
+            self.assertIsNone(current_sole_owned_panel(xdotool, identity))
+
+    def test_keyboard_task_navigation_rebinds_replaced_panel(self) -> None:
+        atspi = object()
+        xdotool = Path("/usr/bin/xdotool")
+
+        def wait(predicate: object, code: str, **_kwargs: object) -> object:
+            if code == "launcher_window_timeout":
+                return "20"
+            if code in {
+                    "launcher_search_focus_timeout", "launcher_dismiss_timeout",
+                    "task_keyboard_focus_timeout"}:
+                return True
+            if code in {"panel_keyboard_return_timeout", "shell_panel_owner_timeout"}:
+                return predicate()
+            self.fail(f"unexpected wait code: {code}")
+
+        with mock.patch.object(pd1_demo, "current_shell_panel",
+                               side_effect=("10", "30", "30")) as panel_probe, \
+                mock.patch.object(pd1_demo, "press", return_value=True), \
+                mock.patch.object(pd1_demo, "wait_until", side_effect=wait), \
+                mock.patch.object(pd1_demo, "focused_window_id", side_effect=("20", "30")), \
+                mock.patch.object(pd1_demo, "send_focused_key"), \
+                mock.patch.object(pd1_demo, "has_showing_focused_action", return_value=True), \
+                mock.patch.object(pd1_demo, "send_focused_window_action_key") as key_sender:
+            observed = focus_task_from_panel(
+                atspi, xdotool, "10", ProcessIdentity(42, 100, 102), APP_TITLES[0],
+            )
+
+        self.assertEqual(observed, "30")
+        self.assertEqual(panel_probe.call_count, 3)
+        key_sender.assert_called_once_with(
+            atspi, xdotool, "30", ProcessIdentity(42, 100, 102),
+            "Open applications", "Tab",
+        )
+
     def test_cleanup_identity_bounds_fail_closed(self) -> None:
         fixture = ProcessIdentity(2, 1, 0)
         with self.assertRaises(DemoError):
@@ -630,7 +698,8 @@ class EvidenceContractTests(unittest.TestCase):
                 mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
             with self.assertRaisesRegex(DemoError, "^action_window_focus_lost$"):
                 send_focused_window_action_key(
-                    object(), xdotool, "4194305", 100, APP_TITLES[0], "shift+F10",
+                    object(), xdotool, "4194305", ProcessIdentity(100, 1, 0),
+                    APP_TITLES[0], "shift+F10",
                 )
         focus_probe.assert_not_called()
         key_sender.assert_not_called()
@@ -645,19 +714,22 @@ class EvidenceContractTests(unittest.TestCase):
                 ), mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
             with self.assertRaisesRegex(DemoError, "^atspi_focused_control_identity$"):
                 send_focused_window_action_key(
-                    object(), xdotool, "4194305", 100, APP_TITLES[0], "shift+F10",
+                    object(), xdotool, "4194305", ProcessIdentity(100, 1, 0),
+                    APP_TITLES[0], "shift+F10",
                 )
         key_sender.assert_not_called()
 
     def test_focused_window_action_rejects_atspi_owner_drift_without_emission(self) -> None:
         xdotool = Path("/usr/bin/xdotool")
         with mock.patch.object(pd1_demo, "window_process_id", return_value=100), \
+                mock.patch.object(pd1_demo, "process_identity_alive", return_value=True), \
                 mock.patch.object(pd1_demo, "process_application_id", return_value=99), \
                 mock.patch.object(pd1_demo, "focused_window_id") as focus_probe, \
                 mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
             with self.assertRaisesRegex(DemoError, "^atspi_owner_identity_invalid$"):
                 send_focused_window_action_key(
-                    object(), xdotool, "4194305", 100, APP_TITLES[0], "shift+F10",
+                    object(), xdotool, "4194305", ProcessIdentity(100, 1, 0),
+                    APP_TITLES[0], "shift+F10",
                 )
         focus_probe.assert_not_called()
         key_sender.assert_not_called()
@@ -665,11 +737,14 @@ class EvidenceContractTests(unittest.TestCase):
     def test_focused_shell_action_rejects_wrong_owner_without_emission(self) -> None:
         xdotool = Path("/usr/bin/xdotool")
         with mock.patch.object(pd1_demo, "window_process_id", return_value=99), \
+                mock.patch.object(pd1_demo, "window_ids", return_value=["4194305"]), \
+                mock.patch.object(pd1_demo, "wait_until",
+                                  side_effect=lambda predicate, *_args, **_kwargs: predicate()), \
                 mock.patch.object(pd1_demo, "showing_focused_action_node") as focus_probe, \
                 mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
             with self.assertRaisesRegex(DemoError, "^panel_owner_identity_invalid$"):
                 send_focused_shell_action_key(
-                    object(), xdotool, "4194305", 100,
+                    object(), xdotool, "4194305", ProcessIdentity(100, 1, 0),
                     f"Minimize {APP_TITLES[0]}", "Return",
                 )
         focus_probe.assert_not_called()
@@ -678,6 +753,9 @@ class EvidenceContractTests(unittest.TestCase):
     def test_focused_shell_action_rejects_lost_atspi_focus_without_emission(self) -> None:
         xdotool = Path("/usr/bin/xdotool")
         with mock.patch.object(pd1_demo, "require_shell_owner"), \
+                mock.patch.object(pd1_demo, "window_ids", return_value=["4194305"]), \
+                mock.patch.object(pd1_demo, "wait_until",
+                                  side_effect=lambda predicate, *_args, **_kwargs: predicate()), \
                 mock.patch.object(pd1_demo, "focused_window_id", return_value="4194305"), \
                 mock.patch.object(
                     pd1_demo, "showing_focused_action_node",
@@ -685,7 +763,7 @@ class EvidenceContractTests(unittest.TestCase):
                 ), mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
             with self.assertRaisesRegex(DemoError, "^atspi_focused_control_identity$"):
                 send_focused_shell_action_key(
-                    object(), xdotool, "4194305", 100,
+                    object(), xdotool, "4194305", ProcessIdentity(100, 1, 0),
                     f"Minimize {APP_TITLES[0]}", "Return",
                 )
         key_sender.assert_not_called()
@@ -785,27 +863,36 @@ class EvidenceContractTests(unittest.TestCase):
         xdotool = Path("/usr/bin/xdotool")
         result = mock.Mock(returncode=0)
         with mock.patch.object(pd1_demo, "window_process_id", return_value=100), \
+                mock.patch.object(pd1_demo, "process_identity_alive", return_value=True), \
                 mock.patch.object(pd1_demo, "process_application_id", return_value=100), \
+                mock.patch.object(pd1_demo, "window_ids", return_value=["4194305"]), \
+                mock.patch.object(pd1_demo, "wait_until",
+                                  side_effect=lambda predicate, *_args, **_kwargs: predicate()), \
                 mock.patch.object(pd1_demo, "task_screen_center", return_value=(200, 684)), \
                 mock.patch.object(pd1_demo, "run_checked", return_value=result) as pointer_sender, \
                 mock.patch.object(pd1_demo, "require_task_context_menu_focus") as focus_probe:
             open_task_context_menu_from_pointer(
-                atspi, xdotool, "4194305", 100, APP_TITLES[1],
+                atspi, xdotool, "4194305", ProcessIdentity(100, 1, 0), APP_TITLES[1],
             )
         pointer_sender.assert_called_once_with([
             str(xdotool), "mousemove", "--sync", "200", "684", "click", "3",
         ])
         focus_probe.assert_called_once_with(
-            atspi, xdotool, "4194305", 100, APP_TITLES[1], False,
+            atspi, xdotool, "4194305", ProcessIdentity(100, 1, 0),
+            APP_TITLES[1], False,
         )
 
     def test_pointer_context_open_rejects_invalid_shell_identity_before_emission(self) -> None:
         with mock.patch.object(pd1_demo, "window_process_id") as owner_probe, \
+                mock.patch.object(pd1_demo, "window_ids", return_value=["4194305"]), \
+                mock.patch.object(pd1_demo, "wait_until",
+                                  side_effect=lambda predicate, *_args, **_kwargs: predicate()), \
                 mock.patch.object(pd1_demo, "task_screen_center") as center_probe, \
                 mock.patch.object(pd1_demo, "run_checked") as pointer_sender:
             with self.assertRaisesRegex(DemoError, "^shell_process_identity_invalid$"):
                 open_task_context_menu_from_pointer(
-                    object(), Path("/usr/bin/xdotool"), "4194305", 1, APP_TITLES[1],
+                    object(), Path("/usr/bin/xdotool"), "4194305",
+                    ProcessIdentity(1, 1, 0), APP_TITLES[1],
                 )
         owner_probe.assert_not_called()
         center_probe.assert_not_called()
@@ -813,11 +900,15 @@ class EvidenceContractTests(unittest.TestCase):
 
     def test_pointer_context_open_rejects_stale_panel_before_emission(self) -> None:
         with mock.patch.object(pd1_demo, "window_process_id", return_value=99), \
+                mock.patch.object(pd1_demo, "window_ids", return_value=["4194305"]), \
+                mock.patch.object(pd1_demo, "wait_until",
+                                  side_effect=lambda predicate, *_args, **_kwargs: predicate()), \
                 mock.patch.object(pd1_demo, "task_screen_center") as center_probe, \
                 mock.patch.object(pd1_demo, "run_checked") as pointer_sender:
             with self.assertRaisesRegex(DemoError, "^panel_owner_identity_invalid$"):
                 open_task_context_menu_from_pointer(
-                    object(), Path("/usr/bin/xdotool"), "4194305", 100, APP_TITLES[1],
+                    object(), Path("/usr/bin/xdotool"), "4194305",
+                    ProcessIdentity(100, 1, 0), APP_TITLES[1],
                 )
         center_probe.assert_not_called()
         pointer_sender.assert_not_called()
