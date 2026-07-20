@@ -112,16 +112,15 @@ TEST(SessionCompositionRuntimeTest, ProductionActivityWaitWakesForSessionBusWork
         "/tmp",
         "unix:path=/tmp/bus"};
     ShutdownPort shutdownPort;
-    auto platform =
-        makeProductionSessionSupervisorPlatform(options, environment, runtime.value());
+    auto platform = makeProductionSessionSupervisorPlatform(options, environment, runtime.value());
     ASSERT_TRUE(platform->ownSessionControl(shutdownPort));
 
     ipc::sdbus::Bus client;
     ASSERT_GE(sd_bus_open_user(client.put()), 0);
     ipc::sdbus::Message request;
-    ASSERT_GE(sd_bus_message_new_method_call(
-                  client.get(), request.put(), "org.prismdrake.Session1",
-                  "/org/prismdrake/Session1", "org.prismdrake.Session1", "GetSessionState"),
+    ASSERT_GE(sd_bus_message_new_method_call(client.get(), request.put(), "org.prismdrake.Session1",
+                                             "/org/prismdrake/Session1", "org.prismdrake.Session1",
+                                             "GetSessionState"),
               0);
     ASSERT_GE(sd_bus_send(client.get(), request.get(), nullptr), 0);
     ASSERT_GE(sd_bus_flush(client.get()), 0);
@@ -147,8 +146,7 @@ TEST(SessionCompositionRuntimeTest, ProductionActivityWaitRetainsChildExitDelive
         "/tmp",
         "unix:path=/tmp/bus"};
     ShutdownPort shutdownPort;
-    auto platform =
-        makeProductionSessionSupervisorPlatform(options, environment, runtime.value());
+    auto platform = makeProductionSessionSupervisorPlatform(options, environment, runtime.value());
     ASSERT_TRUE(platform->ownSessionControl(shutdownPort));
     ASSERT_TRUE(platform->launch(ComponentRole::settingsd, false));
 

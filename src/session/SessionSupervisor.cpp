@@ -380,14 +380,12 @@ class ProductionSessionSupervisorPlatform final : public SessionSupervisorPlatfo
             const auto monotonicNow = std::chrono::duration_cast<std::chrono::microseconds>(
                                           MonotonicClock::Clock::now().time_since_epoch())
                                           .count();
-            const auto nowMicroseconds = monotonicNow > 0
-                                             ? static_cast<std::uint64_t>(monotonicNow)
-                                             : std::uint64_t{0U};
+            const auto nowMicroseconds =
+                monotonicNow > 0 ? static_cast<std::uint64_t>(monotonicNow) : std::uint64_t{0U};
             const auto remainingMicroseconds =
                 busDeadline > nowMicroseconds ? busDeadline - nowMicroseconds : 0U;
             timeout.tv_sec = static_cast<time_t>(remainingMicroseconds / 1'000'000U);
-            timeout.tv_nsec =
-                static_cast<long>((remainingMicroseconds % 1'000'000U) * 1'000U);
+            timeout.tv_nsec = static_cast<long>((remainingMicroseconds % 1'000'000U) * 1'000U);
             timeoutPointer = &timeout;
         }
 

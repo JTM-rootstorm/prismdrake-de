@@ -963,8 +963,7 @@ TEST(SessionSupervisorTest, UnresponsiveChildrenAreKilledAndReportedInReverseOrd
                          DiagnosticEventId::operation_cancelled),
               3);
     EXPECT_LE(platform.currentTime.time_since_epoch(),
-              3U * (sessionTerminateGrace + sessionKillReapGrace) +
-                  sessionInterruptibleWaitSlice);
+              3U * (sessionTerminateGrace + sessionKillReapGrace) + sessionInterruptibleWaitSlice);
 }
 
 TEST(SessionSupervisorTest, PollFailureStillStopsEveryOwnedChildInReverseOrder) {

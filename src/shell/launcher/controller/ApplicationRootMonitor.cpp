@@ -281,8 +281,8 @@ class ApplicationRootMonitor::CollectionWorker final {
         }
 
         bool expected = false;
-        if (dispatch_scheduled_.compare_exchange_strong(
-                expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        if (dispatch_scheduled_.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
+                                                        std::memory_order_acquire)) {
             // Yield to the worker event loop while retaining exactly one latest successor.
             scheduleDrain();
         }
