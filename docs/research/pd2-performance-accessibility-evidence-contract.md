@@ -171,12 +171,18 @@ successor dispatch. Task event delivery deduplicates invalidated windows within
 the task-model bound and degrades overflow to one full client-cache invalidation
 before the next authoritative refresh. Output delivery similarly keeps the
 latest complete topology rather than an owner-thread callback per observation,
-and output-monitor teardown interrupts a reply-bearing RandR wait before
-joining its worker. Their remaining timed waits are bounded readiness, recovery,
-and termination policy rather than idle polling. Until a matching validated
-multi-sample PD1 idle baseline exists, the final record must identify that
-comparison as unavailable instead of labeling the observed total a regression
-pass. PD2-specific shell work must not add an unbounded repeating timer.
+and both the task and output workers publish their connection-owning operations
+to teardown before reply-bearing X11 setup. They perform a bounded follow-up
+event drain after setup and after each query, task refresh, or task request; an
+examination-limited batch schedules one further bounded drain before sleeping.
+This consumes events already buffered inside libxcb without depending on a new
+descriptor edge, while teardown can interrupt setup or a later reply wait before
+joining the worker. Their remaining timed waits are bounded readiness,
+recovery, and termination policy rather than idle polling. Until a matching
+validated multi-sample PD1 idle baseline exists, the final record must identify
+that comparison as unavailable instead of labeling the observed total a
+regression pass. PD2-specific shell work must not add an unbounded repeating
+timer.
 
 The installed demonstration artifact is authoritative for exact source
 revision, installed executable hashes, workflow postconditions, and cleanup.

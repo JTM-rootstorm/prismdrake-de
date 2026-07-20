@@ -22,7 +22,7 @@ storage, C++, QML, and evidence formats remain Experimental.
 
 | Area | Current source behavior | Requirements |
 |---|---|---|
-| Outputs and surfaces | One registry reconciles bounded RandR and Qt screen observations, creates one desktop per active output, applies the configured panel-output policy, and transfers or dismisses global transient surfaces after topology changes. A dedicated output worker coalesces owner-thread delivery to the latest complete topology and interrupts reply-bearing RandR work during teardown. Dedicated bounded host workers own checked desktop and dock EWMH property transactions; Qt view staging and generation-checked publication remain GUI-thread work. | `PD-OUTPUT-001` through `PD-OUTPUT-004`, `PD-PANEL-001`, `PD-DESKTOP-001`, `PD-PERF-001`, `PD-PERF-004` |
+| Outputs and surfaces | One registry reconciles bounded RandR and Qt screen observations, creates one desktop per active output, applies the configured panel-output policy, and transfers or dismisses global transient surfaces after topology changes. A dedicated output worker publishes its cancelable X11 operations before reply-bearing RandR setup, coalesces owner-thread delivery to the latest complete topology, and interrupts reply-bearing work during teardown. Dedicated bounded host workers own checked desktop and dock EWMH property transactions; Qt view staging and generation-checked publication remain GUI-thread work. | `PD-OUTPUT-001` through `PD-OUTPUT-004`, `PD-PANEL-001`, `PD-DESKTOP-001`, `PD-PERF-001`, `PD-PERF-004` |
 | Panel and tasks | Shared panel QML presents ordered pins and running tasks, deterministic `always`, `never`, and `when_full` grouping, explicit active/minimized/urgent/modal state, group navigation, launch, activate, minimize, close, and pin actions. A dedicated task worker owns reply-bearing X11 refreshes, events, and checked EWMH requests to the active WM; event delivery and client invalidations coalesce within fixed bounds. | `PD-PANEL-001` through `PD-PANEL-005`, `PD-PANEL-008`, `PD-WIN-001` through `PD-WIN-007`, `PD-PERF-001`, `PD-PERF-004` |
 | Launcher | The local XDG application catalog is monitored without polling. Dedicated workers own bounded recursive discovery, watch replacement, catalog refresh, search, launch, and icon lookup; owner-thread publication remains generation-checked. Active collection and at most one latest successor replace an unbounded recovery backlog. The launcher supports desktop actions, typed D-Bus activation, direct execution without an implicit shell where allowed, icons with fallback, pins, and Prismdrake destinations. | `PD-LAUNCH-001` through `PD-LAUNCH-005`, `PD-LAUNCH-007`, `PD-LAUNCH-008`, `PD-INT-007`, `PD-SEC-002`, `PD-PERF-001`, `PD-PERF-004`, `PD-PERF-006` |
 | Desktop and wallpaper | A non-focusable standard X11 desktop surface is hosted per active output. One bounded decoded wallpaper snapshot is laid out in the configured mode on every output; candidates are scoped to the active settings-owner epoch and generation, while the last complete mapped desktop remains visible during an owner gap or replacement decode. Invalid or missing images use the configured solid color. | `PD-DESKTOP-001` through `PD-DESKTOP-003`, `PD-DESKTOP-005`, `PD-DESKTOP-006` |
@@ -59,11 +59,16 @@ and close requests. Refresh hints and worker-to-owner event delivery are
 replaceable and coalesced. Per-window invalidations are deduplicated up to the
 task-model bound; overflow degrades to invalidating every cached client before
 the next complete authoritative refresh instead of growing an unbounded list.
-Action work has a fixed queue bound and is rejected when its applied refresh
-token or window incarnation is stale. Completions return through queued
-owner-thread callbacks, and teardown cancels descriptor waits before joining
-the worker. This keeps the path event-driven without transferring window-state
-authority from the active WM.
+The connection-owning operations object is reachable by teardown before its
+reply-bearing event and model setup begins. Setup, refresh, and request work each
+force a bounded follow-up event drain before the worker sleeps; an
+examination-limited batch forces one further bounded drain so events already
+buffered inside libxcb cannot wait indefinitely for a descriptor edge. Action
+work has a fixed queue bound and is rejected when its applied refresh token or
+window incarnation is stale. Completions return through queued owner-thread
+callbacks, and teardown cancels descriptor waits before joining the worker.
+This keeps the path event-driven without transferring window-state authority
+from the active WM.
 
 This behavior implements the PD2 portions of `PD-PANEL-002` through
 `PD-PANEL-005`, `PD-WIN-003` through `PD-WIN-007`, `PD-INPUT-001`, and

@@ -90,9 +90,12 @@ carry a verified or observed version.
   The bounded production task presentation now provides activation, minimize,
   and close actions. Its dedicated task worker owns the X11 connection,
   reply-bearing refreshes, event drain, and checked requests while Qt receives
-  only queued presentation completions. PD2 adds pin and grouping policy above
-  the same window-manager-authoritative X11 boundary without another X11
-  dependency.
+  only queued presentation completions. The connection-owning operation is
+  published to teardown before reply-bearing setup. A bounded event drain after
+  setup, refresh, request, and every examination-limited batch consumes events
+  already buffered by libxcb before the worker sleeps. PD2 adds pin and grouping
+  policy above the same window-manager-authoritative X11 boundary without
+  another X11 dependency.
 - `prismdrake-session` is an Experimental init-neutral supervisor. It directly
   uses the selected sd-bus provider for bounded settings and notification
   readiness and the internal X11 adapter for display readiness, then owns only
@@ -140,10 +143,12 @@ carry a verified or observed version.
   cleanup, and commits only current queued completions. The task worker
   separately owns blocking task replies, event drain, checked actions, and
   bounded coalescing of invalidation delivery. The output worker coalesces
-  complete topology delivery to the latest observation and interrupts its X11
-  connection during teardown so a reply-bearing RandR query cannot extend the
-  join indefinitely. These workers add no library dependency. Quick Test is
-  test-only. The live
+  complete topology delivery to the latest observation, publishes its
+  connection-owning operation before reply-bearing RandR setup, and interrupts
+  that connection during teardown so setup or a query cannot extend the join
+  indefinitely. It performs a bounded event drain after setup, after every
+  query, and again after an examination-limited batch before sleeping. These
+  workers add no library dependency. Quick Test is test-only. The live
   snapshot client directly uses the selected sd-bus provider and session D-Bus,
   while its canonical inverse parser includes the
   system nlohmann JSON header. Qt 6.11 is the maintainer-selected declared
