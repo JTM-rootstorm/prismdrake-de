@@ -48,6 +48,7 @@ struct TopologyStormState final {
     std::mutex mutex;
     std::condition_variable changed;
     std::size_t queries{0U};
+    std::size_t postQueryDrains{0U};
     std::size_t validQuery{0U};
 };
 
@@ -83,6 +84,11 @@ class TopologyStormOperations final : public ShellOutputMonitorOperations {
     }
     [[nodiscard]] int eventFileDescriptor() const noexcept override { return -1; }
     foundation::Result<ShellOutputMonitorEventDrain> drainEvents() override {
+        {
+            std::scoped_lock lock{state_->mutex};
+            ++state_->postQueryDrains;
+        }
+        state_->changed.notify_all();
         return foundation::Result<ShellOutputMonitorEventDrain>::success({false, false});
     }
     void cancelWaits() noexcept override {}
@@ -364,7 +370,7 @@ TEST(ShellOutputMonitorTest, TopologyStormQueuesOnlyTheNewestStateForTheOwner) {
         }
         std::unique_lock lock{state->mutex};
         ASSERT_TRUE(state->changed.wait_for(lock, std::chrono::seconds{1},
-                                            [&] { return state->queries >= expected; }));
+                                            [&] { return state->postQueryDrains >= expected; }));
     }
     EXPECT_TRUE(accepted.empty());
     EXPECT_TRUE(failures.empty());
