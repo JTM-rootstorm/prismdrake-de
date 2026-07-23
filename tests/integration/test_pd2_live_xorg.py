@@ -118,6 +118,18 @@ SURFACE_TYPES = {
     PANEL_RIGHT: b"_NET_WM_WINDOW_TYPE_DOCK",
 }
 
+PRIVATE_BUS_ARGUMENT_PREFIX = "--address=unix:path="
+PRIVATE_RUNTIME_PREFIX = "prismdrake-pd2-"
+
+
+def matches_private_bus_argument(argument: str, runtime: Path) -> bool:
+    return (
+        runtime.is_absolute()
+        and runtime.name.startswith(PRIVATE_RUNTIME_PREFIX)
+        and runtime.name != PRIVATE_RUNTIME_PREFIX
+        and argument == f"{PRIVATE_BUS_ARGUMENT_PREFIX}{runtime / 'bus'}"
+    )
+
 
 def xwininfo_payload(window: int, geometry: WindowGeometry) -> bytes:
     return f"""xwininfo: Window id: 0x{window:x} "Private surface"
@@ -1986,6 +1998,7 @@ class LivePortTests(unittest.TestCase):
             Observation(True, True),
         )
 
+        xorg_argv, _xorg_environment = operations.spawn_calls[0]
         bus_argv, bus_environment = operations.spawn_calls[2]
         session_argv, session_environment = operations.spawn_calls[3]
         self.assertEqual(
@@ -1998,8 +2011,10 @@ class LivePortTests(unittest.TestCase):
             ),
         )
         self.assertEqual(len(bus_argv), 5)
-        self.assertRegex(
-            bus_argv[4], r"^--address=unix:path=/tmp/prismdrake-pd2-.+/bus$"
+        runtime = Path(xorg_argv[xorg_argv.index("-config") + 1]).parent
+        self.assertTrue(
+            matches_private_bus_argument(bus_argv[4], runtime),
+            bus_argv[4],
         )
         self.assertNotIn("DISPLAY", bus_environment)
         self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", bus_environment)
@@ -2049,6 +2064,85 @@ class LivePortTests(unittest.TestCase):
 
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
         self.assertEqual(operations.stop_calls, list(reversed(operations.children)))
+
+    def test_private_bus_address_accepts_a_non_default_temp_root(self) -> None:
+        operations = FakeOperations()
+        executables = installed_paths()
+        temp_mkdtemp = tempfile.mkdtemp
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temp_root = (
+                Path(temporary)
+                / "var"
+                / "tmp"
+                / "portage"
+                / "x11-misc"
+                / "prismdrake-9999"
+                / "temp"
+            )
+            temp_root.mkdir(parents=True)
+
+            with patch.object(
+                live_xorg.tempfile,
+                "mkdtemp",
+                side_effect=lambda *, prefix: temp_mkdtemp(
+                    prefix=prefix, dir=temp_root
+                ),
+            ):
+                port = LiveXorgHarnessPort(config(executables), operations)
+                port.run_step(
+                    "installed_workflow", "start_isolated_two_output_x11"
+                )
+                port.run_step(
+                    "installed_workflow", "start_installed_prismdrake_session"
+                )
+
+            xorg_argv, _xorg_environment = operations.spawn_calls[0]
+            bus_argv, _bus_environment = operations.spawn_calls[2]
+            runtime = Path(xorg_argv[xorg_argv.index("-config") + 1]).parent
+            self.assertEqual(runtime.parent, temp_root)
+            self.assertTrue(
+                matches_private_bus_argument(bus_argv[4], runtime),
+                bus_argv[4],
+            )
+            self.assertEqual(
+                port.cleanup("installed_workflow"), Observation(True, True)
+            )
+
+    def test_private_bus_argument_rejects_malformed_and_unrelated_paths(self) -> None:
+        runtime = Path(
+            "/var/tmp/portage/x11-misc/prismdrake-9999/temp/"
+            "prismdrake-pd2-private"
+        )
+        valid = f"{PRIVATE_BUS_ARGUMENT_PREFIX}{runtime / 'bus'}"
+
+        self.assertTrue(matches_private_bus_argument(valid, runtime))
+        for argument in (
+            f"unix:path={runtime / 'bus'}",
+            f"--address=unix:abstract={runtime / 'bus'}",
+            "--address=unix:path=$TMPDIR/prismdrake-pd2-private/bus",
+            f"{PRIVATE_BUS_ARGUMENT_PREFIX}{runtime / 'other-bus'}",
+            f"{valid},nonce=unreviewed",
+            f"{valid};touch=/tmp/unreviewed",
+            "--address=unix:path=/tmp/prismdrake-pd2-private/bus",
+        ):
+            with self.subTest(argument=argument):
+                self.assertFalse(
+                    matches_private_bus_argument(argument, runtime)
+                )
+        self.assertFalse(
+            matches_private_bus_argument(
+                "--address=unix:path=relative/prismdrake-pd2-private/bus",
+                Path("relative/prismdrake-pd2-private"),
+            )
+        )
+        self.assertFalse(
+            matches_private_bus_argument(
+                f"{PRIVATE_BUS_ARGUMENT_PREFIX}"
+                f"{runtime.parent / 'prismdrake-pd2-unrelated' / 'bus'}",
+                runtime,
+            )
+        )
 
     def test_keeps_one_attested_notification_epoch_across_steps_17_to_24(self) -> None:
         operations = FakeOperations()
