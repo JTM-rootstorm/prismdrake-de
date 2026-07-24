@@ -1926,10 +1926,10 @@ class LiveXorgHarnessPort:
             self._xrandr("--output", PRIMARY_OUTPUT, "--off")
             self._require_only_secondary()
             self._require_failure_replay_surfaces(
-                {WindowGeometry(OUTPUT_WIDTH, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT)},
+                {WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT)},
                 {
                     WindowGeometry(
-                        OUTPUT_WIDTH,
+                        0,
                         OUTPUT_HEIGHT - PANEL_HEIGHT,
                         OUTPUT_WIDTH,
                         PANEL_HEIGHT,
@@ -5083,6 +5083,13 @@ class LiveXorgHarnessPort:
         first = outputs.get(PRIMARY_OUTPUT)
         second = outputs.get(SECONDARY_OUTPUT)
         if first is None or second is None or first.active or not second.active:
+            raise HarnessError("xrandr_primary_removal_invalid")
+        if (second.width, second.height, second.x, second.y) != (
+            OUTPUT_WIDTH,
+            OUTPUT_HEIGHT,
+            0,
+            0,
+        ):
             raise HarnessError("xrandr_primary_removal_invalid")
 
     def _start_openbox(self) -> None:

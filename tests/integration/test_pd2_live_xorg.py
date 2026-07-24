@@ -81,7 +81,13 @@ DUMMY1 disconnected (normal left inverted right x axis y axis)
 DUMMY2 disconnected (normal left inverted right x axis y axis)
 """
 
-ONLY_SECONDARY = b"""Screen 0: minimum 64 x 64, current 3200 x 900, maximum 32767 x 32767
+ONLY_SECONDARY = b"""Screen 0: minimum 64 x 64, current 1600 x 900, maximum 32767 x 32767
+DUMMY0 connected primary (normal left inverted right x axis y axis) 0mm x 0mm
+DUMMY1 connected 1600x900+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+DUMMY2 disconnected (normal left inverted right x axis y axis)
+"""
+
+ONLY_SECONDARY_STALE_POSITION = b"""Screen 0: minimum 64 x 64, current 3200 x 900, maximum 32767 x 32767
 DUMMY0 connected primary (normal left inverted right x axis y axis) 0mm x 0mm
 DUMMY1 connected 1600x900+1600+0 (normal left inverted right x axis y axis) 0mm x 0mm
 DUMMY2 disconnected (normal left inverted right x axis y axis)
@@ -2875,6 +2881,16 @@ class LivePortTests(unittest.TestCase):
                 self.assertEqual(
                     port.cleanup("failure_replay"), Observation(True, True)
                 )
+
+    def test_primary_removal_rejects_survivor_that_was_not_rebased(self) -> None:
+        operations = FakeOperations(query_payload=ONLY_SECONDARY_STALE_POSITION)
+        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port._display = ":140"  # noqa: SLF001
+
+        with self.assertRaisesRegex(
+            HarnessError, "^xrandr_primary_removal_invalid$"
+        ):
+            port._require_only_secondary()  # noqa: SLF001
 
     def test_service_shell_and_window_manager_restarts_preserve_exact_owners(self) -> None:
         cases = (
