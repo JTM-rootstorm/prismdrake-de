@@ -278,7 +278,9 @@ if(PRISMDRAKE_XVFB_EXECUTABLE AND PRISMDRAKE_OPENBOX_EXECUTABLE
             "$<TARGET_FILE:prismdrake-x11-integration-tests>"
             --
             --gtest_filter=DockPropertiesIntegrationTest.VerifiedWindowManagerAppliesCurrentDesktopWorkarea)
-    set_tests_properties(X11DockOpenboxIntegrationTest PROPERTIES TIMEOUT 30)
+    set_tests_properties(X11DockOpenboxIntegrationTest PROPERTIES
+        RUN_SERIAL TRUE
+        TIMEOUT 30)
 elseif(NOT PRISMDRAKE_XVFB_EXECUTABLE)
     add_test(
         NAME X11DockOpenboxIntegrationTest
