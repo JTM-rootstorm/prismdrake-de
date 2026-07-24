@@ -628,11 +628,21 @@ class FakeAccessibility:
         self.operations = operations
         self.pinned = False
         self.observed: list[str] = []
+        self.application_observations = 0
         self.absent: list[str] = []
         self.states: list[tuple[str, str, bool]] = []
         self.invoked: list[str] = []
         self.persist_pin = True
         self.references: list[object] = []
+
+    def observe_application(
+        self, shell_pid: int, environment: Mapping[str, str]
+    ) -> bool:
+        self.application_observations += 1
+        return (
+            shell_pid == self.operations.surface_owner
+            and "DBUS_SESSION_BUS_ADDRESS" in environment
+        )
 
     def observe(
         self, shell_pid: int, selector: object, environment: Mapping[str, str]
@@ -2149,7 +2159,8 @@ class LivePortTests(unittest.TestCase):
             ),
         )
         self.assertEqual(len(set(ownership.values())), 4)
-        self.assertEqual(accessibility.observed, ["Open applications"])
+        self.assertEqual(accessibility.application_observations, 1)
+        self.assertEqual(accessibility.observed, [])
 
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
         self.assertEqual(operations.stop_calls, list(reversed(operations.children)))
@@ -2160,14 +2171,13 @@ class LivePortTests(unittest.TestCase):
         operations = FakeOperations()
 
         class MissingShellAccessibility(FakeAccessibility):
-            def observe(
+            def observe_application(
                 self,
                 shell_pid: int,
-                selector: object,
                 environment: Mapping[str, str],
             ) -> bool:
-                super().observe(shell_pid, selector, environment)
-                return selector.name != "Open applications"
+                super().observe_application(shell_pid, environment)
+                return False
 
         accessibility = MissingShellAccessibility(operations)
         port = LiveXorgHarnessPort(
@@ -2182,7 +2192,7 @@ class LivePortTests(unittest.TestCase):
             port.run_step("installed_workflow", "verify_component_readiness")
 
         self.assertGreaterEqual(
-            accessibility.observed.count("Open applications"), 2
+            accessibility.application_observations, 2
         )
         self.assertFalse(
             any(

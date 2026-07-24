@@ -21,6 +21,7 @@ from pd2_live_atspi import (  # noqa: E402
     MAX_CHILDREN,
     MAX_NAME_LENGTH,
     invoke_reviewed_action,
+    observe_application_owner,
     observe_control_absence,
     observe_control_reference,
     observe_control_state,
@@ -209,6 +210,23 @@ class LiveAtspiHelperTests(unittest.TestCase):
 
         self.assertEqual(result.as_dict(), {"category": "atspi_control_ready", "status": "passed"})
         self.assertEqual(calls, [self.application])
+        validate_categorical_result(result)
+
+    def test_observes_exact_shell_application_without_control_cardinality(self) -> None:
+        self.application.children.append(
+            FakeNode(
+                "Open applications",
+                FakeRole.PUSH_BUTTON,
+                states=set(VISIBLE),
+                action=FakeAction(["Press"]),
+            )
+        )
+
+        result = observe_application_owner(
+            self.atspi, exact_owner(self.application)
+        )
+
+        self.assertEqual(result.category, "atspi_application_ready")
         validate_categorical_result(result)
 
     def test_retains_exact_focused_reference_and_rejects_defunct_node(self) -> None:
@@ -419,6 +437,12 @@ class LiveAtspiHelperTests(unittest.TestCase):
             "atspi_application_identity",
             lambda: observe_showing_control(
                 duplicate_atspi, exact_owner(self.application), self.selector
+            ),
+        )
+        self.assert_category(
+            "atspi_application_identity",
+            lambda: observe_application_owner(
+                duplicate_atspi, exact_owner(self.application)
             ),
         )
 

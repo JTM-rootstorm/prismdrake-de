@@ -36,6 +36,7 @@ ROLE_ENUM_NAMES = {
 RESULT_CATEGORIES = frozenset(
     {
         "atspi_action_invoked",
+        "atspi_application_ready",
         "atspi_control_absent",
         "atspi_control_reference_ready",
         "atspi_control_ready",
@@ -312,6 +313,16 @@ def observe_showing_control(
 
     _resolve_control(atspi, owner_probe, selector, require_action=False)
     return CategoricalResult("atspi_control_ready")
+
+
+def observe_application_owner(
+    atspi: Any, owner_probe: OwnerProbe
+) -> CategoricalResult:
+    """Prove one exact shell application without assuming control cardinality."""
+
+    application = _find_application(atspi)
+    _verify_owner(application, owner_probe)
+    return CategoricalResult("atspi_application_ready")
 
 
 def capture_control_reference(

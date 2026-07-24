@@ -38,7 +38,9 @@ accessibility bus through its `GetAddress` method, and requires a bounded
 registry reply before starting the installed Prismdrake session. The observer
 connects after the shell readiness marker, binds the exact shell application
 before the first shell action, and remains process-scoped across replay
-epochs. Exact shell-process matching rejects stale accessible applications.
+epochs. Readiness is application-scoped because each output legitimately
+publishes its own panel controls. Exact shell-process matching rejects stale
+accessible applications.
 
 The environment deliberately provides no Glasswyrm-native capability and does
 not require compositor blur. Output names, display addresses, bus addresses,

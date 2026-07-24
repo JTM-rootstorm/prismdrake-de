@@ -36,6 +36,7 @@ from pd2_live_atspi import (
     LiveAtspiError,
     capture_control_reference,
     invoke_reviewed_action,
+    observe_application_owner,
     observe_control_absence,
     observe_control_reference,
     observe_control_state,
@@ -260,6 +261,10 @@ class Operations(Protocol):
 class AccessibilityOperations(Protocol):
     """Bounded shell-owned AT-SPI observation and action boundary."""
 
+    def observe_application(
+        self, shell_pid: int, environment: Mapping[str, str]
+    ) -> bool: ...
+
     def observe(
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> bool: ...
@@ -369,6 +374,16 @@ class SystemAccessibilityOperations:
                 observe_showing_control(
                     self._binding(), self._owner(shell_pid), selector
                 )
+        except LiveAtspiError:
+            return False
+        return True
+
+    def observe_application(
+        self, shell_pid: int, environment: Mapping[str, str]
+    ) -> bool:
+        try:
+            with self._environment(environment):
+                observe_application_owner(self._binding(), self._owner(shell_pid))
         except LiveAtspiError:
             return False
         return True
@@ -1772,12 +1787,10 @@ class LiveXorgHarnessPort:
         elif identifier == "verify_component_readiness":
             self._wait_for_session_readiness()
             # Bind the process-scoped AT-SPI observer to the exact live shell
-            # before the first shell action. Initializing it only after opening
-            # the launcher can miss the already-published application epoch.
-            self._wait_accessible(
-                ControlSelector("Open applications", "push_button"),
-                "shell_accessibility_readiness_timeout",
-            )
+            # before the first shell action. The two-output environment has two
+            # valid panel controls with the same accessible name, so readiness
+            # is intentionally application-scoped rather than control-scoped.
+            self._wait_accessible_application()
             self.capture_process_ownership()
         elif identifier == "verify_desktop_wallpaper_both_outputs":
             self._require_desktop_wallpaper_surfaces()
@@ -4166,6 +4179,17 @@ class LiveXorgHarnessPort:
                 return
             self._operations.pause(0.05)
         raise HarnessError(timeout_error)
+
+    def _wait_accessible_application(self) -> None:
+        shell = self._shell_identity()
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._accessibility.observe_application(
+                shell.pid, self.probe_environment()
+            ):
+                return
+            self._operations.pause(0.05)
+        raise HarnessError("shell_accessibility_readiness_timeout")
 
     def _wait_accessible_absent(
         self, selector: ControlSelector, timeout_error: str
