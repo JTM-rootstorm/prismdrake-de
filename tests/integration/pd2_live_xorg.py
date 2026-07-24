@@ -9,6 +9,7 @@ steps fail closed and therefore cannot produce PD2 completion evidence.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -107,7 +108,7 @@ MAX_DESKTOP_PATH_BYTES = 4096
 MAX_PROCESS_SCAN_ENTRIES = 32_768
 MAX_PROCESS_ANCESTRY_DEPTH = 64
 MAX_SURFACE_WINDOWS = 64
-MAX_ACCESSIBILITY_APPLICATIONS = 256
+MAX_ACCESSIBILITY_BUS_ADDRESS_BYTES = 4096
 SESSION_SHUTDOWN_SEQUENCE = (
     "confirmed",
     "stopping_shell",
@@ -259,10 +260,6 @@ class Operations(Protocol):
 class AccessibilityOperations(Protocol):
     """Bounded shell-owned AT-SPI observation and action boundary."""
 
-    def initialize(self, environment: Mapping[str, str]) -> bool: ...
-
-    def reset(self) -> bool: ...
-
     def observe(
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> bool: ...
@@ -356,35 +353,6 @@ class SystemAccessibilityOperations:
                 raise HarnessError("live_atspi_unavailable") from error
             self._atspi = Atspi
         return self._atspi
-
-    def initialize(self, environment: Mapping[str, str]) -> bool:
-        """Start the private AT-SPI epoch before accessible clients launch."""
-
-        with self._environment(environment):
-            atspi = self._binding()
-            try:
-                desktop = atspi.get_desktop(0)
-                child_count = desktop.get_child_count()
-            except Exception:
-                return False
-        return (
-            desktop is not None
-            and type(child_count) is int
-            and 0 <= child_count <= MAX_ACCESSIBILITY_APPLICATIONS
-        )
-
-    def reset(self) -> bool:
-        """Release the binding before its private session bus is stopped."""
-
-        atspi = self._atspi
-        self._atspi = None
-        if atspi is None:
-            return True
-        try:
-            atspi.exit()
-        except Exception:
-            return False
-        return True
 
     @staticmethod
     def _owner(shell_pid: int):
@@ -1491,6 +1459,38 @@ mock_capability_overrides = []
 """
 
 
+def _parse_accessibility_bus_address(payload: bytes) -> str:
+    if not payload or len(payload) > MAX_ACCESSIBILITY_BUS_ADDRESS_BYTES:
+        raise HarnessError("private_accessibility_bus_address_invalid")
+    try:
+        parsed = ast.literal_eval(payload.decode("ascii").strip())
+    except (SyntaxError, ValueError, UnicodeDecodeError):
+        raise HarnessError("private_accessibility_bus_address_invalid") from None
+    if (
+        type(parsed) is not tuple
+        or len(parsed) != 1
+        or type(parsed[0]) is not str
+    ):
+        raise HarnessError("private_accessibility_bus_address_invalid")
+    address = parsed[0]
+    permitted = frozenset(
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789_./%+-=,:@"
+    )
+    try:
+        address_bytes = address.encode("ascii")
+    except UnicodeEncodeError:
+        raise HarnessError("private_accessibility_bus_address_invalid") from None
+    if (
+        not address.startswith(("unix:path=", "unix:abstract="))
+        or len(address_bytes) > MAX_ACCESSIBILITY_BUS_ADDRESS_BYTES
+        or any(character not in permitted for character in address)
+    ):
+        raise HarnessError("private_accessibility_bus_address_invalid")
+    return address
+
+
 @dataclass(frozen=True)
 class LiveXorgConfig:
     """Exact executable inputs for a private Xorg-dummy demonstration run."""
@@ -1502,6 +1502,7 @@ class LiveXorgConfig:
     xwininfo: Path
     dbus_daemon: Path
     dbus_monitor: Path
+    gdbus: Path
     installed_executables: Mapping[str, Path]
     xdotool: Path | None = None
     xwd: Path | None = None
@@ -2917,14 +2918,7 @@ class LiveXorgHarnessPort:
                 clean = self._operations.stop_identity(
                     identity, fixture, self._config.stop_timeout
                 ) and clean
-        if self._session is not None:
-            clean = (
-                self._operations.stop(self._session, self._config.stop_timeout)
-                and clean
-            )
-            self._session = None
-        clean = self._accessibility.reset() and clean
-        for attribute in ("_bus", "_openbox"):
+        for attribute in ("_session", "_bus", "_openbox"):
             child = getattr(self, attribute)
             if child is not None:
                 clean = self._operations.stop(child, self._config.stop_timeout) and clean
@@ -3682,14 +3676,7 @@ class LiveXorgHarnessPort:
                     )
                     and clean
                 )
-        if self._session is not None:
-            clean = (
-                self._operations.stop(self._session, self._config.stop_timeout)
-                and clean
-            )
-            self._session = None
-        clean = self._accessibility.reset() and clean
-        for attribute in ("_bus", "_openbox", "_xorg"):
+        for attribute in ("_session", "_bus", "_openbox", "_xorg"):
             child = getattr(self, attribute)
             if child is not None:
                 clean = self._operations.stop(child, self._config.stop_timeout) and clean
@@ -4679,17 +4666,7 @@ class LiveXorgHarnessPort:
                 "QT_LINUX_ACCESSIBILITY_ALWAYS_ON": "1",
             }
         )
-        deadline = self._operations.monotonic() + self._config.readiness_timeout
-        while self._operations.monotonic() < deadline:
-            if self._bus is None or self._bus.poll() is not None:
-                raise HarnessError(
-                    "private_session_bus_exited_before_accessibility_readiness"
-                )
-            if self._accessibility.initialize(environment):
-                break
-            self._operations.pause(0.05)
-        else:
-            raise HarnessError("private_accessibility_bus_readiness_failed")
+        self._activate_accessibility_bus(environment)
         argv = (
             str(executables["prismdrake-session"]),
             "--settingsd",
@@ -4704,6 +4681,70 @@ class LiveXorgHarnessPort:
         if self._session.poll() is not None:
             self._session = None
             raise HarnessError("prismdrake_session_start_failed")
+
+    def _activate_accessibility_bus(self, environment: Mapping[str, str]) -> None:
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            if self._bus is None or self._bus.poll() is not None:
+                raise HarnessError(
+                    "private_session_bus_exited_before_accessibility_readiness"
+                )
+            timeout = min(
+                1.0, max(deadline - self._operations.monotonic(), 0.01)
+            )
+            try:
+                activation = self._operations.run(
+                    (
+                        str(self._config.gdbus),
+                        "call",
+                        "--address",
+                        self._private_bus_address(),
+                        "--dest",
+                        "org.a11y.Bus",
+                        "--object-path",
+                        "/org/a11y/bus",
+                        "--method",
+                        "org.a11y.Bus.GetAddress",
+                    ),
+                    environment,
+                    timeout,
+                )
+                if (
+                    activation.returncode != 0
+                    or not activation.stdout
+                    or activation.stderr
+                ):
+                    raise HarnessError("private_accessibility_bus_not_activated")
+                address = _parse_accessibility_bus_address(activation.stdout)
+                timeout = min(
+                    1.0, max(deadline - self._operations.monotonic(), 0.01)
+                )
+                registry = self._operations.run(
+                    (
+                        str(self._config.gdbus),
+                        "call",
+                        "--address",
+                        address,
+                        "--dest",
+                        "org.a11y.atspi.Registry",
+                        "--object-path",
+                        "/org/a11y/atspi/registry",
+                        "--method",
+                        "org.freedesktop.DBus.Peer.Ping",
+                    ),
+                    environment,
+                    timeout,
+                )
+                if (
+                    registry.returncode == 0
+                    and registry.stdout.strip() == b"()"
+                    and not registry.stderr
+                ):
+                    return
+            except HarnessError:
+                pass
+            self._operations.pause(0.05)
+        raise HarnessError("private_accessibility_bus_readiness_failed")
 
     def _start_private_bus(self) -> None:
         if self._runtime is None:

@@ -193,6 +193,8 @@ class FakeOperations:
         self.session_marker = session_marker
         self.bus_socket_ready = bus_socket_ready
         self.bus_exits_early = bus_exits_early
+        self.accessibility_bus_ready = True
+        self.accessibility_registry_ready = True
         self.bus_socket_path: Path | None = None
         self.bus_socket_identity: tuple[int, int] | None = None
         self.identity_offsets: dict[int, int] = {}
@@ -292,6 +294,21 @@ class FakeOperations:
             self.visible_named_windows.setdefault(
                 live_xorg.LAUNCHER_WINDOW_TITLE, 0x510001
             )
+        if command[:2] == ("/usr/bin/gdbus", "call"):
+            destination = command[command.index("--dest") + 1]
+            if destination == "org.a11y.Bus":
+                return (
+                    CommandResult(0, b"('unix:path=/tmp/private-atspi',)\n")
+                    if self.accessibility_bus_ready
+                    else CommandResult(1)
+                )
+            if destination == "org.a11y.atspi.Registry":
+                return (
+                    CommandResult(0, b"()\n")
+                    if self.accessibility_registry_ready
+                    else CommandResult(1)
+                )
+            return CommandResult(1)
         if command[:3] == ("/usr/bin/prismdrake-shellctl", "panel", "focus"):
             self.panel_focus_pending = True
             if not self.panel_focus_never_arrives and self.panel_focus_read_delay == 0:
@@ -609,9 +626,6 @@ class FakeOperations:
 class FakeAccessibility:
     def __init__(self, operations: FakeOperations) -> None:
         self.operations = operations
-        self.initialize_succeeds = True
-        self.initialize_spawn_counts: list[int] = []
-        self.reset_calls = 0
         self.pinned = False
         self.observed: list[str] = []
         self.absent: list[str] = []
@@ -619,21 +633,6 @@ class FakeAccessibility:
         self.invoked: list[str] = []
         self.persist_pin = True
         self.references: list[object] = []
-
-    def initialize(self, environment: Mapping[str, str]) -> bool:
-        if (
-            "DBUS_SESSION_BUS_ADDRESS" not in environment
-            or "DISPLAY" not in environment
-        ):
-            return False
-        self.initialize_spawn_counts.append(len(self.operations.spawn_calls))
-        self.operations.events.append(("accessibility_initialize", None))
-        return self.initialize_succeeds
-
-    def reset(self) -> bool:
-        self.reset_calls += 1
-        self.operations.events.append(("accessibility_reset", None))
-        return True
 
     def observe(
         self, shell_pid: int, selector: object, environment: Mapping[str, str]
@@ -777,6 +776,7 @@ def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
         xwininfo=Path("/usr/bin/xwininfo"),
         dbus_daemon=Path("/usr/bin/dbus-daemon"),
         dbus_monitor=Path("/usr/bin/dbus-monitor"),
+        gdbus=Path("/usr/bin/gdbus"),
         installed_executables=installed or {},
         xdotool=Path("/usr/bin/xdotool"),
         xwd=Path("/usr/bin/xwd"),
@@ -1028,6 +1028,39 @@ class XrandrParserTests(unittest.TestCase):
         self.assertIn('Modeline "1600x900"', payload)
         self.assertNotIn("/home/", payload)
         self.assertNotIn("Display", payload.splitlines()[0])
+
+
+class AccessibilityBusAddressParserTests(unittest.TestCase):
+    def test_accepts_one_bounded_private_unix_address(self) -> None:
+        self.assertEqual(
+            live_xorg._parse_accessibility_bus_address(  # noqa: SLF001
+                b"('unix:path=/tmp/private-atspi,guid=0123456789abcdef',)\n"
+            ),
+            "unix:path=/tmp/private-atspi,guid=0123456789abcdef",
+        )
+        self.assertEqual(
+            live_xorg._parse_accessibility_bus_address(  # noqa: SLF001
+                b"('unix:abstract=private-atspi',)"
+            ),
+            "unix:abstract=private-atspi",
+        )
+
+    def test_rejects_malformed_unsafe_and_oversized_addresses(self) -> None:
+        cases = (
+            b"",
+            b"('tcp:host=localhost',)\n",
+            b"('unix:path=/tmp/first;unix:path=/tmp/second',)\n",
+            b"('unix:path=/tmp/private', 'extra')\n",
+            b"['unix:path=/tmp/private']\n",
+            b"('unix:path=/tmp/private\\npath',)\n",
+            b"x" * (live_xorg.MAX_ACCESSIBILITY_BUS_ADDRESS_BYTES + 1),
+        )
+        for payload in cases:
+            with self.subTest(payload=payload[:40]):
+                with self.assertRaisesRegex(
+                    HarnessError, "^private_accessibility_bus_address_invalid$"
+                ):
+                    live_xorg._parse_accessibility_bus_address(payload)  # noqa: SLF001
 
 
 class SurfaceParserTests(unittest.TestCase):
@@ -2827,7 +2860,7 @@ class LivePortTests(unittest.TestCase):
                     port.cleanup("installed_workflow"), Observation(True, True)
                 )
 
-    def test_accessibility_epoch_is_ready_before_session_spawn_and_reset_on_cleanup(
+    def test_accessibility_bus_is_activated_before_session_spawn(
         self,
     ) -> None:
         operations = FakeOperations()
@@ -2839,54 +2872,55 @@ class LivePortTests(unittest.TestCase):
 
         port.run_step("installed_workflow", "start_installed_prismdrake_session")
 
-        self.assertEqual(accessibility.initialize_spawn_counts, [3])
         self.assertEqual(
             [Path(argv[0]).name for argv, _environment in operations.spawn_calls],
             ["Xorg", "openbox", "dbus-daemon", "prismdrake-session"],
         )
-        self.assertLess(
-            operations.events.index(("spawn", "dbus-daemon")),
-            operations.events.index(("accessibility_initialize", None)),
-        )
-        self.assertLess(
-            operations.events.index(("accessibility_initialize", None)),
-            operations.events.index(("spawn", "prismdrake-session")),
-        )
+        bus_index = operations.events.index(("spawn", "dbus-daemon"))
+        session_index = operations.events.index(("spawn", "prismdrake-session"))
+        gdbus_indices = [
+            index
+            for index, event in enumerate(operations.events)
+            if event == ("run", "gdbus")
+        ]
+        self.assertEqual(len(gdbus_indices), 2)
+        self.assertTrue(all(bus_index < index < session_index for index in gdbus_indices))
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
-        self.assertEqual(accessibility.reset_calls, 1)
-        self.assertLess(
-            operations.events.index(("stop", "prismdrake-session")),
-            operations.events.index(("accessibility_reset", None)),
-        )
-        self.assertLess(
-            operations.events.index(("accessibility_reset", None)),
-            operations.events.index(("stop", "dbus-daemon")),
-        )
 
-    def test_session_is_not_spawned_when_private_accessibility_never_becomes_ready(
+    def test_session_is_not_spawned_when_private_accessibility_readiness_fails(
         self,
     ) -> None:
-        operations = FakeOperations()
-        accessibility = FakeAccessibility(operations)
-        accessibility.initialize_succeeds = False
-        port = LiveXorgHarnessPort(
-            config(installed_paths()), operations, accessibility
-        )
-        port.run_step("installed_workflow", "start_isolated_two_output_x11")
+        for mutation in ("bus", "registry"):
+            with self.subTest(mutation=mutation):
+                operations = FakeOperations()
+                accessibility = FakeAccessibility(operations)
+                if mutation == "bus":
+                    operations.accessibility_bus_ready = False
+                else:
+                    operations.accessibility_registry_ready = False
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()), operations, accessibility
+                )
+                port.run_step("installed_workflow", "start_isolated_two_output_x11")
 
-        with self.assertRaisesRegex(
-            HarnessError, "^private_accessibility_bus_readiness_failed$"
-        ):
-            port.run_step("installed_workflow", "start_installed_prismdrake_session")
+                with self.assertRaisesRegex(
+                    HarnessError, "^private_accessibility_bus_readiness_failed$"
+                ):
+                    port.run_step(
+                        "installed_workflow", "start_installed_prismdrake_session"
+                    )
 
-        self.assertTrue(accessibility.initialize_spawn_counts)
-        self.assertEqual(set(accessibility.initialize_spawn_counts), {3})
-        self.assertNotIn(
-            "prismdrake-session",
-            [Path(argv[0]).name for argv, _environment in operations.spawn_calls],
-        )
-        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
-        self.assertEqual(accessibility.reset_calls, 1)
+                self.assertIn(("run", "gdbus"), operations.events)
+                self.assertNotIn(
+                    "prismdrake-session",
+                    [
+                        Path(argv[0]).name
+                        for argv, _environment in operations.spawn_calls
+                    ],
+                )
+                self.assertEqual(
+                    port.cleanup("installed_workflow"), Observation(True, True)
+                )
 
     def test_private_bus_attestation_rejects_socket_replacement_and_owner_drift(
         self,
@@ -2960,6 +2994,13 @@ class LivePortTests(unittest.TestCase):
         self.assertEqual(second, Observation(True, True))
         self.assertEqual(len(operations.spawn_calls), 8)
         self.assertEqual(len(operations.stop_calls), 4)
+        self.assertEqual(
+            sum(
+                argv[:2] == ("/usr/bin/gdbus", "call")
+                for argv, _environment in operations.run_calls
+            ),
+            4,
+        )
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
         self.assertEqual(len(operations.stop_calls), 8)
 
