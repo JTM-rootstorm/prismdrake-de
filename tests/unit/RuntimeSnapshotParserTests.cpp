@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
-#include <atomic>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace prismdrake::shell::settings {
 namespace {
@@ -21,12 +22,19 @@ namespace {
 class TemporaryDirectory final {
   public:
     TemporaryDirectory() {
-        static std::atomic_uint counter{0U};
-        path_ = std::filesystem::temp_directory_path() /
-                ("prismdrake-snapshot-parser-test-" + std::to_string(counter.fetch_add(1U)));
-        std::filesystem::create_directories(path_);
+        auto pattern =
+            (std::filesystem::temp_directory_path() / "prismdrake-snapshot-parser-test.XXXXXX")
+                .string();
+        char *created = ::mkdtemp(pattern.data());
+        if (created == nullptr) {
+            throw std::runtime_error{"temporary directory creation failed"};
+        }
+        path_ = created;
     }
-    ~TemporaryDirectory() { std::filesystem::remove_all(path_); }
+    ~TemporaryDirectory() {
+        std::error_code ignored;
+        std::filesystem::remove_all(path_, ignored);
+    }
 
     [[nodiscard]] const std::filesystem::path &path() const noexcept { return path_; }
 
