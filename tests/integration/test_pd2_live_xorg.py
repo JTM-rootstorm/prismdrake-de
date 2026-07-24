@@ -476,8 +476,9 @@ class FakeOperations:
     def stop(self, child: FakeChild, timeout: float) -> bool:
         del timeout
         self.stop_calls.append(child)
+        executable = Path(self.spawn_calls[child.pid - 1000][0][0]).name
+        self.events.append(("stop", executable))
         if self.stop_succeeds:
-            executable = Path(self.spawn_calls[child.pid - 1000][0][0]).name
             if executable == "dbus-daemon":
                 self.bus_socket_path = None
                 self.bus_socket_identity = None
@@ -608,6 +609,9 @@ class FakeOperations:
 class FakeAccessibility:
     def __init__(self, operations: FakeOperations) -> None:
         self.operations = operations
+        self.initialize_succeeds = True
+        self.initialize_spawn_counts: list[int] = []
+        self.reset_calls = 0
         self.pinned = False
         self.observed: list[str] = []
         self.absent: list[str] = []
@@ -615,6 +619,21 @@ class FakeAccessibility:
         self.invoked: list[str] = []
         self.persist_pin = True
         self.references: list[object] = []
+
+    def initialize(self, environment: Mapping[str, str]) -> bool:
+        if (
+            "DBUS_SESSION_BUS_ADDRESS" not in environment
+            or "DISPLAY" not in environment
+        ):
+            return False
+        self.initialize_spawn_counts.append(len(self.operations.spawn_calls))
+        self.operations.events.append(("accessibility_initialize", None))
+        return self.initialize_succeeds
+
+    def reset(self) -> bool:
+        self.reset_calls += 1
+        self.operations.events.append(("accessibility_reset", None))
+        return True
 
     def observe(
         self, shell_pid: int, selector: object, environment: Mapping[str, str]
@@ -2019,7 +2038,9 @@ class LivePortTests(unittest.TestCase):
     def test_starts_exact_installed_session_and_attests_distinct_owners(self) -> None:
         operations = FakeOperations()
         executables = installed_paths()
-        port = LiveXorgHarnessPort(config(executables), operations)
+        port = LiveXorgHarnessPort(
+            config(executables), operations, FakeAccessibility(operations)
+        )
 
         port.run_step("installed_workflow", "start_isolated_two_output_x11")
         self.assertEqual(
@@ -2122,7 +2143,9 @@ class LivePortTests(unittest.TestCase):
                     prefix=prefix, dir=temp_root
                 ),
             ):
-                port = LiveXorgHarnessPort(config(executables), operations)
+                port = LiveXorgHarnessPort(
+                    config(executables), operations, FakeAccessibility(operations)
+                )
                 port.run_step(
                     "installed_workflow", "start_isolated_two_output_x11"
                 )
@@ -2330,7 +2353,9 @@ class LivePortTests(unittest.TestCase):
 
     def test_observes_two_coherent_wallpaper_desktops_and_bottom_panels(self) -> None:
         operations = FakeOperations()
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
         for identifier in (
             "start_isolated_two_output_x11",
             "start_installed_prismdrake_session",
@@ -2375,7 +2400,9 @@ class LivePortTests(unittest.TestCase):
         operations.window_geometry_payloads[quick_window] = xwininfo_payload(
             quick_window, quick_geometry
         )
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
         for identifier in (
             "start_isolated_two_output_x11",
             "start_installed_prismdrake_session",
@@ -2656,7 +2683,9 @@ class LivePortTests(unittest.TestCase):
         for mutation, expected in cases:
             with self.subTest(mutation=mutation):
                 operations = FakeOperations()
-                port = LiveXorgHarnessPort(config(installed_paths()), operations)
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()), operations, FakeAccessibility(operations)
+                )
                 for identifier in (
                     "start_isolated_two_output_x11",
                     "start_installed_prismdrake_session",
@@ -2690,7 +2719,9 @@ class LivePortTests(unittest.TestCase):
         stale_window = 0x1000000
         operations.surface_list = (*operations.surface_list, stale_window)
         operations.missing_surface_types.add(stale_window)
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
         for identifier in (
             "start_isolated_two_output_x11",
             "start_installed_prismdrake_session",
@@ -2706,7 +2737,9 @@ class LivePortTests(unittest.TestCase):
 
     def test_panel_surface_observation_accepts_one_keyboard_focused_dock(self) -> None:
         operations = FakeOperations()
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
         for identifier in (
             "start_isolated_two_output_x11",
             "start_installed_prismdrake_session",
@@ -2729,7 +2762,9 @@ class LivePortTests(unittest.TestCase):
         ):
             with self.subTest(mutation=mutation):
                 operations = FakeOperations()
-                port = LiveXorgHarnessPort(config(installed_paths()), operations)
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()), operations, FakeAccessibility(operations)
+                )
                 for identifier in (
                     "start_isolated_two_output_x11",
                     "start_installed_prismdrake_session",
@@ -2754,7 +2789,9 @@ class LivePortTests(unittest.TestCase):
 
     def test_session_readiness_rejects_safe_mode(self) -> None:
         operations = FakeOperations(session_marker="safe-mode")
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
         port.run_step("installed_workflow", "start_isolated_two_output_x11")
         port.run_step("installed_workflow", "start_installed_prismdrake_session")
 
@@ -2778,7 +2815,9 @@ class LivePortTests(unittest.TestCase):
             ),
         ):
             with self.subTest(expected=expected):
-                port = LiveXorgHarnessPort(config(installed_paths()), operations)
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()), operations, FakeAccessibility(operations)
+                )
                 port.run_step("installed_workflow", "start_isolated_two_output_x11")
                 with self.assertRaisesRegex(HarnessError, f"^{expected}$"):
                     port.run_step(
@@ -2787,6 +2826,67 @@ class LivePortTests(unittest.TestCase):
                 self.assertEqual(
                     port.cleanup("installed_workflow"), Observation(True, True)
                 )
+
+    def test_accessibility_epoch_is_ready_before_session_spawn_and_reset_on_cleanup(
+        self,
+    ) -> None:
+        operations = FakeOperations()
+        accessibility = FakeAccessibility(operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        port.run_step("installed_workflow", "start_isolated_two_output_x11")
+
+        port.run_step("installed_workflow", "start_installed_prismdrake_session")
+
+        self.assertEqual(accessibility.initialize_spawn_counts, [3])
+        self.assertEqual(
+            [Path(argv[0]).name for argv, _environment in operations.spawn_calls],
+            ["Xorg", "openbox", "dbus-daemon", "prismdrake-session"],
+        )
+        self.assertLess(
+            operations.events.index(("spawn", "dbus-daemon")),
+            operations.events.index(("accessibility_initialize", None)),
+        )
+        self.assertLess(
+            operations.events.index(("accessibility_initialize", None)),
+            operations.events.index(("spawn", "prismdrake-session")),
+        )
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+        self.assertEqual(accessibility.reset_calls, 1)
+        self.assertLess(
+            operations.events.index(("stop", "prismdrake-session")),
+            operations.events.index(("accessibility_reset", None)),
+        )
+        self.assertLess(
+            operations.events.index(("accessibility_reset", None)),
+            operations.events.index(("stop", "dbus-daemon")),
+        )
+
+    def test_session_is_not_spawned_when_private_accessibility_never_becomes_ready(
+        self,
+    ) -> None:
+        operations = FakeOperations()
+        accessibility = FakeAccessibility(operations)
+        accessibility.initialize_succeeds = False
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        port.run_step("installed_workflow", "start_isolated_two_output_x11")
+
+        with self.assertRaisesRegex(
+            HarnessError, "^private_accessibility_bus_readiness_failed$"
+        ):
+            port.run_step("installed_workflow", "start_installed_prismdrake_session")
+
+        self.assertTrue(accessibility.initialize_spawn_counts)
+        self.assertEqual(set(accessibility.initialize_spawn_counts), {3})
+        self.assertNotIn(
+            "prismdrake-session",
+            [Path(argv[0]).name for argv, _environment in operations.spawn_calls],
+        )
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+        self.assertEqual(accessibility.reset_calls, 1)
 
     def test_private_bus_attestation_rejects_socket_replacement_and_owner_drift(
         self,
@@ -2797,7 +2897,9 @@ class LivePortTests(unittest.TestCase):
         ):
             with self.subTest(mutation=mutation):
                 operations = FakeOperations()
-                port = LiveXorgHarnessPort(config(installed_paths()), operations)
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()), operations, FakeAccessibility(operations)
+                )
                 port.run_step("installed_workflow", "start_isolated_two_output_x11")
                 port.run_step("installed_workflow", "start_installed_prismdrake_session")
                 if mutation == "socket":
@@ -2813,7 +2915,9 @@ class LivePortTests(unittest.TestCase):
 
     def test_session_readiness_rejects_replaced_marker(self) -> None:
         operations = FakeOperations()
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
         port.run_step("installed_workflow", "start_isolated_two_output_x11")
         port.run_step("installed_workflow", "start_installed_prismdrake_session")
         _argv, environment = operations.spawn_calls[3]
@@ -2845,7 +2949,9 @@ class LivePortTests(unittest.TestCase):
             )
         )
         operations.sync_surfaces_from_queries = True
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
 
         first = port.run_step("failure_replay", "two_same_scale_outputs_at_startup")
         second = port.run_step("failure_replay", "add_second_output_after_startup")
@@ -2886,7 +2992,9 @@ class LivePortTests(unittest.TestCase):
             with self.subTest(identifier=identifier):
                 operations = FakeOperations(query_payloads=payloads)
                 operations.sync_surfaces_from_queries = True
-                port = LiveXorgHarnessPort(config(installed_paths()), operations)
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()), operations, FakeAccessibility(operations)
+                )
                 self.assertEqual(
                     port.run_step("failure_replay", identifier),
                     Observation(True, True),
@@ -3054,7 +3162,9 @@ class LivePortTests(unittest.TestCase):
     def test_invalid_wallpaper_fallback_requires_mapped_desktop_surfaces(self) -> None:
         operations = FakeOperations()
         operations.surface_types[DESKTOP_LEFT] = b"_NET_WM_WINDOW_TYPE_NORMAL"
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
 
         with self.assertRaisesRegex(HarnessError, "^desktop_wallpaper_surface_invalid$"):
             port.run_step("failure_replay", "start_with_invalid_wallpaper")
@@ -3062,7 +3172,9 @@ class LivePortTests(unittest.TestCase):
 
     def test_desktop_surface_observation_waits_for_both_mapped_outputs(self) -> None:
         operations = FakeOperations()
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
         for identifier in (
             "start_isolated_two_output_x11",
             "start_installed_prismdrake_session",
@@ -3239,7 +3351,9 @@ class LivePortTests(unittest.TestCase):
     def test_safe_mode_fails_closed_when_the_marker_is_not_published(self) -> None:
         operations = FakeOperations()
         operations.safe_mode_published = False
-        port = LiveXorgHarnessPort(config(installed_paths()), operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
 
         with self.assertRaisesRegex(
             HarnessError, "^prismdrake_session_safe_mode_timeout$"

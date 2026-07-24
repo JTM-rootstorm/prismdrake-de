@@ -33,6 +33,12 @@ opaque surface transitions without retaining screenshots. Gentoo's
 or forbidden compositor operations. `/usr/bin/xtrace` is not accepted because
 that path is Gentoo's unrelated dynamic-loader diagnostic.
 
+The harness attests the private session bus, initializes its bounded AT-SPI
+desktop epoch, and only then starts the installed Prismdrake session. Cleanup
+stops accessible clients and releases that AT-SPI epoch before removing the
+private bus, so consecutive failure replays cannot retain an observer bound to
+an earlier bus.
+
 The environment deliberately provides no Glasswyrm-native capability and does
 not require compositor blur. Output names, display addresses, bus addresses,
 process identities, XIDs, window titles, notification content, application
