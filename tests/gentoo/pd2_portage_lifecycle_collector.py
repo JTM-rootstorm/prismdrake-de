@@ -285,7 +285,12 @@ def run_checked(command: list[str], cwd: Path | None = None) -> str:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={"HOME": "/nonexistent", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            env={
+                "HOME": "/nonexistent",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "PATH": "/usr/bin:/bin",
+            },
             start_new_session=True,
         )
         _require(process.stdout is not None and process.stderr is not None,

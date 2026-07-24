@@ -388,7 +388,7 @@ FocusScope {
                         required property var task
                         property double focusRecoverySerial: 0
 
-                        height: tasks.height
+                        height: Math.min(tasks.height, root.height)
                         presentation: task
                         tokens: root.themeGeneration.panel
                         rightToLeft: root.layoutDirection === Qt.RightToLeft
@@ -420,7 +420,7 @@ FocusScope {
                         required property int index
                         required property var group
 
-                        height: groupedTasks.height
+                        height: Math.min(groupedTasks.height, root.height)
                         presentation: group
                         tokens: root.themeGeneration.panel
                         rightToLeft: root.layoutDirection === Qt.RightToLeft

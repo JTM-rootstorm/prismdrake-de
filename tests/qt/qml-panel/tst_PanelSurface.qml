@@ -865,7 +865,10 @@ TestCase {
         verify(minimize.height >= minimum)
         verify(close.width >= minimum)
         verify(close.height >= minimum)
-        verify(menu.height <= panel.height)
+        verify(menu.height <= panel.height,
+               "action menu height " + menu.height
+               + " exceeds panel height " + panel.height
+               + " for task height " + first.height)
         verify(minimize.x < close.x)
         compare(minimize.y, close.y)
 

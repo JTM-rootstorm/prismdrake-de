@@ -992,6 +992,21 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                     "import sys; sys.stdout.write('x' * 4096)",
                 ])
 
+    def test_observer_environment_uses_deterministic_utf8_locale(self) -> None:
+        observed = {
+            line.partition("=")[0]: line.partition("=")[2]
+            for line in run_checked(["/usr/bin/env"]).splitlines()
+        }
+        self.assertEqual(
+            observed,
+            {
+                "HOME": "/nonexistent",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "PATH": "/usr/bin:/bin",
+            },
+        )
+
     def test_executes_disposable_qa_and_both_bound_resolutions(self) -> None:
         attestation = example_attestation_document()
         with tempfile.TemporaryDirectory() as temporary:
