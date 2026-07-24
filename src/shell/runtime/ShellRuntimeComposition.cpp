@@ -251,6 +251,12 @@ Result<void> ShellRuntimeComposition::dismiss(composition::SurfaceFamily family)
     return commit(std::move(candidate), std::move(transition));
 }
 
+Result<void> ShellRuntimeComposition::dismissToWindowManager(composition::SurfaceFamily family) {
+    auto candidate = composition_;
+    auto transition = candidate.dismissToWindowManager(family);
+    return commit(std::move(candidate), std::move(transition));
+}
+
 Result<void> ShellRuntimeComposition::escape() {
     auto candidate = composition_;
     auto transition = candidate.escape();

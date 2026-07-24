@@ -15,6 +15,7 @@ Popup {
     property bool restoreFocusWhenClosed: true
 
     signal closedToOrigin
+    signal closedToWindowManager
 
     function memberAt(index) {
         return memberRepeater.itemAt(index)
@@ -67,8 +68,11 @@ Popup {
     height: Math.max(tokens.minimumTargetSize, memberRowStrip.implicitHeight)
 
     onClosed: {
-        if (restoreFocusWhenClosed)
+        if (restoreFocusWhenClosed) {
             closedToOrigin()
+        } else {
+            closedToWindowManager()
+        }
         restoreFocusWhenClosed = true
     }
 
@@ -308,7 +312,7 @@ Popup {
                         onClicked: {
                             if (memberRow.member !== null
                                     && memberRow.member.requestActivation())
-                                root.closeToOrigin()
+                                root.dismiss()
                         }
                     }
 

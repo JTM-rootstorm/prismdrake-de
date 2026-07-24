@@ -509,6 +509,15 @@ ShellComposition::presentImpl(SurfaceFamily family, std::optional<OutputName> re
 }
 
 Result<CompositionTransition> ShellComposition::dismiss(SurfaceFamily family) {
+    return dismissImpl(family, true);
+}
+
+Result<CompositionTransition> ShellComposition::dismissToWindowManager(SurfaceFamily family) {
+    return dismissImpl(family, false);
+}
+
+Result<CompositionTransition> ShellComposition::dismissImpl(SurfaceFamily family,
+                                                            bool restoreOrigin) {
     if (!validFamily(family)) {
         return invalidState<CompositionTransition>("The shell surface family is invalid.");
     }
@@ -522,7 +531,11 @@ Result<CompositionTransition> ShellComposition::dismiss(SurfaceFamily family) {
         DismissSurfaceIntent{family, surface.output, DismissReason::explicitRequest});
     active_surfaces_.erase(active_surfaces_.begin() + static_cast<std::ptrdiff_t>(*found));
     if (focused_family_ == family) {
-        appendFocusRecovery(transition.intents_, surface.origin);
+        if (restoreOrigin) {
+            appendFocusRecovery(transition.intents_, surface.origin);
+        } else {
+            transition.intents_.emplace_back(ReleaseFocusToWindowManagerIntent{});
+        }
         focused_family_.reset();
     }
     return Result<CompositionTransition>::success(std::move(transition));

@@ -30,6 +30,7 @@ Control {
     signal focusExitBackward
     signal actionMenuOpening
     signal actionMenuClosed
+    signal actionMenuDismissedToWindowManager
     signal clicked
 
     function openActionMenu() {
@@ -367,7 +368,10 @@ Control {
         tokens: root.tokens
         maximumWidth: root.availableWindowWidth
         rightToLeft: root.rightToLeft
-        onClosed: root.actionMenuClosed()
-        onClosedToOrigin: focusRestoreTimer.restart()
+        onClosedToOrigin: {
+            focusRestoreTimer.restart()
+            root.actionMenuClosed()
+        }
+        onClosedToWindowManager: root.actionMenuDismissedToWindowManager()
     }
 }

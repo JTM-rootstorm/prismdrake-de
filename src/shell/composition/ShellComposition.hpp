@@ -252,6 +252,8 @@ class ShellComposition final {
     [[nodiscard]] foundation::Result<CompositionTransition>
     toggle(SurfaceFamily family, std::optional<OutputName> requestedOutput, FocusOrigin origin);
     [[nodiscard]] foundation::Result<CompositionTransition> dismiss(SurfaceFamily family);
+    [[nodiscard]] foundation::Result<CompositionTransition>
+    dismissToWindowManager(SurfaceFamily family);
     [[nodiscard]] CompositionTransition escape();
 
     [[nodiscard]] std::span<const ActiveSurface> activeSurfaces() const noexcept {
@@ -265,6 +267,8 @@ class ShellComposition final {
     [[nodiscard]] foundation::Result<CompositionTransition>
     presentImpl(SurfaceFamily family, std::optional<OutputName> requestedOutput, FocusOrigin origin,
                 bool toggleRequest);
+    [[nodiscard]] foundation::Result<CompositionTransition> dismissImpl(SurfaceFamily family,
+                                                                        bool restoreOrigin);
     [[nodiscard]] CompositionTransition invalidateAll(DismissReason reason);
     [[nodiscard]] CompositionTransition invalidateNotificationDependencies(DismissReason reason,
                                                                            bool availableAfter);

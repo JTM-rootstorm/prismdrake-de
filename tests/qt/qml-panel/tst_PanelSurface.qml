@@ -41,6 +41,11 @@ TestCase {
     SignalSpy { id: actionMenuOpened; target: panel; signalName: "actionMenuOpened" }
     SignalSpy { id: actionMenuClosed; target: panel; signalName: "actionMenuClosed" }
     SignalSpy {
+        id: actionMenuDismissedToWindowManager
+        target: panel
+        signalName: "actionMenuDismissedToWindowManager"
+    }
+    SignalSpy {
         id: groupedLaunchRequested
         target: panelFixture.groupedTaskModel
         signalName: "launchRequested"
@@ -115,6 +120,7 @@ TestCase {
         launcherRequest.clear()
         actionMenuOpened.clear()
         actionMenuClosed.clear()
+        actionMenuDismissedToWindowManager.clear()
         groupedLaunchRequested.clear()
         groupedPinChangeRequested.clear()
         tryCompare(panel, "taskCount", 3)
@@ -444,6 +450,8 @@ TestCase {
         keyClick(Qt.Key_Return)
         tryCompare(panelFixture, "activationCount", 1)
         tryCompare(popup, "opened", false)
+        tryCompare(actionMenuDismissedToWindowManager, "count", 1)
+        compare(actionMenuClosed.count, 1)
         compare(panelFixture.lastActivationTitle, "Editor document")
     }
 

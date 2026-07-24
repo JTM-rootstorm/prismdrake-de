@@ -55,6 +55,8 @@ class ShellRuntimeComposition final : public control::ShellPresentationPort,
                                                   std::string_view outputName,
                                                   composition::FocusOrigin origin);
     [[nodiscard]] foundation::Result<void> dismiss(composition::SurfaceFamily family);
+    [[nodiscard]] foundation::Result<void>
+    dismissToWindowManager(composition::SurfaceFamily family);
     [[nodiscard]] foundation::Result<void> escape();
 
     [[nodiscard]] const composition::ShellComposition &state() const noexcept {

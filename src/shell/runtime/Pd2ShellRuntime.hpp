@@ -105,6 +105,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
                                                              composition::FocusControlRole role,
                                                              std::string_view controlId);
     void dismissActionMenu();
+    void dismissActionMenuToWindowManager();
     [[nodiscard]] foundation::Result<void> reconcileGroupedTasks();
     [[nodiscard]] foundation::Result<void>
     replacePin(const prismdrake::launcher::DesktopFileId &desktopFileId, bool pinned);
@@ -121,6 +122,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     void panelQuickSettingsRequested(const QString &outputName);
     void panelActionMenuOpened(const QString &outputName);
     void panelActionMenuClosed();
+    void panelActionMenuDismissedToWindowManager();
     void launcherSearchRequested(const QString &query);
     void launcherDismissRequested();
     void launcherActionMenuOpened();

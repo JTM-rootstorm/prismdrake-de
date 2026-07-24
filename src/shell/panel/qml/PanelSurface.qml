@@ -37,6 +37,7 @@ FocusScope {
     signal quickSettingsRequested(string outputName)
     signal actionMenuOpened(string outputName)
     signal actionMenuClosed
+    signal actionMenuDismissedToWindowManager
     signal focusExitForward
     signal focusExitBackward
 
@@ -431,6 +432,8 @@ FocusScope {
                             root.actionMenuOpened(root.outputName)
                         }
                         onActionMenuClosed: root.actionMenuClosed()
+                        onActionMenuDismissedToWindowManager:
+                            root.actionMenuDismissedToWindowManager()
                         onClicked: root.closeTaskActionMenus()
                     }
                 }

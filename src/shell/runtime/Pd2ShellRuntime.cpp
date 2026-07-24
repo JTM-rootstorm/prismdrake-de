@@ -713,6 +713,8 @@ Result<std::unique_ptr<QQuickView>> Pd2ShellRuntime::makePanel(std::string_view 
     connect(view->rootObject(), SIGNAL(actionMenuOpened(QString)), this,
             SLOT(panelActionMenuOpened(QString)));
     connect(view->rootObject(), SIGNAL(actionMenuClosed()), this, SLOT(panelActionMenuClosed()));
+    connect(view->rootObject(), SIGNAL(actionMenuDismissedToWindowManager()), this,
+            SLOT(panelActionMenuDismissedToWindowManager()));
     return Result<std::unique_ptr<QQuickView>>::success(std::move(view));
 }
 
@@ -1107,6 +1109,15 @@ void Pd2ShellRuntime::dismissActionMenu() {
     action_menu_role_.reset();
 }
 
+void Pd2ShellRuntime::dismissActionMenuToWindowManager() {
+    auto dismissed = composition_.dismissToWindowManager(composition::SurfaceFamily::actionMenu);
+    if (!dismissed) {
+        report("action menu dismissal", dismissed.error());
+        return;
+    }
+    action_menu_role_.reset();
+}
+
 Result<void> Pd2ShellRuntime::replacePin(const prismdrake::launcher::DesktopFileId &desktopFileId,
                                          bool pinned) {
     if (!pin_state_ || !pin_state_->current()) {
@@ -1194,6 +1205,12 @@ void Pd2ShellRuntime::panelActionMenuOpened(const QString &outputName) {
 void Pd2ShellRuntime::panelActionMenuClosed() {
     if (action_menu_role_ == composition::FocusControlRole::panelTaskGroup) {
         dismissActionMenu();
+    }
+}
+
+void Pd2ShellRuntime::panelActionMenuDismissedToWindowManager() {
+    if (action_menu_role_ == composition::FocusControlRole::panelTaskGroup) {
+        dismissActionMenuToWindowManager();
     }
 }
 
