@@ -261,6 +261,8 @@ class Operations(Protocol):
 class AccessibilityOperations(Protocol):
     """Bounded shell-owned AT-SPI observation and action boundary."""
 
+    def initialize(self, environment: Mapping[str, str]) -> bool: ...
+
     def observe_application(
         self, shell_pid: int, environment: Mapping[str, str]
     ) -> bool: ...
@@ -358,6 +360,13 @@ class SystemAccessibilityOperations:
                 raise HarnessError("live_atspi_unavailable") from error
             self._atspi = Atspi
         return self._atspi
+
+    def initialize(self, environment: Mapping[str, str]) -> bool:
+        """Bind libatspi to the verified private registry before clients start."""
+
+        with self._environment(environment):
+            self._binding()
+        return True
 
     @staticmethod
     def _owner(shell_pid: int):
@@ -4698,6 +4707,8 @@ class LiveXorgHarnessPort:
             }
         )
         self._activate_accessibility_bus(environment)
+        if not self._accessibility.initialize(environment):
+            raise HarnessError("live_atspi_initialization_failed")
         argv = (
             str(executables["prismdrake-session"]),
             "--settingsd",

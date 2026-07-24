@@ -634,6 +634,13 @@ class FakeAccessibility:
         self.invoked: list[str] = []
         self.persist_pin = True
         self.references: list[object] = []
+        self.initialization_environments: list[dict[str, str]] = []
+        self.initialization_spawn_counts: list[int] = []
+
+    def initialize(self, environment: Mapping[str, str]) -> bool:
+        self.initialization_environments.append(dict(environment))
+        self.initialization_spawn_counts.append(len(self.operations.spawn_calls))
+        return True
 
     def observe_application(
         self, shell_pid: int, environment: Mapping[str, str]
@@ -2130,6 +2137,11 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertEqual(session_environment["QT_QPA_PLATFORM"], "xcb")
         self.assertEqual(session_environment["QT_QUICK_BACKEND"], "software")
+        self.assertEqual(accessibility.initialization_spawn_counts, [3])
+        self.assertEqual(
+            accessibility.initialization_environments,
+            [session_environment],
+        )
         self.assertEqual(
             session_environment["DBUS_SESSION_BUS_ADDRESS"],
             bus_argv[4].removeprefix("--address="),
@@ -2199,6 +2211,36 @@ class LivePortTests(unittest.TestCase):
                 argv[:3]
                 == ("/usr/bin/prismdrake-shellctl", "launcher", "toggle")
                 for argv, _environment in operations.run_calls
+            )
+        )
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_session_start_fails_closed_when_accessibility_binding_fails(self) -> None:
+        operations = FakeOperations()
+
+        class FailedInitialization(FakeAccessibility):
+            def initialize(self, environment: Mapping[str, str]) -> bool:
+                super().initialize(environment)
+                return False
+
+        accessibility = FailedInitialization(operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        port.run_step("installed_workflow", "start_isolated_two_output_x11")
+
+        with self.assertRaisesRegex(
+            HarnessError, "^live_atspi_initialization_failed$"
+        ):
+            port.run_step(
+                "installed_workflow", "start_installed_prismdrake_session"
+            )
+
+        self.assertEqual(accessibility.initialization_spawn_counts, [3])
+        self.assertFalse(
+            any(
+                Path(argv[0]).name == "prismdrake-session"
+                for argv, _environment in operations.spawn_calls
             )
         )
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
