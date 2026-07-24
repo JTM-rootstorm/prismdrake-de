@@ -6,7 +6,6 @@
 #include <QThread>
 #include <QTimer>
 
-#include <algorithm>
 #include <exception>
 #include <map>
 #include <string>
@@ -275,12 +274,7 @@ Result<void> TaskController::dispatchCheckedRequest(const x11::TaskRequestState 
              "Wait for a complete authoritative task refresh before retrying."});
     }
 
-    const auto active = std::ranges::find_if(
-        snapshot->tasks(), [](const x11::TaskRecord &task) { return task.active(); });
-    const auto activeWindow = active == snapshot->tasks().end()
-                                  ? std::optional<x11::WindowId>{}
-                                  : std::optional<x11::WindowId>{active->window()};
-    return io_worker_->submitRequest(applied_refresh_token_, request, activeWindow);
+    return io_worker_->submitRequest(applied_refresh_token_, request);
 }
 
 void TaskController::retryTaskRefresh() {

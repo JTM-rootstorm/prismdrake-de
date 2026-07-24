@@ -35,6 +35,8 @@ class TaskIoOperations {
     [[nodiscard]] virtual foundation::Result<void> initialize() = 0;
     [[nodiscard]] virtual foundation::Result<x11::TaskModelObservation>
     refresh(std::span<const x11::WindowId> invalidatedWindows, bool invalidateAllClients) = 0;
+    /// Revalidates the exact request target against the operation owner's
+    /// latest complete observation before sending one WM request.
     [[nodiscard]] virtual foundation::Result<void>
     request(const x11::TaskRequestState &request, std::optional<x11::WindowId> currentlyActive) = 0;
     [[nodiscard]] virtual int eventFileDescriptor() const noexcept = 0;
@@ -44,9 +46,11 @@ class TaskIoOperations {
 
 /// One bounded worker for reply-bearing task refreshes and checked WM requests.
 ///
-/// Refresh hints are replaceable and coalesced. Requests are bounded and are
-/// rejected if their applied refresh token is no longer current when the worker
-/// reaches them. Completion callbacks are always queued to the supplied owner.
+/// Refresh hints are replaceable and coalesced. Requests are bounded. A newer
+/// successful refresh may overtake a queued request only when its complete
+/// observation still proves the exact target incarnation; removed, replaced,
+/// excluded, and future-token targets are rejected. Completion callbacks are
+/// always queued to the supplied owner.
 class TaskIoWorker final {
   public:
     using OperationsFactory =
@@ -67,9 +71,8 @@ class TaskIoWorker final {
     [[nodiscard]] foundation::Result<void>
     submitRefresh(std::uint64_t token, std::vector<x11::WindowId> invalidatedWindows,
                   bool invalidateAllClients = false);
-    [[nodiscard]] foundation::Result<void>
-    submitRequest(std::uint64_t appliedRefreshToken, const x11::TaskRequestState &request,
-                  std::optional<x11::WindowId> currentlyActive);
+    [[nodiscard]] foundation::Result<void> submitRequest(std::uint64_t appliedRefreshToken,
+                                                         const x11::TaskRequestState &request);
 
   private:
     struct RefreshJob final {
@@ -80,7 +83,6 @@ class TaskIoWorker final {
     struct RequestJob final {
         std::uint64_t appliedRefreshToken;
         x11::TaskRequestState request;
-        std::optional<x11::WindowId> currentlyActive;
     };
     struct EventDeliveryState;
 

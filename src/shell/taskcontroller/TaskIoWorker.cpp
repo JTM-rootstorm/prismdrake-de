@@ -47,10 +47,23 @@ inline constexpr std::size_t maximumQueuedTaskIoRequests = 64U;
          "Wait for authoritative task refreshes before issuing another action."});
 }
 
-[[nodiscard]] Result<void> staleRequest() {
+[[nodiscard]] Result<void> invalidRequestEpoch() {
     return Result<void>::failure(
-        {ErrorCode::cancelled, "The checked task request belongs to a stale refresh token.",
-         "Wait for the latest authoritative task snapshot before retrying."});
+        {ErrorCode::cancelled, "The checked task request has no current validated refresh epoch.",
+         "Wait for a complete authoritative task refresh before retrying."});
+}
+
+[[nodiscard]] Result<void> futureRequestToken() {
+    return Result<void>::failure(
+        {ErrorCode::cancelled, "The checked task request belongs to a future refresh token.",
+         "Submit requests only from an applied authoritative task snapshot."});
+}
+
+[[nodiscard]] Result<void> staleRequestTarget() {
+    return Result<void>::failure(
+        {ErrorCode::cancelled,
+         "The checked task request target is absent from the latest complete observation.",
+         "Use the current task entry after the authoritative refresh is published."});
 }
 
 [[nodiscard]] bool mergeInvalidations(std::vector<x11::WindowId> &target,
@@ -196,10 +209,9 @@ Result<void> TaskIoWorker::submitRefresh(std::uint64_t token,
 }
 
 Result<void> TaskIoWorker::submitRequest(std::uint64_t appliedRefreshToken,
-                                         const x11::TaskRequestState &request,
-                                         std::optional<x11::WindowId> currentlyActive) {
+                                         const x11::TaskRequestState &request) {
     if (appliedRefreshToken == 0U) {
-        return staleRequest();
+        return invalidRequestEpoch();
     }
     {
         std::scoped_lock lock{mutex_};
@@ -209,7 +221,7 @@ Result<void> TaskIoWorker::submitRequest(std::uint64_t appliedRefreshToken,
         if (pending_requests_.size() >= maximumQueuedTaskIoRequests) {
             return fullWorker();
         }
-        pending_requests_.push_back(RequestJob{appliedRefreshToken, request, currentlyActive});
+        pending_requests_.push_back(RequestJob{appliedRefreshToken, request});
         if (!wake()) {
             pending_requests_.pop_back();
             return Result<void>::failure(wakeFailure());
@@ -242,6 +254,12 @@ void TaskIoWorker::run(std::stop_token stopToken) {
         }
     }
     std::uint64_t currentRefreshToken = 0U;
+    std::vector<x11::AuthoritativeTaskClient> currentRequestTargets;
+    std::optional<x11::WindowId> currentActiveWindow;
+    // Reuse the publication contract as a worker-local validation gate. Its
+    // generated lifetimes are never exposed; request identity remains the
+    // source-assigned window incarnation carried by TaskRequestState.
+    x11::TaskModel validationModel;
 
     while (!stopToken.stop_requested()) {
         bool workQueued = false;
@@ -319,7 +337,23 @@ void TaskIoWorker::run(std::stop_token stopToken) {
                                                       refresh->invalidateAllClients);
             eventFollowUpRequired = taskEventFollowUpRequired(true, eventFollowUpRequired);
             if (result) {
-                currentRefreshToken = refresh->token;
+                auto validated = validationModel.publish(result.value());
+                if (!validated) {
+                    result = Result<x11::TaskModelObservation>::failure(validated.error());
+                } else {
+                    currentRefreshToken = refresh->token;
+                    currentRequestTargets.clear();
+                    currentRequestTargets.reserve(validated.value()->tasks().size());
+                    for (const auto &task : validated.value()->tasks()) {
+                        currentRequestTargets.push_back({task.window(), task.incarnation()});
+                    }
+                    currentActiveWindow = result.value().authoritative.activeWindow();
+                }
+            }
+            if (!result) {
+                currentRefreshToken = 0U;
+                currentRequestTargets.clear();
+                currentActiveWindow.reset();
             }
             deliverRefresh(refresh->token, std::move(result));
             continue;
@@ -331,11 +365,21 @@ void TaskIoWorker::run(std::stop_token stopToken) {
             deliverRequest(std::move(request->request), Result<void>::failure(*setupError));
             continue;
         }
-        if (request->appliedRefreshToken != currentRefreshToken) {
-            deliverRequest(std::move(request->request), staleRequest());
+        if (currentRefreshToken == 0U) {
+            deliverRequest(std::move(request->request), invalidRequestEpoch());
             continue;
         }
-        auto result = operations.value()->request(request->request, request->currentlyActive);
+        if (request->appliedRefreshToken > currentRefreshToken) {
+            deliverRequest(std::move(request->request), futureRequestToken());
+            continue;
+        }
+        const auto target =
+            x11::AuthoritativeTaskClient{request->request.window(), request->request.incarnation()};
+        if (std::ranges::find(currentRequestTargets, target) == currentRequestTargets.end()) {
+            deliverRequest(std::move(request->request), staleRequestTarget());
+            continue;
+        }
+        auto result = operations.value()->request(request->request, currentActiveWindow);
         eventFollowUpRequired = true;
         deliverRequest(std::move(request->request), std::move(result));
     }

@@ -968,7 +968,11 @@ def task_reactivation_diagnostic(active_target: bool, hidden_target: bool,
     categorized_messages = (
         ("path_rejected", "The checked task request path is not current."),
         ("token_stale", "The checked task request belongs to a stale refresh token."),
+        ("epoch_invalid", "The checked task request has no current validated refresh epoch."),
+        ("token_future", "The checked task request belongs to a future refresh token."),
         ("target_stale", "The checked task request target is stale on the X11 worker."),
+        ("target_absent",
+         "The checked task request target is absent from the latest complete observation."),
         ("wm_rejected", "The window manager rejected a current task request."),
     )
     categories = " ".join(

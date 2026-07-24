@@ -112,13 +112,11 @@ class BlockingOperations final : public TaskIoOperations {
 
 [[nodiscard]] x11::WindowId testWindow() { return x11::WindowId::fromProtocol(42U).value(); }
 
-[[nodiscard]] x11::WindowIncarnationId testIncarnation() {
-    return x11::WindowIncarnationId::fromObserved(1U).value();
-}
-
-[[nodiscard]] x11::TaskModelObservation testObservation() {
+[[nodiscard]] x11::TaskModelObservation
+testObservation(std::optional<std::uint32_t> activeWindow = std::nullopt, bool includedTask = true,
+                std::uint64_t incarnation = 1U, bool metadataAvailable = true) {
     auto list = x11::buildEwmhTaskListSnapshot(x11::EwmhTaskListObservation{
-        std::vector<std::uint32_t>{testWindow().value()}, std::nullopt, std::nullopt});
+        std::vector<std::uint32_t>{testWindow().value()}, std::nullopt, activeWindow});
     EXPECT_TRUE(list);
     x11::WindowMetadata metadata{
         testWindow(),
@@ -131,12 +129,16 @@ class BlockingOperations final : public TaskIoOperations {
         false,
         false,
         false,
-        false,
+        !includedTask,
         false,
         std::nullopt,
         {}};
+    auto observedIncarnation = x11::WindowIncarnationId::fromObserved(incarnation).value();
+    if (!metadataAvailable) {
+        return {std::move(list).value(), {{testWindow(), observedIncarnation, std::nullopt, ""}}};
+    }
     return {std::move(list).value(),
-            {{testWindow(), testIncarnation(), std::move(metadata), "application-x-executable"}}};
+            {{testWindow(), observedIncarnation, std::move(metadata), "application-x-executable"}}};
 }
 
 class CountingOperations final : public TaskIoOperations {
@@ -404,6 +406,83 @@ class RequestBufferedEventOperations final : public TaskIoOperations {
     std::shared_ptr<RequestBufferedEventState> state_;
 };
 
+struct InterveningRefreshState final {
+    std::mutex mutex;
+    std::condition_variable changed;
+    int refreshCount{0};
+    bool secondRefreshEntered{false};
+    bool secondRefreshReleased{false};
+    bool includeSecondTarget{true};
+    bool secondMetadataAvailable{true};
+    bool failSecondRefresh{false};
+    std::uint64_t secondIncarnation{1U};
+    bool requestHandled{false};
+    std::optional<x11::WindowId> requestActiveWindow;
+};
+
+class InterveningRefreshOperations final : public TaskIoOperations {
+  public:
+    explicit InterveningRefreshOperations(std::shared_ptr<InterveningRefreshState> state)
+        : state_(std::move(state)) {}
+
+    foundation::Result<void> initialize() override { return foundation::Result<void>::success(); }
+
+    foundation::Result<x11::TaskModelObservation> refresh(std::span<const x11::WindowId>,
+                                                          bool) override {
+        bool includeTarget = true;
+        bool metadataAvailable = true;
+        bool failRefresh = false;
+        std::uint64_t incarnation = 1U;
+        {
+            std::unique_lock lock{state_->mutex};
+            ++state_->refreshCount;
+            if (state_->refreshCount == 2) {
+                state_->secondRefreshEntered = true;
+                state_->changed.notify_all();
+                state_->changed.wait(lock, [&] { return state_->secondRefreshReleased; });
+                includeTarget = state_->includeSecondTarget;
+                metadataAvailable = state_->secondMetadataAvailable;
+                failRefresh = state_->failSecondRefresh;
+                incarnation = state_->secondIncarnation;
+            }
+        }
+        if (failRefresh) {
+            return foundation::Result<x11::TaskModelObservation>::failure(
+                {foundation::ErrorCode::validation_error,
+                 "The injected intervening refresh failed.",
+                 "Reject requests until a newer complete observation is available."});
+        }
+        return foundation::Result<x11::TaskModelObservation>::success(
+            testObservation(testWindow().value(), includeTarget, incarnation, metadataAvailable));
+    }
+
+    foundation::Result<void> request(const x11::TaskRequestState &,
+                                     std::optional<x11::WindowId> currentlyActive) override {
+        {
+            std::scoped_lock lock{state_->mutex};
+            state_->requestHandled = true;
+            state_->requestActiveWindow = currentlyActive;
+        }
+        state_->changed.notify_all();
+        return foundation::Result<void>::success();
+    }
+
+    [[nodiscard]] int eventFileDescriptor() const noexcept override { return -1; }
+    foundation::Result<TaskEventDrain> drainEvents() override {
+        return foundation::Result<TaskEventDrain>::success({{}, false});
+    }
+    void cancelWaits() noexcept override {
+        {
+            std::scoped_lock lock{state_->mutex};
+            state_->secondRefreshReleased = true;
+        }
+        state_->changed.notify_all();
+    }
+
+  private:
+    std::shared_ptr<InterveningRefreshState> state_;
+};
+
 [[nodiscard]] std::shared_ptr<BlockingState> blockingState() {
     int descriptors[2]{-1, -1};
     if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, descriptors) != 0) {
@@ -420,6 +499,109 @@ class RequestBufferedEventOperations final : public TaskIoOperations {
         return foundation::Result<std::unique_ptr<TaskIoOperations>>::success(
             std::make_unique<BlockingOperations>(state));
     };
+}
+
+void expectRequestOutcomeAfterInterveningRefresh(bool includeSecondTarget, bool expectedSuccess,
+                                                 bool metadataAvailable = true,
+                                                 std::uint64_t incarnation = 1U,
+                                                 bool failRefresh = false) {
+    ensureApplication();
+    auto state = std::make_shared<InterveningRefreshState>();
+    state->includeSecondTarget = includeSecondTarget;
+    state->secondMetadataAvailable = metadataAvailable;
+    state->secondIncarnation = incarnation;
+    state->failSecondRefresh = failRefresh;
+    QObject owner;
+    int refreshCompletions = 0;
+    bool requestCompleted = false;
+    bool requestSucceeded = false;
+    std::optional<foundation::ErrorCode> requestError;
+    auto worker = TaskIoWorker::create(
+        owner,
+        [state] {
+            return foundation::Result<std::unique_ptr<TaskIoOperations>>::success(
+                std::make_unique<InterveningRefreshOperations>(state));
+        },
+        [&refreshCompletions, failRefresh](auto, auto result) {
+            EXPECT_EQ(result.hasValue(), refreshCompletions == 0 || !failRefresh);
+            ++refreshCompletions;
+        },
+        [&](auto, auto result) {
+            requestCompleted = true;
+            requestSucceeded = result.hasValue();
+            if (!result) {
+                requestError = result.error().code;
+            }
+        },
+        [](auto) {});
+    ASSERT_TRUE(worker);
+    ASSERT_TRUE(worker.value()->submitRefresh(1U, {}));
+
+    QEventLoop firstRefreshLoop;
+    QTimer firstRefreshPoll;
+    firstRefreshPoll.setInterval(1);
+    QObject::connect(&firstRefreshPoll, &QTimer::timeout, &firstRefreshLoop, [&] {
+        if (refreshCompletions == 1) {
+            firstRefreshLoop.quit();
+        }
+    });
+    QTimer::singleShot(1000, &firstRefreshLoop, &QEventLoop::quit);
+    firstRefreshPoll.start();
+    firstRefreshLoop.exec();
+    ASSERT_EQ(refreshCompletions, 1);
+
+    x11::TaskModel model;
+    auto snapshot = model.publish(testObservation());
+    ASSERT_TRUE(snapshot);
+    auto request = x11::TaskRequestState::issue(*snapshot.value(),
+                                                snapshot.value()->tasks().front().lifetime(),
+                                                x11::TaskRequestAction::activate, 8U);
+    ASSERT_TRUE(request);
+
+    ASSERT_TRUE(worker.value()->submitRefresh(2U, {}));
+    {
+        std::unique_lock lock{state->mutex};
+        ASSERT_TRUE(state->changed.wait_for(lock, std::chrono::seconds{1},
+                                            [&] { return state->secondRefreshEntered; }));
+    }
+    ASSERT_TRUE(worker.value()->submitRequest(1U, request.value()));
+    {
+        std::scoped_lock lock{state->mutex};
+        state->secondRefreshReleased = true;
+    }
+    state->changed.notify_all();
+
+    QEventLoop completionLoop;
+    QTimer completionPoll;
+    completionPoll.setInterval(1);
+    QObject::connect(&completionPoll, &QTimer::timeout, &completionLoop, [&] {
+        if (refreshCompletions == 2 && requestCompleted) {
+            completionLoop.quit();
+        }
+    });
+    QTimer::singleShot(1000, &completionLoop, &QEventLoop::quit);
+    completionPoll.start();
+    completionLoop.exec();
+
+    ASSERT_EQ(refreshCompletions, 2);
+    ASSERT_TRUE(requestCompleted);
+    EXPECT_EQ(requestSucceeded, expectedSuccess);
+    {
+        std::scoped_lock lock{state->mutex};
+        EXPECT_EQ(state->requestHandled, expectedSuccess);
+        if (expectedSuccess) {
+            ASSERT_TRUE(state->requestActiveWindow.has_value());
+            EXPECT_EQ(state->requestActiveWindow, testWindow());
+        } else {
+            EXPECT_FALSE(state->requestActiveWindow.has_value());
+        }
+    }
+    if (expectedSuccess) {
+        EXPECT_FALSE(requestError.has_value());
+    } else {
+        ASSERT_TRUE(requestError.has_value());
+        EXPECT_EQ(*requestError, foundation::ErrorCode::cancelled);
+    }
 }
 
 TEST(TaskIoWorkerTest, BlockingRefreshLeavesOwnerHeartbeatResponsive) {
@@ -587,8 +769,8 @@ TEST(TaskIoWorkerTest, DrainsMultipleRequestsAfterOneAggregatedWake) {
     ASSERT_TRUE(activate);
     ASSERT_TRUE(closeRequest);
     ASSERT_TRUE(worker.value()->submitRefresh(1U, {}));
-    ASSERT_TRUE(worker.value()->submitRequest(1U, activate.value(), std::nullopt));
-    ASSERT_TRUE(worker.value()->submitRequest(1U, closeRequest.value(), std::nullopt));
+    ASSERT_TRUE(worker.value()->submitRequest(1U, activate.value()));
+    ASSERT_TRUE(worker.value()->submitRequest(1U, closeRequest.value()));
 
     QEventLoop loop;
     QTimer poll;
@@ -603,6 +785,95 @@ TEST(TaskIoWorkerTest, DrainsMultipleRequestsAfterOneAggregatedWake) {
     loop.exec();
     EXPECT_EQ(completions, 2);
     EXPECT_EQ(count->load(std::memory_order_relaxed), 2);
+    (void)close(descriptors[1]);
+}
+
+TEST(TaskIoWorkerTest, InterveningRefreshRetainsExactRequestTargetAndLatestActiveWindow) {
+    expectRequestOutcomeAfterInterveningRefresh(true, true);
+}
+
+TEST(TaskIoWorkerTest, InterveningRefreshRejectsTargetExcludedFromLatestObservation) {
+    expectRequestOutcomeAfterInterveningRefresh(false, false);
+}
+
+TEST(TaskIoWorkerTest, InterveningRefreshRejectsChangedWindowIncarnation) {
+    expectRequestOutcomeAfterInterveningRefresh(true, false, true, 2U);
+}
+
+TEST(TaskIoWorkerTest, InterveningRefreshRejectsMissingTargetMetadata) {
+    expectRequestOutcomeAfterInterveningRefresh(true, false, false);
+}
+
+TEST(TaskIoWorkerTest, InterveningRefreshFailureInvalidatesThePriorDispatchEpoch) {
+    expectRequestOutcomeAfterInterveningRefresh(true, false, true, 1U, true);
+}
+
+TEST(TaskIoWorkerTest, FutureRefreshTokenRejectsAnOtherwiseCurrentTarget) {
+    ensureApplication();
+    int descriptors[2]{-1, -1};
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, descriptors), 0);
+    auto count = std::make_shared<std::atomic<int>>(0);
+    QObject owner;
+    bool refreshCompleted = false;
+    bool requestCompleted = false;
+    std::optional<foundation::ErrorCode> requestError;
+    auto worker = TaskIoWorker::create(
+        owner,
+        [descriptor = descriptors[0], count] {
+            return foundation::Result<std::unique_ptr<TaskIoOperations>>::success(
+                std::make_unique<CountingOperations>(descriptor, count));
+        },
+        [&refreshCompleted](auto, auto result) {
+            EXPECT_TRUE(result);
+            refreshCompleted = true;
+        },
+        [&](auto, auto result) {
+            requestCompleted = true;
+            ASSERT_FALSE(result);
+            requestError = result.error().code;
+        },
+        [](auto) {});
+    ASSERT_TRUE(worker);
+    ASSERT_TRUE(worker.value()->submitRefresh(1U, {}));
+
+    QEventLoop refreshLoop;
+    QTimer refreshPoll;
+    refreshPoll.setInterval(1);
+    QObject::connect(&refreshPoll, &QTimer::timeout, &refreshLoop, [&] {
+        if (refreshCompleted) {
+            refreshLoop.quit();
+        }
+    });
+    QTimer::singleShot(1000, &refreshLoop, &QEventLoop::quit);
+    refreshPoll.start();
+    refreshLoop.exec();
+    ASSERT_TRUE(refreshCompleted);
+
+    x11::TaskModel model;
+    auto snapshot = model.publish(testObservation());
+    ASSERT_TRUE(snapshot);
+    auto request = x11::TaskRequestState::issue(*snapshot.value(),
+                                                snapshot.value()->tasks().front().lifetime(),
+                                                x11::TaskRequestAction::activate, 8U);
+    ASSERT_TRUE(request);
+    ASSERT_TRUE(worker.value()->submitRequest(2U, request.value()));
+
+    QEventLoop requestLoop;
+    QTimer requestPoll;
+    requestPoll.setInterval(1);
+    QObject::connect(&requestPoll, &QTimer::timeout, &requestLoop, [&] {
+        if (requestCompleted) {
+            requestLoop.quit();
+        }
+    });
+    QTimer::singleShot(1000, &requestLoop, &QEventLoop::quit);
+    requestPoll.start();
+    requestLoop.exec();
+
+    ASSERT_TRUE(requestCompleted);
+    ASSERT_TRUE(requestError.has_value());
+    EXPECT_EQ(*requestError, foundation::ErrorCode::cancelled);
+    EXPECT_EQ(count->load(std::memory_order_relaxed), 0);
     (void)close(descriptors[1]);
 }
 
@@ -754,7 +1025,7 @@ TEST(TaskIoWorkerTest, CheckedRequestDrainsBufferedEventWithoutDescriptorWake) {
                                                 snapshot.value()->tasks().front().lifetime(),
                                                 x11::TaskRequestAction::activate, 1U);
     ASSERT_TRUE(request);
-    ASSERT_TRUE(worker.value()->submitRequest(1U, request.value(), std::nullopt));
+    ASSERT_TRUE(worker.value()->submitRequest(1U, request.value()));
 
     QEventLoop requestLoop;
     QTimer requestPoll;

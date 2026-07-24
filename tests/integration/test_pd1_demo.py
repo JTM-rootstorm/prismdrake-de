@@ -596,7 +596,10 @@ class EvidenceContractTests(unittest.TestCase):
         log = "\n".join((
             "The checked task request path is not current.",
             "The checked task request belongs to a stale refresh token.",
+            "The checked task request has no current validated refresh epoch.",
+            "The checked task request belongs to a future refresh token.",
             "The checked task request target is stale on the X11 worker.",
+            "The checked task request target is absent from the latest complete observation.",
             "The window manager rejected a current task request.",
         ))
         diagnostic = task_reactivation_diagnostic(True, False, True, True, False, log)
@@ -604,7 +607,8 @@ class EvidenceContractTests(unittest.TestCase):
             diagnostic,
             "PD1 task reactivation diagnostic: active_target=1 hidden_target=0 "
             "focused_panel=1 focused_task=1 minimized_semantic=0 path_rejected=1 "
-            "token_stale=1 target_stale=1 wm_rejected=1",
+            "token_stale=1 epoch_invalid=1 token_future=1 target_stale=1 "
+            "target_absent=1 wm_rejected=1",
         )
         for private_field in (
                 "display=", "bus_address=", "process_id=", "window_id=", "title="):
