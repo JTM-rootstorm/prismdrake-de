@@ -30,7 +30,7 @@ find_program(PRISMDRAKE_PANEL_WINDOW_XVFB_EXECUTABLE NAMES Xvfb)
 find_program(PRISMDRAKE_PANEL_WINDOW_OPENBOX_EXECUTABLE NAMES openbox)
 find_program(PRISMDRAKE_PANEL_WINDOW_XPROP_EXECUTABLE NAMES xprop)
 set(prismdrake_panel_window_xvfb_runner
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../integration/run_with_xvfb.py")
+    "${PROJECT_SOURCE_DIR}/tests/integration/run_with_xvfb.py")
 
 if(PRISMDRAKE_PANEL_WINDOW_XVFB_EXECUTABLE)
     add_test(
