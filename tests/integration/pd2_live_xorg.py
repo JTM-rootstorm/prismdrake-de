@@ -1771,6 +1771,13 @@ class LiveXorgHarnessPort:
             self._start_session(_session_config("persistent"))
         elif identifier == "verify_component_readiness":
             self._wait_for_session_readiness()
+            # Bind the process-scoped AT-SPI observer to the exact live shell
+            # before the first shell action. Initializing it only after opening
+            # the launcher can miss the already-published application epoch.
+            self._wait_accessible(
+                ControlSelector("Open applications", "push_button"),
+                "shell_accessibility_readiness_timeout",
+            )
             self.capture_process_ownership()
         elif identifier == "verify_desktop_wallpaper_both_outputs":
             self._require_desktop_wallpaper_surfaces()

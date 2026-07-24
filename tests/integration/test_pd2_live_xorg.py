@@ -2071,8 +2071,9 @@ class LivePortTests(unittest.TestCase):
     def test_starts_exact_installed_session_and_attests_distinct_owners(self) -> None:
         operations = FakeOperations()
         executables = installed_paths()
+        accessibility = FakeAccessibility(operations)
         port = LiveXorgHarnessPort(
-            config(executables), operations, FakeAccessibility(operations)
+            config(executables), operations, accessibility
         )
 
         port.run_step("installed_workflow", "start_isolated_two_output_x11")
@@ -2148,9 +2149,49 @@ class LivePortTests(unittest.TestCase):
             ),
         )
         self.assertEqual(len(set(ownership.values())), 4)
+        self.assertEqual(accessibility.observed, ["Open applications"])
 
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
         self.assertEqual(operations.stop_calls, list(reversed(operations.children)))
+
+    def test_component_readiness_fails_before_actions_when_shell_accessibility_is_absent(
+        self,
+    ) -> None:
+        operations = FakeOperations()
+
+        class MissingShellAccessibility(FakeAccessibility):
+            def observe(
+                self,
+                shell_pid: int,
+                selector: object,
+                environment: Mapping[str, str],
+            ) -> bool:
+                super().observe(shell_pid, selector, environment)
+                return selector.name != "Open applications"
+
+        accessibility = MissingShellAccessibility(operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        port.run_step("installed_workflow", "start_isolated_two_output_x11")
+        port.run_step("installed_workflow", "start_installed_prismdrake_session")
+
+        with self.assertRaisesRegex(
+            HarnessError, "^shell_accessibility_readiness_timeout$"
+        ):
+            port.run_step("installed_workflow", "verify_component_readiness")
+
+        self.assertGreaterEqual(
+            accessibility.observed.count("Open applications"), 2
+        )
+        self.assertFalse(
+            any(
+                argv[:3]
+                == ("/usr/bin/prismdrake-shellctl", "launcher", "toggle")
+                for argv, _environment in operations.run_calls
+            )
+        )
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_private_bus_address_accepts_a_non_default_temp_root(self) -> None:
         operations = FakeOperations()
