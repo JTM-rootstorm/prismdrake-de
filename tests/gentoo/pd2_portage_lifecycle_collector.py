@@ -85,14 +85,31 @@ EXCLUSION_REGEX = "^(?:" + "|".join(re.escape(name) for name in EXCLUDED_TESTS) 
 OPTIONAL_PACKAGE_SKIP_TEST = "AtomicFileTest.RejectsDestinationOwnedByAnotherUser"
 OPTIONAL_PACKAGE_SKIP_REASON = "requires_root_ownership_transition"
 PORTAGE_TOTAL_PATTERN = re.compile(
-    r"^Total: (?P<count>[0-9]+) packages?"
-    r"(?:, Size of downloads: [0-9]+(?:\.[0-9]+)? [A-Za-z]+)?$"
+    r"^Total: (?P<count>0|[1-9][0-9]{0,5}) (?P<noun>package|packages)"
+    r"(?: \((?P<summary>[A-Za-z0-9, ]{1,128})\))?"
+    r"(?:, Size of downloads: [0-9]{1,12}(?:\.[0-9]{1,3})? "
+    r"(?:KiB|MiB|GiB))?$"
+)
+PORTAGE_SUMMARY_ITEM_PATTERN = re.compile(
+    r"(?P<count>[1-9][0-9]{0,5}) "
+    r"(?P<label>new|upgrades?|downgrades?|reinstalls?|in new slots?)"
+)
+PORTAGE_ACTION_PATTERN = re.compile(
+    r"(?m)^\s*\[(?:ebuild|binary)\s+(?P<flags>[^\]\r\n]{1,32})\]\s+"
+    r"(?P<atom>\S+)"
 )
 PORTAGE_CONFLICT_PATTERN = re.compile(
     r"(?:\bblocks?\b|\bconflicts?\b|\bmasked\b|\bno ebuilds to satisfy\b|"
     r"\brequired_use\b|\bunsatisfied\b|!!!)",
     re.IGNORECASE,
 )
+PORTAGE_ACTION_CATEGORIES = {
+    "N": "new",
+    "U": "upgrade",
+    "D": "downgrade",
+    "R": "reinstall",
+    "NS": "in_new_slot",
+}
 
 
 class Pd2CollectorError(RuntimeError):
@@ -453,18 +470,56 @@ def capture_portage_qa(
     }
 
 
+def _portage_action_category(flags: str) -> str:
+    tokens = re.findall(r"[A-Z]+", flags)
+    categories = [
+        PORTAGE_ACTION_CATEGORIES[token]
+        for token in tokens if token in PORTAGE_ACTION_CATEGORIES
+    ]
+    _require(len(categories) == 1, "portage_resolution_output_invalid")
+    return categories[0]
+
+
+def _portage_summary_categories(summary: str) -> dict[str, int]:
+    categories: dict[str, int] = {}
+    for item in summary.split(", "):
+        match = PORTAGE_SUMMARY_ITEM_PATTERN.fullmatch(item)
+        _require(match is not None, "portage_resolution_output_invalid")
+        count = int(match["count"])
+        label = match["label"]
+        if label == "new":
+            category = "new"
+        elif label.startswith("upgrade"):
+            category = "upgrade"
+            _require((count == 1) is (label == "upgrade"),
+                     "portage_resolution_output_invalid")
+        elif label.startswith("downgrade"):
+            category = "downgrade"
+            _require((count == 1) is (label == "downgrade"),
+                     "portage_resolution_output_invalid")
+        elif label.startswith("reinstall"):
+            category = "reinstall"
+            _require((count == 1) is (label == "reinstall"),
+                     "portage_resolution_output_invalid")
+        else:
+            category = "in_new_slot"
+            _require((count == 1) is (label == "in new slot"),
+                     "portage_resolution_output_invalid")
+        _require(category not in categories, "portage_resolution_output_invalid")
+        categories[category] = count
+    return categories
+
+
 def _validate_portage_resolution_output(output: str, repository_name: str) -> bool:
     """Return whether one successful pretend is an installed zero-change result."""
 
     _require(bool(output.strip()), "portage_resolution_output_invalid")
     _require(PORTAGE_CONFLICT_PATTERN.search(output) is None,
              "portage_resolution_output_invalid")
-    action_pattern = re.compile(
-        r"(?m)^\s*\[(?:ebuild|binary)[^\]]*\]\s+"
-        rf"=?{re.escape(PACKAGE_VERSIONED_ATOM)}::{re.escape(repository_name)}"
-        r"(?:\s|$)"
-    )
-    exact_action = action_pattern.search(output) is not None
+    actions = list(PORTAGE_ACTION_PATTERN.finditer(output))
+    exact_atom = f"{PACKAGE_VERSIONED_ATOM}::{repository_name}"
+    exact_action = any(match["atom"].removeprefix("=") == exact_atom
+                       for match in actions)
     total_lines = [
         line.strip() for line in output.splitlines()
         if line.strip().startswith("Total:")
@@ -473,19 +528,35 @@ def _validate_portage_resolution_output(output: str, repository_name: str) -> bo
         PORTAGE_TOTAL_PATTERN.fullmatch(total_lines[0])
         if len(total_lines) == 1 else None
     )
-    if exact_action:
-        _require(not total_lines or
-                 (total_match is not None and int(total_match["count"]) > 0),
+    if total_match is not None:
+        _require((int(total_match["count"]) == 1) is
+                 (total_match["noun"] == "package"),
                  "portage_resolution_output_invalid")
+    if exact_action:
+        if total_lines:
+            _require(total_match is not None and int(total_match["count"]) > 0 and
+                     total_match["summary"] is not None,
+                     "portage_resolution_output_invalid")
+            action_categories: dict[str, int] = {}
+            for action in actions:
+                category = _portage_action_category(action["flags"])
+                action_categories[category] = action_categories.get(category, 0) + 1
+            summary_categories = _portage_summary_categories(total_match["summary"])
+            _require(int(total_match["count"]) == len(actions) and
+                     sum(summary_categories.values()) == len(actions) and
+                     summary_categories == action_categories,
+                     "portage_resolution_output_invalid")
         return False
 
     _require(total_match is not None and int(total_match["count"]) == 0,
              "portage_resolution_output_invalid")
+    _require(total_match["summary"] is None, "portage_resolution_output_invalid")
     _require(re.search(
         rf"(?<![A-Za-z0-9+_.-]){re.escape(PACKAGE_ATOM)}[^\s]*", output,
     ) is None, "portage_resolution_output_invalid")
-    _require(re.search(r"(?m)^\s*\[(?:ebuild|binary|blocks?)[^\]]*\]", output) is None,
-             "portage_resolution_output_invalid")
+    _require(not actions and re.search(
+        r"(?m)^\s*\[(?:ebuild|binary|blocks?)[^\]]*\]", output,
+    ) is None, "portage_resolution_output_invalid")
     return True
 
 

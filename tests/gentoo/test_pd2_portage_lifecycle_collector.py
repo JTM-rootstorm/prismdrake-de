@@ -870,6 +870,42 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             self.assertEqual([command[1] for command in emerge_calls],
                              ["USE=-test", "USE=test"])
 
+            real_reinstall_output = (
+                '[ebuild R *] x11-misc/prismdrake-9999::prismdrake-local '
+                'USE="-test*"\n'
+                "Total: 1 package (1 reinstall), Size of downloads: 0 KiB\n"
+            )
+
+            def real_summary_runner(command: list[str], cwd: Path | None) -> str:
+                if command[0] == "/usr/bin/env" and command[1] == "USE=-test":
+                    return real_reinstall_output
+                return runner(command, cwd)
+
+            real_summary_records = capture_portage_resolutions(
+                attestation, source, hash_file=hash_file,
+                command_runner=real_summary_runner,
+            )
+            self.assertEqual(real_summary_records[0]["mode"], "default")
+
+            plural_summary_output = (
+                "[ebuild U] dev-libs/example-2::gentoo\n"
+                "[ebuild R *] x11-misc/prismdrake-9999::prismdrake-local "
+                'USE="-test*"\n'
+                "Total: 2 packages (1 upgrade, 1 reinstall), "
+                "Size of downloads: 0 KiB\n"
+            )
+
+            def plural_summary_runner(command: list[str], cwd: Path | None) -> str:
+                if command[0] == "/usr/bin/env" and command[1] == "USE=-test":
+                    return plural_summary_output
+                return runner(command, cwd)
+
+            plural_summary_records = capture_portage_resolutions(
+                attestation, source, hash_file=hash_file,
+                command_runner=plural_summary_runner,
+            )
+            self.assertEqual(plural_summary_records[0]["mode"], "default")
+
             def zero_change_use_test(command: list[str], cwd: Path | None) -> str:
                 if command[0] == "/usr/bin/env" and command[1] == "USE=test":
                     return (
@@ -899,6 +935,19 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 "masked conflict\nTotal: 0 packages\n",
                 "[ebuild N] x11-misc/prismdrake-9999::prismdrake-local test\n"
                 "Total: 0 packages\n",
+                real_reinstall_output.replace(
+                    "1 package (1 reinstall)", "2 packages (1 reinstall)",
+                ),
+                real_reinstall_output.replace("(1 reinstall)", "(1 upgrade)"),
+                real_reinstall_output.replace("(1 reinstall)", "(1 refresh)"),
+                real_reinstall_output.replace("(1 reinstall)", "(1 reinstalls)"),
+                real_reinstall_output.replace("1 package", "1 packages"),
+                real_reinstall_output.replace("[ebuild R *]", "[nomerge R *]"),
+                real_reinstall_output.replace("[ebuild R *]", "[ebuild X *]"),
+                real_reinstall_output.replace(
+                    "(1 reinstall),", "(1 reinstall, security fix),",
+                ),
+                real_reinstall_output.replace("0 KiB", "0 KiB unexpected"),
             )
             for invalid_output in invalid_use_test_outputs:
                 with self.subTest(invalid_output=invalid_output):
