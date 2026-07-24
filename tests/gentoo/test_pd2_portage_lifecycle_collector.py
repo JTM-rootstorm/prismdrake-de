@@ -52,6 +52,19 @@ from pd2_portage_lifecycle_evidence import (
 
 
 class Pd2LifecycleCollectorTests(unittest.TestCase):
+    def test_package_exclusion_regex_uses_ctest_compatible_grouping(self) -> None:
+        self.assertEqual(
+            collector.EXCLUSION_REGEX,
+            "^(" + "|".join(re.escape(name) for name in EXCLUDED_TESTS) + ")$",
+        )
+        self.assertNotIn("(?:", collector.EXCLUSION_REGEX)
+        for test_name in EXCLUDED_TESTS:
+            with self.subTest(test_name=test_name):
+                self.assertIsNotNone(re.fullmatch(collector.EXCLUSION_REGEX, test_name))
+        self.assertIsNone(
+            re.fullmatch(collector.EXCLUSION_REGEX, "UnreviewedPackageTest")
+        )
+
     @staticmethod
     def create_python(root: Path, name: str = "python") -> Path:
         executable = root / name

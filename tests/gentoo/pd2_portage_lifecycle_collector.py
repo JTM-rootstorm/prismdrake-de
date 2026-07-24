@@ -84,7 +84,7 @@ EBUILD_RELATIVE_PATH = Path(
 )
 CTEST_INVENTORY_RELATIVE_PATH = Path("tests/gentoo/pd2-ctest-inventory-v1.json")
 BUILD_PROVENANCE_PATH = Path("/usr/share/prismdrake/build-provenance.json")
-EXCLUSION_REGEX = "^(?:" + "|".join(re.escape(name) for name in EXCLUDED_TESTS) + ")$"
+EXCLUSION_REGEX = "^(" + "|".join(re.escape(name) for name in EXCLUDED_TESTS) + ")$"
 OPTIONAL_PACKAGE_SKIP_TEST = "AtomicFileTest.RejectsDestinationOwnedByAnotherUser"
 OPTIONAL_PACKAGE_SKIP_REASON = "requires_root_ownership_transition"
 PORTAGE_TOTAL_PATTERN = re.compile(
