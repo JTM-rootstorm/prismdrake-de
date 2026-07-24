@@ -151,7 +151,9 @@ class X11TaskIoOperations final : public TaskIoOperations {
     void cancelWaits() noexcept override {
         const int descriptor = connection_.eventFileDescriptor();
         if (descriptor >= 0) {
-            (void)shutdown(descriptor, SHUT_RDWR);
+            // Interrupt reply-bearing reads without disabling libxcb writes that may still be
+            // completing on the sole worker before it observes the stop request and joins.
+            (void)shutdown(descriptor, SHUT_RD);
         }
     }
 
