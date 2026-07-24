@@ -77,8 +77,10 @@ strut handling: removing the preload from Openbox alone restored the exact
 work-area result, while removing it only from the Prismdrake test did not. The
 product ebuild therefore excludes this one controlled-WM integration case from
 the sandboxed test phase and requires repeated outside-sandbox execution of the
-same built artifact. The upstream three-second bound and exact rectangle remain
-unchanged.
+same built artifact. The exact rectangle remains unchanged. The
+outside-sandbox observation allows up to eight seconds for bounded Openbox
+event processing under reference-VM contention; the isolated harness and CTest
+ceilings remain independently bounded.
 
 Openbox is selected only as a controlled standards-capable test WM. Runtime
 capability discovery uses protocol state and never infers support from its

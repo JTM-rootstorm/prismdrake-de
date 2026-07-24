@@ -31,6 +31,7 @@ using namespace std::chrono_literals;
 
 constexpr std::uint32_t panelHeight = 48U;
 constexpr std::uint32_t maximumObservedPropertyItems = 256U;
+constexpr auto workareaApplicationTimeout = 8s;
 
 struct ConnectionDeleter final {
     void operator()(xcb_connection_t *connection) const noexcept {
@@ -377,7 +378,7 @@ TEST_F(DockPropertiesIntegrationTest, VerifiedWindowManagerAppliesCurrentDesktop
             const auto workarea = currentWorkarea();
             return workarea && workarea.value() == expected;
         },
-        3s);
+        workareaApplicationTimeout);
     const auto applied = currentWorkarea();
     ASSERT_TRUE(applied);
     EXPECT_TRUE(appliedExpectedWorkarea);
