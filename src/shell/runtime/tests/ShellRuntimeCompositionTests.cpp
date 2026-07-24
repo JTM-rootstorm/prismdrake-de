@@ -301,31 +301,30 @@ TEST(ShellRuntimeCompositionTest, LauncherActionMenuRetainsParentAndRestoresExac
     });
     ASSERT_NE(restore, dismissBatch.end());
     EXPECT_EQ(std::get<composition::RestoreControlFocusIntent>(*restore).origin, origin);
-}
 
-TEST(ShellRuntimeCompositionTest, TaskActivationDismissalReleasesFocusToWindowManager) {
-    PresentationPort port;
-    ShellRuntimeComposition runtime{port};
-    TopologyHarness topology;
+    {
+        PresentationPort taskPort;
+        ShellRuntimeComposition taskRuntime{taskPort};
+        TopologyHarness taskTopology;
 
-    ASSERT_TRUE(runtime.observeOutputs(topology.observe(1U)));
-    ASSERT_TRUE(runtime.observeSettingsOwner(authority(10U, 1U)));
-    auto output = composition::OutputName::create("LEFT-1").value();
-    auto controlId = composition::FocusControlId::create("panel-task-strip").value();
-    auto origin = composition::FocusOrigin::control(
-                      output, composition::FocusControlRole::panelTaskGroup, controlId)
-                      .value();
+        ASSERT_TRUE(taskRuntime.observeOutputs(taskTopology.observe(1U)));
+        ASSERT_TRUE(taskRuntime.observeSettingsOwner(authority(10U, 1U)));
+        auto taskControlId = composition::FocusControlId::create("panel-task-strip").value();
+        auto taskOrigin = composition::FocusOrigin::control(
+                              output, composition::FocusControlRole::panelTaskGroup, taskControlId)
+                              .value();
 
-    ASSERT_TRUE(runtime.present(SurfaceFamily::actionMenu, "LEFT-1", origin));
-    ASSERT_TRUE(runtime.dismissToWindowManager(SurfaceFamily::actionMenu));
-    ASSERT_TRUE(runtime.state().activeSurfaces().empty());
-    const auto &dismissBatch = port.batches.back();
-    EXPECT_TRUE(std::ranges::any_of(dismissBatch, [](const auto &intent) {
-        return std::holds_alternative<composition::ReleaseFocusToWindowManagerIntent>(intent);
-    }));
-    EXPECT_FALSE(std::ranges::any_of(dismissBatch, [](const auto &intent) {
-        return std::holds_alternative<composition::RestoreControlFocusIntent>(intent);
-    }));
+        ASSERT_TRUE(taskRuntime.present(SurfaceFamily::actionMenu, "LEFT-1", taskOrigin));
+        ASSERT_TRUE(taskRuntime.dismissToWindowManager(SurfaceFamily::actionMenu));
+        ASSERT_TRUE(taskRuntime.state().activeSurfaces().empty());
+        const auto &taskDismissBatch = taskPort.batches.back();
+        EXPECT_TRUE(std::ranges::any_of(taskDismissBatch, [](const auto &intent) {
+            return std::holds_alternative<composition::ReleaseFocusToWindowManagerIntent>(intent);
+        }));
+        EXPECT_FALSE(std::ranges::any_of(taskDismissBatch, [](const auto &intent) {
+            return std::holds_alternative<composition::RestoreControlFocusIntent>(intent);
+        }));
+    }
 }
 
 TEST(ShellRuntimeCompositionTest, PanelLauncherTogglePreservesExactEscapeFocusOrigin) {
