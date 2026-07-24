@@ -4869,14 +4869,18 @@ class LiveXorgHarnessPort:
         else:
             raise HarnessError("failure_surface_republication_timeout")
 
+        root_bottom = max(
+            geometry.y + geometry.height for geometry in expected_desktops
+        )
         for window, geometry in panels.items():
             strut = self._window_cardinals(window, b"_NET_WM_STRUT", 4)
             partial = self._window_cardinals(window, b"_NET_WM_STRUT_PARTIAL", 12)
-            if strut != (0, 0, 0, PANEL_HEIGHT) or partial != (
+            bottom = root_bottom - geometry.y
+            if strut != (0, 0, 0, bottom) or partial != (
                 0,
                 0,
                 0,
-                PANEL_HEIGHT,
+                bottom,
                 0,
                 0,
                 0,

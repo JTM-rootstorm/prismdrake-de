@@ -207,7 +207,11 @@ class FakeOperations:
             window: xwininfo_payload(window, geometry)
             for window, geometry in SURFACE_GEOMETRIES.items()
         }
-        self.panel_strut_bottom = 48
+        self.panel_strut_bottom: int | None = None
+        self.panel_strut_bottoms = {
+            PANEL_LEFT: 48,
+            PANEL_RIGHT: 48,
+        }
         self.component_pids = {
             "prismdrake-settingsd": 2002,
             "prismdrake-notifyd": 2003,
@@ -396,10 +400,15 @@ class FakeOperations:
                     )
                 return CommandResult(0, b"_NET_WM_STATE:  not found.\n")
             geometry = self.surface_geometries[window]
+            panel_strut_bottom = (
+                self.panel_strut_bottom
+                if self.panel_strut_bottom is not None
+                else self.panel_strut_bottoms.get(window, 48)
+            )
             if property_name == "_NET_WM_STRUT":
                 return CommandResult(
                     0,
-                    f"_NET_WM_STRUT(CARDINAL) = 0, 0, 0, {self.panel_strut_bottom}\n".encode(
+                    f"_NET_WM_STRUT(CARDINAL) = 0, 0, 0, {panel_strut_bottom}\n".encode(
                         "ascii"
                     ),
                 )
@@ -408,7 +417,7 @@ class FakeOperations:
                     0,
                     0,
                     0,
-                    48,
+                    panel_strut_bottom,
                     0,
                     0,
                     0,
@@ -437,6 +446,9 @@ class FakeOperations:
             "DUMMY0": (DESKTOP_LEFT, PANEL_LEFT),
             "DUMMY1": (DESKTOP_RIGHT, PANEL_RIGHT),
         }
+        root_bottom = max(
+            (output.y + output.height for output in outputs.values()), default=0
+        )
         surfaces: list[int] = []
         for name, (desktop, panel) in identifiers.items():
             output = outputs.get(name)
@@ -453,6 +465,7 @@ class FakeOperations:
             )
             self.surface_geometries[desktop] = desktop_geometry
             self.surface_geometries[panel] = panel_geometry
+            self.panel_strut_bottoms[panel] = root_bottom - panel_geometry.y
             self.window_geometry_payloads[desktop] = xwininfo_payload(
                 desktop, desktop_geometry
             )
@@ -2878,6 +2891,11 @@ class LivePortTests(unittest.TestCase):
                     port.run_step("failure_replay", identifier),
                     Observation(True, True),
                 )
+                if identifier == "change_output_geometry":
+                    self.assertEqual(
+                        operations.panel_strut_bottoms,
+                        {PANEL_LEFT: 948, PANEL_RIGHT: 48},
+                    )
                 self.assertEqual(
                     port.cleanup("failure_replay"), Observation(True, True)
                 )
