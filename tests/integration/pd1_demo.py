@@ -944,6 +944,24 @@ def focus_task_from_panel(atspi: Any, xdotool: Path, panel: str,
     return panel
 
 
+def reactivate_focused_task_from_panel(atspi: Any, xdotool: Path, panel: str,
+                                       shell_identity: ProcessIdentity, title: str) -> str:
+    require(title in APP_TITLES, "task_reactivation_target_invalid")
+
+    def focused_owned_task() -> str | None:
+        current = current_shell_panel(atspi, xdotool, shell_identity)
+        if current is None or focused_window_id(xdotool) != current or not \
+                has_showing_focused_action(atspi, title):
+            return None
+        return current
+
+    panel = wait_until(focused_owned_task, "task_reactivation_focus_timeout")
+    send_focused_window_action_key(
+        atspi, xdotool, panel, shell_identity, title, "Return",
+    )
+    return panel
+
+
 def open_task_context_menu(atspi: Any, xdotool: Path, panel: str,
                            shell_identity: ProcessIdentity, title: str,
                            expected_action: str = "Minimize") -> str:
@@ -1404,12 +1422,8 @@ def run_session_child(arguments: argparse.Namespace) -> None:
             "task_minimized_accessibility_timeout",
         )
 
-        panel = focus_task_from_panel(
+        panel = reactivate_focused_task_from_panel(
             Atspi, arguments.xdotool, panel, initial_shell_identity, APP_TITLES[0],
-        )
-        send_focused_window_action_key(
-            Atspi, arguments.xdotool, panel, initial_shell_identity,
-            APP_TITLES[0], "Return",
         )
         wait_until(
             lambda: (first if run_checked([

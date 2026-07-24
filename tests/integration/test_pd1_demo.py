@@ -44,6 +44,7 @@ from pd1_demo import (
     parse_utf8_property,
     parse_window_property,
     process_identity_alive,
+    reactivate_focused_task_from_panel,
     require_distinct_process_identity,
     require_normal_ready,
     require_normal_snapshot,
@@ -564,6 +565,31 @@ class EvidenceContractTests(unittest.TestCase):
             atspi, xdotool, "30", ProcessIdentity(42, 100, 102),
             "Open applications", "Tab",
         )
+
+    def test_reactivation_reuses_restored_task_focus_without_launcher_churn(self) -> None:
+        atspi = object()
+        xdotool = Path("/usr/bin/xdotool")
+        identity = ProcessIdentity(42, 100, 102)
+
+        def wait(predicate: object, code: str, **_kwargs: object) -> object:
+            self.assertEqual(code, "task_reactivation_focus_timeout")
+            return predicate()
+
+        with mock.patch.object(pd1_demo, "current_shell_panel", return_value="30"), \
+                mock.patch.object(pd1_demo, "focused_window_id", return_value="30"), \
+                mock.patch.object(pd1_demo, "has_showing_focused_action", return_value=True), \
+                mock.patch.object(pd1_demo, "wait_until", side_effect=wait), \
+                mock.patch.object(pd1_demo, "send_focused_window_action_key") as key_sender, \
+                mock.patch.object(pd1_demo, "press") as launcher_press:
+            observed = reactivate_focused_task_from_panel(
+                atspi, xdotool, "10", identity, APP_TITLES[0],
+            )
+
+        self.assertEqual(observed, "30")
+        key_sender.assert_called_once_with(
+            atspi, xdotool, "30", identity, APP_TITLES[0], "Return",
+        )
+        launcher_press.assert_not_called()
 
     def test_cleanup_identity_bounds_fail_closed(self) -> None:
         fixture = ProcessIdentity(2, 1, 0)
