@@ -62,6 +62,9 @@ MAX_CAPTURE_FILE_BYTES = 256 * 1024 * 1024
 MAX_CAPTURE_JSON_BYTES = 524_288
 MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024
 MAX_CTEST_JUNIT_BYTES = 16 * 1024 * 1024
+MAX_CTEST_PROJECT_FILES = 16_384
+MAX_CTEST_PROJECT_DIRECTORIES = 256
+MAX_CTEST_PROJECT_BYTES = 256 * 1024 * 1024
 SOURCE_COMMAND_TIMEOUT_SECONDS = 30
 OBSERVER_COMMAND_TIMEOUT_SECONDS = 120
 CTEST_COMMAND_TIMEOUT_SECONDS = 1800
@@ -977,8 +980,15 @@ def _test_manifest_sha256(
     expected_fixture = build_directory / "tests/integration/prismdrake-controlled-window-fixture"
     _require(controlled_fixture == expected_fixture and controlled_fixture.is_absolute(),
              "controlled_fixture_build_mismatch")
+    _require(
+        all(
+            root.is_absolute() and root.is_dir() and not root.is_symlink()
+            for root in (build_directory, source_checkout)
+        ),
+        "ctest_project_command_unbound",
+    )
 
-    def project_file(candidate: Path) -> Path | None:
+    def project_artifacts(candidate: Path) -> tuple[Path, ...] | None:
         if not candidate.is_absolute():
             return None
         for root in (build_directory, source_checkout):
@@ -986,39 +996,132 @@ def _test_manifest_sha256(
                 relative = candidate.relative_to(root)
             except ValueError:
                 continue
-            if ".." in relative.parts:
-                return None
+            if not relative.parts or ".." in relative.parts:
+                raise Pd2CollectorError("ctest_project_command_unbound")
             current = root
             try:
                 for part in relative.parts:
                     current /= part
                     if current.is_symlink():
-                        return None
+                        raise Pd2CollectorError("ctest_project_command_unbound")
                 resolved_root = root.resolve(strict=True)
                 resolved = candidate.resolve(strict=True)
                 resolved.relative_to(resolved_root)
             except (OSError, RuntimeError, ValueError):
-                return None
+                raise Pd2CollectorError("ctest_project_command_unbound") from None
             if resolved.is_file():
-                return resolved
+                return (resolved,)
+            if not resolved.is_dir():
+                raise Pd2CollectorError("ctest_project_command_unbound")
+
+            artifacts: list[Path] = []
+            artifact_bytes = 0
+            directory_count = 0
+
+            def collect(directory: Path) -> None:
+                nonlocal artifact_bytes, directory_count
+                directory_count += 1
+                _require(
+                    directory_count <= MAX_CTEST_PROJECT_DIRECTORIES,
+                    "ctest_project_manifest_oversized",
+                )
+                try:
+                    metadata = directory.lstat()
+                    _require(
+                        stat.S_ISDIR(metadata.st_mode) and
+                        not stat.S_ISLNK(metadata.st_mode),
+                        "ctest_project_command_unbound",
+                    )
+                    with os.scandir(directory) as entries:
+                        found_entry = False
+                        for entry in entries:
+                            found_entry = True
+                            try:
+                                entry_metadata = entry.stat(
+                                    follow_symlinks=False
+                                )
+                            except OSError as error:
+                                raise Pd2CollectorError(
+                                    "ctest_project_command_unbound"
+                                ) from error
+                            path = Path(entry.path)
+                            if stat.S_ISREG(entry_metadata.st_mode):
+                                _require(
+                                    len(artifacts) < MAX_CTEST_PROJECT_FILES,
+                                    "ctest_project_manifest_oversized",
+                                )
+                                artifact_bytes += entry_metadata.st_size
+                                _require(
+                                    0 <= artifact_bytes
+                                    <= MAX_CTEST_PROJECT_BYTES,
+                                    "ctest_project_manifest_oversized",
+                                )
+                                artifacts.append(path)
+                            elif stat.S_ISDIR(entry_metadata.st_mode):
+                                collect(path)
+                            else:
+                                raise Pd2CollectorError(
+                                    "ctest_project_command_unbound"
+                                )
+                except OSError as error:
+                    raise Pd2CollectorError(
+                        "ctest_project_command_unbound"
+                    ) from error
+                _require(found_entry, "ctest_project_command_unbound")
+
+            collect(resolved)
+            _require(artifacts, "ctest_project_command_unbound")
+            return tuple(sorted(artifacts, key=str))
         return None
 
-    resolved_fixture = project_file(controlled_fixture)
-    _require(resolved_fixture is not None, "controlled_fixture_build_mismatch")
     project_files: dict[str, str] = {}
+    project_bytes = 0
+
+    def bind_artifact(artifact: Path) -> None:
+        nonlocal project_bytes
+        native = str(artifact)
+        if native in project_files:
+            return
+        try:
+            metadata = artifact.lstat()
+        except OSError as error:
+            raise Pd2CollectorError("ctest_project_command_unbound") from error
+        _require(
+            stat.S_ISREG(metadata.st_mode) and
+            not stat.S_ISLNK(metadata.st_mode) and
+            metadata.st_size >= 0,
+            "ctest_project_command_unbound",
+        )
+        _require(
+            len(project_files) < MAX_CTEST_PROJECT_FILES,
+            "ctest_project_manifest_oversized",
+        )
+        project_bytes += metadata.st_size
+        _require(
+            project_bytes <= MAX_CTEST_PROJECT_BYTES,
+            "ctest_project_manifest_oversized",
+        )
+        project_files[native] = _require_sha256(hash_file(artifact))
+
+    resolved_fixture = project_artifacts(controlled_fixture)
+    _require(
+        resolved_fixture is not None and len(resolved_fixture) == 1,
+        "controlled_fixture_build_mismatch",
+    )
     normalized_tests = []
     for item in inventory:
         command = item["command"]
         found_project_file = False
         for token in command:
             candidate = Path(token)
-            resolved = project_file(candidate)
-            if resolved is not None:
-                project_files[str(resolved)] = _require_sha256(hash_file(resolved))
+            artifacts = project_artifacts(candidate)
+            if artifacts is not None:
+                for artifact in artifacts:
+                    bind_artifact(artifact)
                 found_project_file = True
         _require(found_project_file, "ctest_project_command_unbound")
         normalized_tests.append({"name": item["name"], "command": command})
-    project_files[str(resolved_fixture)] = _require_sha256(hash_file(resolved_fixture))
+    bind_artifact(resolved_fixture[0])
     payload = {
         "tests": normalized_tests,
         "project_files": [

@@ -581,6 +581,107 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                     inventory, build, source, fixture, hash_file,
                 )
 
+    def test_manifest_binds_qml_directory_deterministically_and_with_bounds(
+            self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            build = root / "build"
+            qml = source / "tests/qt/qml"
+            nested = qml / "controls"
+            fixture = (
+                build
+                / "tests/integration/prismdrake-controlled-window-fixture"
+            )
+            nested.mkdir(parents=True)
+            fixture.parent.mkdir(parents=True)
+            fixture.write_bytes(b"fixture")
+            (nested / "Card.qml").write_bytes(b"Card {}")
+            (qml / "tst_Card.qml").write_bytes(b"TestCase {}")
+            inventory = [{
+                "name": "NotificationCardQmlTest",
+                "command": [
+                    "/usr/lib64/qt6/bin/qmltestrunner", "-input", str(qml),
+                ],
+            }]
+
+            first = collector._test_manifest_sha256(
+                inventory, build, source, fixture, sha256_regular_file,
+            )
+            second = collector._test_manifest_sha256(
+                inventory, build, source, fixture, sha256_regular_file,
+            )
+            self.assertEqual(first, second)
+            (nested / "Card.qml").write_bytes(b"Card { changed: true }")
+            self.assertNotEqual(
+                first,
+                collector._test_manifest_sha256(
+                    inventory, build, source, fixture, sha256_regular_file,
+                ),
+            )
+
+            empty = source / "empty"
+            empty.mkdir()
+            inventory[0]["command"][-1] = str(empty)
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^ctest_project_command_unbound$"):
+                collector._test_manifest_sha256(
+                    inventory, build, source, fixture, sha256_regular_file,
+                )
+
+            symlink_file_directory = source / "symlink-file"
+            symlink_file_directory.mkdir()
+            (symlink_file_directory / "Card.qml").symlink_to(
+                nested / "Card.qml"
+            )
+            inventory[0]["command"][-1] = str(symlink_file_directory)
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^ctest_project_command_unbound$"):
+                collector._test_manifest_sha256(
+                    inventory, build, source, fixture, sha256_regular_file,
+                )
+
+            symlink_directory = source / "symlink-directory"
+            symlink_directory.mkdir()
+            (symlink_directory / "controls").symlink_to(nested)
+            inventory[0]["command"][-1] = str(symlink_directory)
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^ctest_project_command_unbound$"):
+                collector._test_manifest_sha256(
+                    inventory, build, source, fixture, sha256_regular_file,
+                )
+
+            escaped = root / "escaped"
+            escaped.write_bytes(b"escaped")
+            project_command = build / "project-command"
+            project_command.write_bytes(b"command")
+            inventory[0]["command"] = [
+                str(project_command), str(source / "../escaped"),
+            ]
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^ctest_project_command_unbound$"):
+                collector._test_manifest_sha256(
+                    inventory, build, source, fixture, sha256_regular_file,
+                )
+
+            inventory[0]["command"] = [str(qml)]
+            with mock.patch.object(collector, "MAX_CTEST_PROJECT_FILES", 2):
+                with self.assertRaisesRegex(
+                        Pd2CollectorError,
+                        "^ctest_project_manifest_oversized$"):
+                    collector._test_manifest_sha256(
+                        inventory, build, source, fixture,
+                        sha256_regular_file,
+                    )
+            with mock.patch.object(collector, "MAX_CTEST_PROJECT_BYTES", 1):
+                with self.assertRaisesRegex(
+                        Pd2CollectorError,
+                        "^ctest_project_manifest_oversized$"):
+                    collector._test_manifest_sha256(
+                        inventory, build, source, fixture,
+                        sha256_regular_file,
+                    )
+
     def test_ctest_contract_rejects_command_and_behavior_property_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
