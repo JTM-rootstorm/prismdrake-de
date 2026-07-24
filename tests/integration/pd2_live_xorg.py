@@ -30,6 +30,7 @@ from typing import Protocol
 
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation
 from pd2_live_atspi import (
+    APPLICATION_ERROR_CATEGORIES,
     CategoricalResult as AtspiCategoricalResult,
     ControlReference,
     ControlSelector,
@@ -263,6 +264,8 @@ class AccessibilityOperations(Protocol):
 
     def initialize(self, environment: Mapping[str, str]) -> bool: ...
 
+    def application_error_category(self) -> str | None: ...
+
     def observe_application(
         self, shell_pid: int, environment: Mapping[str, str]
     ) -> bool: ...
@@ -323,18 +326,19 @@ class SystemAccessibilityOperations:
 
     def __init__(self) -> None:
         self._atspi: object | None = None
+        self._application_error: str | None = None
 
     @staticmethod
     @contextmanager
     def _environment(environment: Mapping[str, str]):
         if not all(
             isinstance(environment.get(name), str) and environment[name]
-            for name in ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
+            for name in ("AT_SPI_BUS_ADDRESS", "DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
         ):
             raise HarnessError("live_atspi_environment_invalid")
         selected = {
             name: environment[name]
-            for name in ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
+            for name in ("AT_SPI_BUS_ADDRESS", "DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
         }
         previous = {name: os.environ.get(name) for name in selected}
         try:
@@ -368,6 +372,9 @@ class SystemAccessibilityOperations:
             self._binding()
         return True
 
+    def application_error_category(self) -> str | None:
+        return self._application_error
+
     @staticmethod
     def _owner(shell_pid: int):
         def matches(application: object) -> bool:
@@ -393,8 +400,13 @@ class SystemAccessibilityOperations:
         try:
             with self._environment(environment):
                 observe_application_owner(self._binding(), self._owner(shell_pid))
-        except LiveAtspiError:
+        except LiveAtspiError as error:
+            category = str(error)
+            self._application_error = (
+                category if category in APPLICATION_ERROR_CATEGORIES else None
+            )
             return False
+        self._application_error = None
         return True
 
     def invoke(
@@ -1691,6 +1703,7 @@ class LiveXorgHarnessPort:
         self._session: ChildProcess | None = None
         self._bus_process_identity: ProcessIdentity | None = None
         self._bus_socket_identity: tuple[int, int] | None = None
+        self._accessibility_bus_address: str | None = None
         self._desktop_surfaces: dict[int, WindowGeometry] | None = None
         self._surface_shell_identity: ProcessIdentity | None = None
         self._controlled_windows: dict[str, int] = {}
@@ -3713,6 +3726,7 @@ class LiveXorgHarnessPort:
         self._display = None
         self._bus_process_identity = None
         self._bus_socket_identity = None
+        self._accessibility_bus_address = None
         self._desktop_surfaces = None
         self._surface_shell_identity = None
         self._controlled_windows.clear()
@@ -4198,6 +4212,11 @@ class LiveXorgHarnessPort:
             ):
                 return
             self._operations.pause(0.05)
+        category = self._accessibility.application_error_category()
+        if category in APPLICATION_ERROR_CATEGORIES:
+            raise HarnessError(
+                f"shell_accessibility_readiness_timeout_{category}"
+            )
         raise HarnessError("shell_accessibility_readiness_timeout")
 
     def _wait_accessible_absent(
@@ -4706,7 +4725,8 @@ class LiveXorgHarnessPort:
                 "QT_LINUX_ACCESSIBILITY_ALWAYS_ON": "1",
             }
         )
-        self._activate_accessibility_bus(environment)
+        self._accessibility_bus_address = self._activate_accessibility_bus(environment)
+        environment["AT_SPI_BUS_ADDRESS"] = self._accessibility_bus_address
         if not self._accessibility.initialize(environment):
             raise HarnessError("live_atspi_initialization_failed")
         argv = (
@@ -4724,7 +4744,7 @@ class LiveXorgHarnessPort:
             self._session = None
             raise HarnessError("prismdrake_session_start_failed")
 
-    def _activate_accessibility_bus(self, environment: Mapping[str, str]) -> None:
+    def _activate_accessibility_bus(self, environment: Mapping[str, str]) -> str:
         deadline = self._operations.monotonic() + self._config.readiness_timeout
         while self._operations.monotonic() < deadline:
             if self._bus is None or self._bus.poll() is not None:
@@ -4782,7 +4802,7 @@ class LiveXorgHarnessPort:
                     and registry.stdout.strip() == b"()"
                     and not registry.stderr
                 ):
-                    return
+                    return address
             except HarnessError:
                 pass
             self._operations.pause(0.05)
@@ -4829,6 +4849,8 @@ class LiveXorgHarnessPort:
         self._attest_private_bus()
         environment = self._x11_environment()
         environment["DBUS_SESSION_BUS_ADDRESS"] = self._private_bus_address()
+        if self._accessibility_bus_address is not None:
+            environment["AT_SPI_BUS_ADDRESS"] = self._accessibility_bus_address
         return environment
 
     def _inspect_private_bus_socket(self) -> tuple[int, int] | None:

@@ -636,11 +636,15 @@ class FakeAccessibility:
         self.references: list[object] = []
         self.initialization_environments: list[dict[str, str]] = []
         self.initialization_spawn_counts: list[int] = []
+        self.application_error: str | None = None
 
     def initialize(self, environment: Mapping[str, str]) -> bool:
         self.initialization_environments.append(dict(environment))
         self.initialization_spawn_counts.append(len(self.operations.spawn_calls))
         return True
+
+    def application_error_category(self) -> str | None:
+        return self.application_error
 
     def observe_application(
         self, shell_pid: int, environment: Mapping[str, str]
@@ -2137,6 +2141,10 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertEqual(session_environment["QT_QPA_PLATFORM"], "xcb")
         self.assertEqual(session_environment["QT_QUICK_BACKEND"], "software")
+        self.assertEqual(
+            session_environment["AT_SPI_BUS_ADDRESS"],
+            "unix:path=/tmp/private-atspi",
+        )
         self.assertEqual(accessibility.initialization_spawn_counts, [3])
         self.assertEqual(
             accessibility.initialization_environments,
@@ -2189,6 +2197,7 @@ class LivePortTests(unittest.TestCase):
                 environment: Mapping[str, str],
             ) -> bool:
                 super().observe_application(shell_pid, environment)
+                self.application_error = "atspi_application_missing"
                 return False
 
         accessibility = MissingShellAccessibility(operations)
@@ -2199,7 +2208,8 @@ class LivePortTests(unittest.TestCase):
         port.run_step("installed_workflow", "start_installed_prismdrake_session")
 
         with self.assertRaisesRegex(
-            HarnessError, "^shell_accessibility_readiness_timeout$"
+            HarnessError,
+            "^shell_accessibility_readiness_timeout_atspi_application_missing$",
         ):
             port.run_step("installed_workflow", "verify_component_readiness")
 

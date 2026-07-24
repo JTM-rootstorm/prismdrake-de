@@ -44,6 +44,17 @@ RESULT_CATEGORIES = frozenset(
         "atspi_stale_control_rejected",
     }
 )
+APPLICATION_ERROR_CATEGORIES = frozenset(
+    {
+        "atspi_application_identity",
+        "atspi_application_missing",
+        "atspi_child_bound",
+        "atspi_name_bound",
+        "atspi_node_unavailable",
+        "atspi_owner_identity",
+        "atspi_owner_probe_unavailable",
+    }
+)
 
 
 class LiveAtspiError(RuntimeError):
