@@ -69,6 +69,12 @@ SOURCE_COMMAND_TIMEOUT_SECONDS = 30
 OBSERVER_COMMAND_TIMEOUT_SECONDS = 120
 CTEST_COMMAND_TIMEOUT_SECONDS = 1800
 PORTAGE_COMMAND_TIMEOUT_SECONDS = 1800
+OBSERVER_ENVIRONMENT = {
+    "HOME": "/nonexistent",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+    "PATH": "/usr/bin:/bin",
+}
 CTEST_PATH = Path("/usr/bin/ctest")
 SCANELF_PATH = Path("/usr/bin/scanelf")
 EQUERY_PATH = Path("/usr/bin/equery")
@@ -285,12 +291,7 @@ def run_checked(command: list[str], cwd: Path | None = None) -> str:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={
-                "HOME": "/nonexistent",
-                "LANG": "C.UTF-8",
-                "LC_ALL": "C.UTF-8",
-                "PATH": "/usr/bin:/bin",
-            },
+            env=OBSERVER_ENVIRONMENT,
             start_new_session=True,
         )
         _require(process.stdout is not None and process.stderr is not None,

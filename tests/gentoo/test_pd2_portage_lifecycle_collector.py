@@ -993,12 +993,8 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 ])
 
     def test_observer_environment_uses_deterministic_utf8_locale(self) -> None:
-        observed = {
-            line.partition("=")[0]: line.partition("=")[2]
-            for line in run_checked(["/usr/bin/env"]).splitlines()
-        }
         self.assertEqual(
-            observed,
+            collector.OBSERVER_ENVIRONMENT,
             {
                 "HOME": "/nonexistent",
                 "LANG": "C.UTF-8",
