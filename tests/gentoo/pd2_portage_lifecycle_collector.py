@@ -84,6 +84,15 @@ BUILD_PROVENANCE_PATH = Path("/usr/share/prismdrake/build-provenance.json")
 EXCLUSION_REGEX = "^(?:" + "|".join(re.escape(name) for name in EXCLUDED_TESTS) + ")$"
 OPTIONAL_PACKAGE_SKIP_TEST = "AtomicFileTest.RejectsDestinationOwnedByAnotherUser"
 OPTIONAL_PACKAGE_SKIP_REASON = "requires_root_ownership_transition"
+PORTAGE_TOTAL_PATTERN = re.compile(
+    r"^Total: (?P<count>[0-9]+) packages?"
+    r"(?:, Size of downloads: [0-9]+(?:\.[0-9]+)? [A-Za-z]+)?$"
+)
+PORTAGE_CONFLICT_PATTERN = re.compile(
+    r"(?:\bblocks?\b|\bconflicts?\b|\bmasked\b|\bno ebuilds to satisfy\b|"
+    r"\brequired_use\b|\bunsatisfied\b|!!!)",
+    re.IGNORECASE,
+)
 
 
 class Pd2CollectorError(RuntimeError):
@@ -444,6 +453,59 @@ def capture_portage_qa(
     }
 
 
+def _validate_portage_resolution_output(output: str, repository_name: str) -> bool:
+    """Return whether one successful pretend is an installed zero-change result."""
+
+    _require(bool(output.strip()), "portage_resolution_output_invalid")
+    _require(PORTAGE_CONFLICT_PATTERN.search(output) is None,
+             "portage_resolution_output_invalid")
+    action_pattern = re.compile(
+        r"(?m)^\s*\[(?:ebuild|binary)[^\]]*\]\s+"
+        rf"=?{re.escape(PACKAGE_VERSIONED_ATOM)}::{re.escape(repository_name)}"
+        r"(?:\s|$)"
+    )
+    exact_action = action_pattern.search(output) is not None
+    total_lines = [
+        line.strip() for line in output.splitlines()
+        if line.strip().startswith("Total:")
+    ]
+    total_match = (
+        PORTAGE_TOTAL_PATTERN.fullmatch(total_lines[0])
+        if len(total_lines) == 1 else None
+    )
+    if exact_action:
+        _require(not total_lines or
+                 (total_match is not None and int(total_match["count"]) > 0),
+                 "portage_resolution_output_invalid")
+        return False
+
+    _require(total_match is not None and int(total_match["count"]) == 0,
+             "portage_resolution_output_invalid")
+    _require(re.search(
+        rf"(?<![A-Za-z0-9+_.-]){re.escape(PACKAGE_ATOM)}[^\s]*", output,
+    ) is None, "portage_resolution_output_invalid")
+    _require(re.search(r"(?m)^\s*\[(?:ebuild|binary|blocks?)[^\]]*\]", output) is None,
+             "portage_resolution_output_invalid")
+    return True
+
+
+def _verify_zero_change_install(attestation: dict[str, Any], use_test: bool) -> None:
+    """Bind a zero-change resolution to the already captured installed VDB state."""
+
+    source = attestation["source"]
+    installed = attestation["installed"]
+    vdb = installed["vdb"]
+    _require(
+        vdb["atom"] == PACKAGE_VERSIONED_ATOM and
+        vdb["repository"] == source["repository_name"] and
+        vdb["ebuild_sha256"] == source["ebuild_sha256"] and
+        vdb["use_test"] is use_test and
+        installed["source_revision"] == source["revision"] and
+        installed["ebuild_sha256"] == source["ebuild_sha256"],
+        "portage_zero_change_vdb_mismatch",
+    )
+
+
 def capture_portage_resolutions(
         attestation: dict[str, Any], source_checkout: Path,
         portageq: Path = PORTAGEQ_PATH, emerge: Path = EMERGE_PATH,
@@ -452,6 +514,7 @@ def capture_portage_resolutions(
 ) -> list[dict[str, Any]]:
     """Execute both exact package pretend resolutions against the selected overlay."""
 
+    _binding(attestation)
     source = attestation["source"]
     _verify_clean_source_binding(source_checkout, source, hash_file, command_runner)
     repository_output = command_runner(
@@ -472,7 +535,11 @@ def capture_portage_resolutions(
             str(ENV_PATH), use_value, str(emerge), "--pretend", "--verbose", "--tree",
             "--newuse", f"={PACKAGE_VERSIONED_ATOM}::{source['repository_name']}",
         ], None)
-        _require(PACKAGE_ATOM in output, "portage_resolution_output_invalid")
+        zero_change = _validate_portage_resolution_output(
+            output, source["repository_name"],
+        )
+        if zero_change:
+            _verify_zero_change_install(attestation, use_test)
         records.append({
             "mode": mode,
             "source_revision": source["revision"],

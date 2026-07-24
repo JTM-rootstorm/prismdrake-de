@@ -826,7 +826,8 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 if command[0] == "/usr/bin/portageq":
                     return str(installed_repository) + "\n"
                 if command[0] == "/usr/bin/env":
-                    return ("[ebuild N] x11-misc/prismdrake-9999 " +
+                    return ("[ebuild N] x11-misc/prismdrake-9999"
+                            "::prismdrake-local " +
                             ("test\n" if command[1] == "USE=test" else "-test\n"))
                 raise AssertionError(command)
 
@@ -869,9 +870,71 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             self.assertEqual([command[1] for command in emerge_calls],
                              ["USE=-test", "USE=test"])
 
+            def zero_change_use_test(command: list[str], cwd: Path | None) -> str:
+                if command[0] == "/usr/bin/env" and command[1] == "USE=test":
+                    return (
+                        "Calculating dependencies... done!\n"
+                        "Total: 0 packages, Size of downloads: 0 KiB\n"
+                    )
+                return runner(command, cwd)
+
+            zero_change_records = capture_portage_resolutions(
+                attestation, source, hash_file=hash_file,
+                command_runner=zero_change_use_test,
+            )
+            self.assertEqual(
+                [item["mode"] for item in zero_change_records],
+                ["default", "use_test"],
+            )
+            self.assertNotEqual(
+                zero_change_records[0]["dependency_graph_sha256"],
+                zero_change_records[1]["dependency_graph_sha256"],
+            )
+
+            invalid_use_test_outputs = (
+                "",
+                "Total: zero packages\n",
+                "[ebuild N] x11-misc/prismdrake-9999::wrong-repository test\n",
+                "[ebuild N] x11-misc/prismdrake-tools-9999::prismdrake-local test\n",
+                "masked conflict\nTotal: 0 packages\n",
+                "[ebuild N] x11-misc/prismdrake-9999::prismdrake-local test\n"
+                "Total: 0 packages\n",
+            )
+            for invalid_output in invalid_use_test_outputs:
+                with self.subTest(invalid_output=invalid_output):
+                    def invalid_resolution(
+                            command: list[str], cwd: Path | None,
+                            output: str = invalid_output) -> str:
+                        if command[0] == "/usr/bin/env" and command[1] == "USE=test":
+                            return output
+                        return runner(command, cwd)
+
+                    with self.assertRaisesRegex(
+                            Pd2CollectorError,
+                            "^portage_resolution_output_invalid$"):
+                        capture_portage_resolutions(
+                            attestation, source, hash_file=hash_file,
+                            command_runner=invalid_resolution,
+                        )
+
+            def zero_change_default(command: list[str], cwd: Path | None) -> str:
+                if command[0] == "/usr/bin/env" and command[1] == "USE=-test":
+                    return "Total: 0 packages\n"
+                return runner(command, cwd)
+
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^portage_zero_change_vdb_mismatch$"):
+                capture_portage_resolutions(
+                    attestation, source, hash_file=hash_file,
+                    command_runner=zero_change_default,
+                )
+
             def same_graph(command: list[str], cwd: Path | None) -> str:
                 if command[0] == "/usr/bin/env":
-                    return "[ebuild N] x11-misc/prismdrake-9999\n"
+                    return (
+                        "[ebuild N] x11-misc/prismdrake-9999"
+                        "::prismdrake-local\n"
+                    )
                 return runner(command, cwd)
 
             with self.assertRaisesRegex(
