@@ -1,5 +1,5 @@
 {
-  "exact_test_count": 828,
+  "exact_test_count": 834,
   "excluded_tests": [
     "DetachedApplicationTest.ExecutesExactArgvWorkingDirectoryAndEnvironmentWithoutShell",
     "LauncherPipelineTest.ExpandsPlansAndLaunchesLiteralArgumentsWithoutAShell",
@@ -7,7 +7,7 @@
     "TaskControllerOpenboxStabilizationIntegrationTest"
   ],
   "inventory_kind": "pd2_exact_ctest_inventory",
-  "canonical_inventory_sha256": "687e0276b609bfebbb28cfcd51cca2ce674caad41c913060ea64eb757550e11b",
-  "ordered_test_names_sha256": "d3ab22bd3400eaad0acb52846dfeb43b3f1ebe7412c03ce3875aff07dbbd87b7",
+  "canonical_inventory_sha256": "8014dc28d555c138fb191a5fe6cbecc94f8b3a9f671572949e4b8ca23e4bafeb",
+  "ordered_test_names_sha256": "f544ca6b8b2378598943c5bb7bf75776da5df47bf52025150670fbf0427ab179",
   "schema_version": 1
 }
