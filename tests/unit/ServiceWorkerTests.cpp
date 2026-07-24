@@ -2,14 +2,15 @@
 
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <poll.h>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -26,12 +27,18 @@ template <typename T> [[nodiscard]] T requireOptional(std::optional<T> value) {
 class WorkerTemporaryDirectory final {
   public:
     WorkerTemporaryDirectory() {
-        static std::atomic_uint counter{0U};
-        path_ = std::filesystem::temp_directory_path() /
-                ("prismdrake-worker-test-" + std::to_string(counter.fetch_add(1U)));
-        std::filesystem::create_directories(path_);
+        auto pattern =
+            (std::filesystem::temp_directory_path() / "prismdrake-worker-test.XXXXXX").string();
+        char *created = ::mkdtemp(pattern.data());
+        if (created == nullptr) {
+            throw std::runtime_error{"temporary directory creation failed"};
+        }
+        path_ = created;
     }
-    ~WorkerTemporaryDirectory() { std::filesystem::remove_all(path_); }
+    ~WorkerTemporaryDirectory() {
+        std::error_code ignored;
+        std::filesystem::remove_all(path_, ignored);
+    }
 
     [[nodiscard]] const std::filesystem::path &path() const noexcept { return path_; }
 
