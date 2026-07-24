@@ -53,6 +53,24 @@ from pd2_portage_lifecycle_evidence import (
 
 class Pd2LifecycleCollectorTests(unittest.TestCase):
     @staticmethod
+    def create_python(root: Path, name: str = "python") -> Path:
+        executable = root / name
+        executable.write_bytes(b"#!/bin/sh\n")
+        executable.chmod(0o700)
+        return executable
+
+    @staticmethod
+    def write_test_cache(
+            build: Path, source: Path, revision: str, python: Path) -> None:
+        (build / "CMakeCache.txt").write_text(
+            "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
+            f"{revision}\n"
+            f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n"
+            f"_Python3_EXECUTABLE:INTERNAL={python}\n",
+            encoding="utf-8",
+        )
+
+    @staticmethod
     def create_vdb(root: Path, attestation: dict, use_test: bool) -> tuple[Path, bytes]:
         vdb = root / "vdb"
         vdb.mkdir()
@@ -364,11 +382,9 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             build.mkdir()
             source = root / "source"
             source.mkdir()
-            (build / "CMakeCache.txt").write_text(
-                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
-                f"{attestation['source']['revision']}\n"
-                f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
-                encoding="utf-8",
+            python = self.create_python(root)
+            self.write_test_cache(
+                build, source, attestation["source"]["revision"], python,
             )
             fixture = build / "tests/integration/prismdrake-controlled-window-fixture"
             fixture.parent.mkdir(parents=True)
@@ -573,11 +589,8 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             source.mkdir()
             build.mkdir()
             revision = "1" * 40
-            (build / "CMakeCache.txt").write_text(
-                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
-                f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
-                encoding="utf-8",
-            )
+            python = self.create_python(root)
+            self.write_test_cache(build, source, revision, python)
             contract = source / collector.CTEST_INVENTORY_RELATIVE_PATH
             contract.parent.mkdir(parents=True)
             inventory = [{
@@ -660,20 +673,23 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
 
             revision_a = "1" * 40
             revision_b = "2" * 40
+            python_a = self.create_python(root / "a", "standalone-python")
+            python_b = self.create_python(root / "b", "package-python-shim")
             for source, build, revision in (
                     (source_a, build_a, revision_a),
                     (source_b, build_b, revision_b)):
-                (build / "CMakeCache.txt").write_text(
-                    "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
-                    f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
-                    encoding="utf-8",
-                )
+                python = python_a if build == build_a else python_b
+                self.write_test_cache(build, source, revision, python)
 
-            def inventory(source: Path, build: Path, revision: str) -> list[dict]:
+            def inventory(
+                    source: Path, build: Path, revision: str,
+                    python: Path) -> list[dict]:
                 return [{
                     "name": "ContractTest.Ordinary",
-                    "command": [str(build / "test-command"), f"--source={source}",
-                                "--revision", revision],
+                    "command": [
+                        str(python), str(build / "test-command"),
+                        f"--source={source}", "--revision", revision,
+                    ],
                     "properties": [
                         {"name": "WORKING_DIRECTORY", "value": str(build / "tests")},
                         {"name": "ENVIRONMENT", "value": [f"SOURCE={source}"]},
@@ -694,29 +710,33 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
 
             self.assertEqual(
                 collector._canonical_ctest_inventory_sha256(
-                    inventory(source_a, build_a, revision_a), build_a, source_a,
+                    inventory(source_a, build_a, revision_a, python_a),
+                    build_a, source_a,
                 ),
                 collector._canonical_ctest_inventory_sha256(
-                    inventory(source_b, build_b, revision_b), build_b, source_b,
+                    inventory(source_b, build_b, revision_b, python_b),
+                    build_b, source_b,
                 ),
             )
 
-            changed_command = inventory(source_b, build_b, revision_b)
+            changed_command = inventory(source_b, build_b, revision_b, python_b)
             changed_command[0]["command"].append("--changed")
             self.assertNotEqual(
                 collector._canonical_ctest_inventory_sha256(
-                    inventory(source_a, build_a, revision_a), build_a, source_a,
+                    inventory(source_a, build_a, revision_a, python_a),
+                    build_a, source_a,
                 ),
                 collector._canonical_ctest_inventory_sha256(
                     changed_command, build_b, source_b,
                 ),
             )
 
-            changed_property = inventory(source_b, build_b, revision_b)
+            changed_property = inventory(source_b, build_b, revision_b, python_b)
             changed_property[0]["properties"][2]["value"]["extra"] = True
             self.assertNotEqual(
                 collector._canonical_ctest_inventory_sha256(
-                    inventory(source_a, build_a, revision_a), build_a, source_a,
+                    inventory(source_a, build_a, revision_a, python_a),
+                    build_a, source_a,
                 ),
                 collector._canonical_ctest_inventory_sha256(
                     changed_property, build_b, source_b,
@@ -724,15 +744,13 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             )
 
             first_revision_hash = collector._canonical_ctest_inventory_sha256(
-                inventory(source_a, build_a, revision_a), build_a, source_a,
+                inventory(source_a, build_a, revision_a, python_a),
+                build_a, source_a,
             )
-            (build_a / "CMakeCache.txt").write_text(
-                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
-                f"{revision_b}\nCMAKE_HOME_DIRECTORY:INTERNAL={source_a}\n",
-                encoding="utf-8",
-            )
+            self.write_test_cache(build_a, source_a, revision_b, python_a)
             second_revision_hash = collector._canonical_ctest_inventory_sha256(
-                inventory(source_a, build_a, revision_b), build_a, source_a,
+                inventory(source_a, build_a, revision_b, python_a),
+                build_a, source_a,
             )
             self.assertEqual(first_revision_hash, second_revision_hash)
 
@@ -768,9 +786,11 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 )
 
             revision = "3" * 40
+            python = self.create_python(root)
             cache.write_text(
                 "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
-                f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n",
+                f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n"
+                f"_Python3_EXECUTABLE:INTERNAL={python}\n",
                 encoding="utf-8",
             )
             forged = [{
@@ -780,6 +800,72 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             with self.assertRaisesRegex(
                     Pd2CollectorError,
                     "^ctest_inventory_revision_placeholder_invalid$"):
+                collector._canonical_ctest_inventory_sha256(
+                    forged, build, source,
+                )
+
+    def test_ctest_contract_rejects_untrusted_configured_python(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            build = root / "build"
+            source.mkdir()
+            build.mkdir()
+            revision = "4" * 40
+            inventory = [{"name": "ContractTest.Ordinary", "command": ["/bin/true"]}]
+            cache = build / "CMakeCache.txt"
+            prefix = (
+                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
+                f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n"
+            )
+
+            invalid_entries = (
+                "",
+                "_Python3_EXECUTABLE:INTERNAL=relative/python\n",
+                "_Python3_EXECUTABLE:INTERNAL=/does/not/exist/python\n",
+            )
+            for entry in invalid_entries:
+                with self.subTest(entry=entry):
+                    cache.write_text(prefix + entry, encoding="utf-8")
+                    with self.assertRaisesRegex(
+                            Pd2CollectorError, "^test_build_python_invalid$"):
+                        collector._canonical_ctest_inventory_sha256(
+                            inventory, build, source,
+                        )
+
+            python = self.create_python(root)
+            cache.write_text(
+                prefix
+                + f"_Python3_EXECUTABLE:INTERNAL={python}\n"
+                + f"_Python3_EXECUTABLE:INTERNAL={python}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^test_build_python_invalid$"):
+                collector._canonical_ctest_inventory_sha256(
+                    inventory, build, source,
+                )
+
+            symlink = root / "python-link"
+            symlink.symlink_to(python)
+            cache.write_text(
+                prefix + f"_Python3_EXECUTABLE:INTERNAL={symlink}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                    Pd2CollectorError, "^test_build_python_invalid$"):
+                collector._canonical_ctest_inventory_sha256(
+                    inventory, build, source,
+                )
+
+            self.write_test_cache(build, source, revision, python)
+            forged = [{
+                "name": "ContractTest.Ordinary",
+                "command": [str(python), "${PYTHON}"],
+            }]
+            with self.assertRaisesRegex(
+                    Pd2CollectorError,
+                    "^ctest_inventory_python_placeholder_invalid$"):
                 collector._canonical_ctest_inventory_sha256(
                     forged, build, source,
                 )

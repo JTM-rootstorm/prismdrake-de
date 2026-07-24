@@ -785,11 +785,11 @@ def _is_within(path: Path, root: Path) -> bool:
         return False
 
 
-def _configured_test_build_revision(
+def _configured_test_build_metadata(
         build_directory: Path, source_checkout: Path,
         hash_file: Callable[[Path], str] = sha256_regular_file,
-) -> str:
-    """Read one exact lifecycle revision from a source-bound CMake cache."""
+) -> tuple[str, str]:
+    """Read exact lifecycle metadata from a source-bound CMake cache."""
 
     _require(build_directory.is_absolute() and build_directory.is_dir() and
              not build_directory.is_symlink(), "test_build_invalid")
@@ -805,11 +805,27 @@ def _configured_test_build_revision(
         "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL=")]
     source_matches = [line.partition("=")[2] for line in lines if line.startswith(
         "CMAKE_HOME_DIRECTORY:INTERNAL=")]
+    python_matches = [line.partition("=")[2] for line in lines if line.startswith(
+        "_Python3_EXECUTABLE:INTERNAL=")]
     _require(source_matches == [str(source_checkout)], "test_build_source_mismatch")
     _require(len(revision_matches) == 1 and
              re.fullmatch(r"[0-9a-f]{40}", revision_matches[0]) is not None,
              "test_build_revision_invalid")
-    return revision_matches[0]
+    _require(len(python_matches) == 1, "test_build_python_invalid")
+    configured_python = Path(python_matches[0])
+    try:
+        python_metadata = configured_python.lstat()
+    except OSError as error:
+        raise Pd2CollectorError("test_build_python_invalid") from error
+    _require(
+        configured_python.is_absolute() and
+        str(configured_python) == python_matches[0] and
+        stat.S_ISREG(python_metadata.st_mode) and
+        not stat.S_ISLNK(python_metadata.st_mode) and
+        python_metadata.st_mode & 0o111 != 0,
+        "test_build_python_invalid",
+    )
+    return revision_matches[0], python_matches[0]
 
 
 def verify_test_build(
@@ -819,7 +835,7 @@ def verify_test_build(
 ) -> None:
     """Bind a retained CTest tree to one exact clean source checkout."""
 
-    configured_revision = _configured_test_build_revision(
+    configured_revision, _configured_python = _configured_test_build_metadata(
         build_directory, source_checkout, hash_file,
     )
     _require(configured_revision == revision, "test_build_revision_mismatch")
@@ -868,7 +884,7 @@ def _canonical_ctest_inventory_sha256(
 ) -> str:
     """Hash ordered CTest commands and behavior properties independent of roots."""
 
-    configured_revision = _configured_test_build_revision(
+    configured_revision, configured_python = _configured_test_build_metadata(
         build_directory, source_checkout,
     )
     try:
@@ -880,6 +896,7 @@ def _canonical_ctest_inventory_sha256(
         (
             (build_root, "${BUILD}"),
             (source_root, "${SOURCE}"),
+            (configured_python, "${PYTHON}"),
             (configured_revision, "${REVISION}"),
         ),
         key=lambda item: len(item[0]), reverse=True,
@@ -889,6 +906,8 @@ def _canonical_ctest_inventory_sha256(
         if isinstance(value, str):
             _require("${REVISION}" not in value,
                      "ctest_inventory_revision_placeholder_invalid")
+            _require("${PYTHON}" not in value,
+                     "ctest_inventory_python_placeholder_invalid")
             for root, token in replacements:
                 value = value.replace(root, token)
             return value
