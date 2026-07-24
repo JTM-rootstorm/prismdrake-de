@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import selectors
+import signal
 import subprocess
 import sys
 import time
@@ -102,6 +103,37 @@ def selected_test_timeout(options: HarnessArguments) -> int:
     return OPENBOX_TEST_TIMEOUT_SECONDS if options.openbox is not None else TEST_TIMEOUT_SECONDS
 
 
+def openbox_environment(environment: dict[str, str]) -> dict[str, str]:
+    """Return an Openbox-only C-locale environment without changing the test."""
+
+    selected = environment.copy()
+    selected["LC_ALL"] = "C"
+    return selected
+
+
+def failed_test_status(return_code: int) -> str:
+    """Describe one non-zero child status without exposing its arguments."""
+
+    if return_code < 0:
+        signal_number = -return_code
+        try:
+            signal_name = signal.Signals(signal_number).name
+        except ValueError:
+            signal_name = "UNKNOWN"
+        return f"test terminated by signal {signal_number} ({signal_name})"
+    return f"test exited with status {return_code}"
+
+
+def process_status(return_code: int | None) -> str:
+    """Describe one harness process using bounded, non-private state."""
+
+    if return_code is None:
+        return "running"
+    if return_code < 0:
+        return failed_test_status(return_code).removeprefix("test ")
+    return f"exited with status {return_code}"
+
+
 def main() -> int:
     try:
         separator = sys.argv.index("--")
@@ -172,13 +204,12 @@ def main() -> int:
         environment["DISPLAY"] = f":{display_number}"
         if openbox is not None:
             environment["PRISMDRAKE_TEST_EXPECT_EWMH_WM"] = "1"
-            environment["LC_ALL"] = "C"
             openbox_process = subprocess.Popen(
                 [str(openbox), "--sm-disable"],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                env=environment,
+                env=openbox_environment(environment),
                 text=True,
             )
             readiness_deadline = time.monotonic() + OPENBOX_READY_TIMEOUT_SECONDS
@@ -211,9 +242,27 @@ def main() -> int:
             timeout=selected_test_timeout(options),
             check=False,
         )
+        if completed.returncode < 0:
+            openbox_status = (
+                process_status(openbox_process.poll())
+                if openbox_process is not None
+                else "not requested"
+            )
+            return fail(
+                f"{failed_test_status(completed.returncode)}; "
+                f"Xvfb {process_status(server.poll())}; Openbox {openbox_status}"
+            )
         return completed.returncode
     except subprocess.TimeoutExpired:
-        return fail("test exceeded its bounded timeout")
+        openbox_status = (
+            process_status(openbox_process.poll())
+            if openbox_process is not None
+            else "not requested"
+        )
+        return fail(
+            "test exceeded its bounded timeout; "
+            f"Xvfb {process_status(server.poll())}; Openbox {openbox_status}"
+        )
     finally:
         if openbox_process is not None and openbox_process.poll() is None:
             openbox_process.terminate()
