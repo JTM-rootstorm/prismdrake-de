@@ -55,6 +55,7 @@ from pd1_demo import (
     select_current_workarea,
     session_child_command,
     task_screen_center,
+    task_reactivation_diagnostic,
     validate_cleanup_identities,
     validate_artifact_provenance,
     validate_evidence,
@@ -590,6 +591,24 @@ class EvidenceContractTests(unittest.TestCase):
             atspi, xdotool, "30", identity, APP_TITLES[0], "Return",
         )
         launcher_press.assert_not_called()
+
+    def test_reactivation_failure_diagnostic_is_redacted_and_categorized(self) -> None:
+        log = "\n".join((
+            "The checked task request path is not current.",
+            "The checked task request belongs to a stale refresh token.",
+            "The checked task request target is stale on the X11 worker.",
+            "The window manager rejected a current task request.",
+        ))
+        diagnostic = task_reactivation_diagnostic(True, False, True, True, False, log)
+        self.assertEqual(
+            diagnostic,
+            "PD1 task reactivation diagnostic: active_target=1 hidden_target=0 "
+            "focused_panel=1 focused_task=1 minimized_semantic=0 path_rejected=1 "
+            "token_stale=1 target_stale=1 wm_rejected=1",
+        )
+        for private_field in (
+                "display=", "bus_address=", "process_id=", "window_id=", "title="):
+            self.assertNotIn(private_field, diagnostic)
 
     def test_cleanup_identity_bounds_fail_closed(self) -> None:
         fixture = ProcessIdentity(2, 1, 0)

@@ -962,6 +962,30 @@ def reactivate_focused_task_from_panel(atspi: Any, xdotool: Path, panel: str,
     return panel
 
 
+def task_reactivation_diagnostic(active_target: bool, hidden_target: bool,
+                                 focused_panel: bool, focused_task: bool,
+                                 minimized_semantic: bool, diagnostic_log: str) -> str:
+    categorized_messages = (
+        ("path_rejected", "The checked task request path is not current."),
+        ("token_stale", "The checked task request belongs to a stale refresh token."),
+        ("target_stale", "The checked task request target is stale on the X11 worker."),
+        ("wm_rejected", "The window manager rejected a current task request."),
+    )
+    categories = " ".join(
+        f"{name}={diagnostic_log.count(message)}"
+        for name, message in categorized_messages
+    )
+    return (
+        "PD1 task reactivation diagnostic: "
+        f"active_target={int(active_target)} "
+        f"hidden_target={int(hidden_target)} "
+        f"focused_panel={int(focused_panel)} "
+        f"focused_task={int(focused_task)} "
+        f"minimized_semantic={int(minimized_semantic)} "
+        f"{categories}"
+    )
+
+
 def open_task_context_menu(atspi: Any, xdotool: Path, panel: str,
                            shell_identity: ProcessIdentity, title: str,
                            expected_action: str = "Minimize") -> str:
@@ -1425,14 +1449,34 @@ def run_session_child(arguments: argparse.Namespace) -> None:
         panel = reactivate_focused_task_from_panel(
             Atspi, arguments.xdotool, panel, initial_shell_identity, APP_TITLES[0],
         )
-        wait_until(
-            lambda: (first if run_checked([
-                str(arguments.xdotool), "getactivewindow",
-            ]).stdout.strip() == first and
-            "_NET_WM_STATE_HIDDEN" not in window_state_atoms(arguments.xprop, first)
-            else None),
-            "task_reactivation_timeout",
-        )
+        try:
+            wait_until(
+                lambda: (first if run_checked([
+                    str(arguments.xdotool), "getactivewindow",
+                ]).stdout.strip() == first and
+                "_NET_WM_STATE_HIDDEN" not in window_state_atoms(arguments.xprop, first)
+                else None),
+                "task_reactivation_timeout",
+            )
+        except DemoError:
+            active_result = run_checked([str(arguments.xdotool), "getactivewindow"])
+            active_target = active_result.returncode == 0 and active_result.stdout.strip() == first
+            hidden_target = "_NET_WM_STATE_HIDDEN" in window_state_atoms(arguments.xprop, first)
+            focused_panel = focused_window_id(arguments.xdotool) == panel
+            focused_task = has_showing_focused_action(Atspi, APP_TITLES[0])
+            minimized_semantic = "Minimized" in task_accessible_description(
+                Atspi, APP_TITLES[0],
+            )
+            log.flush()
+            diagnostic_log = session_log.read_text(encoding="utf-8")
+            print(
+                task_reactivation_diagnostic(
+                    active_target, hidden_target, focused_panel, focused_task,
+                    minimized_semantic, diagnostic_log,
+                ),
+                file=sys.stderr,
+            )
+            raise
 
         forge_generation = request_profile(arguments.gdbus, "forge")
         forge = wait_until(lambda: current_snapshot(arguments.gdbus).get("generation") == 2 and
