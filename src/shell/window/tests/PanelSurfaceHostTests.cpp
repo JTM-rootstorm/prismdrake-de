@@ -581,6 +581,19 @@ TEST(PanelSurfaceHostTest, AlreadyFocusableRequestKeepsViewAndRunsReadyWithoutWo
     EXPECT_EQ(readyView, focusedView);
     EXPECT_EQ(host->view("TEST-1"), focusedView);
     EXPECT_FALSE(gate->started(3U));
+
+    QQuickView competitor;
+    competitor.show();
+    competitor.requestActivate();
+    ASSERT_TRUE(waitUntil([&] { return competitor.isActive(); }));
+    ASSERT_FALSE(focusedView->isActive());
+
+    readyView = nullptr;
+    ASSERT_TRUE(
+        host->requestKeyboardAccess("TEST-1", [&](QQuickView &view) { readyView = &view; }));
+    EXPECT_EQ(readyView, focusedView);
+    EXPECT_TRUE(waitUntil([&] { return focusedView->isActive(); }));
+    EXPECT_FALSE(gate->started(3U));
 }
 
 TEST(PanelSurfaceHostTest, NewerFocusRequestSuppressesStaleReadyCallback) {

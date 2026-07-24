@@ -220,6 +220,9 @@ class FakeOperations:
             live_xorg.LAUNCHER_WINDOW_TITLE: 0x510001,
         }
         self.focused_window: int | None = None
+        self.panel_focus_read_delay = 0
+        self.panel_focus_never_arrives = False
+        self.panel_focus_pending = False
         self.component_stop_succeeds = True
         self.component_replacement_published = True
         self.unrelated_replacement: str | None = None
@@ -279,6 +282,11 @@ class FakeOperations:
             self.visible_named_windows.setdefault(
                 live_xorg.LAUNCHER_WINDOW_TITLE, 0x510001
             )
+        if command[:3] == ("/usr/bin/prismdrake-shellctl", "panel", "focus"):
+            self.panel_focus_pending = True
+            if not self.panel_focus_never_arrives and self.panel_focus_read_delay == 0:
+                self.focused_window = PANEL_LEFT
+                self.panel_focus_pending = False
         if command[-1] == "--query":
             if self.xorg_stopped and not self.xorg_query_survives_stop:
                 return CommandResult(1, b"", b"cannot open display")
@@ -310,6 +318,12 @@ class FakeOperations:
                 self.focused_window = int(command[3])
                 return CommandResult(0)
             if command[1:] == ("getwindowfocus",):
+                if self.panel_focus_pending and not self.panel_focus_never_arrives:
+                    if self.panel_focus_read_delay == 0:
+                        self.focused_window = PANEL_LEFT
+                        self.panel_focus_pending = False
+                    else:
+                        self.panel_focus_read_delay -= 1
                 if self.focused_window is None:
                     return CommandResult(1)
                 return CommandResult(
@@ -2481,6 +2495,73 @@ class LivePortTests(unittest.TestCase):
                 "Tab",
                 "Shift_L+F10",
             ],
+        )
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_waits_for_primary_panel_x_focus_before_sending_task_tab(self) -> None:
+        operations = FakeOperations()
+        operations.focused_window = CONTROLLED_TWO_ID
+        operations.panel_focus_read_delay = 2
+        accessibility = FakeAccessibility(operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+            "verify_desktop_wallpaper_both_outputs",
+            "verify_panel_policy_both_outputs",
+        ):
+            port.run_step("installed_workflow", identifier)
+
+        port._focus_controlled_panel_task("controlled_task_focus_timeout")  # noqa: SLF001
+
+        focus_observations = [
+            index
+            for index, (argv, _environment) in enumerate(operations.run_calls)
+            if argv[0] == "/usr/bin/xdotool" and argv[1:] == ("getwindowfocus",)
+        ]
+        tab_calls = [
+            index
+            for index, (argv, _environment) in enumerate(operations.run_calls)
+            if argv[:3] == ("/usr/bin/xdotool", "key", "--clearmodifiers")
+            and argv[-1] == "Tab"
+        ]
+        self.assertEqual(len(focus_observations), 3)
+        self.assertEqual(len(tab_calls), 1)
+        self.assertLess(focus_observations[-1], tab_calls[0])
+        self.assertEqual(operations.focused_window, PANEL_LEFT)
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_rejects_task_tab_when_primary_panel_x_focus_never_arrives(self) -> None:
+        operations = FakeOperations()
+        operations.focused_window = CONTROLLED_TWO_ID
+        operations.panel_focus_never_arrives = True
+        accessibility = FakeAccessibility(operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+            "verify_desktop_wallpaper_both_outputs",
+            "verify_panel_policy_both_outputs",
+        ):
+            port.run_step("installed_workflow", identifier)
+
+        with self.assertRaisesRegex(HarnessError, "^panel_x11_focus_timeout$"):
+            port._focus_controlled_panel_task(  # noqa: SLF001
+                "controlled_task_focus_timeout"
+            )
+
+        self.assertFalse(
+            any(
+                argv[:3] == ("/usr/bin/xdotool", "key", "--clearmodifiers")
+                and argv[-1] == "Tab"
+                for argv, _environment in operations.run_calls
+            )
         )
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 

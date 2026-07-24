@@ -4520,6 +4520,21 @@ class LiveXorgHarnessPort:
             ControlSelector("Open applications", "push_button", require_focused=True),
             "panel_focus_timeout",
         )
+        panel = self._primary_panel_window()
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            focused = self._xdotool("getwindowfocus")
+            if (
+                not focused.stderr
+                and len(focused.stdout) <= 32
+                and re.fullmatch(rb"[1-9][0-9]{0,19}\n?", focused.stdout)
+                is not None
+                and int(focused.stdout) == panel
+            ):
+                break
+            self._operations.pause(0.05)
+        else:
+            raise HarnessError("panel_x11_focus_timeout")
         self._xdotool("key", "--clearmodifiers", "Tab")
         self._wait_accessible(
             ControlSelector(
@@ -4527,6 +4542,33 @@ class LiveXorgHarnessPort:
             ),
             timeout_error,
         )
+
+    def _primary_panel_window(self) -> int:
+        self._require_panel_surfaces()
+        outputs = self._query_outputs()
+        primary = [output for output in outputs.values() if output.active and output.primary]
+        if len(primary) != 1:
+            raise HarnessError("panel_x11_focus_target_invalid")
+        output = primary[0]
+        if (
+            output.width is None
+            or output.height is None
+            or output.x is None
+            or output.y is None
+        ):
+            raise HarnessError("panel_x11_focus_target_invalid")
+        expected = WindowGeometry(
+            output.x,
+            output.y + output.height - PANEL_HEIGHT,
+            output.width,
+            PANEL_HEIGHT,
+        )
+        shell = self._shell_identity()
+        panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
+        matches = [window for window, geometry in panels.items() if geometry == expected]
+        if len(matches) != 1:
+            raise HarnessError("panel_x11_focus_target_invalid")
+        return matches[0]
 
     def _x11_environment(self) -> dict[str, str]:
         if self._display is None:

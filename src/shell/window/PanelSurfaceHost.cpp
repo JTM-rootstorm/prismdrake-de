@@ -423,6 +423,7 @@ Result<void> PanelSurfaceHost::requestKeyboardAccess(std::string_view outputName
         return Result<void>::success();
     }
     if (!(current->second->view->flags() & Qt::WindowDoesNotAcceptFocus)) {
+        current->second->view->requestActivate();
         if (focusReady) {
             focusReady(*current->second->view);
         }
