@@ -26,9 +26,19 @@ from pd2_evidence_contract import (  # noqa: E402
     validate_evidence_document,
 )
 from pd2_live_evidence import (  # noqa: E402
+    ACCESSIBILITY_NESTED_TIMEOUT_SECONDS,
+    ACCESSIBILITY_OBSERVER_TIMEOUT_SECONDS,
+    ENVIRONMENT_NESTED_TIMEOUT_SECONDS,
+    ENVIRONMENT_OBSERVER_TIMEOUT_SECONDS,
+    INTERNATIONALIZATION_NESTED_TIMEOUT_SECONDS,
+    INTERNATIONALIZATION_OBSERVER_TIMEOUT_SECONDS,
     LIVE_METHOD_ID,
     MAXIMUM_OBSERVER_TIMEOUT_SECONDS,
+    OBSERVER_TIMEOUT_MARGIN_SECONDS,
     PERFORMANCE_GROUPS,
+    PERFORMANCE_NESTED_TIMEOUT_SECONDS,
+    PERFORMANCE_OBSERVER_TIMEOUT_SECONDS,
+    ROLE_OBSERVER_TIMEOUT_SECONDS,
     BoundResult,
     CommandLiveEvidencePort,
     LiveCollectionConfig,
@@ -449,7 +459,30 @@ class CommandAdapterTests(unittest.TestCase):
 
         self.assertEqual(
             [call.kwargs["timeout"] for call in run.call_args_list],
-            [15.0, 75.0, 15.0, 195.0, 15.0],
+            [
+                ENVIRONMENT_OBSERVER_TIMEOUT_SECONDS,
+                PERFORMANCE_OBSERVER_TIMEOUT_SECONDS,
+                ACCESSIBILITY_OBSERVER_TIMEOUT_SECONDS,
+                INTERNATIONALIZATION_OBSERVER_TIMEOUT_SECONDS,
+                OBSERVER_TIMEOUT_MARGIN_SECONDS,
+            ],
+        )
+        nested_by_role = {
+            "environment": ENVIRONMENT_NESTED_TIMEOUT_SECONDS,
+            "performance": PERFORMANCE_NESTED_TIMEOUT_SECONDS,
+            "accessibility": ACCESSIBILITY_NESTED_TIMEOUT_SECONDS,
+            "internationalization": INTERNATIONALIZATION_NESTED_TIMEOUT_SECONDS,
+        }
+        for role, nested_timeout in nested_by_role.items():
+            with self.subTest(role=role):
+                self.assertGreater(ROLE_OBSERVER_TIMEOUT_SECONDS[role], nested_timeout)
+                self.assertEqual(
+                    ROLE_OBSERVER_TIMEOUT_SECONDS[role] - nested_timeout,
+                    OBSERVER_TIMEOUT_MARGIN_SECONDS,
+                )
+        self.assertEqual(
+            MAXIMUM_OBSERVER_TIMEOUT_SECONDS,
+            max(ROLE_OBSERVER_TIMEOUT_SECONDS.values()),
         )
 
     def test_explicit_timeout_override_remains_finite_and_bounded(self) -> None:
