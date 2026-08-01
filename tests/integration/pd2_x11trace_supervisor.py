@@ -43,6 +43,7 @@ _CATEGORIES = frozenset(
         "x11trace_client_environment_invalid",
         "x11trace_clients_active",
         "x11trace_executable_invalid",
+        "x11trace_fake_display_cleanup_failed",
         "x11trace_fake_display_conflict",
         "x11trace_fake_display_invalid",
         "x11trace_fake_display_timeout",
@@ -77,7 +78,9 @@ class ProcessPort(Protocol):
 
 ProcessFactory = Callable[[tuple[str, ...], Mapping[str, str]], ProcessPort]
 ExecutableInspector = Callable[[Path], bool]
-FakeDisplayObserver = Callable[[int], bool]
+FakeDisplayIdentity = tuple[int, int]
+FakeDisplayObserver = Callable[[int], FakeDisplayIdentity | None]
+FakeDisplayCleaner = Callable[[int, FakeDisplayIdentity], bool]
 Clock = Callable[[], float]
 Sleeper = Callable[[float], None]
 
@@ -150,16 +153,16 @@ def inspect_x11trace_executable(path: Path) -> bool:
     )
 
 
-def observe_fake_display_socket(number: int) -> bool:
+def observe_fake_display_socket(number: int) -> FakeDisplayIdentity | None:
     """Observe x11trace's exact local Unix socket without connecting to it."""
 
     if isinstance(number, bool) or not isinstance(number, int) or not 0 <= number <= 65535:
-        return False
+        return None
     path = Path(f"/tmp/.X11-unix/X{number}")
     try:
         metadata = path.lstat()
     except FileNotFoundError:
-        return False
+        return None
     except OSError:
         _fail("x11trace_fake_display_invalid")
     if (
@@ -168,7 +171,59 @@ def observe_fake_display_socket(number: int) -> bool:
         or metadata.st_uid != os.geteuid()
     ):
         _fail("x11trace_fake_display_invalid")
-    return True
+    return metadata.st_dev, metadata.st_ino
+
+
+def remove_fake_display_socket(
+    number: int, identity: FakeDisplayIdentity
+) -> bool:
+    """Remove only the exact same-owner proxy socket observed at readiness."""
+
+    if (
+        isinstance(number, bool)
+        or not isinstance(number, int)
+        or not 0 <= number <= 65535
+    ):
+        return False
+    return _remove_owned_socket(Path(f"/tmp/.X11-unix/X{number}"), identity)
+
+
+def _remove_owned_socket(path: Path, identity: FakeDisplayIdentity) -> bool:
+    if (
+        not isinstance(path, Path)
+        or not path.is_absolute()
+        or not isinstance(identity, tuple)
+        or len(identity) != 2
+        or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in identity
+        )
+    ):
+        return False
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISSOCK(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or (metadata.st_dev, metadata.st_ino) != identity
+    ):
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
 
 
 def _default_process_factory(
@@ -242,6 +297,7 @@ class X11TraceSupervisor:
         process_factory: ProcessFactory = _default_process_factory,
         executable_inspector: ExecutableInspector = inspect_x11trace_executable,
         fake_display_observer: FakeDisplayObserver = observe_fake_display_socket,
+        fake_display_cleaner: FakeDisplayCleaner = remove_fake_display_socket,
         clock: Clock = time.monotonic,
         sleeper: Sleeper = time.sleep,
     ) -> None:
@@ -265,6 +321,7 @@ class X11TraceSupervisor:
         self._environment = checked_environment
         self._fake_number = fake_number
         self._observer = fake_display_observer
+        self._cleaner = fake_display_cleaner
         self._clock = clock
         self._sleeper = sleeper
         self._process: ProcessPort | None = None
@@ -273,6 +330,7 @@ class X11TraceSupervisor:
         self._finished = False
         self._finishing = False
         self._fake_ready = False
+        self._fake_identity: FakeDisplayIdentity | None = None
         self._monitor_stop = threading.Event()
         self._lock = threading.Lock()
         self._monitor: threading.Thread | None = None
@@ -281,7 +339,7 @@ class X11TraceSupervisor:
         self._trace_identity: tuple[int, int] | None = None
 
         try:
-            if fake_display_observer(fake_number):
+            if fake_display_observer(fake_number) is not None:
                 _fail("x11trace_fake_display_conflict")
             trace_directory = Path(
                 tempfile.mkdtemp(prefix="pd2-x11trace-", dir=config.private_root)
@@ -323,7 +381,18 @@ class X11TraceSupervisor:
             deadline = self._clock() + float(config.readiness_seconds)
             while True:
                 self._check_running()
-                if fake_display_observer(fake_number):
+                identity = fake_display_observer(fake_number)
+                if identity is not None:
+                    if (
+                        not isinstance(identity, tuple)
+                        or len(identity) != 2
+                        or any(
+                            isinstance(value, bool) or not isinstance(value, int)
+                            for value in identity
+                        )
+                    ):
+                        _fail("x11trace_fake_display_invalid")
+                    self._fake_identity = identity
                     self._fake_ready = True
                     break
                 if self._clock() >= deadline:
@@ -391,7 +460,7 @@ class X11TraceSupervisor:
         if (
             self._fake_ready
             and not self._finishing
-            and not self._observer(self._fake_number)
+            and self._observer(self._fake_number) != self._fake_identity
         ):
             _fail("x11trace_fake_display_invalid")
         metadata = self._trace_metadata()
@@ -539,14 +608,33 @@ class X11TraceSupervisor:
             except OSError:
                 pass
 
+    def _cleanup_fake_display(self) -> bool:
+        identity = self._fake_identity
+        self._fake_identity = None
+        self._fake_ready = False
+        if identity is None:
+            return True
+        process = self._process
+        if process is None or process.poll() is None:
+            return False
+        try:
+            return self._cleaner(self._fake_number, identity) is True
+        except Exception:
+            return False
+
     def _abort(self) -> None:
         self._monitor_stop.set()
         monitor = self._monitor
         if monitor is not None and monitor is not threading.current_thread():
             monitor.join(PROCESS_STOP_SECONDS)
         self._terminate_process()
-        self._cleanup_raw_trace()
-        self._finished = True
+        fake_display_clean = self._cleanup_fake_display()
+        try:
+            self._cleanup_raw_trace()
+        finally:
+            self._finished = True
+        if not fake_display_clean:
+            _fail("x11trace_fake_display_cleanup_failed")
 
     def finish(self, *, clients_exited: bool) -> X11TraceSummary:
         """Stop after client teardown, validate the complete trace, and erase it."""

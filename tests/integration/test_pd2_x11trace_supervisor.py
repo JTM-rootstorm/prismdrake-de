@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import stat
+import socket
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,7 @@ from pd2_x11trace_supervisor import (  # noqa: E402
     X11TraceConfig,
     X11TraceSupervisor,
     X11TraceSupervisorError,
+    _remove_owned_socket,
     inspect_x11trace_executable,
 )
 
@@ -84,21 +86,54 @@ class FakeProcess:
         return self.returncode
 
 
+class UnreapedProcess(FakeProcess):
+    def __init__(self) -> None:
+        super().__init__(stubborn=True, natural_exit=False)
+
+    def kill(self) -> None:
+        self.kill_calls += 1
+
+
 class ReadyObserver:
     def __init__(self, *, ready: bool = True, disappear: bool = False) -> None:
         self.ready = ready
         self.disappear = disappear
         self.calls = 0
 
-    def __call__(self, number: int) -> bool:
+    def __call__(self, number: int) -> tuple[int, int] | None:
         if number != 78:
             raise RuntimeError("wrong fake display")
         self.calls += 1
         if self.calls == 1:
-            return False
+            return None
         if self.disappear and self.calls > 2:
-            return False
-        return self.ready
+            return None
+        return (77, 78) if self.ready else None
+
+
+class ReplacementObserver:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, number: int) -> tuple[int, int] | None:
+        if number != 78:
+            raise RuntimeError("wrong fake display")
+        self.calls += 1
+        if self.calls == 1:
+            return None
+        if self.calls == 2:
+            return 77, 78
+        return 77, 79
+
+
+class FakeDisplayCleaner:
+    def __init__(self, *, succeeds: bool = True) -> None:
+        self.succeeds = succeeds
+        self.calls: list[tuple[int, tuple[int, int]]] = []
+
+    def __call__(self, number: int, identity: tuple[int, int]) -> bool:
+        self.calls.append((number, identity))
+        return self.succeeds
 
 
 class ProcessFactory:
@@ -167,8 +202,9 @@ class X11TraceSupervisorTests(unittest.TestCase):
         self,
         factory: ProcessFactory,
         *,
-        observer: ReadyObserver | None = None,
+        observer: Any | None = None,
         config: X11TraceConfig | None = None,
+        cleaner: FakeDisplayCleaner | None = None,
     ) -> X11TraceSupervisor:
         return X11TraceSupervisor(
             config or self.config(),
@@ -176,6 +212,7 @@ class X11TraceSupervisorTests(unittest.TestCase):
             process_factory=factory,
             executable_inspector=self.executable_ok,
             fake_display_observer=observer or ReadyObserver(),
+            fake_display_cleaner=cleaner or FakeDisplayCleaner(),
         )
 
     def assert_category(self, category: str, operation: Any) -> None:
@@ -188,7 +225,8 @@ class X11TraceSupervisorTests(unittest.TestCase):
 
     def test_exact_no_auth_proxy_contract_and_clean_summary(self) -> None:
         factory = ProcessFactory()
-        supervisor = self.make_supervisor(factory)
+        cleaner = FakeDisplayCleaner()
+        supervisor = self.make_supervisor(factory, cleaner=cleaner)
         self.assertFalse(supervisor.finished)
         self.assertEqual(supervisor.proxy_display, ":78")
         self.assertIsNotNone(factory.arguments)
@@ -233,6 +271,67 @@ class X11TraceSupervisorTests(unittest.TestCase):
         self.assertEqual(factory.process.terminate_calls, 1)
         self.assertEqual(factory.process.kill_calls, 0)
         self.assertGreaterEqual(factory.process.wait_calls, 1)
+        self.assertEqual(cleaner.calls, [(78, (77, 78))])
+
+    def test_finish_fails_closed_when_exact_proxy_socket_cannot_be_removed(self) -> None:
+        factory = ProcessFactory()
+        cleaner = FakeDisplayCleaner(succeeds=False)
+        supervisor = self.make_supervisor(factory, cleaner=cleaner)
+        self.assert_category(
+            "x11trace_fake_display_cleanup_failed",
+            lambda: supervisor.finish(clients_exited=True),
+        )
+        self.assertTrue(supervisor.finished)
+        self.assertEqual(cleaner.calls, [(78, (77, 78))])
+        self.assertFalse(factory.output_path.exists())
+
+    def test_unreaped_proxy_preserves_socket_and_fails_cleanup(self) -> None:
+        process = UnreapedProcess()
+        factory = ProcessFactory(process=process)
+        cleaner = FakeDisplayCleaner()
+        supervisor = self.make_supervisor(factory, cleaner=cleaner)
+        self.assert_category(
+            "x11trace_fake_display_cleanup_failed",
+            lambda: supervisor.finish(clients_exited=False),
+        )
+        self.assertEqual(cleaner.calls, [])
+        self.assertGreaterEqual(process.kill_calls, 1)
+
+    def test_poll_rejects_replaced_proxy_socket_identity(self) -> None:
+        factory = ProcessFactory()
+        cleaner = FakeDisplayCleaner()
+        supervisor = self.make_supervisor(
+            factory,
+            observer=ReplacementObserver(),
+            cleaner=cleaner,
+        )
+        self.assert_category("x11trace_fake_display_invalid", supervisor.poll)
+        self.assert_category(
+            "x11trace_clients_active",
+            lambda: supervisor.finish(clients_exited=False),
+        )
+        self.assertEqual(cleaner.calls, [(78, (77, 78))])
+
+    def test_exact_owned_socket_cleanup_preserves_identity_replacement(self) -> None:
+        path = self.root / "proxy.sock"
+        first = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            first.bind(str(path))
+        except PermissionError:
+            first.close()
+            self.skipTest("sandbox blocks AF_UNIX pathname binding")
+        metadata = path.lstat()
+        identity = (metadata.st_dev, metadata.st_ino)
+        self.assertTrue(_remove_owned_socket(path, identity))
+        self.assertFalse(path.exists())
+        first.close()
+
+        second = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        second.bind(str(path))
+        self.assertFalse(_remove_owned_socket(path, identity))
+        self.assertTrue(path.exists())
+        second.close()
+        path.unlink()
 
     def test_kill_and_reap_paths_are_always_incomplete(self) -> None:
         process = FakeProcess(stubborn=True, natural_exit=False)
