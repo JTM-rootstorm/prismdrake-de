@@ -101,8 +101,8 @@ class FakeDbusPort:
         self.states = list(states)
         self.calls: list[tuple[Any, ...]] = []
         self.dnd_generation = 4
-        self.dismiss_generation = 7
-        self.clear_generation = 8
+        self.dismiss_generations = [7]
+        self.clear_generations = [8]
 
     def current_state(self) -> NotificationState:
         self.calls.append(("state",))
@@ -119,11 +119,11 @@ class FakeDbusPort:
 
     def clear_history(self) -> int:
         self.calls.append(("clear",))
-        return self.clear_generation
+        return self.clear_generations.pop(0)
 
     def dismiss(self, record_id: int, content_generation: int) -> int:
         self.calls.append(("dismiss", record_id, content_generation))
-        return self.dismiss_generation
+        return self.dismiss_generations.pop(0)
 
 
 class FakeSender:
@@ -290,6 +290,106 @@ class InstalledNotificationWorkflowTests(unittest.TestCase):
             "Fixture summary",
         ):
             self.assertNotIn(forbidden, serialized)
+
+    def test_literal_notify_send_acceptance_is_observed_and_cleaned_up(self) -> None:
+        flow, sender, dbus, surface = workflow()
+        run_through(flow, 8)
+        suppressed = record(102, notification_id=12, transient=False)
+        critical_closed = record(
+            103,
+            notification_id=None,
+            urgency="critical",
+            transient=False,
+            action=False,
+        )
+        external = record(
+            104,
+            notification_id=14,
+            urgency="critical",
+            transient=True,
+            action=False,
+        )
+        external_closed = record(
+            104,
+            notification_id=None,
+            urgency="critical",
+            transient=False,
+            action=False,
+        )
+        dbus.states.extend(
+            [
+                state(9, [suppressed, critical_closed], dnd=True, override=True),
+                state(10, [suppressed], dnd=True, override=True),
+                state(11, [suppressed, external], dnd=True, override=True),
+                state(12, [suppressed, external_closed], dnd=True, override=True),
+                state(13, [suppressed], dnd=True, override=True),
+            ]
+        )
+        dbus.dismiss_generations.extend([9, 12])
+        dbus.clear_generations.extend([10, 13])
+        calls: list[str] = []
+
+        flow.verify_notify_send(lambda: calls.append("notify-send"))
+
+        self.assertEqual(calls, ["notify-send"])
+        self.assertEqual(
+            sender.calls[-1],
+            ("wait_close", sender.tokens[3], ACTION_TIMEOUT_SECONDS),
+        )
+        self.assertEqual(
+            dbus.calls[-9:],
+            [
+                ("dismiss", 103, 1),
+                ("state",),
+                ("clear",),
+                ("state",),
+                ("state",),
+                ("dismiss", 104, 1),
+                ("state",),
+                ("clear",),
+                ("state",),
+            ],
+        )
+        self.assertEqual(
+            surface.calls[-3:],
+            [
+                ("transient", False, SURFACE_TIMEOUT_SECONDS),
+                ("transient", True, SURFACE_TIMEOUT_SECONDS),
+                ("transient", False, SURFACE_TIMEOUT_SECONDS),
+            ],
+        )
+
+    def test_literal_notify_send_failure_is_redacted_and_does_not_skip_cleanup(self) -> None:
+        flow, _sender, dbus, _surface = workflow()
+        run_through(flow, 8)
+        suppressed = record(102, notification_id=12, transient=False)
+        critical_closed = record(
+            103,
+            notification_id=None,
+            urgency="critical",
+            transient=False,
+            action=False,
+        )
+        dbus.states.extend(
+            [
+                state(9, [suppressed, critical_closed], dnd=True, override=True),
+                state(10, [suppressed], dnd=True, override=True),
+            ]
+        )
+        dbus.dismiss_generations.append(9)
+        dbus.clear_generations.append(10)
+
+        def fail() -> None:
+            raise RuntimeError("private notification content")
+
+        self.assert_category(
+            "notification_workflow_notify_send_failed",
+            lambda: flow.verify_notify_send(fail),
+        )
+        self.assertEqual(
+            dbus.calls[-4:],
+            [("dismiss", 103, 1), ("state",), ("clear",), ("state",)],
+        )
 
     def test_rejects_skipped_repeated_and_out_of_order_steps(self) -> None:
         flow, _sender, _dbus, _surface = workflow()

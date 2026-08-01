@@ -581,8 +581,10 @@ only the libraries and broker required by the five installed Experimental
 executables. Qt SVG is a direct shell dependency at the project-wide Qt 6.11
 floor. Qt Linguist tools are an unconditional build-only dependency used to
 compile the installed pseudo-locale catalogs; qttools is not retained in the
-runtime dependency set. Unused Qt image-format plugins and libnotify are not
-declared.
+runtime dependency set. Unused Qt image-format plugins are not declared.
+Libnotify is a conditional `USE=test` build dependency only so the installed
+workflow can exercise the standard `notify-send` client; it is not a product
+runtime dependency.
 GoogleTest, Python, GLib/PyGObject notification clients, Xvfb, the Xorg dummy
 driver, Openbox, X11 RandR,
 window-tree inspection, bounded XWD capture, protocol tracing, and input tools,

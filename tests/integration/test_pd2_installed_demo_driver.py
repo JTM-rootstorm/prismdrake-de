@@ -398,8 +398,8 @@ class ReviewedLiveConstructionTests(unittest.TestCase):
             set(pd2_demo.REVIEWED_LIVE_TOOL_PATHS),
             {
                 "xorg", "xrandr", "openbox", "xprop", "xwininfo",
-                "dbus_daemon", "dbus_monitor", "gdbus", "xdotool", "xwd",
-                "x11trace",
+                "dbus_daemon", "dbus_monitor", "gdbus", "notify_send",
+                "xdotool", "xwd", "x11trace",
             },
         )
         self.assertTrue(all(path.is_absolute()

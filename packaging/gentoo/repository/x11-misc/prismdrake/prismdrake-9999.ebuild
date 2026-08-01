@@ -37,6 +37,7 @@ BDEPEND="
 		x11-apps/xwd
 		x11-base/xorg-server[xvfb]
 		x11-drivers/xf86-video-dummy
+		x11-libs/libnotify
 		x11-misc/xdotool
 		x11-misc/xtrace
 		x11-themes/hicolor-icon-theme

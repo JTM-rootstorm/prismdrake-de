@@ -52,7 +52,11 @@ from pd2_live_notification_workflow import (
     WorkflowResult,
     validate_workflow_result,
 )
-from pd2_live_notifications import PersistentNotificationProbe
+from pd2_live_notifications import (
+    APPLICATION_NAME,
+    CRITICAL_SUMMARY,
+    PersistentNotificationProbe,
+)
 from pd2_live_lifecycle_workflow import (
     CleanupObservation as LifecycleCleanupObservation,
     ComponentObservation as LifecycleComponentObservation,
@@ -1540,6 +1544,7 @@ class LiveXorgConfig:
     dbus_monitor: Path
     gdbus: Path
     installed_executables: Mapping[str, Path]
+    notify_send: Path | None = None
     xdotool: Path | None = None
     xwd: Path | None = None
     controlled_window_fixture: Path | None = None
@@ -2369,10 +2374,33 @@ class LiveXorgHarnessPort:
             operation = getattr(workflow, method_name)
             result = operation()
             validate_workflow_result(result)
+            if identifier == "clear_notification_history":
+                workflow.verify_notify_send(self._invoke_notify_send)
         except Exception:
             raise HarnessError("live_notification_workflow_failed") from None
         if not isinstance(result, WorkflowResult):
             raise HarnessError("live_notification_workflow_failed")
+
+    def _invoke_notify_send(self) -> None:
+        executable = self._config.notify_send
+        if executable is None:
+            raise HarnessError("notify_send_executable_unavailable")
+        result = self._operations.run(
+            (
+                str(executable),
+                "--app-name",
+                APPLICATION_NAME,
+                "--urgency",
+                "critical",
+                "--expire-time",
+                "0",
+                CRITICAL_SUMMARY,
+            ),
+            self.probe_environment(),
+            3.0,
+        )
+        if result.returncode != 0 or result.stdout or result.stderr:
+            raise HarnessError("notify_send_invocation_failed")
 
     def _notification_workflow_epoch(self) -> _NotificationEpoch:
         if self._notification_epoch is not None:

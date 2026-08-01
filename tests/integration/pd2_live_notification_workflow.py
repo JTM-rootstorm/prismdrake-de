@@ -342,6 +342,7 @@ class InstalledNotificationWorkflow:
         self._primary_record_id: int | None = None
         self._suppressed_token: NotificationToken | None = None
         self._critical_token: NotificationToken | None = None
+        self._critical_record_id: int | None = None
 
     def _require_step(self, expected: int) -> None:
         if self._step != expected:
@@ -593,6 +594,7 @@ class InstalledNotificationWorkflow:
             lambda: self._surface.observe_transient(True, SURFACE_TIMEOUT_SECONDS),
         )
         self._critical_token = token
+        self._critical_record_id = record.record_id
         self._state = after
         return self._result(7)
 
@@ -660,6 +662,172 @@ class InstalledNotificationWorkflow:
             _fail("notification_workflow_history_clear_invalid")
         self._state = after
         return self._result(8)
+
+    def verify_notify_send(self, invoke: Callable[[], None]) -> None:
+        """Prove one literal notify-send notification reaches the live surface.
+
+        The controlled sender remains authoritative for replacement and action
+        callback coverage.  This extra acceptance runs only after the closed
+        eight-step workflow, removes the existing critical transient first,
+        and restores the pre-probe live-record set before returning.
+        """
+
+        self._require_step(8)
+        before = self._required_state()
+        critical_record_id = self._critical_record_id
+        if critical_record_id is None:
+            _fail("notification_workflow_notify_send_baseline_invalid")
+        critical = self._record_map(before).get(critical_record_id)
+        if (
+            critical is None
+            or critical.notification_id is None
+            or critical.urgency != "critical"
+            or not critical.transient
+            or self._critical_token is None
+        ):
+            _fail("notification_workflow_notify_send_baseline_invalid")
+
+        dismiss_generation = self._run(
+            "notification_workflow_notify_send_prepare_failed",
+            lambda: self._dbus.dismiss(
+                critical.record_id, critical.content_generation
+            ),
+        )
+        sender_result = self._run(
+            "notification_workflow_notify_send_prepare_failed",
+            lambda: self._sender.wait_for_close(
+                self._critical_token, ACTION_TIMEOUT_SECONDS
+            ),
+        )
+        self._validate_sender(sender_result, "notification_closed_observed")
+        prepared = self._current_state()
+        closed = self._record_map(prepared).get(critical.record_id)
+        checked_dismiss_generation = _unsigned(
+            dismiss_generation,
+            UINT64_MAX,
+            "notification_workflow_notify_send_prepare_invalid",
+        )
+        if (
+            checked_dismiss_generation <= before.generation
+            or prepared.generation != checked_dismiss_generation
+            or closed is None
+            or closed.notification_id is not None
+            or closed.transient
+            or any(enabled for _action_id, enabled in closed.actions)
+        ):
+            _fail("notification_workflow_notify_send_prepare_invalid")
+
+        clear_generation = self._run(
+            "notification_workflow_notify_send_prepare_failed",
+            self._dbus.clear_history,
+        )
+        baseline = self._current_state()
+        checked_clear_generation = _unsigned(
+            clear_generation,
+            UINT64_MAX,
+            "notification_workflow_notify_send_prepare_invalid",
+        )
+        baseline_records = self._record_map(baseline)
+        if (
+            checked_clear_generation <= prepared.generation
+            or baseline.generation != checked_clear_generation
+            or not baseline.effective_do_not_disturb
+            or baseline.history_mode != prepared.history_mode
+            or baseline.runtime_do_not_disturb_override
+            != prepared.runtime_do_not_disturb_override
+            or critical.record_id in baseline_records
+            or set(baseline_records)
+            != {
+                record.record_id
+                for record in prepared.records
+                if record.notification_id is not None
+            }
+        ):
+            _fail("notification_workflow_notify_send_prepare_invalid")
+        self._run(
+            "notification_workflow_notify_send_prepare_failed",
+            lambda: self._surface.observe_transient(
+                False, SURFACE_TIMEOUT_SECONDS
+            ),
+        )
+
+        self._run("notification_workflow_notify_send_failed", invoke)
+        observed = self._current_state()
+        external = self._new_record(baseline, observed)
+        if (
+            external.notification_id is None
+            or external.urgency != "critical"
+            or not external.transient
+            or external.actions
+            or observed.history_mode != baseline.history_mode
+            or observed.effective_do_not_disturb
+            != baseline.effective_do_not_disturb
+            or observed.runtime_do_not_disturb_override
+            != baseline.runtime_do_not_disturb_override
+        ):
+            _fail("notification_workflow_notify_send_state_invalid")
+        self._run(
+            "notification_workflow_notify_send_observation_failed",
+            lambda: self._surface.observe_transient(
+                True, SURFACE_TIMEOUT_SECONDS
+            ),
+        )
+
+        external_dismiss_generation = self._run(
+            "notification_workflow_notify_send_cleanup_failed",
+            lambda: self._dbus.dismiss(
+                external.record_id, external.content_generation
+            ),
+        )
+        dismissed = self._current_state()
+        dismissed_external = self._record_map(dismissed).get(external.record_id)
+        checked_external_dismiss_generation = _unsigned(
+            external_dismiss_generation,
+            UINT64_MAX,
+            "notification_workflow_notify_send_cleanup_invalid",
+        )
+        if (
+            checked_external_dismiss_generation <= observed.generation
+            or dismissed.generation != checked_external_dismiss_generation
+            or dismissed_external is None
+            or dismissed_external.notification_id is not None
+            or dismissed_external.transient
+            or dismissed_external.actions
+            or dismissed.history_mode != observed.history_mode
+            or dismissed.effective_do_not_disturb
+            != observed.effective_do_not_disturb
+            or dismissed.runtime_do_not_disturb_override
+            != observed.runtime_do_not_disturb_override
+        ):
+            _fail("notification_workflow_notify_send_cleanup_invalid")
+        cleanup_generation = self._run(
+            "notification_workflow_notify_send_cleanup_failed",
+            self._dbus.clear_history,
+        )
+        final = self._current_state()
+        checked_cleanup_generation = _unsigned(
+            cleanup_generation,
+            UINT64_MAX,
+            "notification_workflow_notify_send_cleanup_invalid",
+        )
+        if (
+            checked_cleanup_generation <= dismissed.generation
+            or final.generation != checked_cleanup_generation
+            or self._record_map(final) != baseline_records
+            or final.history_mode != baseline.history_mode
+            or final.effective_do_not_disturb
+            != baseline.effective_do_not_disturb
+            or final.runtime_do_not_disturb_override
+            != baseline.runtime_do_not_disturb_override
+        ):
+            _fail("notification_workflow_notify_send_cleanup_invalid")
+        self._run(
+            "notification_workflow_notify_send_cleanup_failed",
+            lambda: self._surface.observe_transient(
+                False, SURFACE_TIMEOUT_SECONDS
+            ),
+        )
+        self._state = final
 
     @staticmethod
     def _validate_sender(result: SenderResult, expected_category: str) -> None:

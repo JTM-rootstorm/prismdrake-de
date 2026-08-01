@@ -112,11 +112,10 @@ class ProductEbuildContractTests(unittest.TestCase):
         self.assertNotIn("dev-qt/qttools", dependency_body(self.source, "DEPEND"))
         self.assertNotIn("dev-qt/qttools", dependency_body(self.source, "RDEPEND"))
 
-    def test_unimplemented_qt_image_plugins_and_libnotify_are_not_declared(self) -> None:
+    def test_unimplemented_qt_image_plugins_are_not_declared(self) -> None:
         self.assertNotIn("dev-qt/qtimageformats", self.source)
-        self.assertNotIn("x11-libs/libnotify", self.source)
 
-    def test_live_observer_display_and_icon_fixtures_are_test_only(self) -> None:
+    def test_live_observer_and_standards_fixtures_are_test_only(self) -> None:
         bdepend = dependency_body(self.source, "BDEPEND")
         test_bdepend = use_dependency_body(self.source, "test")
         depend = dependency_body(self.source, "DEPEND")
@@ -136,6 +135,7 @@ class ProductEbuildContractTests(unittest.TestCase):
             "x11-apps/xwd",
             "x11-base/xorg-server[xvfb]",
             "x11-drivers/xf86-video-dummy",
+            "x11-libs/libnotify",
             "x11-misc/xdotool",
             "x11-misc/xtrace",
             "x11-themes/hicolor-icon-theme",

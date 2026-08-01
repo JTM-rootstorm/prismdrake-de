@@ -182,6 +182,7 @@ class FakeOperations:
         self.query_payload = query_payload
         self.query_payloads = list(query_payloads)
         self.query_results = list(query_results)
+        self.notify_send_result = CommandResult(0)
         self.spawn_calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
         self.run_calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
         self.stop_calls: list[FakeChild] = []
@@ -357,6 +358,8 @@ class FakeOperations:
                     0, f"{self.focused_window}\n".encode("ascii")
                 )
             return CommandResult(0)
+        if command[0].endswith("notify-send"):
+            return self.notify_send_result
         if command[-1] == "_NET_ACTIVE_WINDOW":
             active = self.active_window or 0
             return CommandResult(
@@ -799,6 +802,7 @@ def config(installed: Mapping[str, Path] | None = None) -> LiveXorgConfig:
         dbus_monitor=Path("/usr/bin/dbus-monitor"),
         gdbus=Path("/usr/bin/gdbus"),
         installed_executables=installed or {},
+        notify_send=Path("/usr/bin/notify-send"),
         xdotool=Path("/usr/bin/xdotool"),
         xwd=Path("/usr/bin/xwd"),
         first_display=140,
@@ -854,6 +858,10 @@ class FakeNotificationWorkflow:
 
     def clear_history(self) -> WorkflowResult:
         return self._run("clear_history")
+
+    def verify_notify_send(self, invoke) -> None:
+        self.calls.append("verify_notify_send")
+        invoke()
 
 
 class FakeLifecycleWorkflow:
@@ -2386,7 +2394,31 @@ class LivePortTests(unittest.TestCase):
                 "create_suppressed_normal",
                 "create_critical_bypass",
                 "clear_history",
+                "verify_notify_send",
             ],
+        )
+        notify_calls = [
+            (argv, environment)
+            for argv, environment in operations.run_calls
+            if argv and argv[0] == "/usr/bin/notify-send"
+        ]
+        self.assertEqual(len(notify_calls), 1)
+        notify_argv, notify_environment = notify_calls[0]
+        self.assertEqual(
+            notify_argv,
+            (
+                "/usr/bin/notify-send",
+                "--app-name",
+                live_xorg.APPLICATION_NAME,
+                "--urgency",
+                "critical",
+                "--expire-time",
+                "0",
+                live_xorg.CRITICAL_SUMMARY,
+            ),
+        )
+        self.assertEqual(
+            notify_environment["DBUS_SESSION_BUS_ADDRESS"], endpoint.address
         )
 
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
@@ -2418,6 +2450,36 @@ class LivePortTests(unittest.TestCase):
         ):
             port.run_step("installed_workflow", "create_normal_notification")
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_notify_send_failure_is_redacted_and_cleanup_still_closes_epoch(self) -> None:
+        operations = FakeOperations()
+        operations.notify_send_result = CommandResult(
+            1, b"private summary", b"private body"
+        )
+        factory = FakeNotificationEpochFactory()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()),
+            operations,
+            FakeAccessibility(operations),
+            factory,
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+        for identifier in tuple(LiveXorgHarnessPort._NOTIFICATION_STEPS)[:-1]:  # noqa: SLF001
+            port.run_step("installed_workflow", identifier)
+
+        with self.assertRaisesRegex(
+            HarnessError, "^live_notification_workflow_failed$"
+        ):
+            port.run_step("installed_workflow", "clear_notification_history")
+
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+        self.assertEqual(factory.sender.close_calls, 1)
+        self.assertEqual(factory.dbus_probe.close_calls, 1)
 
     def test_keeps_one_attested_settings_epoch_across_steps_25_to_28(self) -> None:
         operations = FakeOperations()
