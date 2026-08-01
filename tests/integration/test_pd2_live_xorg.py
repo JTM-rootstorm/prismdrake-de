@@ -2127,6 +2127,81 @@ class LivePortTests(unittest.TestCase):
             ],
         )
 
+    def test_tier_c_quick_settings_opens_from_focused_panel_control(self) -> None:
+        class PreparationPort(LiveXorgHarnessPort):
+            def __init__(self):
+                super().__init__(config(), FakeOperations())
+                self.events: list[tuple[str, object]] = []
+
+            def observe_atspi(self, selector):
+                self.events.append(
+                    (
+                        "focus",
+                        (selector.name, selector.role, selector.require_focused),
+                    )
+                )
+                return live_xorg.AtspiCategoricalResult("atspi_control_ready")
+
+            def _xdotool(self, *arguments):
+                self.events.append(("key", arguments[-1]))
+                return CommandResult(0)
+
+            def _wait_accessible(self, selector, timeout_error):
+                self.events.append(
+                    ("surface_accessible", (selector.name, timeout_error))
+                )
+
+            def _wait_tier_c_named_surface(self, title, timeout_error):
+                self.events.append(("surface_window", (title, timeout_error)))
+                return 0x510004, WindowGeometry(1220, 452, 380, 400)
+
+            def _wait_x11_focus(self, window, timeout_error):
+                self.events.append(("x11_focus", (window, timeout_error)))
+
+            def _window_state_atoms(self, window):
+                self.events.append(("task_policy", window))
+                return frozenset({b"_NET_WM_STATE_SKIP_TASKBAR"})
+
+        port = PreparationPort()
+        port._tier_c_trace = object()  # type: ignore[assignment]  # noqa: SLF001
+        port._tier_c_workflow = object()  # type: ignore[assignment]  # noqa: SLF001
+
+        self.assertEqual(
+            port.prepare_step(live_xorg.STEP_CONTRACTS["quick_settings"]),
+            live_xorg.TierCPortResult("tier_c_step_prepared"),
+        )
+        self.assertEqual(
+            port.events,
+            [
+                (
+                    "focus",
+                    ("Open notification center", "push_button", True),
+                ),
+                ("key", "Tab"),
+                (
+                    "focus",
+                    ("Open quick settings", "push_button", True),
+                ),
+                ("key", "Return"),
+                (
+                    "surface_accessible",
+                    ("Quick settings", "tier_c_quick_settings_timeout"),
+                ),
+                (
+                    "surface_window",
+                    (
+                        live_xorg.QUICK_SETTINGS_WINDOW_TITLE,
+                        "tier_c_quick_settings_window_timeout",
+                    ),
+                ),
+                (
+                    "x11_focus",
+                    (0x510004, "tier_c_quick_settings_x11_focus_timeout"),
+                ),
+                ("task_policy", 0x510004),
+            ],
+        )
+
     def test_tier_c_notification_center_waits_for_dismissal_and_focus(self) -> None:
         class SynchronizationPort(LiveXorgHarnessPort):
             def __init__(self):
@@ -2197,6 +2272,82 @@ class LivePortTests(unittest.TestCase):
                     "x11_focus",
                     "tier_c_notification_center_focus_restore_timeout",
                 ),
+            ],
+        )
+
+    def test_tier_c_notification_center_opens_from_focused_panel_control(self) -> None:
+        class PreparationPort(LiveXorgHarnessPort):
+            def __init__(self):
+                super().__init__(config(), FakeOperations())
+                self.events: list[tuple[str, object]] = []
+
+            def observe_atspi(self, selector):
+                self.events.append(
+                    (
+                        "focus",
+                        (selector.name, selector.role, selector.require_focused),
+                    )
+                )
+                return live_xorg.AtspiCategoricalResult("atspi_control_ready")
+
+            def _xdotool(self, *arguments):
+                self.events.append(("key", arguments[-1]))
+                return CommandResult(0)
+
+            def _wait_accessible(self, selector, timeout_error):
+                self.events.append(
+                    ("surface_accessible", (selector.name, timeout_error))
+                )
+
+            def _wait_tier_c_named_surface(self, title, timeout_error):
+                self.events.append(("surface_window", (title, timeout_error)))
+                return 0x510003, WindowGeometry(1220, 452, 380, 400)
+
+            def _wait_x11_focus(self, window, timeout_error):
+                self.events.append(("x11_focus", (window, timeout_error)))
+
+            def _window_state_atoms(self, window):
+                self.events.append(("task_policy", window))
+                return frozenset({b"_NET_WM_STATE_SKIP_TASKBAR"})
+
+        port = PreparationPort()
+        port._tier_c_trace = object()  # type: ignore[assignment]  # noqa: SLF001
+        port._tier_c_workflow = object()  # type: ignore[assignment]  # noqa: SLF001
+
+        self.assertEqual(
+            port.prepare_step(live_xorg.STEP_CONTRACTS["notification_center"]),
+            live_xorg.TierCPortResult("tier_c_step_prepared"),
+        )
+        self.assertEqual(
+            port.events,
+            [
+                (
+                    "focus",
+                    ("Open notification center", "push_button", True),
+                ),
+                ("key", "Return"),
+                (
+                    "surface_accessible",
+                    (
+                        "Notification center",
+                        "tier_c_notification_center_timeout",
+                    ),
+                ),
+                (
+                    "surface_window",
+                    (
+                        live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE,
+                        "tier_c_notification_center_window_timeout",
+                    ),
+                ),
+                (
+                    "x11_focus",
+                    (
+                        0x510003,
+                        "tier_c_notification_center_x11_focus_timeout",
+                    ),
+                ),
+                ("task_policy", 0x510003),
             ],
         )
 
@@ -2392,7 +2543,20 @@ class LivePortTests(unittest.TestCase):
                 if arguments[:2] != ("key", "--clearmodifiers"):
                     return result
                 identifier = port._tier_c_identifier  # noqa: SLF001
-                if identifier == "launcher" and arguments[-1] == "Return":
+                if identifier is None and arguments[-1] == "Tab":
+                    if accessibility.focused_control == "Open notification center":
+                        accessibility.focused_control = "Open quick settings"
+                elif identifier is None and arguments[-1] == "Return":
+                    if accessibility.focused_control == "Open notification center":
+                        operations.visible_named_windows[
+                            live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE
+                        ] = 0x510003
+                        operations.focused_window = 0x510003
+                        accessibility.focused_control = "Do not disturb"
+                    elif accessibility.focused_control == "Open quick settings":
+                        operations.focused_window = 0x510004
+                        accessibility.focused_control = "Use Prismdrake Lustre"
+                elif identifier == "launcher" and arguments[-1] == "Return":
                     operations.controlled_windows.pop(
                         live_xorg.LAUNCHER_WINDOW_TITLE, None
                     )
@@ -2425,6 +2589,15 @@ class LivePortTests(unittest.TestCase):
                         )
                         operations.focused_window = PANEL_LEFT
                         accessibility.focused_control = "Open notification center"
+                elif identifier == "notification_center" and arguments[-1] == "Escape":
+                    operations.visible_named_windows.pop(
+                        live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE, None
+                    )
+                    operations.focused_window = PANEL_LEFT
+                    accessibility.focused_control = "Open notification center"
+                elif identifier == "quick_settings" and arguments[-1] == "Escape":
+                    operations.focused_window = PANEL_LEFT
+                    accessibility.focused_control = "Open quick settings"
                 return result
 
             with patch.object(
@@ -2503,6 +2676,10 @@ class LivePortTests(unittest.TestCase):
             for identifier in TIER_C_STEPS:
                 if identifier == "task_actions":
                     expected_keys.append("Tab")
+                if identifier == "notification_center":
+                    expected_keys.append("Return")
+                if identifier == "quick_settings":
+                    expected_keys.extend(("Tab", "Return"))
                 expected_keys.extend(
                     live_xorg.TIER_C_KEY_ARGUMENTS[key]
                     for key in live_xorg.STEP_CONTRACTS[identifier].keys

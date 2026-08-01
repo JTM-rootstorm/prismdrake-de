@@ -2890,19 +2890,45 @@ class LiveXorgHarnessPort:
                 "tier_c_notification_window_timeout",
             )
         elif identifier == "notification_center":
-            self._invoke_shellctl("notifications", "open")
+            self.observe_atspi(
+                ControlSelector(
+                    "Open notification center", "push_button", require_focused=True
+                )
+            )
+            self._xdotool("key", "--clearmodifiers", "Return")
             self._wait_accessible(
                 ControlSelector("Notification center", "pane"),
                 "tier_c_notification_center_timeout",
             )
-            surface = self._tier_c_named_surface(NOTIFICATION_CENTER_WINDOW_TITLE)
+            surface = self._wait_tier_c_named_surface(
+                NOTIFICATION_CENTER_WINDOW_TITLE,
+                "tier_c_notification_center_window_timeout",
+            )
+            self._wait_x11_focus(
+                surface[0], "tier_c_notification_center_x11_focus_timeout"
+            )
         elif identifier == "quick_settings":
-            self._invoke_shellctl("quick-settings", "open")
+            self.observe_atspi(
+                ControlSelector(
+                    "Open notification center", "push_button", require_focused=True
+                )
+            )
+            self._xdotool("key", "--clearmodifiers", "Tab")
+            self.observe_atspi(
+                ControlSelector(
+                    "Open quick settings", "push_button", require_focused=True
+                )
+            )
+            self._xdotool("key", "--clearmodifiers", "Return")
             self._wait_accessible(
                 ControlSelector("Quick settings", "pane"),
                 "tier_c_quick_settings_timeout",
             )
-            surface = self._tier_c_named_surface(QUICK_SETTINGS_WINDOW_TITLE)
+            surface = self._wait_tier_c_named_surface(
+                QUICK_SETTINGS_WINDOW_TITLE,
+                "tier_c_quick_settings_window_timeout",
+            )
+            self._wait_x11_focus(surface[0], "tier_c_quick_settings_x11_focus_timeout")
         elif identifier == "logout":
             self._invoke_shellctl("session", "logout")
             self._wait_accessible(
