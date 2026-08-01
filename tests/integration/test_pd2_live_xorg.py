@@ -2080,6 +2080,14 @@ class LivePortTests(unittest.TestCase):
             def _wait_accessible_absent(self, selector, timeout_error):
                 self.events.append(("absent", (selector.name, timeout_error)))
 
+            def _wait_accessible(self, selector, timeout_error):
+                self.events.append(
+                    (
+                        "focus_wait",
+                        (selector.name, selector.require_focused, timeout_error),
+                    )
+                )
+
             def _wait_primary_panel_x11_focus(self, timeout_error):
                 self.events.append(("x11_focus", timeout_error))
 
@@ -2113,7 +2121,14 @@ class LivePortTests(unittest.TestCase):
                         "tier_c_profile_toggle_failed",
                     ),
                 ),
-                ("focus", "Use Prismdrake Forge"),
+                (
+                    "focus_wait",
+                    (
+                        "Use Prismdrake Forge",
+                        True,
+                        "tier_c_profile_focus_recovery_timeout",
+                    ),
+                ),
                 ("key", "Escape"),
                 (
                     "absent",

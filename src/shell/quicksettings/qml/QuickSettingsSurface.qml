@@ -142,7 +142,7 @@ FocusScope {
     }
 
     function restorePendingFocus(index, restoreVisualFocus, recoverySerial,
-                                 attemptsRemaining) {
+                                 allowProfileGroupFallback, attemptsRemaining) {
         Qt.callLater(function() {
             if (recoverySerial !== root.focusRecoverySerial
                     || root.Window.window === null
@@ -154,12 +154,18 @@ FocusScope {
                 if (attemptsRemaining > 0)
                     root.restorePendingFocus(index, restoreVisualFocus,
                                              recoverySerial,
+                                             allowProfileGroupFallback,
                                              attemptsRemaining - 1)
                 return
             }
+            const activeFocusItem = root.Window.window.activeFocusItem
+            const profileGroupFallback = allowProfileGroupFallback
+                && (activeFocusItem === lustreProfile
+                    || activeFocusItem === forgeProfile)
             if (!candidate.activeFocus
-                    && root.Window.window.activeFocusItem !== null
-                    && root.Window.window.activeFocusItem !== root)
+                    && activeFocusItem !== null
+                    && activeFocusItem !== root
+                    && !profileGroupFallback)
                 return
             if (candidate.activeFocus && restoreVisualFocus
                     && !candidate.visualFocus)
@@ -203,11 +209,16 @@ FocusScope {
                 const index = root.pendingProfileFocusRecovery
                 const restoreVisualFocus = root.pendingProfileVisualFocusRecovery
                 const recoverySerial = root.pendingProfileFocusRecoverySerial
+                const activeFocusItem = root.Window.window !== null
+                    ? root.Window.window.activeFocusItem : null
+                const allowProfileGroupFallback = activeFocusItem === lustreProfile
+                    || activeFocusItem === forgeProfile
                 root.pendingProfileFocusRecovery = -1
                 root.pendingProfileVisualFocusRecovery = false
                 root.pendingProfileFocusRecoverySerial = -1
                 root.restorePendingFocus(index, restoreVisualFocus,
-                                         recoverySerial, 2)
+                                         recoverySerial,
+                                         allowProfileGroupFallback, 2)
             }
         }
     }
@@ -225,7 +236,7 @@ FocusScope {
                 root.pendingDoNotDisturbVisualFocusRecovery = false
                 root.pendingDoNotDisturbFocusRecoverySerial = -1
                 root.restorePendingFocus(2, restoreVisualFocus,
-                                         recoverySerial, 2)
+                                         recoverySerial, false, 2)
             }
         }
     }

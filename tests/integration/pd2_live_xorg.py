@@ -3201,16 +3201,19 @@ class LiveXorgHarnessPort:
                 "tier_c_notification_center_focus_restore_timeout"
             )
         elif identifier == "quick_settings":
-            forge = ControlSelector(
-                "Use Prismdrake Forge", "radio_button", require_focused=True
-            )
+            forge = ControlSelector("Use Prismdrake Forge", "radio_button")
             self._wait_accessible_state(
                 forge,
                 "CHECKED",
                 True,
                 "tier_c_profile_toggle_failed",
             )
-            self.observe_atspi(forge)
+            self._wait_accessible(
+                ControlSelector(
+                    "Use Prismdrake Forge", "radio_button", require_focused=True
+                ),
+                "tier_c_profile_focus_recovery_timeout",
+            )
             self._xdotool("key", "--clearmodifiers", "Escape")
             self._wait_accessible_absent(
                 ControlSelector("Quick settings", "pane"),
