@@ -1513,8 +1513,11 @@ def parse_window_ids(payload: bytes, property_name: bytes) -> tuple[int, ...]:
     prefix = property_name + b"(WINDOW): window id # "
     if not payload.startswith(prefix) or not payload.endswith(b"\n"):
         raise HarnessError("x11_window_list_invalid")
-    values = payload[len(prefix) : -1].split(b", ")
-    if not values or len(values) > MAX_SURFACE_WINDOWS:
+    body = payload[len(prefix) : -1]
+    if not body:
+        return ()
+    values = body.split(b", ")
+    if len(values) > MAX_SURFACE_WINDOWS:
         raise HarnessError("x11_window_list_invalid")
     result: list[int] = []
     for value in values:

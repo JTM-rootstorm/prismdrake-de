@@ -1338,6 +1338,13 @@ class SurfaceParserTests(unittest.TestCase):
     def test_parses_bounded_window_lists_cardinals_and_geometry(self) -> None:
         self.assertEqual(
             parse_window_ids(
+                b"_NET_CLIENT_LIST_STACKING(WINDOW): window id # \n",
+                b"_NET_CLIENT_LIST_STACKING",
+            ),
+            (),
+        )
+        self.assertEqual(
+            parse_window_ids(
                 b"_NET_CLIENT_LIST_STACKING(WINDOW): window id # 0x500001, 0x500004\n",
                 b"_NET_CLIENT_LIST_STACKING",
             ),
@@ -1371,6 +1378,14 @@ class SurfaceParserTests(unittest.TestCase):
 
     def test_surface_parsers_reject_ambiguous_or_unmapped_observations(self) -> None:
         cases = (
+            lambda: parse_window_ids(
+                b"_NET_CLIENT_LIST_STACKING(WINDOW): window id #\n",
+                b"_NET_CLIENT_LIST_STACKING",
+            ),
+            lambda: parse_window_ids(
+                b"_NET_CLIENT_LIST_STACKING(WINDOW): window id # , \n",
+                b"_NET_CLIENT_LIST_STACKING",
+            ),
             lambda: parse_window_ids(
                 b"_NET_CLIENT_LIST_STACKING(WINDOW): window id # 0x1, 0x1\n",
                 b"_NET_CLIENT_LIST_STACKING",
