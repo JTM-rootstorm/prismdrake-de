@@ -44,7 +44,8 @@ extern "C" void wakeSessionSupervisor(int signal) {
     const int descriptor = sessionActivityWriteDescriptor;
     if (descriptor >= 0) {
         constexpr std::uint8_t wake = 1U;
-        static_cast<void>(::write(descriptor, &wake, sizeof(wake)));
+        const auto writeResult = ::write(descriptor, &wake, sizeof(wake));
+        static_cast<void>(writeResult);
     }
     errno = savedError;
 }
