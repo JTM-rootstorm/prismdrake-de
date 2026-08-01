@@ -451,7 +451,8 @@ FocusScope {
                 Accessible.checked: checked
                 Accessible.focusable: enabled || (pendingFocusAnchor.activeFocus
                                                     && pendingFocusAnchorOrigin === 0)
-                Accessible.focused: activeFocus || (pendingFocusAnchor.activeFocus
+                Accessible.focused: activeFocus || (!enabled
+                                                     && pendingFocusAnchor.activeFocus
                                                      && pendingFocusAnchorOrigin === 0)
                 Accessible.onPressAction: {
                     if (enabled)
@@ -490,7 +491,8 @@ FocusScope {
                 Accessible.checked: checked
                 Accessible.focusable: enabled || (pendingFocusAnchor.activeFocus
                                                     && pendingFocusAnchorOrigin === 1)
-                Accessible.focused: activeFocus || (pendingFocusAnchor.activeFocus
+                Accessible.focused: activeFocus || (!enabled
+                                                     && pendingFocusAnchor.activeFocus
                                                      && pendingFocusAnchorOrigin === 1)
                 Accessible.onPressAction: {
                     if (enabled)
@@ -542,7 +544,8 @@ FocusScope {
             Accessible.checked: checked
             Accessible.focusable: enabled || (pendingFocusAnchor.activeFocus
                                                 && pendingFocusAnchorOrigin === 2)
-            Accessible.focused: activeFocus || (pendingFocusAnchor.activeFocus
+            Accessible.focused: activeFocus || (!enabled
+                                                 && pendingFocusAnchor.activeFocus
                                                  && pendingFocusAnchorOrigin === 2)
             Accessible.onToggleAction: {
                 if (enabled)

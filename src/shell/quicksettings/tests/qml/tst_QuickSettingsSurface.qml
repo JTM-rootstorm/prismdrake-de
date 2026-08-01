@@ -338,9 +338,14 @@ TestCase {
         profileAdapter.valueId = "forge"
         profileAdapter.pending = false
         profileAdapter.changed()
+        compare(surface.controlAt(1).enabled, true)
+        compare(surface.controlAt(1).activeFocus, false)
+        compare(surface.controlAt(1).Accessible.focused, false)
+        compare(surface.pendingFocusIndicatorVisible, true)
         tryCompare(surface.controlAt(1), "activeFocus", true)
         tryCompare(surface.controlAt(1), "visualFocus", true)
         compare(surface.controlAt(1).Accessible.focused, true)
+        compare(surface.pendingFocusIndicatorVisible, false)
     }
 
     function test_pendingProfileActivationSurvivesSynchronousCompletion() {
@@ -649,9 +654,14 @@ TestCase {
         dndAdapter.checked = true
         dndAdapter.pending = false
         dndAdapter.changed()
+        compare(surface.controlAt(2).enabled, true)
+        compare(surface.controlAt(2).activeFocus, false)
+        compare(surface.controlAt(2).Accessible.focused, false)
+        compare(surface.pendingFocusIndicatorVisible, true)
         tryCompare(surface.controlAt(2), "activeFocus", true)
         tryCompare(surface.controlAt(2), "visualFocus", true)
         compare(surface.controlAt(2).Accessible.focused, true)
+        compare(surface.pendingFocusIndicatorVisible, false)
     }
 
     function test_pendingDndActivationSurvivesSynchronousCompletion() {
