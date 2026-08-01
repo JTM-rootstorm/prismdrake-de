@@ -173,6 +173,9 @@ REVIEWED_LIVE_TOOL_PATHS = {
     "xwd": Path("/usr/bin/xwd"),
     "x11trace": Path("/usr/bin/x11trace"),
 }
+REVIEWED_LIVE_TOOL_SYMLINK_TARGETS = {
+    "notify_send": Path("/usr/bin/libnotify-notify-send"),
+}
 MAX_BOUND_FILE_BYTES = 128 * 1024 * 1024
 
 
@@ -749,18 +752,32 @@ def _driver_path() -> Path:
 
 
 def _require_reviewed_live_tools() -> None:
-    for path in REVIEWED_LIVE_TOOL_PATHS.values():
+    for name, path in REVIEWED_LIVE_TOOL_PATHS.items():
         require(path.is_absolute(), "live_tool_path_invalid")
         try:
             metadata = path.lstat()
         except OSError as error:
             raise HarnessError("live_tool_unavailable") from error
+        executable_path = path
+        if stat.S_ISLNK(metadata.st_mode):
+            expected_target = REVIEWED_LIVE_TOOL_SYMLINK_TARGETS.get(name)
+            require(expected_target is not None, "live_tool_invalid")
+            try:
+                resolved_target = path.resolve(strict=True)
+                metadata = resolved_target.lstat()
+            except OSError as error:
+                raise HarnessError("live_tool_unavailable") from error
+            require(
+                resolved_target == expected_target
+                and not stat.S_ISLNK(metadata.st_mode),
+                "live_tool_invalid",
+            )
+            executable_path = resolved_target
         require(
             stat.S_ISREG(metadata.st_mode)
-            and not stat.S_ISLNK(metadata.st_mode)
             and metadata.st_mode & 0o111 != 0
             and metadata.st_mode & 0o022 == 0
-            and os.access(path, os.X_OK),
+            and os.access(executable_path, os.X_OK),
             "live_tool_invalid",
         )
 

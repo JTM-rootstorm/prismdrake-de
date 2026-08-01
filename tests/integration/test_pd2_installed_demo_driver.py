@@ -359,6 +359,51 @@ class ReviewedLiveConstructionTests(unittest.TestCase):
             ):
                 pd2_demo._require_reviewed_live_tools()
 
+    def test_tool_preflight_accepts_only_the_reviewed_notify_send_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            provider = root / "libnotify-notify-send"
+            provider.write_bytes(b"tool")
+            provider.chmod(0o755)
+            selected = root / "notify-send"
+            selected.symlink_to(provider)
+
+            with (
+                mock.patch.dict(
+                    pd2_demo.REVIEWED_LIVE_TOOL_PATHS,
+                    {"notify_send": selected},
+                    clear=True,
+                ),
+                mock.patch.dict(
+                    pd2_demo.REVIEWED_LIVE_TOOL_SYMLINK_TARGETS,
+                    {"notify_send": provider},
+                    clear=True,
+                ),
+            ):
+                pd2_demo._require_reviewed_live_tools()
+
+            other_provider = root / "other-notify-send"
+            other_provider.write_bytes(b"tool")
+            other_provider.chmod(0o755)
+            selected.unlink()
+            selected.symlink_to(other_provider)
+            with (
+                mock.patch.dict(
+                    pd2_demo.REVIEWED_LIVE_TOOL_PATHS,
+                    {"notify_send": selected},
+                    clear=True,
+                ),
+                mock.patch.dict(
+                    pd2_demo.REVIEWED_LIVE_TOOL_SYMLINK_TARGETS,
+                    {"notify_send": provider},
+                    clear=True,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    pd2_demo.HarnessError, "^live_tool_invalid$"
+                ):
+                    pd2_demo._require_reviewed_live_tools()
+
     def test_constructs_explicit_system_adapters_with_reviewed_absolute_paths(self) -> None:
         created: dict[str, object] = {}
 
