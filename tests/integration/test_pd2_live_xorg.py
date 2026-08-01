@@ -249,6 +249,7 @@ class FakeOperations:
         self.events: list[tuple[str, object]] = []
         self.unavailable_displays: set[int] = set()
         self.sync_surfaces_from_queries = False
+        self.notification_shellctl_status = 0
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
         self.events.append(("spawn", Path(argv[0]).name))
@@ -296,6 +297,14 @@ class FakeOperations:
         ):
             self.visible_named_windows.setdefault(
                 live_xorg.LAUNCHER_WINDOW_TITLE, 0x510001
+            )
+        if command[:3] == (
+            "/usr/bin/prismdrake-shellctl", "notifications", "open"
+        ) and self.notification_shellctl_status != 0:
+            return CommandResult(
+                self.notification_shellctl_status,
+                b"",
+                b"prismdrake-shellctl: The typed control request failed (status 5).\n",
             )
         if command[:2] == ("/usr/bin/gdbus", "call"):
             destination = command[command.index("--dest") + 1]
@@ -969,12 +978,20 @@ class FakeNotificationFailureReplay:
         return FailureEvidence("malformed_persistent_history_recovered")
 
     def verify_conflicting_owner(
-        self, executable, environment, endpoint, sibling_observer
+        self,
+        executable,
+        environment,
+        endpoint,
+        start_conflicted_session,
+        sibling_observer,
+        active_conflict_observer,
     ):
+        start_conflicted_session()
         before = dict(sibling_observer())
         after = dict(sibling_observer())
         if after != before:
             raise RuntimeError("private sibling drift")
+        active_conflict_observer()
         self.conflict_calls.append(
             (executable, dict(environment), endpoint, before)
         )
@@ -1707,7 +1724,11 @@ class NotificationFailureReplayAdapterTests(unittest.TestCase):
 
     def test_owner_lease_encloses_exact_candidate_and_sibling_verification(self) -> None:
         calls: list[tuple[str, object]] = []
-        owner = object()
+        class Owner:
+            def verify(self):
+                calls.append(("owner_verify", None))
+
+        owner = Owner()
 
         class Lease:
             def __init__(self, environment, endpoint):
@@ -1739,11 +1760,19 @@ class NotificationFailureReplayAdapterTests(unittest.TestCase):
         executable = Path("/usr/bin/prismdrake-notifyd")
         endpoint = object()
         environment = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/private"}
-        def siblings():
+
+        def start_conflicted_session() -> None:
+            calls.append(("start", None))
+
+        def siblings() -> dict[str, tuple[int, int]]:
             return {
                 "prismdrake-settingsd": (101, 1001),
                 "prismdrake-shell": (102, 1002),
             }
+
+        def observe_conflict() -> None:
+            calls.append(("observe", None))
+
         adapter = SystemNotificationFailureReplayPort()
         with patch.object(live_xorg, "GioNotificationOwnerLease", Lease), patch.object(
             live_xorg, "verify_conflicting_notification_owner", verify
@@ -1752,16 +1781,49 @@ class NotificationFailureReplayAdapterTests(unittest.TestCase):
                 executable,
                 environment,
                 endpoint,  # type: ignore[arg-type]
+                start_conflicted_session,
                 siblings,
+                observe_conflict,
             )
 
         self.assertEqual(result.category, "notification_owner_conflict_isolated")
         self.assertEqual(
-            [kind for kind, _value in calls], ["lease", "enter", "verify", "exit"]
+            [kind for kind, _value in calls],
+            [
+                "lease",
+                "enter",
+                "start",
+                "verify",
+                "observe",
+                "owner_verify",
+                "exit",
+            ],
         )
 
 
 class LivePortTests(unittest.TestCase):
+    def test_failure_surface_wait_rejects_wrong_owner_without_retry(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        port._start_environment(two_outputs=True)  # noqa: SLF001
+
+        with self.assertRaisesRegex(HarnessError, "^surface_window_owner_invalid$"):
+            port._require_failure_replay_surfaces(  # noqa: SLF001
+                {
+                    WindowGeometry(0, 0, 1600, 900),
+                    WindowGeometry(1600, 0, 1600, 900),
+                },
+                {
+                    WindowGeometry(0, 852, 1600, 48),
+                    WindowGeometry(1600, 852, 1600, 48),
+                },
+                shell=ProcessIdentity(9999, 99_990),
+            )
+
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
     def test_failure_signal_requires_exact_pid_start_time_identity(self) -> None:
         operations = live_xorg.SystemOperations()
         expected = ProcessIdentity(4312, 98_765)
@@ -3781,8 +3843,11 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
 
-    def test_replays_owner_conflict_with_direct_exact_unchanged_siblings(self) -> None:
+    def test_replays_owner_conflict_with_supervised_exact_unchanged_siblings(self) -> None:
         operations = FakeOperations()
+        operations.component_pids.pop("prismdrake-notifyd")
+        operations.component_start_times.pop("prismdrake-notifyd")
+        operations.notification_shellctl_status = 5
         adapter = FakeNotificationFailureReplay()
         port = LiveXorgHarnessPort(
             config(installed_paths()),
@@ -3811,11 +3876,18 @@ class LivePortTests(unittest.TestCase):
         self.assertEqual(
             component_commands,
             [
-                ("/usr/bin/prismdrake-settingsd", "--foreground"),
-                ("/usr/bin/prismdrake-shell",),
+                (
+                    "/usr/bin/prismdrake-session",
+                    "--settingsd",
+                    "/usr/bin/prismdrake-settingsd",
+                    "--notifyd",
+                    "/usr/bin/prismdrake-notifyd",
+                    "--shell",
+                    "/usr/bin/prismdrake-shell",
+                ),
             ],
         )
-        self.assertFalse(
+        self.assertTrue(
             any(
                 Path(argv[0]).name == "prismdrake-session"
                 for argv, _environment in operations.spawn_calls
@@ -3826,9 +3898,19 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertEqual(stat.S_IMODE(configuration.stat().st_mode), 0o600)
         self.assertEqual(configuration.read_text(encoding="ascii"), _session_config())
+        runtime = Path(environment["XDG_RUNTIME_DIR"]) / "prismdrake"
+        self.assertTrue(runtime.is_dir())
+        self.assertFalse(runtime.is_symlink())
+        self.assertEqual(stat.S_IMODE(runtime.stat().st_mode), 0o700)
         self.assertTrue(
             any(
                 argv == ("/usr/bin/prismdrake-shellctl", "launcher", "toggle")
+                for argv, _environment in operations.run_calls
+            )
+        )
+        self.assertTrue(
+            any(
+                argv == ("/usr/bin/prismdrake-shellctl", "notifications", "open")
                 for argv, _environment in operations.run_calls
             )
         )

@@ -1284,7 +1284,9 @@ class NotificationFailureReplayPort(Protocol):
         executable: Path,
         environment: Mapping[str, str],
         endpoint: PrivateBusEndpoint,
+        start_conflicted_session: Callable[[], None],
         sibling_observer: Callable[[], Mapping[str, tuple[int, int]]],
+        active_conflict_observer: Callable[[], None],
     ) -> FailureEvidence: ...
 
 
@@ -1312,12 +1314,17 @@ class SystemNotificationFailureReplayPort:
         executable: Path,
         environment: Mapping[str, str],
         endpoint: PrivateBusEndpoint,
+        start_conflicted_session: Callable[[], None],
         sibling_observer: Callable[[], Mapping[str, tuple[int, int]]],
+        active_conflict_observer: Callable[[], None],
     ) -> FailureEvidence:
         with GioNotificationOwnerLease(environment, endpoint) as owner:
+            start_conflicted_session()
             evidence = verify_conflicting_notification_owner(
                 executable, environment, endpoint, owner, sibling_observer
             )
+            active_conflict_observer()
+            owner.verify()
         validate_failure_evidence(evidence)
         return evidence
 
@@ -1899,8 +1906,6 @@ class LiveXorgHarnessPort:
         self._common_action_acknowledgements: dict[str, int] = {}
         self._notification_epoch: _NotificationEpoch | None = None
         self._settings_epoch: _SettingsEpoch | None = None
-        self._failure_settingsd: ChildProcess | None = None
-        self._failure_shell: ChildProcess | None = None
         self._lifecycle_workflow: InstalledLifecycleWorkflow | None = None
         self._lifecycle_topology_generation = 1
         self._lifecycle_connection_epochs = {
@@ -2439,17 +2444,8 @@ class LiveXorgHarnessPort:
 
     def _replay_conflicting_notification_owner(self) -> None:
         try:
-            # This direct-only composition intentionally bypasses the session
-            # supervisor so the exact notifyd failure cannot trigger restart
-            # policy.  Add the secondary output after the shell exists: Qt's
-            # XCB backend then publishes an unambiguous screen-added epoch for
-            # the direct child before the conflict is introduced.
-            self._start_environment(two_outputs=False)
+            self._start_environment(two_outputs=True)
             self._start_private_bus()
-            self._start_notification_conflict_siblings()
-            self._enable_secondary()
-            self._require_topology(two_outputs=True)
-            siblings_before = self._notification_conflict_sibling_identities()
             executable = self._config.installed_executables.get("prismdrake-notifyd")
             if executable is None:
                 raise HarnessError("component_identity_unavailable")
@@ -2457,32 +2453,11 @@ class LiveXorgHarnessPort:
                 executable,
                 dict(self._private_bus_environment()),
                 self._notification_failure_endpoint(),
+                self._start_notification_conflict_session,
                 self._notification_conflict_sibling_identities,
+                self._verify_active_notification_conflict,
             )
             validate_failure_evidence(evidence)
-            if self._notification_conflict_sibling_identities() != siblings_before:
-                raise HarnessError("notification_failure_sibling_changed")
-            shell_pid, shell_start_time = siblings_before["prismdrake-shell"]
-            self._require_failure_replay_surfaces(
-                {
-                    WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
-                    WindowGeometry(OUTPUT_WIDTH, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
-                },
-                {
-                    WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT),
-                    WindowGeometry(
-                        OUTPUT_WIDTH,
-                        OUTPUT_HEIGHT - PANEL_HEIGHT,
-                        OUTPUT_WIDTH,
-                        PANEL_HEIGHT,
-                    ),
-                },
-                shell=ProcessIdentity(shell_pid, shell_start_time),
-            )
-            # Notification controls are expected to be unavailable while the
-            # competing standard owner is present.  A non-notification command
-            # proves that the failure degraded only the dependent feature.
-            self._invoke_shellctl("launcher", "toggle")
         except Exception:
             raise HarnessError("live_notification_owner_conflict_failed") from None
 
@@ -2494,81 +2469,44 @@ class LiveXorgHarnessPort:
             self._private_bus_address(), socket_identity[0], socket_identity[1]
         )
 
-    def _start_notification_conflict_siblings(self) -> None:
-        if self._failure_settingsd is not None or self._failure_shell is not None:
-            raise HarnessError("notification_failure_siblings_already_started")
-        if self._runtime is None:
-            raise HarnessError("live_environment_not_started")
-        executables = self._config.installed_executables
-        settingsd = executables.get("prismdrake-settingsd")
-        shell = executables.get("prismdrake-shell")
-        if settingsd is None or shell is None:
-            raise HarnessError("component_identity_unavailable")
-        configuration_directory = self._runtime / "config" / "prismdrake"
-        runtime_directory = self._runtime / "prismdrake"
-        try:
-            runtime_directory.mkdir(mode=0o700)
-            runtime_metadata = runtime_directory.lstat()
-        except OSError as error:
-            raise HarnessError("private_session_runtime_invalid") from error
-        if (
-            stat.S_ISLNK(runtime_metadata.st_mode)
-            or not stat.S_ISDIR(runtime_metadata.st_mode)
-            or runtime_metadata.st_uid != os.geteuid()
-            or stat.S_IMODE(runtime_metadata.st_mode) != 0o700
-        ):
-            raise HarnessError("private_session_runtime_invalid")
-        try:
-            configuration_directory.mkdir(mode=0o700)
-            configuration = configuration_directory / "config.toml"
-            configuration.write_text(_session_config(), encoding="ascii")
-            configuration.chmod(0o600)
-        except OSError as error:
-            raise HarnessError("private_session_configuration_failed") from error
-        environment = self._private_bus_environment()
-        environment.update(
-            {
-                "QT_QUICK_BACKEND": "software",
-                "QT_QPA_PLATFORM": "xcb",
-                "QT_QUICK_CONTROLS_STYLE": "Basic",
-                "QT_LINUX_ACCESSIBILITY_ALWAYS_ON": "1",
-            }
-        )
-        self._failure_settingsd = self._operations.spawn(
-            (str(settingsd), "--foreground"), environment
-        )
-        self._operations.pause(0.05)
-        if (
-            self._failure_settingsd.poll() is not None
-            or self._operations.identify(self._failure_settingsd, settingsd) is None
-        ):
-            raise HarnessError("notification_failure_settingsd_start_failed")
-        self._failure_shell = self._operations.spawn((str(shell),), environment)
-        self._operations.pause(0.05)
-        if (
-            self._failure_shell.poll() is not None
-            or self._operations.identify(self._failure_shell, shell) is None
-        ):
-            raise HarnessError("notification_failure_shell_start_failed")
+    def _start_notification_conflict_session(self) -> None:
+        self._start_session(private_bus_started=True)
+        self._wait_for_session_readiness()
+        if self._session_marker_state() != "ready":
+            raise HarnessError("notification_failure_session_not_ready")
 
     def _notification_conflict_sibling_identities(
         self,
     ) -> Mapping[str, tuple[int, int]]:
-        executables = self._config.installed_executables
-        children = {
-            "prismdrake-settingsd": self._failure_settingsd,
-            "prismdrake-shell": self._failure_shell,
+        if self._session is None or self._session.poll() is not None:
+            raise HarnessError("notification_failure_session_invalid")
+        notifyd = self._config.installed_executables.get("prismdrake-notifyd")
+        if notifyd is None or self._operations.descendants(self._session, notifyd):
+            raise HarnessError("notification_failure_notifyd_not_degraded")
+        result = {
+            name: self._component_identity(name)
+            for name in ("prismdrake-settingsd", "prismdrake-shell")
         }
-        result: dict[str, tuple[int, int]] = {}
-        for name, child in children.items():
-            executable = executables.get(name)
-            if child is None or executable is None:
-                raise HarnessError("notification_failure_sibling_invalid")
-            identity = self._operations.identify(child, executable)
-            if identity is None:
-                raise HarnessError("notification_failure_sibling_invalid")
-            result[name] = (identity.pid, identity.start_time)
-        return result
+        return {
+            name: (identity.pid, identity.start_time)
+            for name, identity in result.items()
+        }
+
+    def _verify_active_notification_conflict(self) -> None:
+        before = self._notification_conflict_sibling_identities()
+        self._require_desktop_wallpaper_surfaces()
+        self._require_panel_surfaces()
+        self._require_shellctl_unavailable("notifications", "open")
+        self._invoke_shellctl("launcher", "toggle")
+        self._wait_accessible(
+            ControlSelector(
+                "Search applications", "editable_text", require_focused=True
+            ),
+            "notification_failure_launcher_focus_timeout",
+        )
+        self._operations.pause(0.25)
+        if self._notification_conflict_sibling_identities() != before:
+            raise HarnessError("notification_failure_sibling_changed")
 
     def _run_notification_step(self, identifier: str) -> None:
         method_name = self._NOTIFICATION_STEPS.get(identifier)
@@ -3939,11 +3877,6 @@ class LiveXorgHarnessPort:
         if self._notification_epoch is not None:
             clean = self._notification_epoch.close() and clean
             self._notification_epoch = None
-        for attribute in ("_failure_shell", "_failure_settingsd"):
-            child = getattr(self, attribute)
-            if child is not None:
-                clean = self._operations.stop(child, self._config.stop_timeout) and clean
-                setattr(self, attribute, None)
         fixture = self._config.controlled_window_fixture
         if fixture is not None:
             for identity in self._controlled_processes.values():
@@ -4711,6 +4644,21 @@ class LiveXorgHarnessPort:
         if result.returncode != 0:
             raise HarnessError("shellctl_request_failed")
 
+    def _require_shellctl_unavailable(self, group: str, action: str) -> None:
+        executable = self._config.installed_executables.get("prismdrake-shellctl")
+        if executable is None:
+            raise HarnessError("shellctl_unavailable")
+        result = self._operations.run(
+            (str(executable), group, action), self._private_bus_environment(), 3.0
+        )
+        if (
+            result.returncode != 5
+            or result.stdout
+            or result.stderr
+            != b"prismdrake-shellctl: The typed control request failed (status 5).\n"
+        ):
+            raise HarnessError("shellctl_unavailable_status_invalid")
+
     def _xdotool(self, *arguments: str) -> CommandResult:
         executable = self._config.xdotool
         if executable is None:
@@ -4931,11 +4879,18 @@ class LiveXorgHarnessPort:
     def _run_x11(self, argv: Sequence[str]) -> CommandResult:
         return self._operations.run(argv, self._x11_environment(), 3.0)
 
-    def _start_session(self, configuration_document: str | None = None) -> None:
+    def _start_session(
+        self,
+        configuration_document: str | None = None,
+        *,
+        private_bus_started: bool = False,
+    ) -> None:
         if self._runtime is None or self._xorg is None or self._openbox is None:
             raise HarnessError("live_environment_not_started")
-        if self._session is not None or self._bus is not None:
+        if self._session is not None or (self._bus is not None and not private_bus_started):
             raise HarnessError("live_session_already_started")
+        if private_bus_started:
+            self._attest_private_bus()
         if tuple(self._config.installed_executables.keys()) != EXECUTABLE_NAMES:
             raise HarnessError("installed_executable_set_invalid")
         executables = self._config.installed_executables
@@ -4949,7 +4904,8 @@ class LiveXorgHarnessPort:
             configuration.chmod(0o600)
         except OSError as error:
             raise HarnessError("private_session_configuration_failed") from error
-        self._start_private_bus()
+        if not private_bus_started:
+            self._start_private_bus()
         environment = self._private_bus_environment()
         if self._tier_c_trace is not None:
             environment = self._traced_x11_environment(environment)
@@ -5250,14 +5206,10 @@ class LiveXorgHarnessPort:
         desktops: dict[int, WindowGeometry] = {}
         panels: dict[int, WindowGeometry] = {}
         while self._operations.monotonic() < deadline:
-            try:
-                desktops = self._observe_surface_windows(
-                    b"_NET_WM_WINDOW_TYPE_DESKTOP", shell
-                )
-                panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
-            except HarnessError:
-                desktops = {}
-                panels = {}
+            desktops = self._observe_surface_windows(
+                b"_NET_WM_WINDOW_TYPE_DESKTOP", shell
+            )
+            panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
             if (
                 len(desktops) == len(expected_desktops)
                 and set(desktops.values()) == expected_desktops
