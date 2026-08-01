@@ -9,10 +9,12 @@
     NotAuthorized, ServiceStopping, and Internal.
 
   Error messages are fixed, redacted, and bounded to 256 bytes. Getters have a
-  1-second server budget and mutations have a 5-second server budget. The
-  service validates the effective UID of every caller and fails closed when
-  credentials are absent or differ. A service-returned TimedOut guarantees no
-  later state transition from that call.
+  1-second server budget and mutations have a 5-second commit-admission budget.
+  State publication and shutdown admission are non-waiting. The service validates
+  the effective UID of every caller and fails closed when credentials are absent
+  or differ. A service-returned TimedOut guarantees no queued exact-child shutdown
+  and no later state transition from that call. An admitted operation is never
+  relabeled TimedOut afterward.
 -->
 <node name="/org/prismdrake/Session1">
   <interface name="org.prismdrake.Session1">

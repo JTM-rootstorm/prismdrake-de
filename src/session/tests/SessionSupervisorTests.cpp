@@ -275,7 +275,8 @@ class FakePlatform final : public SessionSupervisorPlatform {
         ++sessionControlDispatches;
         if (logoutOnNextDispatch && shutdownPort_ != nullptr) {
             logoutOnNextDispatch = false;
-            static_cast<void>(shutdownPort_->beginExactChildShutdown(logoutTransactionId));
+            static_cast<void>(shutdownPort_->beginExactChildShutdown(
+                logoutTransactionId, foundation::MonotonicClock::TimePoint::max()));
         }
         return Result<void>::success();
     }
@@ -714,6 +715,9 @@ TEST(SessionSupervisorTest, ConfirmedLogoutStopsExactChildrenInCoordinatedRevers
     FakePlatform platform;
     platform.logoutOnNextDispatch = true;
     auto controller = supervisor(platform);
+
+    EXPECT_EQ(controller.beginExactChildShutdown(99U, platform.currentTime),
+              ExactChildShutdownStart::timed_out);
 
     const auto outcome = controller.run();
 

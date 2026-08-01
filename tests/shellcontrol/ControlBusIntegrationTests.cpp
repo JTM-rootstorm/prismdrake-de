@@ -13,7 +13,6 @@
 #include <string_view>
 #include <thread>
 #include <utility>
-#include <vector>
 
 namespace {
 
@@ -40,54 +39,48 @@ struct Error final {
 
 class ShutdownPort final : public ExactChildShutdownPort {
   public:
-    explicit ShutdownPort(std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock)
-        : clock_(std::move(clock)) {}
-
-    [[nodiscard]] bool beginExactChildShutdown(std::uint64_t transactionId) override {
-        transactionId_ = transactionId;
-        const auto delay = std::chrono::nanoseconds{delay_nanoseconds_.load()};
-        if (delay > std::chrono::nanoseconds::zero()) {
-            (void)clock_->advance(delay);
+    // Test-only deadline-aware blocking probe; production admission is non-waiting.
+    [[nodiscard]] prismdrake::session::ExactChildShutdownStart
+    beginExactChildShutdown(std::uint64_t transactionId,
+                            prismdrake::foundation::MonotonicClock::TimePoint deadline) override {
+        if (block_until_deadline_.load()) {
+            std::this_thread::sleep_until(deadline);
+            return prismdrake::session::ExactChildShutdownStart::timed_out;
         }
-        return true;
+        transaction_id_.store(transactionId);
+        return prismdrake::session::ExactChildShutdownStart::started;
     }
-    void setDelay(std::chrono::nanoseconds delay) noexcept {
-        delay_nanoseconds_.store(delay.count());
-    }
-
-    std::uint64_t transactionId_ = 0;
+    void setBlockUntilDeadline(bool block) noexcept { block_until_deadline_.store(block); }
+    [[nodiscard]] std::uint64_t transactionId() const noexcept { return transaction_id_.load(); }
 
   private:
-    std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock_;
-    std::atomic<std::chrono::nanoseconds::rep> delay_nanoseconds_ = 0;
+    std::atomic_bool block_until_deadline_ = false;
+    std::atomic_uint64_t transaction_id_ = 0U;
 };
 
 class PresentationPort final : public ShellPresentationPort {
   public:
-    explicit PresentationPort(std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock)
-        : clock_(std::move(clock)) {}
-
-    [[nodiscard]] ShellRequestFailure request(ShellAction action,
-                                              std::string_view outputName) override {
+    // Test-only deadline-aware blocking probe; production ports are non-waiting.
+    [[nodiscard]] ShellRequestFailure
+    request(ShellAction action, std::string_view outputName,
+            prismdrake::foundation::MonotonicClock::TimePoint deadline) override {
         if (outputName == "missing") {
             return ShellRequestFailure::output_unavailable;
         }
-        requests.emplace_back(action, std::string{outputName});
-        const auto delay = std::chrono::nanoseconds{delay_nanoseconds_.load()};
-        if (delay > std::chrono::nanoseconds::zero()) {
-            (void)clock_->advance(delay);
+        if (block_until_deadline_.load()) {
+            std::this_thread::sleep_until(deadline);
+            return ShellRequestFailure::timed_out;
         }
+        static_cast<void>(action);
+        committed_count_.fetch_add(1U);
         return ShellRequestFailure::none;
     }
-    void setDelay(std::chrono::nanoseconds delay) noexcept {
-        delay_nanoseconds_.store(delay.count());
-    }
-
-    std::vector<std::pair<ShellAction, std::string>> requests;
+    void setBlockUntilDeadline(bool block) noexcept { block_until_deadline_.store(block); }
+    [[nodiscard]] std::size_t committedCount() const noexcept { return committed_count_.load(); }
 
   private:
-    std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock_;
-    std::atomic<std::chrono::nanoseconds::rep> delay_nanoseconds_ = 0;
+    std::atomic_bool block_until_deadline_ = false;
+    std::atomic_size_t committed_count_ = 0U;
 };
 
 class ControlBusFixture : public ::testing::Test {
@@ -166,12 +159,13 @@ class ControlBusFixture : public ::testing::Test {
         }
     }
 
-    std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock_ =
-        std::make_shared<prismdrake::foundation::TestMonotonicClock>();
-    ShutdownPort shutdown_port_{clock_};
-    PresentationPort presentation_port_{clock_};
-    ShellControlService shell_service_{presentation_port_, clock_};
-    SessionControlService session_service_{shutdown_port_, clock_};
+    std::shared_ptr<prismdrake::foundation::SystemMonotonicClock> clock_ =
+        std::make_shared<prismdrake::foundation::SystemMonotonicClock>();
+    ShutdownPort shutdown_port_;
+    PresentationPort presentation_port_;
+    ShellControlService shell_service_{presentation_port_, clock_, std::chrono::milliseconds{40}};
+    SessionControlService session_service_{shutdown_port_, clock_, std::chrono::seconds{1},
+                                           std::chrono::milliseconds{40}};
     Bus server_bus_;
     Bus client_bus_;
     std::atomic_bool stop_ = false;
@@ -213,31 +207,49 @@ TEST_F(ControlBusFixture, KeepsOneCancellableLogoutTransaction) {
     EXPECT_GE(cancelLogout(transactionId, cancelError), 0);
 }
 
-TEST_F(ControlBusFixture, ReturnsTypedShellTimeoutAtTheMonotonicDeadline) {
+TEST_F(ControlBusFixture, PropagatesShellCommitDeadlineWithoutLatePresentation) {
     using namespace std::chrono_literals;
 
-    presentation_port_.setDelay(1s);
+    presentation_port_.setBlockUntilDeadline(true);
     Error error;
+    const auto started = std::chrono::steady_clock::now();
     EXPECT_LT(callShell("ToggleLauncher", "", error), 0);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
     ASSERT_NE(error.value.name, nullptr);
     EXPECT_STREQ(error.value.name, "org.prismdrake.Shell1.Error.TimedOut");
+    EXPECT_GE(elapsed, 40ms);
+    EXPECT_EQ(presentation_port_.committedCount(), 0U);
+    std::this_thread::sleep_for(20ms);
+    EXPECT_EQ(presentation_port_.committedCount(), 0U);
 }
 
-TEST_F(ControlBusFixture, ReturnsTypedSessionTimeoutAndStopsLaterTransactionTransitions) {
+TEST_F(ControlBusFixture, PropagatesSessionAdmissionDeadlineWithoutLateShutdown) {
     using namespace std::chrono_literals;
 
     Error requestError;
     const auto transactionId = requestLogout(requestError);
     ASSERT_NE(transactionId, 0U);
 
-    shutdown_port_.setDelay(5s);
+    shutdown_port_.setBlockUntilDeadline(true);
     Error confirmError;
+    const auto started = std::chrono::steady_clock::now();
     EXPECT_LT(confirmLogout(transactionId, confirmError), 0);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
     ASSERT_NE(confirmError.value.name, nullptr);
     EXPECT_STREQ(confirmError.value.name, "org.prismdrake.Session1.Error.TimedOut");
+    EXPECT_GE(elapsed, 40ms);
+    EXPECT_EQ(shutdown_port_.transactionId(), 0U);
+    std::this_thread::sleep_for(20ms);
+    EXPECT_EQ(shutdown_port_.transactionId(), 0U);
 
     Error stateError;
-    EXPECT_EQ(getSessionState(stateError), (std::pair{transactionId, std::string{"failed"}}));
+    EXPECT_EQ(getSessionState(stateError),
+              (std::pair{transactionId, std::string{"confirmation_requested"}}));
+
+    Error cancelError;
+    EXPECT_GE(cancelLogout(transactionId, cancelError), 0);
+    Error idleStateError;
+    EXPECT_EQ(getSessionState(idleStateError), (std::pair{std::uint64_t{0U}, std::string{"idle"}}));
 }
 
 TEST_F(ControlBusFixture, ShellctlMapsEveryFrozenCommandToTheTypedOwners) {

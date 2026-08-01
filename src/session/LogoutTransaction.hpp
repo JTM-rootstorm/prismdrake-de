@@ -57,15 +57,26 @@ enum class ExactChildShutdownEvent : std::uint8_t {
     failed,
 };
 
+enum class ExactChildShutdownStart : std::uint8_t {
+    started,
+    timed_out,
+    unavailable,
+};
+
 /// Begins the existing supervisor's bounded exact-child shutdown sequence.
 ///
-/// Implementations must return promptly and may signal only the exact supervised
-/// shell, notifyd, and settingsd children. Completion observations are reported
-/// back on the session dispatch context through `observeShutdownEvent()`.
+/// Implementations must perform only a non-waiting owner-context admission step
+/// and may queue shutdown for only the exact supervised shell, notifyd, and
+/// settingsd children. The deadline is the latest admission point. A timed-out
+/// result must not queue shutdown; once queued, the operation returns `started`.
+/// Completion observations are reported back on the session dispatch context
+/// through `observeShutdownEvent()`.
 class ExactChildShutdownPort {
   public:
     virtual ~ExactChildShutdownPort() = default;
-    [[nodiscard]] virtual bool beginExactChildShutdown(std::uint64_t transactionId) = 0;
+    [[nodiscard]] virtual ExactChildShutdownStart
+    beginExactChildShutdown(std::uint64_t transactionId,
+                            foundation::MonotonicClock::TimePoint deadline) = 0;
 };
 
 /// Authoritative, single-threaded PD2 logout transaction.
@@ -91,8 +102,6 @@ class LogoutTransaction final {
   private:
     [[nodiscard]] LogoutRequestFailure validateCancellable(std::uint64_t transactionId) const;
     [[nodiscard]] std::optional<foundation::MonotonicClock::TimePoint> mutationDeadline() const;
-    [[nodiscard]] bool timedOut(foundation::MonotonicClock::TimePoint deadline) const noexcept;
-    void freezeTimedOut(std::uint64_t transactionId);
     void transition(LogoutState state, std::uint64_t signalTransactionId);
     [[nodiscard]] std::uint64_t allocateTransactionId() noexcept;
 

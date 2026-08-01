@@ -159,6 +159,22 @@ TEST(ShellRuntimeCompositionTest, RoutesShell1AndQuickSettingsThroughOneOutputGe
               ShellRequestFailure::output_unavailable);
     EXPECT_EQ(runtime.request(control::ShellAction::focus_panel, "bad\noutput"),
               ShellRequestFailure::invalid_output);
+
+    const auto active = runtime.state().activeSurfaces();
+    const std::vector<composition::ActiveSurface> activeBeforeDeadline{active.begin(),
+                                                                       active.end()};
+    const auto batchesBeforeDeadline = port.batches.size();
+    EXPECT_EQ(runtime.request(control::ShellAction::toggle_launcher, "LEFT-1",
+                              foundation::MonotonicClock::TimePoint{}),
+              ShellRequestFailure::timed_out);
+    EXPECT_TRUE(std::ranges::equal(runtime.state().activeSurfaces(), activeBeforeDeadline));
+    EXPECT_EQ(port.batches.size(), batchesBeforeDeadline);
+
+    port.focusedPanel.reset();
+    EXPECT_EQ(runtime.request(control::ShellAction::focus_panel, "LEFT-1",
+                              foundation::MonotonicClock::TimePoint{}),
+              ShellRequestFailure::timed_out);
+    EXPECT_FALSE(port.focusedPanel.has_value());
 }
 
 TEST(ShellRuntimeCompositionTest, OwnerLossAndOutputRemovalProduceAtomicDismissals) {

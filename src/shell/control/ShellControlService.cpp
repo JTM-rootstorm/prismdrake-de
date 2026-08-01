@@ -201,11 +201,7 @@ ShellRequestFailure ShellControlService::request(ShellAction action, std::string
     if (!outputName.empty() && !validUtf8OutputName(outputName)) {
         return ShellRequestFailure::invalid_output;
     }
-    const auto failure = presentation_port_->request(action, outputName);
-    if (clock_->now() >= deadline) {
-        return ShellRequestFailure::timed_out;
-    }
-    return failure;
+    return presentation_port_->request(action, outputName, deadline);
 }
 
 } // namespace prismdrake::shell::control

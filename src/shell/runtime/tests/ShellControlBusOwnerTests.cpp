@@ -9,8 +9,9 @@ namespace {
 
 class PresentationPort final : public control::ShellPresentationPort {
   public:
-    [[nodiscard]] control::ShellRequestFailure request(control::ShellAction,
-                                                       std::string_view) override {
+    [[nodiscard]] control::ShellRequestFailure
+    request(control::ShellAction, std::string_view,
+            foundation::MonotonicClock::TimePoint) override {
         return control::ShellRequestFailure::none;
     }
 };

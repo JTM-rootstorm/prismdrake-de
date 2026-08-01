@@ -8,8 +8,11 @@
     ServiceStopping, and Internal.
 
   Error messages are fixed, redacted, and bounded to 256 bytes. Immediate
-  requests have a 1-second server budget. The service validates the effective
-  UID of every caller and fails closed when credentials are absent or differ.
+  requests have a 1-second commit-admission budget. Presentation admission is
+  non-waiting; TimedOut means that no presentation mutation was committed. Once
+  committed, an operation is never relabeled TimedOut. The service validates
+  the effective UID of every caller and fails closed when credentials are absent
+  or differ.
 -->
 <node name="/org/prismdrake/Shell1">
   <interface name="org.prismdrake.Shell1">

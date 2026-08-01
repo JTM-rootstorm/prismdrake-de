@@ -56,9 +56,12 @@ class RuntimeFixture final {
 
 class ShutdownPort final : public ExactChildShutdownPort {
   public:
-    [[nodiscard]] bool beginExactChildShutdown(std::uint64_t transactionId) override {
+    [[nodiscard]] ExactChildShutdownStart
+    beginExactChildShutdown(std::uint64_t transactionId,
+                            foundation::MonotonicClock::TimePoint) override {
         observed_transaction_ = transactionId;
-        return transactionId != 0U;
+        return transactionId != 0U ? ExactChildShutdownStart::started
+                                   : ExactChildShutdownStart::unavailable;
     }
 
   private:

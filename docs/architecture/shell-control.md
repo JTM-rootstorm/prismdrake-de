@@ -17,12 +17,20 @@ effective UID to match the service UID. Missing, incomplete, or mismatched
 credentials fail closed. The session bus is not treated as sufficient proof by
 itself. These interfaces grant no privilege and expose no root service.
 
-Requests and replies are bounded. Service handlers complete validation and
-state transition synchronously without waiting for UI or child exit. The
-reference client applies a two-second monotonic deadline per method call and
-returns a distinct timeout exit status. Work that continues after an accepted
-logout confirmation is owned by the session state machine and has separate
-bounded child-stop deadlines.
+Requests and replies are bounded by construction. Service handlers perform only
+bounded validation and owner-context state admission; their presentation,
+transition-publication, and shutdown-admission collaborators must not wait for
+I/O or visual completion, perform blocking I/O, or dispatch blocking work.
+Potentially blocking work would require the retained-call worker pattern used by
+`Settings1`, not a synchronous callback.
+The monotonic server deadline is therefore the latest commit-admission point,
+not thread preemption: an operation that reaches it before admission returns
+`TimedOut` without mutation, while an admitted operation returns its actual
+result and is never relabeled `TimedOut` afterward. The reference client applies
+a separate two-second monotonic deadline per method call and returns a distinct
+timeout exit status. Work that continues after an accepted logout confirmation
+is owned by the session state machine and has separate bounded child-stop
+deadlines.
 
 Errors are typed by invalid argument, unknown output, unavailable owner,
 unauthorized caller, invalid transaction, stale transaction, busy transaction,

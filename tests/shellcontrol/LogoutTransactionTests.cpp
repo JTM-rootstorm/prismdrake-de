@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -14,17 +15,20 @@ using namespace prismdrake::session;
 
 class ShutdownPort final : public ExactChildShutdownPort {
   public:
-    [[nodiscard]] bool beginExactChildShutdown(std::uint64_t transactionId) override {
-        calls.push_back(transactionId);
-        if (clock && delay > prismdrake::foundation::MonotonicClock::Duration::zero()) {
-            (void)clock->advance(delay);
+    // Test-only deadline-aware blocking probe; production admission is non-waiting.
+    [[nodiscard]] ExactChildShutdownStart
+    beginExactChildShutdown(std::uint64_t transactionId,
+                            prismdrake::foundation::MonotonicClock::TimePoint deadline) override {
+        if (block_until_deadline) {
+            std::this_thread::sleep_until(deadline);
+            return ExactChildShutdownStart::timed_out;
         }
-        return accepts;
+        calls.push_back(transactionId);
+        return response;
     }
 
-    std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock;
-    prismdrake::foundation::MonotonicClock::Duration delay{};
-    bool accepts = true;
+    bool block_until_deadline = false;
+    ExactChildShutdownStart response = ExactChildShutdownStart::started;
     std::vector<std::uint64_t> calls;
 };
 
@@ -99,7 +103,7 @@ TEST(LogoutTransactionTest, RejectsZeroStaleAndPostConfirmationChanges) {
 
 TEST(LogoutTransactionTest, FailsClosedWhenShutdownCannotBeginOrReportsFailure) {
     ShutdownPort port;
-    port.accepts = false;
+    port.response = ExactChildShutdownStart::unavailable;
     LogoutTransaction transaction{port, {}};
     const auto id = transaction.request().transactionId;
     EXPECT_EQ(transaction.confirm(id).failure, LogoutRequestFailure::internal);
@@ -148,32 +152,39 @@ TEST(LogoutTransactionTest, TimesOutBeforeAnExpiredMutationCanPublishState) {
     EXPECT_TRUE(transitions.empty());
 }
 
-TEST(LogoutTransactionTest, FreezesAConfirmationThatTimesOutStartingChildShutdown) {
+TEST(LogoutTransactionTest, PropagatesARealAdmissionDeadlineWithoutLateShutdown) {
     using namespace std::chrono_literals;
 
-    auto clock = std::make_shared<prismdrake::foundation::TestMonotonicClock>();
+    auto clock = std::make_shared<prismdrake::foundation::SystemMonotonicClock>();
     ShutdownPort port;
-    port.clock = clock;
+    port.block_until_deadline = true;
     std::vector<LogoutSnapshot> transitions;
     LogoutTransaction transaction{port, [&](const auto &state) { transitions.push_back(state); },
-                                  clock};
+                                  clock, 40ms};
     const auto id = transaction.request().transactionId;
-    port.delay = 5s;
 
+    const auto started = std::chrono::steady_clock::now();
     const auto confirmed = transaction.confirm(id);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
     EXPECT_EQ(confirmed.failure, LogoutRequestFailure::timed_out);
-    EXPECT_EQ(transaction.snapshot(), (LogoutSnapshot{id, LogoutState::failed}));
-    ASSERT_FALSE(transitions.empty());
-    EXPECT_EQ(transitions.back(), (LogoutSnapshot{id, LogoutState::failed}));
+    EXPECT_GE(elapsed, 40ms);
+    EXPECT_TRUE(port.calls.empty());
+    std::this_thread::sleep_for(20ms);
+    EXPECT_TRUE(port.calls.empty());
+    EXPECT_EQ(transaction.snapshot(), (LogoutSnapshot{id, LogoutState::confirmation_requested}));
+    ASSERT_EQ(transitions.size(), 1U);
+    EXPECT_EQ(transitions.back(), (LogoutSnapshot{id, LogoutState::confirmation_requested}));
     const auto transitionCountAtReply = transitions.size();
 
     EXPECT_EQ(transaction.observeShutdownEvent(id, ExactChildShutdownEvent::shell_stopped).failure,
               LogoutRequestFailure::invalid_state);
-    EXPECT_EQ(transaction.snapshot(), (LogoutSnapshot{id, LogoutState::failed}));
+    EXPECT_EQ(transaction.snapshot(), (LogoutSnapshot{id, LogoutState::confirmation_requested}));
     EXPECT_EQ(transitions.size(), transitionCountAtReply);
+    EXPECT_TRUE(transaction.cancel(id).accepted());
+    EXPECT_EQ(transaction.snapshot(), (LogoutSnapshot{0U, LogoutState::idle}));
 }
 
-TEST(LogoutTransactionTest, PublishesATerminalFailureWhenRequestObservationReachesDeadline) {
+TEST(LogoutTransactionTest, KeepsAnAcceptedRequestInTheFrozenStateGraph) {
     using namespace std::chrono_literals;
 
     auto clock = std::make_shared<prismdrake::foundation::TestMonotonicClock>();
@@ -189,18 +200,13 @@ TEST(LogoutTransactionTest, PublishesATerminalFailureWhenRequestObservationReach
                                   clock};
 
     const auto result = transaction.request();
-    EXPECT_EQ(result.failure, LogoutRequestFailure::timed_out);
-    EXPECT_EQ(transaction.snapshot(), (LogoutSnapshot{result.transactionId, LogoutState::failed}));
-    ASSERT_EQ(transitions.size(), 2U);
-    EXPECT_EQ(transitions.back(), (LogoutSnapshot{result.transactionId, LogoutState::failed}));
-    EXPECT_EQ(
-        transaction
-            .observeShutdownEvent(result.transactionId, ExactChildShutdownEvent::shell_stopped)
-            .failure,
-        LogoutRequestFailure::invalid_state);
+    EXPECT_TRUE(result.accepted());
+    EXPECT_EQ(transaction.snapshot(),
+              (LogoutSnapshot{result.transactionId, LogoutState::confirmation_requested}));
+    ASSERT_EQ(transitions.size(), 1U);
 }
 
-TEST(LogoutTransactionTest, PublishesATerminalFailureWhenCancelObservationReachesDeadline) {
+TEST(LogoutTransactionTest, CompletesAcceptedCancellationWithoutInventingFailure) {
     using namespace std::chrono_literals;
 
     auto clock = std::make_shared<prismdrake::foundation::TestMonotonicClock>();
@@ -217,12 +223,12 @@ TEST(LogoutTransactionTest, PublishesATerminalFailureWhenCancelObservationReache
     const auto id = transaction.request().transactionId;
 
     const auto result = transaction.cancel(id);
-    EXPECT_EQ(result.failure, LogoutRequestFailure::timed_out);
-    EXPECT_EQ(transaction.snapshot(), (LogoutSnapshot{id, LogoutState::failed}));
-    ASSERT_GE(transitions.size(), 4U);
-    EXPECT_EQ(transitions.back(), (LogoutSnapshot{id, LogoutState::failed}));
-    EXPECT_EQ(transaction.observeShutdownEvent(id, ExactChildShutdownEvent::failed).failure,
-              LogoutRequestFailure::invalid_state);
+    EXPECT_TRUE(result.accepted());
+    EXPECT_EQ(transaction.snapshot(), (LogoutSnapshot{0, LogoutState::idle}));
+    ASSERT_EQ(transitions.size(), 3U);
+    EXPECT_EQ(transitions[1], (LogoutSnapshot{id, LogoutState::cancelled}));
+    EXPECT_EQ(transitions[2], (LogoutSnapshot{id, LogoutState::idle}));
+    EXPECT_TRUE(transaction.request().accepted());
 }
 
 TEST(SessionControlServiceTest, AppliesTheGetterBudgetWithAnInjectableClock) {

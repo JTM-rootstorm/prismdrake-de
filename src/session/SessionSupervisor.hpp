@@ -85,7 +85,9 @@ class SessionSupervisor final : public ExactChildShutdownPort {
 
     [[nodiscard]] foundation::Result<SessionTermination> run();
 
-    [[nodiscard]] bool beginExactChildShutdown(std::uint64_t transactionId) override;
+    [[nodiscard]] ExactChildShutdownStart
+    beginExactChildShutdown(std::uint64_t transactionId,
+                            foundation::MonotonicClock::TimePoint deadline) override;
 
   private:
     SessionSupervisor(SessionSupervisorPlatform &platform, SessionRecoveryPolicy recoveryPolicy)

@@ -44,8 +44,10 @@ class ShellRuntimeComposition final : public control::ShellPresentationPort,
     [[nodiscard]] foundation::Result<void>
     observeNotificationOwner(std::optional<composition::AuthoritySnapshot> snapshot);
 
-    [[nodiscard]] control::ShellRequestFailure request(control::ShellAction action,
-                                                       std::string_view outputName) override;
+    [[nodiscard]] control::ShellRequestFailure
+    request(control::ShellAction action, std::string_view outputName,
+            foundation::MonotonicClock::TimePoint deadline =
+                foundation::MonotonicClock::TimePoint::max()) override;
     [[nodiscard]] quicksettings::CommandResult requestOpen() override;
 
     [[nodiscard]] foundation::Result<void> present(composition::SurfaceFamily family,

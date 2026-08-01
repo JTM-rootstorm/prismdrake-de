@@ -174,8 +174,9 @@ ShellRuntimeComposition::requestedOutput(std::string_view outputName) const {
         presentationError(control::ShellRequestFailure::output_unavailable));
 }
 
-control::ShellRequestFailure ShellRuntimeComposition::request(control::ShellAction action,
-                                                              std::string_view outputName) {
+control::ShellRequestFailure
+ShellRuntimeComposition::request(control::ShellAction action, std::string_view outputName,
+                                 foundation::MonotonicClock::TimePoint deadline) {
     auto output = requestedOutput(outputName);
     if (!output) {
         return transitionFailure(output.error());
@@ -190,11 +191,17 @@ control::ShellRequestFailure ShellRuntimeComposition::request(control::ShellActi
     case control::ShellAction::toggle_launcher: {
         auto transition = candidate.toggle(composition::SurfaceFamily::launcher,
                                            std::move(output).value(), origin);
+        if (foundation::MonotonicClock::Clock::now() >= deadline) {
+            return control::ShellRequestFailure::timed_out;
+        }
         return commitRequest(std::move(candidate), std::move(transition));
     }
     case control::ShellAction::open_quick_settings: {
         auto transition = candidate.present(composition::SurfaceFamily::quickSettings,
                                             std::move(output).value(), origin);
+        if (foundation::MonotonicClock::Clock::now() >= deadline) {
+            return control::ShellRequestFailure::timed_out;
+        }
         return commitRequest(std::move(candidate), std::move(transition));
     }
     case control::ShellAction::open_notification_center: {
@@ -203,12 +210,18 @@ control::ShellRequestFailure ShellRuntimeComposition::request(control::ShellActi
         }
         auto transition = candidate.present(composition::SurfaceFamily::notificationCenter,
                                             std::move(output).value(), origin);
+        if (foundation::MonotonicClock::Clock::now() >= deadline) {
+            return control::ShellRequestFailure::timed_out;
+        }
         return commitRequest(std::move(candidate), std::move(transition));
     }
     case control::ShellAction::focus_panel: {
         auto resolved = std::move(output).value();
         if (!resolved) {
             resolved = outputs_->primaryOutput();
+        }
+        if (foundation::MonotonicClock::Clock::now() >= deadline) {
+            return control::ShellRequestFailure::timed_out;
         }
         return presentation_port_->focusPanel(*resolved);
     }

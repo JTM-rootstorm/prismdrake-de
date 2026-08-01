@@ -1002,12 +1002,17 @@ Result<void> SessionSupervisor::shutdownForLogout(std::uint64_t transactionId) {
     return firstError ? Result<void>::failure(*firstError) : Result<void>::success();
 }
 
-bool SessionSupervisor::beginExactChildShutdown(std::uint64_t transactionId) {
+ExactChildShutdownStart
+SessionSupervisor::beginExactChildShutdown(std::uint64_t transactionId,
+                                           foundation::MonotonicClock::TimePoint deadline) {
     if (transactionId == 0U || pending_logout_transaction_) {
-        return false;
+        return ExactChildShutdownStart::unavailable;
+    }
+    if (platform_->now() >= deadline) {
+        return ExactChildShutdownStart::timed_out;
     }
     pending_logout_transaction_ = transactionId;
-    return true;
+    return ExactChildShutdownStart::started;
 }
 
 bool SessionSupervisor::waitInterruptibly(std::chrono::milliseconds duration) {

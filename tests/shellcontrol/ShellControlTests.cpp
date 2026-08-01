@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -15,17 +16,19 @@ using namespace prismdrake::shell::control;
 
 class PresentationPort final : public ShellPresentationPort {
   public:
-    [[nodiscard]] ShellRequestFailure request(ShellAction action,
-                                              std::string_view outputName) override {
-        requests.emplace_back(action, std::string{outputName});
-        if (clock && delay > prismdrake::foundation::MonotonicClock::Duration::zero()) {
-            (void)clock->advance(delay);
+    // Test-only deadline-aware blocking probe; production ports are non-waiting.
+    [[nodiscard]] ShellRequestFailure
+    request(ShellAction action, std::string_view outputName,
+            prismdrake::foundation::MonotonicClock::TimePoint deadline) override {
+        if (block_until_deadline) {
+            std::this_thread::sleep_until(deadline);
+            return ShellRequestFailure::timed_out;
         }
+        requests.emplace_back(action, std::string{outputName});
         return response;
     }
 
-    std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock;
-    prismdrake::foundation::MonotonicClock::Duration delay{};
+    bool block_until_deadline = false;
     ShellRequestFailure response = ShellRequestFailure::none;
     std::vector<std::pair<ShellAction, std::string>> requests;
 };
@@ -67,17 +70,21 @@ TEST(ShellControlTest, PreservesTypedPortFailuresAndStopsClosed) {
     EXPECT_EQ(port.requests.size(), 1U);
 }
 
-TEST(ShellControlTest, ReturnsTimedOutWhenPresentationReachesTheMonotonicDeadline) {
+TEST(ShellControlTest, PropagatesARealCommitDeadlineWithoutLatePresentation) {
     using namespace std::chrono_literals;
 
-    auto clock = std::make_shared<prismdrake::foundation::TestMonotonicClock>();
     PresentationPort port;
-    port.clock = clock;
-    port.delay = 1s;
-    ShellControlService service{port, clock};
+    port.block_until_deadline = true;
+    auto clock = std::make_shared<prismdrake::foundation::SystemMonotonicClock>();
+    ShellControlService service{port, clock, 40ms};
 
+    const auto started = std::chrono::steady_clock::now();
     EXPECT_EQ(service.request(ShellAction::toggle_launcher, ""), ShellRequestFailure::timed_out);
-    ASSERT_EQ(port.requests.size(), 1U);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    EXPECT_GE(elapsed, 40ms);
+    EXPECT_TRUE(port.requests.empty());
+    std::this_thread::sleep_for(20ms);
+    EXPECT_TRUE(port.requests.empty());
 }
 
 TEST(ShellControlTest, RejectsAnExpiredBudgetBeforeCallingThePresentationPort) {

@@ -31,11 +31,16 @@ enum class ShellRequestFailure : std::uint8_t {
 /// Narrow shell-presentation boundary. Implementations validate the requested
 /// output against one coherent topology generation before committing a focus or
 /// surface-routing operation through the WM-respecting shell focus router.
+/// This owner-context call must not wait for I/O or visual completion, perform
+/// blocking I/O, or dispatch blocking work. The deadline is the latest
+/// commit-admission point: return `timed_out` without mutation when it has
+/// elapsed, and never report timeout after committing.
 class ShellPresentationPort {
   public:
     virtual ~ShellPresentationPort() = default;
-    [[nodiscard]] virtual ShellRequestFailure request(ShellAction action,
-                                                      std::string_view outputName) = 0;
+    [[nodiscard]] virtual ShellRequestFailure
+    request(ShellAction action, std::string_view outputName,
+            foundation::MonotonicClock::TimePoint deadline) = 0;
 };
 
 /// Experimental same-user Shell1 object. Name ownership remains with the
