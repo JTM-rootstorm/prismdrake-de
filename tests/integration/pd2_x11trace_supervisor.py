@@ -328,6 +328,7 @@ class X11TraceSupervisor:
         self._started_at = clock()
         self._failure: str | None = None
         self._finished = False
+        self._closed = False
         self._finishing = False
         self._fake_ready = False
         self._fake_identity: FakeDisplayIdentity | None = None
@@ -424,7 +425,7 @@ class X11TraceSupervisor:
     def client_environment(self, environment: Mapping[str, str]) -> dict[str, str]:
         """Return a bounded no-auth-copy client environment for the proxy."""
 
-        if self._finished:
+        if self._closed:
             _fail("x11trace_already_finished")
         checked = _checked_environment(environment)
         checked["DISPLAY"] = self._config.fake_display
@@ -509,7 +510,7 @@ class X11TraceSupervisor:
     def poll(self) -> None:
         """Fail immediately if the proxy, byte cap, or time cap was lost."""
 
-        if self._finished:
+        if self._closed:
             _fail("x11trace_already_finished")
         failure = self._monitor_failure()
         if failure is not None:
@@ -610,17 +611,19 @@ class X11TraceSupervisor:
 
     def _cleanup_fake_display(self) -> bool:
         identity = self._fake_identity
-        self._fake_identity = None
-        self._fake_ready = False
         if identity is None:
             return True
         process = self._process
         if process is None or process.poll() is None:
             return False
         try:
-            return self._cleaner(self._fake_number, identity) is True
+            clean = self._cleaner(self._fake_number, identity) is True
         except Exception:
             return False
+        if clean:
+            self._fake_identity = None
+            self._fake_ready = False
+        return clean
 
     def _abort(self) -> None:
         self._monitor_stop.set()
@@ -632,14 +635,15 @@ class X11TraceSupervisor:
         try:
             self._cleanup_raw_trace()
         finally:
-            self._finished = True
+            self._closed = True
+            self._finished = fake_display_clean
         if not fake_display_clean:
             _fail("x11trace_fake_display_cleanup_failed")
 
     def finish(self, *, clients_exited: bool) -> X11TraceSummary:
         """Stop after client teardown, validate the complete trace, and erase it."""
 
-        if self._finished:
+        if self._closed:
             _fail("x11trace_already_finished")
         if clients_exited is not True:
             self._abort()
@@ -690,7 +694,7 @@ class X11TraceSupervisor:
 
     def __exit__(self, exception_type: Any, exception: Any, traceback: Any) -> None:
         del exception_type, traceback
-        if not self._finished:
+        if not self._closed:
             if exception is None:
                 self.finish(clients_exited=True)
             else:

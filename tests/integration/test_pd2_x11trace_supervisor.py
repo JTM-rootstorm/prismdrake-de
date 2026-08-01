@@ -281,9 +281,14 @@ class X11TraceSupervisorTests(unittest.TestCase):
             "x11trace_fake_display_cleanup_failed",
             lambda: supervisor.finish(clients_exited=True),
         )
-        self.assertTrue(supervisor.finished)
+        self.assertFalse(supervisor.finished)
+        self.assertEqual(supervisor._fake_identity, (77, 78))
         self.assertEqual(cleaner.calls, [(78, (77, 78))])
         self.assertFalse(factory.output_path.exists())
+        self.assert_category(
+            "x11trace_already_finished",
+            lambda: supervisor.finish(clients_exited=True),
+        )
 
     def test_unreaped_proxy_preserves_socket_and_fails_cleanup(self) -> None:
         process = UnreapedProcess()
@@ -294,6 +299,8 @@ class X11TraceSupervisorTests(unittest.TestCase):
             "x11trace_fake_display_cleanup_failed",
             lambda: supervisor.finish(clients_exited=False),
         )
+        self.assertFalse(supervisor.finished)
+        self.assertEqual(supervisor._fake_identity, (77, 78))
         self.assertEqual(cleaner.calls, [])
         self.assertGreaterEqual(process.kill_calls, 1)
 
