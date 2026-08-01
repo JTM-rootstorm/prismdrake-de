@@ -746,7 +746,7 @@ Do not mark a Proposed ADR Accepted merely because a pull request implements it.
 
 ## Common mistakes to avoid
 
-- Treating Qt 6 Quick as final before owner approval.
+- Treating a Proposed technology choice as final before owner approval.
 - Treating GTK as forbidden when the actual constraint concerns GNOME desktop dependencies.
 - Making both GTK and Qt mandatory for core startup.
 - Giving Prismdrake ownership of focus, stacking, workspaces, or blur execution.

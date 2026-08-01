@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-16
 - **Compatibility floor amended:** 2026-07-18
+- **Milestone wording amended:** 2026-07-31
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -64,8 +65,10 @@ The [PD1 toolkit spike](../research/pd1-toolkit-spike.md) and
 [Gentoo dependency evidence](../research/pd1-gentoo-dependency-evidence.md)
 cover the observed single-output X11, keyboard, AT-SPI, scaling, reduced-motion,
 disabled-transparency, restart, and dependency behavior used for this decision.
-Real multi-output, mixed-DPI, real-GPU, alternate-WM, and full screen-reader
-behavior remains PD1 validation work rather than established support.
+The PD1 evidence did not establish real multi-output, mixed-DPI, real-GPU,
+alternate-WM, or full screen-reader behavior. Live multi-output and AT-SPI
+evidence are part of the active PD2 exit gate; the broader limitations remain
+unclaimed and require later-milestone evidence.
 
 ## Revisit conditions
 
