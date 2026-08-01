@@ -209,16 +209,14 @@ FocusScope {
                 const index = root.pendingProfileFocusRecovery
                 const restoreVisualFocus = root.pendingProfileVisualFocusRecovery
                 const recoverySerial = root.pendingProfileFocusRecoverySerial
-                const activeFocusItem = root.Window.window !== null
-                    ? root.Window.window.activeFocusItem : null
-                const allowProfileGroupFallback = activeFocusItem === lustreProfile
-                    || activeFocusItem === forgeProfile
                 root.pendingProfileFocusRecovery = -1
                 root.pendingProfileVisualFocusRecovery = false
                 root.pendingProfileFocusRecoverySerial = -1
+                // Qt may move focus between the disabled radio siblings only
+                // after this signal.  Authorize that exact fallback in the
+                // deferred callback, where the settled focus is observable.
                 root.restorePendingFocus(index, restoreVisualFocus,
-                                         recoverySerial,
-                                         allowProfileGroupFallback, 2)
+                                         recoverySerial, true, 2)
             }
         }
     }

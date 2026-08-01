@@ -303,15 +303,16 @@ TestCase {
         keyClick(Qt.Key_Space)
         compare(profileAdapter.pending, true)
 
-        // A real X11 Qt session moves focus to the other radio while both
-        // profile controls are temporarily disabled.  This is framework
-        // fallback, not a new user navigation request.
         profileAdapter.pending = false
+        profileAdapter.valueId = "forge"
+        profileAdapter.changed()
+
+        // A real X11 Qt session can finish its automatic radio-group fallback
+        // after the publication signal but before deferred recovery runs.
+        // This is framework fallback, not a new user navigation request.
         surface.controlAt(0).forceActiveFocus(Qt.OtherFocusReason)
         compare(surface.controlAt(0).activeFocus, true)
 
-        profileAdapter.valueId = "forge"
-        profileAdapter.changed()
         tryCompare(surface.controlAt(1), "activeFocus", true)
         tryCompare(surface.controlAt(1), "visualFocus", true)
     }
@@ -328,6 +329,22 @@ TestCase {
         profileAdapter.changed()
         wait(0)
         compare(surface.controlAt(3).activeFocus, true)
+        compare(surface.controlAt(1).activeFocus, false)
+    }
+
+    function test_deferredProfileRecoveryHonorsIntentionalSiblingNavigation() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        compare(profileAdapter.pending, true)
+
+        profileAdapter.pending = false
+        profileAdapter.valueId = "forge"
+        profileAdapter.changed()
+        surface.focusControl(0, Qt.TabFocusReason)
+        wait(0)
+
+        compare(surface.controlAt(0).activeFocus, true)
         compare(surface.controlAt(1).activeFocus, false)
     }
 
