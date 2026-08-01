@@ -225,7 +225,7 @@ installed-demonstration artifact for the same revision:
 python3 tests/performance/pd2_runtime_performance.py \
   --source-revision "$(git rev-parse HEAD)" \
   --environment-id gentoo-amd64-qemu-system \
-  --installed-demo-evidence "/absolute/private/evidence/pd2-installed-demo.json" \
+  --installed-demo-evidence "/absolute/private/evidence/pd2-installed-demonstration.json" \
   --controlled-window-fixture "$PWD/build/performance-gcc/tests/integration/prismdrake-controlled-window-fixture" \
   --iterations 3 \
   --output "/absolute/private/evidence/pd2-runtime-performance.json"
