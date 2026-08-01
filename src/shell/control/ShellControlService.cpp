@@ -3,8 +3,10 @@
 #include "PeerCredentials.hpp"
 
 #include <cerrno>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string_view>
 
 namespace prismdrake::shell::control {
@@ -165,6 +167,16 @@ struct ErrorReply final {
 
 } // namespace
 
+ShellControlService::ShellControlService(ShellPresentationPort &presentationPort)
+    : ShellControlService(presentationPort, std::make_shared<foundation::SystemMonotonicClock>()) {}
+
+ShellControlService::ShellControlService(ShellPresentationPort &presentationPort,
+                                         std::shared_ptr<const foundation::MonotonicClock> clock,
+                                         foundation::MonotonicClock::Duration requestBudget)
+    : presentation_port_(&presentationPort),
+      clock_(clock ? std::move(clock) : std::make_shared<foundation::SystemMonotonicClock>()),
+      request_budget_(requestBudget) {}
+
 foundation::Result<void> ShellControlService::attach(sd_bus *bus) {
     if (bus == nullptr || slot_) {
         return foundation::Result<void>::failure(attachError());
@@ -177,13 +189,23 @@ foundation::Result<void> ShellControlService::attach(sd_bus *bus) {
 }
 
 ShellRequestFailure ShellControlService::request(ShellAction action, std::string_view outputName) {
+    const auto startedAt = clock_->now();
+    if (request_budget_ <= foundation::MonotonicClock::Duration::zero() ||
+        startedAt > foundation::MonotonicClock::TimePoint::max() - request_budget_) {
+        return ShellRequestFailure::timed_out;
+    }
+    const auto deadline = startedAt + request_budget_;
     if (service_stopping_) {
         return ShellRequestFailure::service_stopping;
     }
     if (!outputName.empty() && !validUtf8OutputName(outputName)) {
         return ShellRequestFailure::invalid_output;
     }
-    return presentation_port_->request(action, outputName);
+    const auto failure = presentation_port_->request(action, outputName);
+    if (clock_->now() >= deadline) {
+        return ShellRequestFailure::timed_out;
+    }
+    return failure;
 }
 
 } // namespace prismdrake::shell::control

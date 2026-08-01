@@ -1,7 +1,12 @@
 #pragma once
 
+#include "MonotonicClock.hpp"
+
+#include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <optional>
 #include <string_view>
 
 namespace prismdrake::session {
@@ -33,6 +38,7 @@ enum class LogoutRequestFailure : std::uint8_t {
     transaction_mismatch,
     invalid_state,
     busy,
+    timed_out,
     service_stopping,
     internal,
 };
@@ -69,6 +75,10 @@ class LogoutTransaction final {
 
     LogoutTransaction(ExactChildShutdownPort &shutdownPort, TransitionObserver observer,
                       std::uint64_t firstTransactionId = 1);
+    LogoutTransaction(ExactChildShutdownPort &shutdownPort, TransitionObserver observer,
+                      std::shared_ptr<const foundation::MonotonicClock> clock,
+                      foundation::MonotonicClock::Duration mutationBudget = std::chrono::seconds{5},
+                      std::uint64_t firstTransactionId = 1);
 
     [[nodiscard]] LogoutSnapshot snapshot() const noexcept;
     [[nodiscard]] LogoutRequestResult request();
@@ -80,11 +90,16 @@ class LogoutTransaction final {
 
   private:
     [[nodiscard]] LogoutRequestFailure validateCancellable(std::uint64_t transactionId) const;
+    [[nodiscard]] std::optional<foundation::MonotonicClock::TimePoint> mutationDeadline() const;
+    [[nodiscard]] bool timedOut(foundation::MonotonicClock::TimePoint deadline) const noexcept;
+    void freezeTimedOut(std::uint64_t transactionId);
     void transition(LogoutState state, std::uint64_t signalTransactionId);
     [[nodiscard]] std::uint64_t allocateTransactionId() noexcept;
 
     ExactChildShutdownPort *shutdown_port_;
     TransitionObserver observer_;
+    std::shared_ptr<const foundation::MonotonicClock> clock_;
+    foundation::MonotonicClock::Duration mutation_budget_;
     LogoutSnapshot snapshot_;
     std::uint64_t next_transaction_id_ = 1;
     bool service_stopping_ = false;

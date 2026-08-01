@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -16,9 +18,14 @@ class PresentationPort final : public ShellPresentationPort {
     [[nodiscard]] ShellRequestFailure request(ShellAction action,
                                               std::string_view outputName) override {
         requests.emplace_back(action, std::string{outputName});
+        if (clock && delay > prismdrake::foundation::MonotonicClock::Duration::zero()) {
+            (void)clock->advance(delay);
+        }
         return response;
     }
 
+    std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock;
+    prismdrake::foundation::MonotonicClock::Duration delay{};
     ShellRequestFailure response = ShellRequestFailure::none;
     std::vector<std::pair<ShellAction, std::string>> requests;
 };
@@ -58,6 +65,29 @@ TEST(ShellControlTest, PreservesTypedPortFailuresAndStopsClosed) {
     service.beginServiceStop();
     EXPECT_EQ(service.request(ShellAction::focus_panel, ""), ShellRequestFailure::service_stopping);
     EXPECT_EQ(port.requests.size(), 1U);
+}
+
+TEST(ShellControlTest, ReturnsTimedOutWhenPresentationReachesTheMonotonicDeadline) {
+    using namespace std::chrono_literals;
+
+    auto clock = std::make_shared<prismdrake::foundation::TestMonotonicClock>();
+    PresentationPort port;
+    port.clock = clock;
+    port.delay = 1s;
+    ShellControlService service{port, clock};
+
+    EXPECT_EQ(service.request(ShellAction::toggle_launcher, ""), ShellRequestFailure::timed_out);
+    ASSERT_EQ(port.requests.size(), 1U);
+}
+
+TEST(ShellControlTest, RejectsAnExpiredBudgetBeforeCallingThePresentationPort) {
+    auto clock = std::make_shared<prismdrake::foundation::TestMonotonicClock>();
+    PresentationPort port;
+    ShellControlService service{port, clock,
+                                prismdrake::foundation::MonotonicClock::Duration::zero()};
+
+    EXPECT_EQ(service.request(ShellAction::focus_panel, ""), ShellRequestFailure::timed_out);
+    EXPECT_TRUE(port.requests.empty());
 }
 
 } // namespace

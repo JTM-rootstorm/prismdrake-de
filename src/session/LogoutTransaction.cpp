@@ -1,6 +1,7 @@
 #include "LogoutTransaction.hpp"
 
 #include <limits>
+#include <memory>
 #include <utility>
 
 namespace prismdrake::session {
@@ -31,12 +32,27 @@ std::string_view logoutStateName(LogoutState state) noexcept {
 
 LogoutTransaction::LogoutTransaction(ExactChildShutdownPort &shutdownPort,
                                      TransitionObserver observer, std::uint64_t firstTransactionId)
+    : LogoutTransaction(shutdownPort, std::move(observer),
+                        std::make_shared<foundation::SystemMonotonicClock>(),
+                        std::chrono::seconds{5}, firstTransactionId) {}
+
+LogoutTransaction::LogoutTransaction(ExactChildShutdownPort &shutdownPort,
+                                     TransitionObserver observer,
+                                     std::shared_ptr<const foundation::MonotonicClock> clock,
+                                     foundation::MonotonicClock::Duration mutationBudget,
+                                     std::uint64_t firstTransactionId)
     : shutdown_port_(&shutdownPort), observer_(std::move(observer)),
+      clock_(clock ? std::move(clock) : std::make_shared<foundation::SystemMonotonicClock>()),
+      mutation_budget_(mutationBudget),
       next_transaction_id_(firstTransactionId == 0 ? 1 : firstTransactionId) {}
 
 LogoutSnapshot LogoutTransaction::snapshot() const noexcept { return snapshot_; }
 
 LogoutRequestResult LogoutTransaction::request() {
+    const auto deadline = mutationDeadline();
+    if (!deadline) {
+        return {LogoutRequestFailure::timed_out, snapshot_.transactionId};
+    }
     if (service_stopping_) {
         return {LogoutRequestFailure::service_stopping, snapshot_.transactionId};
     }
@@ -46,17 +62,38 @@ LogoutRequestResult LogoutTransaction::request() {
     const auto transactionId = allocateTransactionId();
     snapshot_.transactionId = transactionId;
     transition(LogoutState::confirmation_requested, transactionId);
+    if (timedOut(*deadline)) {
+        freezeTimedOut(transactionId);
+        return {LogoutRequestFailure::timed_out, transactionId};
+    }
     return {LogoutRequestFailure::none, transactionId};
 }
 
 LogoutRequestResult LogoutTransaction::confirm(std::uint64_t transactionId) {
+    const auto deadline = mutationDeadline();
+    if (!deadline) {
+        return {LogoutRequestFailure::timed_out, snapshot_.transactionId};
+    }
     const auto failure = validateCancellable(transactionId);
     if (failure != LogoutRequestFailure::none) {
         return {failure, snapshot_.transactionId};
     }
     transition(LogoutState::confirmed, transactionId);
+    if (timedOut(*deadline)) {
+        freezeTimedOut(transactionId);
+        return {LogoutRequestFailure::timed_out, transactionId};
+    }
     transition(LogoutState::stopping_shell, transactionId);
-    if (!shutdown_port_->beginExactChildShutdown(transactionId)) {
+    if (timedOut(*deadline)) {
+        freezeTimedOut(transactionId);
+        return {LogoutRequestFailure::timed_out, transactionId};
+    }
+    const bool shutdownStarted = shutdown_port_->beginExactChildShutdown(transactionId);
+    if (timedOut(*deadline)) {
+        freezeTimedOut(transactionId);
+        return {LogoutRequestFailure::timed_out, transactionId};
+    }
+    if (!shutdownStarted) {
         transition(LogoutState::failed, transactionId);
         return {LogoutRequestFailure::internal, transactionId};
     }
@@ -64,13 +101,25 @@ LogoutRequestResult LogoutTransaction::confirm(std::uint64_t transactionId) {
 }
 
 LogoutRequestResult LogoutTransaction::cancel(std::uint64_t transactionId) {
+    const auto deadline = mutationDeadline();
+    if (!deadline) {
+        return {LogoutRequestFailure::timed_out, snapshot_.transactionId};
+    }
     const auto failure = validateCancellable(transactionId);
     if (failure != LogoutRequestFailure::none) {
         return {failure, snapshot_.transactionId};
     }
     transition(LogoutState::cancelled, transactionId);
+    if (timedOut(*deadline)) {
+        freezeTimedOut(transactionId);
+        return {LogoutRequestFailure::timed_out, transactionId};
+    }
     snapshot_.transactionId = 0;
     transition(LogoutState::idle, transactionId);
+    if (timedOut(*deadline)) {
+        freezeTimedOut(transactionId);
+        return {LogoutRequestFailure::timed_out, transactionId};
+    }
     return {LogoutRequestFailure::none, transactionId};
 }
 
@@ -129,6 +178,24 @@ LogoutRequestFailure LogoutTransaction::validateCancellable(std::uint64_t transa
         return LogoutRequestFailure::invalid_state;
     }
     return LogoutRequestFailure::none;
+}
+
+std::optional<foundation::MonotonicClock::TimePoint> LogoutTransaction::mutationDeadline() const {
+    const auto now = clock_->now();
+    if (mutation_budget_ <= foundation::MonotonicClock::Duration::zero() ||
+        now > foundation::MonotonicClock::TimePoint::max() - mutation_budget_) {
+        return std::nullopt;
+    }
+    return now + mutation_budget_;
+}
+
+bool LogoutTransaction::timedOut(foundation::MonotonicClock::TimePoint deadline) const noexcept {
+    return clock_->now() >= deadline;
+}
+
+void LogoutTransaction::freezeTimedOut(std::uint64_t transactionId) {
+    snapshot_.transactionId = transactionId;
+    transition(LogoutState::failed, transactionId);
 }
 
 void LogoutTransaction::transition(LogoutState state, std::uint64_t signalTransactionId) {

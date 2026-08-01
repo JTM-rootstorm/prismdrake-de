@@ -1,9 +1,12 @@
 #pragma once
 
+#include "MonotonicClock.hpp"
 #include "Result.hpp"
 #include "SdBusApi.hpp"
 
+#include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string_view>
 
 namespace prismdrake::shell::control {
@@ -39,8 +42,11 @@ class ShellPresentationPort {
 /// embedding shell runtime.
 class ShellControlService final {
   public:
-    explicit ShellControlService(ShellPresentationPort &presentationPort)
-        : presentation_port_(&presentationPort) {}
+    explicit ShellControlService(ShellPresentationPort &presentationPort);
+    ShellControlService(ShellPresentationPort &presentationPort,
+                        std::shared_ptr<const foundation::MonotonicClock> clock,
+                        foundation::MonotonicClock::Duration requestBudget = std::chrono::seconds{
+                            1});
 
     [[nodiscard]] foundation::Result<void> attach(sd_bus *bus);
     [[nodiscard]] ShellRequestFailure request(ShellAction action, std::string_view outputName);
@@ -48,6 +54,8 @@ class ShellControlService final {
 
   private:
     ShellPresentationPort *presentation_port_;
+    std::shared_ptr<const foundation::MonotonicClock> clock_;
+    foundation::MonotonicClock::Duration request_budget_;
     ipc::sdbus::Slot slot_;
     bool service_stopping_ = false;
 };

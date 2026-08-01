@@ -6,7 +6,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <utility>
 
 #include <sys/random.h>
 #include <unistd.h>
@@ -21,6 +23,7 @@ constexpr char noTransactionError[] = "org.prismdrake.Session1.Error.NoTransacti
 constexpr char transactionMismatchError[] = "org.prismdrake.Session1.Error.TransactionMismatch";
 constexpr char invalidStateError[] = "org.prismdrake.Session1.Error.InvalidState";
 constexpr char busyError[] = "org.prismdrake.Session1.Error.Busy";
+constexpr char timedOutError[] = "org.prismdrake.Session1.Error.TimedOut";
 constexpr char notAuthorizedError[] = "org.prismdrake.Session1.Error.NotAuthorized";
 constexpr char serviceStoppingError[] = "org.prismdrake.Session1.Error.ServiceStopping";
 constexpr char internalError[] = "org.prismdrake.Session1.Error.Internal";
@@ -29,6 +32,7 @@ constexpr char noTransactionMessage[] = "No logout transaction is active.";
 constexpr char transactionMismatchMessage[] = "The logout transaction is stale or unknown.";
 constexpr char invalidStateMessage[] = "The logout transaction is not in the required state.";
 constexpr char busyMessage[] = "A logout transaction is already active.";
+constexpr char timedOutMessage[] = "The session request exceeded its bounded service deadline.";
 constexpr char notAuthorizedMessage[] = "The session request is not authorized.";
 constexpr char serviceStoppingMessage[] = "The session service is stopping.";
 constexpr char internalMessage[] = "The session service could not complete the request.";
@@ -50,6 +54,8 @@ struct ErrorReply final {
         return {invalidStateError, invalidStateMessage};
     case LogoutRequestFailure::busy:
         return {busyError, busyMessage};
+    case LogoutRequestFailure::timed_out:
+        return {timedOutError, timedOutMessage};
     case LogoutRequestFailure::service_stopping:
         return {serviceStoppingError, serviceStoppingMessage};
     case LogoutRequestFailure::internal:
@@ -110,9 +116,13 @@ struct ErrorReply final {
     if (authorized < 0) {
         return authorized;
     }
-    const auto state = fromUserData(userData).snapshot();
-    const std::string stateName{logoutStateName(state.state)};
-    return sd_bus_reply_method_return(message, "ts", state.transactionId, stateName.c_str());
+    const auto result = fromUserData(userData).getSessionState();
+    if (!result.accepted()) {
+        return replyFailure(error, result.failure);
+    }
+    const std::string stateName{logoutStateName(result.snapshot.state)};
+    return sd_bus_reply_method_return(message, "ts", result.snapshot.transactionId,
+                                      stateName.c_str());
 }
 
 [[nodiscard]] int handleRequestLogout(sd_bus_message *message, void *userData,
@@ -178,9 +188,17 @@ template <TransactionMutation Operation>
 } // namespace
 
 SessionControlService::SessionControlService(ExactChildShutdownPort &shutdownPort)
-    : transaction_(
-          shutdownPort, [this](const LogoutSnapshot &state) { emitTransition(state); },
-          firstTransactionIdForOwnerEpoch()) {}
+    : SessionControlService(shutdownPort, std::make_shared<foundation::SystemMonotonicClock>()) {}
+
+SessionControlService::SessionControlService(
+    ExactChildShutdownPort &shutdownPort, std::shared_ptr<const foundation::MonotonicClock> clock,
+    foundation::MonotonicClock::Duration getterBudget,
+    foundation::MonotonicClock::Duration mutationBudget)
+    : clock_(clock ? std::move(clock) : std::make_shared<foundation::SystemMonotonicClock>()),
+      getter_budget_(getterBudget),
+      transaction_(
+          shutdownPort, [this](const LogoutSnapshot &state) { emitTransition(state); }, clock_,
+          mutationBudget, firstTransactionIdForOwnerEpoch()) {}
 
 foundation::Result<void> SessionControlService::attach(sd_bus *bus) {
     if (bus == nullptr || bus_ != nullptr) {
@@ -196,6 +214,20 @@ foundation::Result<void> SessionControlService::attach(sd_bus *bus) {
 }
 
 LogoutSnapshot SessionControlService::snapshot() const noexcept { return transaction_.snapshot(); }
+
+SessionStateResult SessionControlService::getSessionState() const {
+    const auto startedAt = clock_->now();
+    if (getter_budget_ <= foundation::MonotonicClock::Duration::zero() ||
+        startedAt > foundation::MonotonicClock::TimePoint::max() - getter_budget_) {
+        return {LogoutRequestFailure::timed_out, {}};
+    }
+    const auto deadline = startedAt + getter_budget_;
+    const auto state = transaction_.snapshot();
+    if (clock_->now() >= deadline) {
+        return {LogoutRequestFailure::timed_out, {}};
+    }
+    return {LogoutRequestFailure::none, state};
+}
 
 LogoutRequestResult SessionControlService::requestLogout() { return transaction_.request(); }
 

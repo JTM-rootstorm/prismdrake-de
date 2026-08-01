@@ -1,3 +1,4 @@
+#include "MonotonicClock.hpp"
 #include "SessionControlService.hpp"
 #include "ShellControlService.hpp"
 #include "ShellCtl.hpp"
@@ -7,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -38,24 +40,54 @@ struct Error final {
 
 class ShutdownPort final : public ExactChildShutdownPort {
   public:
+    explicit ShutdownPort(std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock)
+        : clock_(std::move(clock)) {}
+
     [[nodiscard]] bool beginExactChildShutdown(std::uint64_t transactionId) override {
         transactionId_ = transactionId;
+        const auto delay = std::chrono::nanoseconds{delay_nanoseconds_.load()};
+        if (delay > std::chrono::nanoseconds::zero()) {
+            (void)clock_->advance(delay);
+        }
         return true;
     }
+    void setDelay(std::chrono::nanoseconds delay) noexcept {
+        delay_nanoseconds_.store(delay.count());
+    }
+
     std::uint64_t transactionId_ = 0;
+
+  private:
+    std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock_;
+    std::atomic<std::chrono::nanoseconds::rep> delay_nanoseconds_ = 0;
 };
 
 class PresentationPort final : public ShellPresentationPort {
   public:
+    explicit PresentationPort(std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock)
+        : clock_(std::move(clock)) {}
+
     [[nodiscard]] ShellRequestFailure request(ShellAction action,
                                               std::string_view outputName) override {
         if (outputName == "missing") {
             return ShellRequestFailure::output_unavailable;
         }
         requests.emplace_back(action, std::string{outputName});
+        const auto delay = std::chrono::nanoseconds{delay_nanoseconds_.load()};
+        if (delay > std::chrono::nanoseconds::zero()) {
+            (void)clock_->advance(delay);
+        }
         return ShellRequestFailure::none;
     }
+    void setDelay(std::chrono::nanoseconds delay) noexcept {
+        delay_nanoseconds_.store(delay.count());
+    }
+
     std::vector<std::pair<ShellAction, std::string>> requests;
+
+  private:
+    std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock_;
+    std::atomic<std::chrono::nanoseconds::rep> delay_nanoseconds_ = 0;
 };
 
 class ControlBusFixture : public ::testing::Test {
@@ -103,6 +135,24 @@ class ControlBusFixture : public ::testing::Test {
                                   "CancelLogout", &error.value, reply.put(), "t", transactionId);
     }
 
+    [[nodiscard]] int confirmLogout(std::uint64_t transactionId, Error &error) {
+        Message reply;
+        return sd_bus_call_method(client_bus_.get(), sessionService, sessionPath, sessionInterface,
+                                  "ConfirmLogout", &error.value, reply.put(), "t", transactionId);
+    }
+
+    [[nodiscard]] std::pair<std::uint64_t, std::string> getSessionState(Error &error) {
+        Message reply;
+        if (sd_bus_call_method(client_bus_.get(), sessionService, sessionPath, sessionInterface,
+                               "GetSessionState", &error.value, reply.put(), "") < 0) {
+            return {};
+        }
+        std::uint64_t transactionId = 0;
+        const char *state = nullptr;
+        EXPECT_GE(sd_bus_message_read(reply.get(), "ts", &transactionId, &state), 0);
+        return {transactionId, state != nullptr ? std::string{state} : std::string{}};
+    }
+
     void dispatch() {
         while (!stop_.load()) {
             int result = 0;
@@ -116,10 +166,12 @@ class ControlBusFixture : public ::testing::Test {
         }
     }
 
-    ShutdownPort shutdown_port_;
-    PresentationPort presentation_port_;
-    ShellControlService shell_service_{presentation_port_};
-    SessionControlService session_service_{shutdown_port_};
+    std::shared_ptr<prismdrake::foundation::TestMonotonicClock> clock_ =
+        std::make_shared<prismdrake::foundation::TestMonotonicClock>();
+    ShutdownPort shutdown_port_{clock_};
+    PresentationPort presentation_port_{clock_};
+    ShellControlService shell_service_{presentation_port_, clock_};
+    SessionControlService session_service_{shutdown_port_, clock_};
     Bus server_bus_;
     Bus client_bus_;
     std::atomic_bool stop_ = false;
@@ -159,6 +211,33 @@ TEST_F(ControlBusFixture, KeepsOneCancellableLogoutTransaction) {
 
     Error cancelError;
     EXPECT_GE(cancelLogout(transactionId, cancelError), 0);
+}
+
+TEST_F(ControlBusFixture, ReturnsTypedShellTimeoutAtTheMonotonicDeadline) {
+    using namespace std::chrono_literals;
+
+    presentation_port_.setDelay(1s);
+    Error error;
+    EXPECT_LT(callShell("ToggleLauncher", "", error), 0);
+    ASSERT_NE(error.value.name, nullptr);
+    EXPECT_STREQ(error.value.name, "org.prismdrake.Shell1.Error.TimedOut");
+}
+
+TEST_F(ControlBusFixture, ReturnsTypedSessionTimeoutAndStopsLaterTransactionTransitions) {
+    using namespace std::chrono_literals;
+
+    Error requestError;
+    const auto transactionId = requestLogout(requestError);
+    ASSERT_NE(transactionId, 0U);
+
+    shutdown_port_.setDelay(5s);
+    Error confirmError;
+    EXPECT_LT(confirmLogout(transactionId, confirmError), 0);
+    ASSERT_NE(confirmError.value.name, nullptr);
+    EXPECT_STREQ(confirmError.value.name, "org.prismdrake.Session1.Error.TimedOut");
+
+    Error stateError;
+    EXPECT_EQ(getSessionState(stateError), (std::pair{transactionId, std::string{"failed"}}));
 }
 
 TEST_F(ControlBusFixture, ShellctlMapsEveryFrozenCommandToTheTypedOwners) {
