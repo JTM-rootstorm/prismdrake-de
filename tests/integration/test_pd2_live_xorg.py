@@ -3786,6 +3786,57 @@ class LivePortTests(unittest.TestCase):
         self.assertGreaterEqual(calls, 2)
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
+    def test_surface_observation_ignores_only_confirmed_vanished_windows(self) -> None:
+        class VanishingWindowOperations(FakeOperations):
+            def __init__(self, *, remove_from_stacking: bool) -> None:
+                super().__init__()
+                self.remove_from_stacking = remove_from_stacking
+                self.failed = False
+
+            def run(self, argv, env, timeout):
+                command = tuple(argv)
+                if (
+                    not self.failed
+                    and command
+                    == (
+                        "/usr/bin/xprop",
+                        "-id",
+                        f"0x{DESKTOP_LEFT:x}",
+                        "_NET_WM_WINDOW_TYPE",
+                    )
+                ):
+                    self.failed = True
+                    if self.remove_from_stacking:
+                        self.surface_list = tuple(
+                            window
+                            for window in self.surface_list
+                            if window != DESKTOP_LEFT
+                        )
+                    return CommandResult(1, b"", b"BadWindow")
+                return super().run(argv, env, timeout)
+
+        operations = VanishingWindowOperations(remove_from_stacking=True)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        port._display = ":99"  # noqa: SLF001
+        observed = port._observe_surface_windows(  # noqa: SLF001
+            b"_NET_WM_WINDOW_TYPE_DESKTOP", ProcessIdentity(2004, 20_040)
+        )
+        self.assertEqual(observed, {DESKTOP_RIGHT: SURFACE_GEOMETRIES[DESKTOP_RIGHT]})
+
+        operations = VanishingWindowOperations(remove_from_stacking=False)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        port._display = ":99"  # noqa: SLF001
+        with self.assertRaisesRegex(
+            HarnessError, "^x11_window_property_query_failed$"
+        ):
+            port._observe_surface_windows(  # noqa: SLF001
+                b"_NET_WM_WINDOW_TYPE_DESKTOP", ProcessIdentity(2004, 20_040)
+            )
+
     def test_malformed_pin_recovery_requires_a_valid_private_replacement(self) -> None:
         operations = FakeOperations()
         accessibility = FakeAccessibility(operations)

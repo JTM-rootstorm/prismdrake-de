@@ -5334,35 +5334,56 @@ class LiveXorgHarnessPort:
         windows = parse_window_ids(result.stdout, b"_NET_CLIENT_LIST_STACKING")
         observed: dict[int, WindowGeometry] = {}
         for window in windows:
-            payload = self._window_property(window, b"_NET_WM_WINDOW_TYPE")
-            if payload == b"_NET_WM_WINDOW_TYPE:  not found.\n":
-                continue
-            if parse_window_type_atoms(payload) != (window_type,):
-                continue
-            owner = self._window_cardinals(window, b"_NET_WM_PID", 1)
-            if owner != (shell.pid,):
-                raise HarnessError("surface_window_owner_invalid")
-            hints = self._window_property(window, b"WM_HINTS")
-            focus_lines = [
-                line
-                for line in hints.splitlines()
-                if re.fullmatch(
-                    rb"[ \t]+Client accepts input or input focus: (?:True|False)",
-                    line,
+            try:
+                payload = self._window_property(window, b"_NET_WM_WINDOW_TYPE")
+                if payload == b"_NET_WM_WINDOW_TYPE:  not found.\n":
+                    continue
+                if parse_window_type_atoms(payload) != (window_type,):
+                    continue
+                owner = self._window_cardinals(window, b"_NET_WM_PID", 1)
+                if owner != (shell.pid,):
+                    raise HarnessError("surface_window_owner_invalid")
+                hints = self._window_property(window, b"WM_HINTS")
+                focus_lines = [
+                    line
+                    for line in hints.splitlines()
+                    if re.fullmatch(
+                        rb"[ \t]+Client accepts input or input focus: (?:True|False)",
+                        line,
+                    )
+                ]
+                if len(focus_lines) != 1 or (
+                    window_type == b"_NET_WM_WINDOW_TYPE_DESKTOP"
+                    and not focus_lines[0].endswith(b": False")
+                ):
+                    raise HarnessError("surface_window_focus_policy_invalid")
+                geometry_result = self._run_x11(
+                    (str(self._config.xwininfo), "-id", f"0x{window:x}", "-stats")
                 )
-            ]
-            if len(focus_lines) != 1 or (
-                window_type == b"_NET_WM_WINDOW_TYPE_DESKTOP"
-                and not focus_lines[0].endswith(b": False")
-            ):
-                raise HarnessError("surface_window_focus_policy_invalid")
-            geometry_result = self._run_x11(
-                (str(self._config.xwininfo), "-id", f"0x{window:x}", "-stats")
-            )
-            if geometry_result.returncode != 0:
-                raise HarnessError("x11_window_geometry_query_failed")
-            observed[window] = parse_window_geometry(geometry_result.stdout)
+                if geometry_result.returncode != 0:
+                    raise HarnessError("x11_window_geometry_query_failed")
+                observed[window] = parse_window_geometry(geometry_result.stdout)
+            except HarnessError as error:
+                if str(error) not in {
+                    "x11_window_property_query_failed",
+                    "x11_window_geometry_query_failed",
+                }:
+                    raise
+                if self._window_remains_listed(window):
+                    raise
         return observed
+
+    def _window_remains_listed(self, window: int) -> bool:
+        """Recheck an XID before classifying a failed query as a stale-window race."""
+
+        result = self._run_x11(
+            (str(self._config.xprop), "-root", "_NET_CLIENT_LIST_STACKING")
+        )
+        if result.returncode != 0:
+            raise HarnessError("x11_window_list_query_failed")
+        return window in parse_window_ids(
+            result.stdout, b"_NET_CLIENT_LIST_STACKING"
+        )
 
     def _window_property(self, window: int, property_name: bytes) -> bytes:
         try:
