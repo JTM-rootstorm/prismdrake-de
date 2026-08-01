@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 APPLICATION_NAME = "prismdrake-shell"
 LAUNCHER_TITLE = "Prismdrake Launcher"
-FIXTURE_RESULT_NAME = "Prismdrake Evidence App"
+FIXTURE_RESULT_NAME = "Prüfdrache 星"
 NOTIFICATION_CENTER_NAME = "Open notification center"
 QUICK_SETTINGS_NAME = "Open quick settings"
 KNOWN_PANEL_CONTROL_NAMES = (
@@ -906,7 +906,7 @@ def _run_session_child(arguments: argparse.Namespace) -> None:
     (applications / "prismdrake-evidence.desktop").write_text(
         "[Desktop Entry]\n"
         "Type=Application\n"
-        "Name=Prismdrake Evidence App\n"
+        f"Name={FIXTURE_RESULT_NAME}\n"
         "GenericName=Evidence utility\n"
         "Comment=Deterministic accessibility fixture\n"
         "Exec=/bin/true\n"

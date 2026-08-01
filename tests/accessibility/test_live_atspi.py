@@ -14,6 +14,7 @@ from unittest import mock
 import live_atspi
 from live_atspi import (
     EvidenceError,
+    FIXTURE_RESULT_NAME,
     _grab_focus,
     example_evidence_document,
     validate_evidence_document,
@@ -520,6 +521,16 @@ class AccessibilityEvidenceContractTests(unittest.TestCase):
         evidence = example_evidence_document()
         validate_evidence_schema(evidence)
         validate_evidence_document(evidence)
+
+    def test_example_binds_keyboard_focus_to_arbitrary_localized_fixture_name(self) -> None:
+        evidence = example_evidence_document()
+
+        with self.assertRaises(UnicodeEncodeError):
+            FIXTURE_RESULT_NAME.encode("ascii")
+        self.assertEqual(evidence["phases"][2]["focused_control"], FIXTURE_RESULT_NAME)
+        self.assertEqual(
+            evidence["phases"][2]["controls"][1]["name"], FIXTURE_RESULT_NAME
+        )
 
     def test_schema_source_is_strict_version_one_json(self) -> None:
         schema_path = Path(__file__).with_name("atspi-evidence.schema.json")

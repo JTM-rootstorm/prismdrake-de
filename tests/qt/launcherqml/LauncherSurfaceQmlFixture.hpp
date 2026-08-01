@@ -44,6 +44,7 @@ class LauncherSurfaceQmlFixture final : public QObject {
     Q_INVOKABLE bool resetAccessible();
     Q_INVOKABLE bool publishForge();
     Q_INVOKABLE bool publishRepresentativeResults();
+    Q_INVOKABLE bool publishArbitraryLocalizedResult();
     Q_INVOKABLE bool publishLongResult();
     Q_INVOKABLE bool publishOverflowActions();
     Q_INVOKABLE bool publishQuickSettingsDestination();

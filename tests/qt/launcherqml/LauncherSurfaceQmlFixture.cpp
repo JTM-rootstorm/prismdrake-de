@@ -194,6 +194,14 @@ bool LauncherSurfaceQmlFixture::publishRepresentativeResults() {
            publishSearch({}, prismdrake::launcher::maximumApplicationSearchWorkUnits);
 }
 
+bool LauncherSurfaceQmlFixture::publishArbitraryLocalizedResult() {
+    overflow_actions_ = false;
+    applications_ = {{"localized.desktop", "Prüfdrache 星", "Prüfwerkzeug",
+                      "Deterministische mehrsprachige Barrierefreiheitsprüfung", false}};
+    return rebuildCatalog() &&
+           publishSearch({}, prismdrake::launcher::maximumApplicationSearchWorkUnits);
+}
+
 bool LauncherSurfaceQmlFixture::publishLongResult() {
     overflow_actions_ = false;
     applications_ = {{"long.desktop", std::string(2048U, 'L'), "Literal <b>utility</b>",

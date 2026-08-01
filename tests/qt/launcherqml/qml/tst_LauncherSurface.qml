@@ -366,6 +366,46 @@ TestCase {
         tryCompare(dismissed, "count", 1)
     }
 
+    function test_arbitraryLocalizedNamePreservesKeyboardAndAccessibility() {
+        const localizedName = "Prüfdrache 星"
+        verify(launcherFixture.publishArbitraryLocalizedResult())
+        tryCompare(surface, "resultCount", 1)
+
+        const result = surface.resultAt(0)
+        verify(result !== null)
+        const title = findChild(result, "launcherResultTitle")
+        verify(title !== null)
+        compare(result.presentationName, localizedName)
+        compare(title.text, localizedName)
+        compare(result.Accessible.role, Accessible.Button)
+        compare(result.Accessible.name, localizedName)
+        verify(result.Accessible.description.indexOf("Prüfwerkzeug") >= 0)
+
+        surface.focusSearch()
+        tryCompare(search(), "activeFocus", true)
+        keyClick(Qt.Key_Down)
+        tryCompare(result, "activeFocus", true)
+        compare(result.Accessible.focused, true)
+        compare(result.Accessible.selected, true)
+        keyClick(Qt.Key_Space)
+        tryCompare(launcherFixture, "launchCount", 1)
+        compare(launcherFixture.lastLaunchedName, localizedName)
+
+        keyClick(Qt.Key_F10, Qt.ShiftModifier)
+        const menu = findChild(result, "launcherActionsMenu")
+        tryCompare(menu, "visible", true)
+        const action = result.actionMenuItemAt(0)
+        verify(action !== null)
+        verify(action.Accessible.description.indexOf(localizedName) >= 0)
+        keyClick(Qt.Key_Escape)
+        tryCompare(menu, "visible", false)
+        tryCompare(result, "activeFocus", true)
+
+        result.Accessible.pressAction()
+        tryCompare(launcherFixture, "launchCount", 2)
+        compare(launcherFixture.lastLaunchedName, localizedName)
+    }
+
     function test_reorderRemovalAndStateChangeRecoverFocus() {
         const focused = surface.resultAt(0)
         const focusedPresentation = focused.presentation
