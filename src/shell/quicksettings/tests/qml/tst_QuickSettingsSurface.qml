@@ -18,6 +18,7 @@ TestCase {
 
     QtObject {
         id: profileAdapter
+        signal changed
         property string valueId: "lustre"
         property string valueText: "Prismdrake Lustre"
         property string description: "Choose the active Prismdrake profile."
@@ -29,6 +30,7 @@ TestCase {
 
     QtObject {
         id: dndAdapter
+        signal changed
         property string description: "Normal notifications may be presented."
         property string stateText: "Disabled"
         property bool interactive: true
@@ -72,20 +74,26 @@ TestCase {
 
         function requestLustreProfile() {
             ++testCase.profileRequests
-            if (testCase.makeProfileRequestPending)
+            if (testCase.makeProfileRequestPending) {
                 profileAdapter.pending = true
+                profileAdapter.changed()
+            }
             return true
         }
         function requestForgeProfile() {
             ++testCase.profileRequests
-            if (testCase.makeProfileRequestPending)
+            if (testCase.makeProfileRequestPending) {
                 profileAdapter.pending = true
+                profileAdapter.changed()
+            }
             return true
         }
         function requestDoNotDisturb(enabled) {
             ++testCase.dndRequests
-            if (testCase.makeDndRequestPending)
+            if (testCase.makeDndRequestPending) {
                 dndAdapter.pending = true
+                dndAdapter.changed()
+            }
             return true
         }
         function requestNotificationCenter() { ++testCase.centerRequests; return true }
@@ -277,6 +285,7 @@ TestCase {
 
         profileAdapter.valueId = "forge"
         profileAdapter.pending = false
+        profileAdapter.changed()
         tryCompare(surface.controlAt(1), "activeFocus", true)
     }
 
@@ -289,6 +298,7 @@ TestCase {
         surface.focusControl(3, Qt.TabFocusReason)
         profileAdapter.valueId = "forge"
         profileAdapter.pending = false
+        profileAdapter.changed()
         wait(0)
         compare(surface.controlAt(3).activeFocus, true)
         compare(surface.controlAt(1).activeFocus, false)
@@ -306,6 +316,7 @@ TestCase {
         surface.focusControl(3, Qt.TabFocusReason)
         profileAdapter.valueId = "forge"
         profileAdapter.pending = false
+        profileAdapter.changed()
         wait(0)
         compare(surface.controlAt(3).activeFocus, true)
         compare(surface.controlAt(1).activeFocus, false)
@@ -323,6 +334,7 @@ TestCase {
 
         dndAdapter.checked = true
         dndAdapter.pending = false
+        dndAdapter.changed()
         tryCompare(surface.controlAt(2), "activeFocus", true)
     }
 

@@ -152,7 +152,7 @@ FocusScope {
 
     Connections {
         target: root.quickSettingsModel.profile
-        function onPendingChanged() {
+        function onChanged() {
             if (!root.quickSettingsModel.profile.pending
                     && root.pendingProfileFocusRecovery >= 0) {
                 const index = root.pendingProfileFocusRecovery
@@ -164,7 +164,7 @@ FocusScope {
 
     Connections {
         target: root.quickSettingsModel.doNotDisturb
-        function onPendingChanged() {
+        function onChanged() {
             if (!root.quickSettingsModel.doNotDisturb.pending
                     && root.pendingDoNotDisturbFocusRecovery) {
                 root.pendingDoNotDisturbFocusRecovery = false
