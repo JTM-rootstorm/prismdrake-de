@@ -18,9 +18,11 @@
 #include "ShellRuntimeComposition.hpp"
 #include "ShellRuntimeOptions.hpp"
 #include "ShellThemeSnapshotAdapter.hpp"
+#include "SingletonTaskPolicyGate.hpp"
 #include "TaskController.hpp"
 #include "TaskPresentationModel.hpp"
 #include "WallpaperLoader.hpp"
+#include "X11PropertyWorker.hpp"
 
 #include <QObject>
 
@@ -94,6 +96,8 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     [[nodiscard]] foundation::Result<std::unique_ptr<QQuickView>>
     makePanel(std::string_view outputName, QScreen &screen);
     [[nodiscard]] foundation::Result<void> ensureSingletonViews();
+    void handleSingletonTaskPolicyPublication(std::uint64_t token, foundation::Result<void> result);
+    void reconcileTransientPresentation();
     [[nodiscard]] foundation::Result<void> applyWallpaper();
     [[nodiscard]] foundation::Result<void> maybePublishReady();
     [[nodiscard]] foundation::Result<void> position(composition::SurfaceFamily family,
@@ -150,6 +154,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     std::unique_ptr<FatalDisplayShutdown> fatal_display_;
     std::unique_ptr<ShellOutputMonitor> outputs_;
     std::unique_ptr<window::PanelSurfaceHost> panels_;
+    std::unique_ptr<window::X11PropertyWorker> singleton_property_worker_;
     desktop::DesktopSurfaceController desktop_controller_;
     std::unique_ptr<desktop::DesktopWindowHost> desktops_;
     prismdrake::desktop::WallpaperLoader wallpaper_loader_;
@@ -159,6 +164,8 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     std::unique_ptr<QQuickView> notification_center_view_;
     std::unique_ptr<QQuickView> transient_view_;
     std::unique_ptr<QQuickView> logout_view_;
+    SingletonTaskPolicyGate singleton_task_policy_gate_;
+    std::uint64_t next_singleton_task_policy_token_{1U};
     std::optional<outputs::SurfaceRegistrySnapshot> surface_snapshot_;
     SettingsWallpaperEpochGate wallpaper_candidate_;
     std::shared_ptr<const prismdrake::settings::SettingsSnapshot> settings_snapshot_;

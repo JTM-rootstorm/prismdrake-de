@@ -47,6 +47,14 @@ using foundation::Result;
     return {policy, panel.outputs};
 }
 
+[[nodiscard]] Result<x11::WindowId> windowId(QWindow &window) {
+    const auto native = window.winId();
+    if (native == 0U || native > std::numeric_limits<x11::WindowId::Value>::max()) {
+        return Result<x11::WindowId>::failure(surfaceError());
+    }
+    return x11::WindowId::fromProtocol(static_cast<x11::WindowId::Value>(native));
+}
+
 } // namespace
 
 void SettingsWallpaperEpochGate::ownerLost() noexcept { candidate_.reset(); }
@@ -145,6 +153,7 @@ Pd2ShellRuntime::~Pd2ShellRuntime() {
     if (outputs_) {
         outputs_->stop();
     }
+    singleton_property_worker_.reset();
 }
 
 Result<std::unique_ptr<Pd2ShellRuntime>> Pd2ShellRuntime::create(ShellRuntimeOptions options) {
@@ -209,6 +218,14 @@ Result<void> Pd2ShellRuntime::initialize() {
         return Result<void>::failure(fatal.error());
     }
     fatal_display_ = std::move(fatal).value();
+    auto singletonPropertyWorker = window::X11PropertyWorker::create(
+        *this, options_.display, [this](std::uint64_t token, Result<void> result) {
+            handleSingletonTaskPolicyPublication(token, std::move(result));
+        });
+    if (!singletonPropertyWorker) {
+        return Result<void>::failure(singletonPropertyWorker.error());
+    }
+    singleton_property_worker_ = std::move(singletonPropertyWorker).value();
     auto taskController = taskcontroller::TaskController::create(
         task_model_, options_.display,
         [this](const auto &error) { fatal_display_->request(error); },
@@ -348,20 +365,8 @@ Result<void> Pd2ShellRuntime::initialize() {
                 static_cast<void>(composition_.dismiss(composition::SurfaceFamily::launcher));
             });
     connect(&notifications_.presentation(),
-            &notificationcenter::NotificationCenterPresentation::stateChanged, this, [this]() {
-                const bool hasTransient =
-                    notifications_.presentation().transientModel()->rowCount() > 0;
-                if (hasTransient && settings_available_ && surface_snapshot_ &&
-                    surface_snapshot_->primaryOutputName()) {
-                    static_cast<void>(composition_.present(
-                        composition::SurfaceFamily::transientNotificationAction,
-                        *surface_snapshot_->primaryOutputName(),
-                        composition::FocusOrigin::windowManager()));
-                } else {
-                    static_cast<void>(composition_.dismiss(
-                        composition::SurfaceFamily::transientNotificationAction));
-                }
-            });
+            &notificationcenter::NotificationCenterPresentation::stateChanged, this,
+            [this]() { reconcileTransientPresentation(); });
     return Result<void>::success();
 }
 
@@ -437,12 +442,23 @@ void Pd2ShellRuntime::loseSettings() {
     panels_->clear();
     grouped_tasks_.clearSettingsOwner();
     quick_settings_.clearSettingsOwner();
-    launcher_view_.reset();
-    quick_settings_view_.reset();
-    notification_center_view_.reset();
-    transient_view_.reset();
-    logout_view_.reset();
-    theme_.reset();
+    singleton_task_policy_gate_.invalidate();
+    if (singleton_task_policy_gate_.pending()) {
+        for (auto *view :
+             {launcher_view_.get(), quick_settings_view_.get(), notification_center_view_.get(),
+              transient_view_.get(), logout_view_.get()}) {
+            if (view != nullptr) {
+                view->hide();
+            }
+        }
+    } else {
+        launcher_view_.reset();
+        quick_settings_view_.reset();
+        notification_center_view_.reset();
+        transient_view_.reset();
+        logout_view_.reset();
+        theme_.reset();
+    }
     settings_snapshot_.reset();
     if (!authority) {
         shutdown("settings owner loss", authority.error());
@@ -656,7 +672,8 @@ Result<void> Pd2ShellRuntime::maybePublishReady() {
     const auto desktop = desktops_ ? desktops_->current() : nullptr;
     const bool presentationReady = theme_ && theme_->current() && launcher_view_ &&
                                    quick_settings_view_ && notification_center_view_ &&
-                                   transient_view_ && logout_view_;
+                                   transient_view_ && logout_view_ &&
+                                   singleton_task_policy_gate_.ready();
     const auto settingsGeneration =
         settings_snapshot_ ? settings_snapshot_->generation.value() : 0U;
     const ShellReadinessObservation observation{
@@ -720,6 +737,11 @@ Result<std::unique_ptr<QQuickView>> Pd2ShellRuntime::makePanel(std::string_view 
 
 Result<void> Pd2ShellRuntime::ensureSingletonViews() {
     if (launcher_view_) {
+        if (!quick_settings_view_ || !notification_center_view_ || !transient_view_ ||
+            !logout_view_) {
+            return Result<void>::failure(surfaceError());
+        }
+        singleton_task_policy_gate_.revalidate();
         const auto themeValue = objectVariant(theme_->current());
         for (auto *view :
              {launcher_view_.get(), quick_settings_view_.get(), notification_center_view_.get(),
@@ -794,6 +816,33 @@ Result<void> Pd2ShellRuntime::ensureSingletonViews() {
         !transient_view_ || !logout_view_) {
         return Result<void>::failure(surfaceError());
     }
+    if (!singleton_property_worker_ || next_singleton_task_policy_token_ == 0U) {
+        return Result<void>::failure(surfaceError());
+    }
+    std::vector<x11::WindowId> taskPolicyWindows;
+    taskPolicyWindows.reserve(5U);
+    for (auto *view :
+         {launcher_view_.get(), quick_settings_view_.get(), notification_center_view_.get(),
+          transient_view_.get(), logout_view_.get()}) {
+        auto nativeWindow = windowId(*view);
+        if (!nativeWindow) {
+            return Result<void>::failure(nativeWindow.error());
+        }
+        taskPolicyWindows.push_back(nativeWindow.value());
+    }
+    const auto publicationToken = next_singleton_task_policy_token_;
+    next_singleton_task_policy_token_ =
+        publicationToken == std::numeric_limits<std::uint64_t>::max() ? 0U : publicationToken + 1U;
+    auto begun = singleton_task_policy_gate_.begin(publicationToken);
+    if (!begun) {
+        return begun;
+    }
+    auto submitted = singleton_property_worker_->submitInitialSkipTaskbar(
+        publicationToken, std::move(taskPolicyWindows));
+    if (!submitted) {
+        static_cast<void>(singleton_task_policy_gate_.complete(publicationToken, false, true));
+        return submitted;
+    }
     const auto trackPlacement = [this](QQuickView &view, composition::SurfaceFamily family) {
         const auto reposition = [this, family]() {
             const auto surfaces = composition_.state().activeSurfaces();
@@ -831,11 +880,58 @@ Result<void> Pd2ShellRuntime::ensureSingletonViews() {
             SLOT(quickSettingsDismissRequested()));
     connect(notification_center_view_->rootObject(), SIGNAL(closeRequested()), this,
             SLOT(notificationCenterDismissRequested()));
+    connect(notification_center_view_->rootObject(), SIGNAL(focusExitForward()), this,
+            SLOT(notificationCenterDismissRequested()));
+    connect(notification_center_view_->rootObject(), SIGNAL(focusExitBackward()), this,
+            SLOT(notificationCenterDismissRequested()));
     connect(logout_view_->rootObject(), SIGNAL(confirmRequested()), this,
             SLOT(logoutConfirmRequested()));
     connect(logout_view_->rootObject(), SIGNAL(cancelRequested()), this,
             SLOT(logoutCancelRequested()));
     return Result<void>::success();
+}
+
+void Pd2ShellRuntime::handleSingletonTaskPolicyPublication(std::uint64_t token,
+                                                           Result<void> result) {
+    const auto disposition =
+        singleton_task_policy_gate_.complete(token, result.hasValue(), settings_available_);
+    if (disposition == SingletonTaskPolicyGate::CompletionDisposition::stale) {
+        return;
+    }
+    if (disposition == SingletonTaskPolicyGate::CompletionDisposition::discard) {
+        launcher_view_.reset();
+        quick_settings_view_.reset();
+        notification_center_view_.reset();
+        transient_view_.reset();
+        logout_view_.reset();
+        theme_.reset();
+        return;
+    }
+    if (disposition == SingletonTaskPolicyGate::CompletionDisposition::fatal) {
+        shutdown("singleton task-policy X11 publication", result.error());
+        return;
+    }
+    reconcileTransientPresentation();
+    auto ready = maybePublishReady();
+    if (!ready) {
+        shutdown("transient notification readiness", ready.error());
+    }
+}
+
+void Pd2ShellRuntime::reconcileTransientPresentation() {
+    if (!singleton_task_policy_gate_.ready()) {
+        return;
+    }
+    const bool hasTransient = notifications_.presentation().transientModel()->rowCount() > 0;
+    if (hasTransient && settings_available_ && surface_snapshot_ &&
+        surface_snapshot_->primaryOutputName()) {
+        static_cast<void>(composition_.present(
+            composition::SurfaceFamily::transientNotificationAction,
+            *surface_snapshot_->primaryOutputName(), composition::FocusOrigin::windowManager()));
+        return;
+    }
+    static_cast<void>(
+        composition_.dismiss(composition::SurfaceFamily::transientNotificationAction));
 }
 
 QQuickView *Pd2ShellRuntime::surface(composition::SurfaceFamily family) const noexcept {
@@ -884,6 +980,9 @@ control::ShellRequestFailure Pd2ShellRuntime::validatePresentation(
                         return screen(value.output.value()) == nullptr
                                    ? control::ShellRequestFailure::output_unavailable
                                    : control::ShellRequestFailure::none;
+                    }
+                    if (!singleton_task_policy_gate_.ready()) {
+                        return control::ShellRequestFailure::busy;
                     }
                     if (surface(value.family) == nullptr) {
                         return control::ShellRequestFailure::internal;
@@ -1049,8 +1148,27 @@ void Pd2ShellRuntime::panelLauncherRequested() {
 }
 
 void Pd2ShellRuntime::panelNotificationCenterRequested(const QString &outputName) {
-    static_cast<void>(composition_.request(control::ShellAction::open_notification_center,
-                                           outputName.toStdString()));
+    auto output = composition::OutputName::create(outputName.toStdString());
+    auto id = composition::FocusControlId::create("notification-center-button");
+    if (!output) {
+        report("panel notification center origin", output.error());
+        return;
+    }
+    if (!id) {
+        report("panel notification center origin", id.error());
+        return;
+    }
+    auto origin = composition::FocusOrigin::control(
+        output.value(), composition::FocusControlRole::panelNotificationCenter, id.value());
+    if (!origin) {
+        report("panel notification center origin", origin.error());
+        return;
+    }
+    auto presented = composition_.present(composition::SurfaceFamily::notificationCenter,
+                                          outputName.toStdString(), std::move(origin).value());
+    if (!presented) {
+        report("panel notification center", presented.error());
+    }
 }
 
 void Pd2ShellRuntime::panelQuickSettingsRequested(const QString &outputName) {

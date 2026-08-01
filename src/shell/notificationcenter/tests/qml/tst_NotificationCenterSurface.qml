@@ -62,6 +62,8 @@ TestCase {
 
     SignalSpy { id: closeSpy; target: center; signalName: "closeRequested" }
     SignalSpy { id: returnSpy; target: center; signalName: "focusReturnRequested" }
+    SignalSpy { id: forwardExitSpy; target: center; signalName: "focusExitForward" }
+    SignalSpy { id: backwardExitSpy; target: center; signalName: "focusExitBackward" }
     SignalSpy {
         id: dndRequestSpy
         target: notificationCenterFixture.presentation
@@ -79,6 +81,8 @@ TestCase {
         themeGeneration.notification.fallbackActive = true
         closeSpy.clear()
         returnSpy.clear()
+        forwardExitSpy.clear()
+        backwardExitSpy.clear()
         dndRequestSpy.clear()
         tryCompare(transients, "count", 0)
     }
@@ -134,6 +138,21 @@ TestCase {
         keyClick(Qt.Key_Escape)
         tryCompare(closeSpy, "count", 1)
         tryCompare(returnSpy, "count", 1)
+    }
+
+    function test_focusBoundariesEmitExitSignals() {
+        verify(notificationCenterFixture.publish(0))
+        center.focusFirstControl()
+        const dnd = findChild(center, "notificationCenterDoNotDisturb")
+        tryCompare(dnd, "activeFocus", true)
+
+        keyClick(Qt.Key_Backtab)
+        tryCompare(backwardExitSpy, "count", 1)
+
+        center.focusFirstControl()
+        tryCompare(dnd, "activeFocus", true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(forwardExitSpy, "count", 1)
     }
 
     function test_transientStackIsBoundedToNewestFive() {

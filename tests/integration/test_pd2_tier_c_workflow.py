@@ -184,7 +184,7 @@ class TierCWorkflowTests(unittest.TestCase):
     def test_notification_opens_center_from_the_next_panel_control(self) -> None:
         contract = STEP_CONTRACTS["notification"]
 
-        self.assertEqual(contract.keys, ("TAB", "TAB", "ENTER"))
+        self.assertEqual(contract.keys, ("TAB", "TAB", "ENTER", "SHIFT_TAB"))
         self.assertEqual(contract.focus_selector.name, "Open applications")
         self.assertTrue(contract.focus_selector.require_focused)
 

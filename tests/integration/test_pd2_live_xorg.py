@@ -305,11 +305,15 @@ class FakeOperations:
             )
         if command[:3] == (
             "/usr/bin/prismdrake-shellctl", "notifications", "open"
-        ) and self.notification_shellctl_status != 0:
-            return CommandResult(
-                self.notification_shellctl_status,
-                b"",
-                b"prismdrake-shellctl: The typed control request failed (status 5).\n",
+        ):
+            if self.notification_shellctl_status != 0:
+                return CommandResult(
+                    self.notification_shellctl_status,
+                    b"",
+                    b"prismdrake-shellctl: The typed control request failed (status 5).\n",
+                )
+            self.visible_named_windows.setdefault(
+                live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE, 0x510003
             )
         if command[:2] == ("/usr/bin/gdbus", "call"):
             destination = command[command.index("--dest") + 1]
@@ -1900,6 +1904,59 @@ class LivePortTests(unittest.TestCase):
         with self.assertRaisesRegex(HarnessError, "^tier_c_surface_depth_invalid$"):
             port._tier_c_window_geometry(DESKTOP_LEFT)  # noqa: SLF001
 
+    def test_tier_c_notification_requires_skip_taskbar_before_capture(self) -> None:
+        class NotificationPolicyPort(LiveXorgHarnessPort):
+            has_skip_taskbar = False
+
+            def _run_notification_step(self, identifier):
+                self.assert_notification_identifier = identifier
+
+            def _invoke_shellctl(self, group, action):
+                self.assert_panel_request = (group, action)
+
+            def _wait_accessible(self, selector, timeout_error):
+                self.assert_accessible = (selector.name, timeout_error)
+
+            def _xdotool(self, *arguments):
+                self.assert_xdotool = arguments
+                return CommandResult(0)
+
+            def _tier_c_named_surface(self, title):
+                self.assert_notification_title = title
+                return 0x510002, WindowGeometry(100, 100, 380, 400)
+
+            def _window_state_atoms(self, window):
+                self.assert_state_window = window
+                return (
+                    frozenset({b"_NET_WM_STATE_SKIP_TASKBAR"})
+                    if self.has_skip_taskbar
+                    else frozenset()
+                )
+
+        operations = FakeOperations()
+        port = NotificationPolicyPort(config(), operations)
+        port._tier_c_trace = object()  # type: ignore[assignment]  # noqa: SLF001
+        port._tier_c_workflow = object()  # type: ignore[assignment]  # noqa: SLF001
+
+        with self.assertRaisesRegex(
+            HarnessError, "^tier_c_transient_task_policy_invalid$"
+        ):
+            port.prepare_step(live_xorg.STEP_CONTRACTS["notification"])
+
+        port.has_skip_taskbar = True
+        self.assertEqual(
+            port.prepare_step(live_xorg.STEP_CONTRACTS["notification"]),
+            live_xorg.TierCPortResult("tier_c_step_prepared"),
+        )
+
+        singleton_port = NotificationPolicyPort(config(), FakeOperations())
+        singleton_port._tier_c_trace = object()  # type: ignore[assignment]  # noqa: SLF001
+        singleton_port._tier_c_workflow = object()  # type: ignore[assignment]  # noqa: SLF001
+        with self.assertRaisesRegex(
+            HarnessError, "^tier_c_singleton_task_policy_invalid$"
+        ):
+            singleton_port.prepare_step(live_xorg.STEP_CONTRACTS["launcher"])
+
     def test_quotes_whitespace_fixture_and_rejects_desktop_field_code_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1961,7 +2018,37 @@ class LivePortTests(unittest.TestCase):
             fixture.write_bytes(b"fixture")
             fixture.chmod(0o700)
             operations = FakeOperations()
-            accessibility = FakeAccessibility(operations)
+            class TierCAccessibility(FakeAccessibility):
+                def __init__(self, fake_operations):
+                    super().__init__(fake_operations)
+                    self.strict_notification = False
+                    self.focused_control: str | None = None
+
+                def observe(self, shell_pid, selector, environment):
+                    if self.strict_notification:
+                        if selector.name == "Notification center":
+                            return (
+                                live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE
+                                in self.operations.visible_named_windows
+                            )
+                        if selector.require_focused and selector.name in {
+                            "Open applications",
+                            CONTROLLED_APPLICATION_NAME,
+                            "Open notification center",
+                            "Do not disturb",
+                        }:
+                            return selector.name == self.focused_control
+                    return super().observe(shell_pid, selector, environment)
+
+                def observe_absent(self, shell_pid, selector, environment):
+                    if self.strict_notification and selector.name == "Notification center":
+                        return (
+                            live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE
+                            not in self.operations.visible_named_windows
+                        )
+                    return super().observe_absent(shell_pid, selector, environment)
+
+            accessibility = TierCAccessibility(operations)
             named = {
                 live_xorg.LAUNCHER_WINDOW_TITLE: 0x510001,
                 live_xorg.NOTIFICATION_WINDOW_TITLE: 0x510002,
@@ -1971,10 +2058,15 @@ class LivePortTests(unittest.TestCase):
             }
             for index, (title, window) in enumerate(named.items()):
                 geometry = WindowGeometry(100 + index, 100, 380, 400)
-                operations.controlled_windows[title] = window
+                if title != live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE:
+                    operations.controlled_windows[title] = window
                 operations.surface_geometries[window] = geometry
                 operations.window_geometry_payloads[window] = xwininfo_payload(
                     window, geometry
+                )
+            for window in named.values():
+                operations.window_state_payloads[window] = (
+                    b"_NET_WM_STATE(ATOM) = _NET_WM_STATE_SKIP_TASKBAR\n"
                 )
 
             traces: list[FakeTierCTrace] = []
@@ -2022,6 +2114,25 @@ class LivePortTests(unittest.TestCase):
                     if port._session is None:  # noqa: SLF001
                         raise AssertionError("session missing before logout")
                     port._session.returncode = 0  # type: ignore[attr-defined]  # noqa: SLF001
+                elif identifier == "notification":
+                    if arguments[-1] == "Tab":
+                        accessibility.focused_control = (
+                            CONTROLLED_APPLICATION_NAME
+                            if accessibility.focused_control == "Open applications"
+                            else "Open notification center"
+                        )
+                    elif arguments[-1] == "Return":
+                        operations.visible_named_windows[
+                            live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE
+                        ] = 0x510003
+                        operations.focused_window = 0x510003
+                        accessibility.focused_control = "Do not disturb"
+                    elif arguments[-1] == "shift+Tab":
+                        operations.visible_named_windows.pop(
+                            live_xorg.NOTIFICATION_CENTER_WINDOW_TITLE, None
+                        )
+                        operations.focused_window = PANEL_LEFT
+                        accessibility.focused_control = "Open notification center"
                 return result
 
             with patch.object(
@@ -2030,6 +2141,9 @@ class LivePortTests(unittest.TestCase):
                 workflow = None
                 for identifier in TIER_C_STEPS:
                     with self.subTest(identifier=identifier):
+                        accessibility.strict_notification = identifier == "notification"
+                        if accessibility.strict_notification:
+                            accessibility.focused_control = "Open applications"
                         self.assertEqual(
                             port.run_step("tier_c_replay", identifier),
                             Observation(True, True),

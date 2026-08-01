@@ -154,6 +154,18 @@ TestCase {
         compare(quickSettings.Accessible.focused, true)
     }
 
+    function test_focusNotificationRestoresTheExactPanelControl() {
+        developmentDiagnostics = false
+        explicitProductionAffordances = true
+        const notificationCenter = findChild(panel, "panelNotificationCenterButton")
+
+        panel.focusLauncher()
+        compare(launcher().activeFocus, true)
+        panel.focusNotification()
+        compare(notificationCenter.activeFocus, true)
+        compare(notificationCenter.Accessible.focused, true)
+    }
+
     function test_groupedTasksExposeProductionActionsAndOutputScopedAffordances() {
         groupedTasks = true
         verify(panelFixture.publishRepresentativeGroups())

@@ -373,6 +373,34 @@ TEST(ShellRuntimeCompositionTest, PanelLauncherTogglePreservesExactEscapeFocusOr
     }));
 }
 
+TEST(ShellRuntimeCompositionTest, NotificationCenterDismissRestoresExactPanelControlOrigin) {
+    PresentationPort port;
+    ShellRuntimeComposition runtime{port};
+    TopologyHarness topology;
+
+    ASSERT_TRUE(runtime.observeOutputs(topology.observe(1U)));
+    ASSERT_TRUE(runtime.observeSettingsOwner(authority(10U, 1U)));
+    ASSERT_TRUE(runtime.observeNotificationOwner(authority(20U, 1U)));
+    auto output = composition::OutputName::create("LEFT-1").value();
+    auto controlId = composition::FocusControlId::create("notification-center-button").value();
+    auto origin = composition::FocusOrigin::control(
+                      output, composition::FocusControlRole::panelNotificationCenter, controlId)
+                      .value();
+
+    ASSERT_TRUE(runtime.present(SurfaceFamily::notificationCenter, "LEFT-1", origin));
+    ASSERT_TRUE(runtime.dismiss(SurfaceFamily::notificationCenter));
+    ASSERT_TRUE(runtime.state().activeSurfaces().empty());
+    const auto &dismissBatch = port.batches.back();
+    const auto restored = std::ranges::find_if(dismissBatch, [](const auto &intent) {
+        return std::holds_alternative<composition::RestoreControlFocusIntent>(intent);
+    });
+    ASSERT_NE(restored, dismissBatch.end());
+    EXPECT_EQ(std::get<composition::RestoreControlFocusIntent>(*restored).origin, origin);
+    EXPECT_FALSE(std::ranges::any_of(dismissBatch, [](const auto &intent) {
+        return std::holds_alternative<composition::ReleaseFocusToWindowManagerIntent>(intent);
+    }));
+}
+
 TEST(ShellRuntimeCompositionTest, LauncherMenuBlocksLowerPrioritySiblingUntilLogoutPreemptsStack) {
     PresentationPort port;
     ShellRuntimeComposition runtime{port};

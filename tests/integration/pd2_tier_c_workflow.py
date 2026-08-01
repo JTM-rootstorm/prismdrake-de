@@ -219,7 +219,7 @@ STEP_CONTRACTS: Mapping[str, TierCStepContract] = MappingProxyType({
     ),
     "notification": TierCStepContract(
         "notification",
-        ("TAB", "TAB", "ENTER"),
+        ("TAB", "TAB", "ENTER", "SHIFT_TAB"),
         ControlSelector("Transient notifications", "notification"),
         ControlSelector(
             "Open applications", "push_button", require_focused=True

@@ -2894,6 +2894,19 @@ class LiveXorgHarnessPort:
         else:
             raise HarnessError("tier_c_step_state_invalid")
 
+        if identifier in {
+            "launcher",
+            "notification",
+            "notification_center",
+            "quick_settings",
+            "logout",
+        } and b"_NET_WM_STATE_SKIP_TASKBAR" not in self._window_state_atoms(surface[0]):
+            raise HarnessError(
+                "tier_c_transient_task_policy_invalid"
+                if identifier == "notification"
+                else "tier_c_singleton_task_policy_invalid"
+            )
+
         self._tier_c_identifier = identifier
         self._tier_c_surface = surface
         return TierCPortResult("tier_c_step_prepared")
@@ -2904,7 +2917,7 @@ class LiveXorgHarnessPort:
         if identifier != self._tier_c_identifier or not keys:
             raise HarnessError("tier_c_keyboard_state_invalid")
         if identifier == "notification":
-            if keys != ("TAB", "TAB", "ENTER"):
+            if keys != ("TAB", "TAB", "ENTER", "SHIFT_TAB"):
                 raise HarnessError("tier_c_keyboard_mapping_invalid")
             self._xdotool("key", "--clearmodifiers", "Tab")
             self.observe_atspi(
@@ -2923,6 +2936,29 @@ class LiveXorgHarnessPort:
                 )
             )
             self._xdotool("key", "--clearmodifiers", "Return")
+            self.observe_atspi(ControlSelector("Notification center", "pane"))
+            self.observe_atspi(
+                ControlSelector("Do not disturb", "check_box", require_focused=True)
+            )
+            center = self._tier_c_named_surface(NOTIFICATION_CENTER_WINDOW_TITLE)
+            self._wait_x11_focus(
+                center[0], "tier_c_notification_center_x11_focus_timeout"
+            )
+            self._xdotool("key", "--clearmodifiers", "shift+Tab")
+            self._wait_accessible_absent(
+                ControlSelector("Notification center", "pane"),
+                "tier_c_notification_center_dismissal_timeout",
+            )
+            self.observe_atspi(
+                ControlSelector(
+                    "Open notification center",
+                    "push_button",
+                    require_focused=True,
+                )
+            )
+            self._wait_primary_panel_x11_focus(
+                "tier_c_notification_center_focus_restore_timeout"
+            )
             return TierCKeyboardObservation("tier_c_keyboard_complete", len(keys))
         for key in keys:
             mapped = TIER_C_KEY_ARGUMENTS.get(key)
@@ -3075,9 +3111,12 @@ class LiveXorgHarnessPort:
                 )
             )
         elif identifier == "notification":
-            self.observe_atspi(ControlSelector("Notification center", "pane"))
             self.observe_atspi(
-                ControlSelector("Do not disturb", "check_box", require_focused=True)
+                ControlSelector(
+                    "Open notification center",
+                    "push_button",
+                    require_focused=True,
+                )
             )
         elif identifier == "notification_center":
             self._wait_accessible_state(
@@ -4821,7 +4860,19 @@ class LiveXorgHarnessPort:
             ControlSelector("Open applications", "push_button", require_focused=True),
             "panel_focus_timeout",
         )
-        panel = self._primary_panel_window()
+        self._wait_primary_panel_x11_focus("panel_x11_focus_timeout")
+        self._xdotool("key", "--clearmodifiers", "Tab")
+        self._wait_accessible(
+            ControlSelector(
+                CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
+            ),
+            timeout_error,
+        )
+
+    def _wait_primary_panel_x11_focus(self, timeout_error: str) -> None:
+        self._wait_x11_focus(self._primary_panel_window(), timeout_error)
+
+    def _wait_x11_focus(self, window: int, timeout_error: str) -> None:
         deadline = self._operations.monotonic() + self._config.readiness_timeout
         while self._operations.monotonic() < deadline:
             focused = self._xdotool("getwindowfocus")
@@ -4830,19 +4881,12 @@ class LiveXorgHarnessPort:
                 and len(focused.stdout) <= 32
                 and re.fullmatch(rb"[1-9][0-9]{0,19}\n?", focused.stdout)
                 is not None
-                and int(focused.stdout) == panel
+                and int(focused.stdout) == window
             ):
                 break
             self._operations.pause(0.05)
         else:
-            raise HarnessError("panel_x11_focus_timeout")
-        self._xdotool("key", "--clearmodifiers", "Tab")
-        self._wait_accessible(
-            ControlSelector(
-                CONTROLLED_APPLICATION_NAME, "push_button", require_focused=True
-            ),
-            timeout_error,
-        )
+            raise HarnessError(timeout_error)
 
     def _primary_panel_window(self) -> int:
         self._require_panel_surfaces()
