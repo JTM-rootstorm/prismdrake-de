@@ -2268,7 +2268,9 @@ class LivePortTests(unittest.TestCase):
                     expected_keys.append("Tab")
             self.assertEqual(key_calls, expected_keys)
 
-    def test_tier_c_skips_real_display_with_unavailable_proxy_pair(self) -> None:
+    def test_tier_c_skips_unavailable_proxy_pair_and_cleans_trace_for_any_phase(
+        self,
+    ) -> None:
         operations = FakeOperations()
         operations.unavailable_displays.add(1140)
         traces: list[FakeTierCTrace] = []
@@ -2289,8 +2291,9 @@ class LivePortTests(unittest.TestCase):
         port._start_environment(two_outputs=True, tier_c=True)  # noqa: SLF001
 
         self.assertEqual(port._display, ":141")  # noqa: SLF001
-        self.assertEqual(port.cleanup("tier_c_replay"), Observation(True, True))
+        self.assertEqual(port.cleanup("diagnostic"), Observation(True, True))
         self.assertEqual(len(traces), 1)
+        self.assertEqual(traces[0].finish_calls, [True])
         self.assertTrue(traces[0].finished)
 
     def test_logout_methods_use_shellctl_accessibility_and_reject_stale_id(self) -> None:
@@ -4035,6 +4038,86 @@ class LivePortTests(unittest.TestCase):
             port._require_desktop_wallpaper_surfaces()  # noqa: SLF001
 
         self.assertGreaterEqual(calls, 2)
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_restart_surface_requirements_resample_transient_old_shell_owner(
+        self,
+    ) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+        original = port._observe_surface_windows  # noqa: SLF001
+        desktop_calls = 0
+
+        def delayed_desktop(window_type, shell):
+            nonlocal desktop_calls
+            desktop_calls += 1
+            if desktop_calls == 1:
+                raise HarnessError("surface_window_owner_invalid")
+            return original(window_type, shell)
+
+        with patch.object(
+            port, "_observe_surface_windows", side_effect=delayed_desktop
+        ):
+            port._require_desktop_wallpaper_surfaces()  # noqa: SLF001
+        self.assertEqual(desktop_calls, 2)
+
+        retries = {
+            b"_NET_WM_WINDOW_TYPE_DESKTOP": 1,
+            b"_NET_WM_WINDOW_TYPE_DOCK": 1,
+        }
+
+        def delayed_panel(window_type, shell):
+            if retries[window_type] > 0:
+                retries[window_type] -= 1
+                raise HarnessError("surface_window_owner_invalid")
+            return original(window_type, shell)
+
+        with patch.object(port, "_observe_surface_windows", side_effect=delayed_panel):
+            port._require_panel_surfaces()  # noqa: SLF001
+        self.assertEqual(
+            retries,
+            {
+                b"_NET_WM_WINDOW_TYPE_DESKTOP": 0,
+                b"_NET_WM_WINDOW_TYPE_DOCK": 0,
+            },
+        )
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_restart_surface_owner_retry_preserves_persistent_error(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+        started = operations.now
+        with patch.object(
+            port,
+            "_observe_surface_windows",
+            side_effect=HarnessError("surface_window_owner_invalid"),
+        ) as observe:
+            with self.assertRaisesRegex(
+                HarnessError, "^surface_window_owner_invalid$"
+            ):
+                port._require_desktop_wallpaper_surfaces()  # noqa: SLF001
+        elapsed = operations.now - started
+        self.assertGreater(observe.call_count, 1)
+        self.assertGreaterEqual(elapsed, port._config.readiness_timeout)  # noqa: SLF001
+        self.assertLessEqual(  # One retry quantum permits floating-point rounding.
+            elapsed, port._config.readiness_timeout + 0.05  # noqa: SLF001
+        )
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_surface_observation_ignores_only_confirmed_vanished_windows(self) -> None:

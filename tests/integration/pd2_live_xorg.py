@@ -3915,7 +3915,11 @@ class LiveXorgHarnessPort:
 
     def cleanup(self, phase: str) -> Observation:
         tier_c_error: Exception | None = None
-        if phase == "tier_c_replay":
+        if (
+            phase == "tier_c_replay"
+            or self._tier_c_workflow is not None
+            or self._tier_c_trace is not None
+        ):
             try:
                 if self._tier_c_workflow is not None:
                     result = self._tier_c_workflow.cleanup()
@@ -5228,18 +5232,20 @@ class LiveXorgHarnessPort:
     ) -> None:
         self._require_topology(two_outputs=True)
         shell = self._wait_for_surface_shell(allow_safe_mode=allow_safe_mode)
-        desktops = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DESKTOP", shell)
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        desktops = self._wait_for_owned_surface_windows(
+            b"_NET_WM_WINDOW_TYPE_DESKTOP", shell, deadline
+        )
         expected = {
             WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
             WindowGeometry(OUTPUT_WIDTH, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
         }
-        deadline = self._operations.monotonic() + self._config.readiness_timeout
         while len(desktops) != 2 or set(desktops.values()) != expected:
             if self._operations.monotonic() >= deadline:
                 raise HarnessError("desktop_wallpaper_surface_invalid")
             self._operations.pause(0.05)
-            desktops = self._observe_surface_windows(
-                b"_NET_WM_WINDOW_TYPE_DESKTOP", shell
+            desktops = self._wait_for_owned_surface_windows(
+                b"_NET_WM_WINDOW_TYPE_DESKTOP", shell, deadline
             )
         if len(desktops) != 2 or set(desktops.values()) != expected:
             raise HarnessError("desktop_wallpaper_surface_invalid")
@@ -5333,10 +5339,15 @@ class LiveXorgHarnessPort:
         shell = self._require_surface_shell(allow_safe_mode=allow_safe_mode)
         if shell != self._surface_shell_identity:
             raise HarnessError("surface_shell_identity_changed")
-        desktops = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DESKTOP", shell)
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        desktops = self._wait_for_owned_surface_windows(
+            b"_NET_WM_WINDOW_TYPE_DESKTOP", shell, deadline
+        )
         if desktops != self._desktop_surfaces:
             raise HarnessError("desktop_surface_epoch_changed")
-        panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
+        panels = self._wait_for_owned_surface_windows(
+            b"_NET_WM_WINDOW_TYPE_DOCK", shell, deadline
+        )
         expected_geometries = {
             WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT)
         }
@@ -5415,6 +5426,21 @@ class LiveXorgHarnessPort:
         if len(identities) != 1:
             raise HarnessError("surface_shell_identity_invalid")
         return identities[0]
+
+    def _wait_for_owned_surface_windows(
+        self, window_type: bytes, shell: ProcessIdentity, deadline: float
+    ) -> dict[int, WindowGeometry]:
+        """Resample a retiring shell's still-listed surfaces within one deadline."""
+
+        while True:
+            try:
+                return self._observe_surface_windows(window_type, shell)
+            except HarnessError as error:
+                if str(error) != "surface_window_owner_invalid":
+                    raise
+                if self._operations.monotonic() >= deadline:
+                    raise
+            self._operations.pause(0.05)
 
     def _observe_surface_windows(
         self, window_type: bytes, shell: ProcessIdentity
