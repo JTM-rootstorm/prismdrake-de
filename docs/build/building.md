@@ -46,8 +46,9 @@ not provide product build or compatibility evidence. The Experimental shell
 composition root wires the settings, output, launcher, panel, task,
 notification-center, desktop, quick-settings, Shell1, and Session1 clients and
 surfaces. Installed mode uses the separate toolkit-neutral
-`prismdrake-notifyd` authority; synthetic notification ownership remains
-explicitly test- or developer-mode only. See the
+`prismdrake-notifyd` authority; the retired PD1 synthetic notification owner is
+not part of the production runtime, while synthetic models remain test-only.
+See the
 [PD2 implementation status](../architecture/pd2-core-shell.md).
 
 ## Installation contract

@@ -1,24 +1,23 @@
-add_library(prismdrake-shell-runtime-state STATIC
+add_library(prismdrake-shell-runtime-composition STATIC
+    ShellReadinessGate.cpp
+    ShellReadinessGate.hpp
     ShellRuntimeComposition.cpp
-    ShellRuntimeComposition.hpp
-    ShellRuntimeState.cpp
-    ShellRuntimeState.hpp)
-add_library(Prismdrake::shell-runtime-state ALIAS prismdrake-shell-runtime-state)
-target_include_directories(prismdrake-shell-runtime-state
+    ShellRuntimeComposition.hpp)
+add_library(Prismdrake::shell-runtime-composition ALIAS
+    prismdrake-shell-runtime-composition)
+target_include_directories(prismdrake-shell-runtime-composition
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
-prismdrake_configure_cpp_target(prismdrake-shell-runtime-state)
-target_link_libraries(prismdrake-shell-runtime-state
+prismdrake_configure_cpp_target(prismdrake-shell-runtime-composition)
+target_link_libraries(prismdrake-shell-runtime-composition
     PUBLIC
         Prismdrake::shell-composition
         Prismdrake::shell-control
         Prismdrake::output-surfaces
         Prismdrake::shell-quick-settings)
-prismdrake_enable_warnings(prismdrake-shell-runtime-state)
-prismdrake_enable_sanitizers(prismdrake-shell-runtime-state)
+prismdrake_enable_warnings(prismdrake-shell-runtime-composition)
+prismdrake_enable_sanitizers(prismdrake-shell-runtime-composition)
 
 add_library(prismdrake-shell-runtime STATIC
-    DevelopmentNotificationOwner.cpp
-    DevelopmentNotificationOwner.hpp
     FatalDisplayShutdown.cpp
     FatalDisplayShutdown.hpp
     NotificationRuntimeAdapter.cpp
@@ -27,8 +26,6 @@ add_library(prismdrake-shell-runtime STATIC
     Pd2ShellRuntime.hpp
     ShellControlBusOwner.cpp
     ShellControlBusOwner.hpp
-    ShellRuntime.cpp
-    ShellRuntime.hpp
     ShellRuntimeOptions.cpp
     ShellRuntimeOptions.hpp
     ShellOutputMonitor.cpp
@@ -43,10 +40,9 @@ target_include_directories(prismdrake-shell-runtime
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
 target_link_libraries(prismdrake-shell-runtime
     PUBLIC
-        Prismdrake::shell-runtime-state
+        Prismdrake::shell-runtime-composition
         Prismdrake::async-pin-state
         Prismdrake::shell-launcher-controller
-        Prismdrake::shell-notification-presentation
         Prismdrake::notification-center-client
         Prismdrake::notification-center-presentation
         Prismdrake::shell-control-clients
@@ -62,10 +58,6 @@ target_link_libraries(prismdrake-shell-runtime
         Qt6::Gui
         Qt6::Qml
         Qt6::Quick)
-if(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES)
-    target_compile_definitions(prismdrake-shell-runtime
-        PRIVATE PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES=1)
-endif()
 if(PRISMDRAKE_USE_INSTALL_PATHS)
     set(prismdrake_translation_directory
         "${CMAKE_INSTALL_FULL_DATADIR}/prismdrake/translations")

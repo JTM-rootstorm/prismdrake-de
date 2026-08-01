@@ -1,5 +1,10 @@
 # PD1 development panel-shell evidence
 
+> Historical note (2026-07-24): PD2 replaced the single-panel PD1 window host
+> with the generation-checked multi-output `PanelSurfaceHost`. The current tree
+> no longer builds the retired host/controller path; the evidence below remains
+> tied to the recorded PD1 revisions and environments.
+
 ## Status and scope
 
 This report records measured evidence for the Experimental PD1 development

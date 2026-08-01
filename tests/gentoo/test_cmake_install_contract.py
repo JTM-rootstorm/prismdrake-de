@@ -10,7 +10,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 ROOT_CMAKE = ROOT / "CMakeLists.txt"
-PANEL_WINDOW_TEST_CMAKE = ROOT / "tests/qt/window/CMakeLists.txt"
 
 
 def install_blocks(source: str) -> tuple[str, ...]:
@@ -23,21 +22,6 @@ def install_blocks(source: str) -> tuple[str, ...]:
 
 
 class CMakeInstallContractTests(unittest.TestCase):
-    def test_panel_window_ctest_runner_is_source_bound_without_parent_traversal(
-        self,
-    ) -> None:
-        source = PANEL_WINDOW_TEST_CMAKE.read_text(encoding="utf-8")
-        match = re.search(
-            r'set\(prismdrake_panel_window_xvfb_runner\s+"([^"]+)"\)',
-            source,
-        )
-        self.assertIsNotNone(match)
-        self.assertEqual(
-            match.group(1),
-            "${PROJECT_SOURCE_DIR}/tests/integration/run_with_xvfb.py",
-        )
-        self.assertNotIn("..", match.group(1))
-
     def test_exact_five_pd2_executables_are_installed(self) -> None:
         installed_targets: set[str] = set()
         for path in (ROOT / "src").rglob("CMakeLists.txt"):

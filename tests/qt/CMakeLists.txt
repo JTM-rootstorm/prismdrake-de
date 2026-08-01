@@ -149,7 +149,6 @@ set_tests_properties(PanelSurfaceQmlTest PROPERTIES
     ENVIRONMENT
         "QT_QPA_PLATFORM=offscreen;QSG_RHI_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
 
-add_subdirectory(window)
 add_subdirectory(taskcontroller)
 add_subdirectory(settings)
 add_subdirectory(launchercontroller)

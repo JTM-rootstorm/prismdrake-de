@@ -7,8 +7,6 @@ option(PRISMDRAKE_ENABLE_CLANG_TIDY "Run Clang-Tidy on project-owned targets" OF
 option(PRISMDRAKE_WARNINGS_AS_ERRORS "Treat project-owned target warnings as errors" OFF)
 option(PRISMDRAKE_ENABLE_DEVELOPER_OVERRIDES
     "Enable non-production diagnostics and mock-capability overrides" OFF)
-option(PRISMDRAKE_ENABLE_SHELL_TEST_FIXTURES
-    "Enable synthetic shell presentation fixtures for explicit test builds" OFF)
 option(PRISMDRAKE_USE_INSTALL_PATHS
     "Embed configured install locations for packaged Prismdrake runtime data" OFF)
 option(PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST

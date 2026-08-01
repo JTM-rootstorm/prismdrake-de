@@ -1,18 +1,17 @@
 find_package(GTest QUIET)
 if(GTest_FOUND)
-    add_executable(prismdrake-shell-runtime-state-tests
-        tests/ShellRuntimeCompositionTests.cpp
-        tests/ShellRuntimeStateTests.cpp)
-    target_link_libraries(prismdrake-shell-runtime-state-tests
+    add_executable(prismdrake-shell-runtime-composition-tests
+        tests/ShellReadinessGateTests.cpp
+        tests/ShellRuntimeCompositionTests.cpp)
+    target_link_libraries(prismdrake-shell-runtime-composition-tests
         PRIVATE
             GTest::gtest_main
-            Prismdrake::shell-runtime-state)
-    prismdrake_configure_cpp_target(prismdrake-shell-runtime-state-tests)
-    prismdrake_enable_warnings(prismdrake-shell-runtime-state-tests)
-    prismdrake_enable_sanitizers(prismdrake-shell-runtime-state-tests)
+            Prismdrake::shell-runtime-composition)
+    prismdrake_configure_cpp_target(prismdrake-shell-runtime-composition-tests)
+    prismdrake_enable_warnings(prismdrake-shell-runtime-composition-tests)
+    prismdrake_enable_sanitizers(prismdrake-shell-runtime-composition-tests)
 
     add_executable(prismdrake-shell-runtime-tests
-        tests/DevelopmentNotificationOwnerTests.cpp
         tests/FatalDisplayShutdownTests.cpp
         tests/Pd2ShellRuntimeTests.cpp
         tests/ShellControlBusOwnerTests.cpp
@@ -31,7 +30,7 @@ if(GTest_FOUND)
     prismdrake_enable_sanitizers(prismdrake-shell-runtime-tests)
 
     include(GoogleTest)
-    gtest_discover_tests(prismdrake-shell-runtime-state-tests
+    gtest_discover_tests(prismdrake-shell-runtime-composition-tests
         DISCOVERY_MODE PRE_TEST)
     gtest_discover_tests(prismdrake-shell-runtime-tests
         DISCOVERY_MODE PRE_TEST)

@@ -1,5 +1,11 @@
 # PD1 X11 development harness
 
+> Historical procedure: this guide records the retired PD1 composition root and
+> its synthetic notification demonstration. It is not executable against the
+> current PD2 tree. Use the
+> [PD2 installed demonstration](pd2-installed-demonstration.md) for current
+> shell validation.
+
 This operator path demonstrates the Experimental PD1 session, settings service,
 and shell on an X11 display. It is a bounded development check, not a login
 session recommendation or evidence that Prismdrake is a daily-use desktop. The

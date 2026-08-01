@@ -12,12 +12,8 @@ prismdrake_enable_warnings(prismdrake-shell-x11-property-worker)
 prismdrake_enable_sanitizers(prismdrake-shell-x11-property-worker)
 
 add_library(prismdrake-shell-panel-window STATIC
-    PanelWindowController.cpp
-    PanelWindowController.hpp
     PanelSurfaceHost.cpp
-    PanelSurfaceHost.hpp
-    PanelWindowHost.cpp
-    PanelWindowHost.hpp)
+    PanelSurfaceHost.hpp)
 add_library(Prismdrake::shell-panel-window ALIAS prismdrake-shell-panel-window)
 
 target_include_directories(prismdrake-shell-panel-window

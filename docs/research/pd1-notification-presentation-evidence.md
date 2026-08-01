@@ -1,5 +1,10 @@
 # PD1 synthetic notification-presentation evidence
 
+> Historical note (2026-07-24): PD2 replaced the installed PD1 synthetic
+> notification owner with the service-backed notification path. The current
+> tree no longer builds that retired composition-root dependency; the evidence
+> below remains tied to the recorded PD1 revisions and environments.
+
 **Date:** 2026-07-17
 
 **Reference environments:** host plus `prismdrake-vm`
