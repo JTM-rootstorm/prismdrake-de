@@ -37,6 +37,18 @@ FocusScope {
         root.focusReturnRequested()
     }
 
+    function activateDoNotDisturb(event) {
+        event.accepted = true
+        if (!event.isAutoRepeat && dndSwitch.enabled)
+            root.presentation.requestDoNotDisturb(!dndSwitch.checked)
+    }
+
+    function activateButton(control, event) {
+        event.accepted = true
+        if (!event.isAutoRepeat && control.enabled)
+            control.clicked()
+    }
+
     function focusFirstControl() {
         dndSwitch.forceActiveFocus(Qt.TabFocusReason)
     }
@@ -179,6 +191,8 @@ FocusScope {
                         root.focusHistory(true)
                     event.accepted = true
                 }
+                Keys.onReturnPressed: event => root.activateDoNotDisturb(event)
+                Keys.onEnterPressed: event => root.activateDoNotDisturb(event)
             }
 
             Button {
@@ -225,6 +239,8 @@ FocusScope {
                     root.focusHistory(true)
                     event.accepted = true
                 }
+                Keys.onReturnPressed: event => root.activateButton(clearButton, event)
+                Keys.onEnterPressed: event => root.activateButton(clearButton, event)
             }
         }
 

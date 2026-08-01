@@ -69,6 +69,11 @@ TestCase {
         target: notificationCenterFixture.presentation
         signalName: "doNotDisturbRequested"
     }
+    SignalSpy {
+        id: clearRequestSpy
+        target: notificationCenterFixture.presentation
+        signalName: "clearHistoryRequested"
+    }
 
     function init() {
         notificationCenterFixture.reset()
@@ -84,7 +89,44 @@ TestCase {
         forwardExitSpy.clear()
         backwardExitSpy.clear()
         dndRequestSpy.clear()
+        clearRequestSpy.clear()
         tryCompare(transients, "count", 0)
+    }
+
+    function test_activationKeysRequestActionsExactlyOnce() {
+        verify(notificationCenterFixture.publish(1))
+        const dnd = findChild(center, "notificationCenterDoNotDisturb")
+        const clear = findChild(center, "notificationCenterClearHistory")
+
+        for (let index = 0; index < 3; ++index) {
+            const key = [Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space][index]
+            const authoritativeState = index === 1
+            verify(notificationCenterFixture.publish(1, authoritativeState))
+            dnd.forceActiveFocus(Qt.OtherFocusReason)
+            tryCompare(dnd, "activeFocus", true)
+            keyClick(key)
+            tryCompare(dndRequestSpy, "count", index + 1)
+            compare(dndRequestSpy.signalArguments[index][0], !authoritativeState)
+            wait(0)
+            compare(dndRequestSpy.count, index + 1)
+            if (index === 0) {
+                verify(notificationCenterFixture.publish(1, true))
+                keyClick(Qt.Key_Tab)
+                tryCompare(clear, "activeFocus", true)
+                compare(clear.Accessible.focused, true)
+            }
+        }
+
+        for (let index = 0; index < 3; ++index) {
+            const key = [Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space][index]
+            clear.forceActiveFocus(Qt.OtherFocusReason)
+            tryCompare(clear, "activeFocus", true)
+            compare(clear.Accessible.focused, true)
+            keyClick(key)
+            tryCompare(clearRequestSpy, "count", index + 1)
+            wait(0)
+            compare(clearRequestSpy.count, index + 1)
+        }
     }
 
     function test_unavailableAndLiteralAccessibleContent() {

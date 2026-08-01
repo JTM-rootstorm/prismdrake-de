@@ -538,6 +538,16 @@ FocusScope {
                 event.accepted = true
                 root.focusTask(root.taskCount - 1, true)
             }
+            Keys.onReturnPressed: event => {
+                event.accepted = true
+                if (!event.isAutoRepeat)
+                    notificationCenter.clicked()
+            }
+            Keys.onEnterPressed: event => {
+                event.accepted = true
+                if (!event.isAutoRepeat)
+                    notificationCenter.clicked()
+            }
             onClicked: {
                 root.closeTaskActionMenus()
                 root.notificationCenterRequested(root.outputName)
@@ -577,6 +587,16 @@ FocusScope {
             Keys.onBacktabPressed: event => {
                 event.accepted = true
                 notificationCenter.forceActiveFocus(Qt.BacktabFocusReason)
+            }
+            Keys.onReturnPressed: event => {
+                event.accepted = true
+                if (!event.isAutoRepeat)
+                    quickSettings.clicked()
+            }
+            Keys.onEnterPressed: event => {
+                event.accepted = true
+                if (!event.isAutoRepeat)
+                    quickSettings.clicked()
             }
             onClicked: {
                 root.closeTaskActionMenus()

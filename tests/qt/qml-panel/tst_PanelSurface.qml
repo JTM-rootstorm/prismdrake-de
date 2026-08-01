@@ -124,6 +124,8 @@ TestCase {
         forwardExit.clear()
         backwardExit.clear()
         launcherRequest.clear()
+        notificationCenterRequest.clear()
+        quickSettingsRequest.clear()
         actionMenuOpened.clear()
         actionMenuClosed.clear()
         actionMenuDismissedToWindowManager.clear()
@@ -177,6 +179,36 @@ TestCase {
         panel.focusNotification()
         compare(notificationCenter.activeFocus, true)
         compare(notificationCenter.Accessible.focused, true)
+    }
+
+    function test_productionPanelAffordancesHandleAllActivationKeysExactlyOnce() {
+        developmentDiagnostics = false
+        explicitProductionAffordances = true
+        const notificationCenter = findChild(panel, "panelNotificationCenterButton")
+        const quickSettings = findChild(panel, "panelQuickSettingsButton")
+
+        let expectedCount = 0
+        for (const key of [Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space]) {
+            notificationCenter.forceActiveFocus(Qt.OtherFocusReason)
+            tryCompare(notificationCenter, "activeFocus", true)
+            keyClick(key)
+            ++expectedCount
+            tryCompare(notificationCenterRequest, "count", expectedCount)
+            compare(quickSettingsRequest.count, 0)
+        }
+
+        expectedCount = 0
+        for (const key of [Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space]) {
+            quickSettings.forceActiveFocus(Qt.OtherFocusReason)
+            tryCompare(quickSettings, "activeFocus", true)
+            keyClick(key)
+            ++expectedCount
+            tryCompare(quickSettingsRequest, "count", expectedCount)
+        }
+        for (let index = 0; index < 3; ++index) {
+            compare(notificationCenterRequest.signalArguments[index][0], "DP-1")
+            compare(quickSettingsRequest.signalArguments[index][0], "DP-1")
+        }
     }
 
     function test_groupedTasksExposeProductionActionsAndOutputScopedAffordances() {
