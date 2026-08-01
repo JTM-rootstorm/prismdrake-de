@@ -288,6 +288,8 @@ class PackagingGuideContractTests(unittest.TestCase):
             "pd2_portage_lifecycle_evidence.py",
             'EGIT_OVERRIDE_REPO_JTM_ROOTSTORM_PRISMDRAKE_DE=',
             'EGIT_OVERRIDE_COMMIT_JTM_ROOTSTORM_PRISMDRAKE_DE=',
+            'git clone --bare "$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle"',
+            'file://$PRISMDRAKE_TRANSPORT_REPOSITORY',
             'PRISMDRAKE_PORTAGE_TMPDIR=$(/usr/bin/portageq envvar PORTAGE_TMPDIR)',
             '"$PRISMDRAKE_PORTAGE_WORKDIR/prismdrake-9999_test_build"',
             '--source-checkout "$PRISMDRAKE_SOURCE_CHECKOUT"',
@@ -302,6 +304,9 @@ class PackagingGuideContractTests(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIn(command, self.source)
+        self.assertNotIn(
+            'file://$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle', self.source
+        )
         for stale in (
             "tests/gentoo/portage_lifecycle_collector.py",
             "tests/gentoo/portage_lifecycle_evidence.py",

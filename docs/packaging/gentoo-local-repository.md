@@ -165,8 +165,18 @@ test -z "$(/usr/bin/git -C "$PRISMDRAKE_INPUT_CHECKOUT" \
 test "$(/usr/bin/stat -c %a \
   "$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle")" = 600
 
+export PRISMDRAKE_TRANSPORT_REPOSITORY=\
+"$PRISMDRAKE_EVIDENCE_ROOT/prismdrake-transport.git"
+test ! -e "$PRISMDRAKE_TRANSPORT_REPOSITORY"
+/usr/bin/git clone --bare "$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle" \
+  "$PRISMDRAKE_TRANSPORT_REPOSITORY"
+/usr/bin/chmod -R u=rwX,go=rX "$PRISMDRAKE_TRANSPORT_REPOSITORY"
+/usr/bin/git --git-dir="$PRISMDRAKE_TRANSPORT_REPOSITORY" fsck --full
+test "$(/usr/bin/git --git-dir="$PRISMDRAKE_TRANSPORT_REPOSITORY" \
+  rev-parse HEAD)" = "$PRISMDRAKE_REVISION"
+
 export EGIT_OVERRIDE_REPO_JTM_ROOTSTORM_PRISMDRAKE_DE=\
-"file://$PRISMDRAKE_EVIDENCE_ROOT/prismdrake.bundle"
+"file://$PRISMDRAKE_TRANSPORT_REPOSITORY"
 export EGIT_OVERRIDE_COMMIT_JTM_ROOTSTORM_PRISMDRAKE_DE=\
 "$PRISMDRAKE_REVISION"
 
@@ -175,11 +185,18 @@ USE="test" FEATURES="test keepwork" \
   =x11-misc/prismdrake-9999::prismdrake-local
 ```
 
+git-r3 requires a repository transport and cannot fetch a bundle directly as
+`EGIT_OVERRIDE_REPO`; doing so fails before unpack with Git's `too large to be a
+.git file` diagnostic. The verified mode-0600 bundle remains the source
+attestation artifact. The read-only bare clone is only its local git-r3
+transport and must resolve the same exact commit.
+
 The overrides are command-environment inputs, not package configuration. Keep
-them exported for the later ordinary reinstall and record their variable names,
-bundle digest, and resolved commit; do not record a private host path in the
-public evidence. A pushed canonical revision may omit the repository override,
-but it must still bind the exact commit used by the evidence.
+them and the bare transport available for the later ordinary reinstall and
+record the override variable names, bundle digest, and resolved commit; do not
+record a private host path in the public evidence. A pushed canonical revision
+may omit the repository override, but it must still bind the exact commit used
+by the evidence.
 The evidence root is traversal-only so the ordinary package-test user can reach
 its private mode-0700 subdirectory; root-owned evidence files remain mode 0600.
 
