@@ -2868,6 +2868,10 @@ class LiveXorgHarnessPort:
         elif identifier == "notification":
             self._run_notification_step("create_normal_notification")
             self._invoke_shellctl("panel", "focus")
+            self._wait_accessible(
+                ControlSelector("Transient notifications", "notification"),
+                "tier_c_notification_presentation_timeout",
+            )
             surface = self._tier_c_named_surface(NOTIFICATION_WINDOW_TITLE)
         elif identifier == "notification_center":
             self._invoke_shellctl("notifications", "open")
@@ -2959,6 +2963,17 @@ class LiveXorgHarnessPort:
             self._wait_primary_panel_x11_focus(
                 "tier_c_notification_center_focus_restore_timeout"
             )
+            return TierCKeyboardObservation("tier_c_keyboard_complete", len(keys))
+        if identifier == "quick_settings":
+            if keys != ("TAB", "SPACE"):
+                raise HarnessError("tier_c_keyboard_mapping_invalid")
+            self._xdotool("key", "--clearmodifiers", "Tab")
+            self.observe_atspi(
+                ControlSelector(
+                    "Use Prismdrake Forge", "radio_button", require_focused=True
+                )
+            )
+            self._xdotool("key", "--clearmodifiers", "space")
             return TierCKeyboardObservation("tier_c_keyboard_complete", len(keys))
         for key in keys:
             mapped = TIER_C_KEY_ARGUMENTS.get(key)
@@ -3131,18 +3146,42 @@ class LiveXorgHarnessPort:
                 )
             )
             self._xdotool("key", "--clearmodifiers", "Escape")
+            self._wait_accessible_absent(
+                ControlSelector("Notification center", "pane"),
+                "tier_c_notification_center_dismissal_timeout",
+            )
+            self.observe_atspi(
+                ControlSelector(
+                    "Open notification center", "push_button", require_focused=True
+                )
+            )
+            self._wait_primary_panel_x11_focus(
+                "tier_c_notification_center_focus_restore_timeout"
+            )
         elif identifier == "quick_settings":
             forge = ControlSelector(
                 "Use Prismdrake Forge", "radio_button", require_focused=True
             )
-            self.observe_atspi(forge)
             self._wait_accessible_state(
                 forge,
                 "CHECKED",
                 True,
                 "tier_c_profile_toggle_failed",
             )
+            self.observe_atspi(forge)
             self._xdotool("key", "--clearmodifiers", "Escape")
+            self._wait_accessible_absent(
+                ControlSelector("Quick settings", "pane"),
+                "tier_c_quick_settings_dismissal_timeout",
+            )
+            self.observe_atspi(
+                ControlSelector(
+                    "Open quick settings", "push_button", require_focused=True
+                )
+            )
+            self._wait_primary_panel_x11_focus(
+                "tier_c_quick_settings_focus_restore_timeout"
+            )
         elif identifier == "logout":
             components = self._tier_c_logout_components
             session = self._session
@@ -4980,6 +5019,10 @@ class LiveXorgHarnessPort:
         environment = self._private_bus_environment()
         if self._tier_c_trace is not None:
             environment = self._traced_x11_environment(environment)
+            # x11trace proxies the X11 byte stream but cannot relay MIT-SHM file
+            # descriptors. Force ordinary image transport only for the traced
+            # session and its Qt children.
+            environment["QT_XCB_NO_MITSHM"] = "1"
         environment.update(
             {
                 "QT_QUICK_BACKEND": "software",
@@ -5231,10 +5274,11 @@ class LiveXorgHarnessPort:
         self, *, allow_safe_mode: bool = False
     ) -> None:
         self._require_topology(two_outputs=True)
-        shell = self._wait_for_surface_shell(allow_safe_mode=allow_safe_mode)
         deadline = self._operations.monotonic() + self._config.readiness_timeout
-        desktops = self._wait_for_owned_surface_windows(
-            b"_NET_WM_WINDOW_TYPE_DESKTOP", shell, deadline
+        shell, desktops = self._wait_for_coherent_surface_epoch(
+            b"_NET_WM_WINDOW_TYPE_DESKTOP",
+            deadline,
+            allow_safe_mode=allow_safe_mode,
         )
         expected = {
             WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
@@ -5244,8 +5288,10 @@ class LiveXorgHarnessPort:
             if self._operations.monotonic() >= deadline:
                 raise HarnessError("desktop_wallpaper_surface_invalid")
             self._operations.pause(0.05)
-            desktops = self._wait_for_owned_surface_windows(
-                b"_NET_WM_WINDOW_TYPE_DESKTOP", shell, deadline
+            shell, desktops = self._wait_for_coherent_surface_epoch(
+                b"_NET_WM_WINDOW_TYPE_DESKTOP",
+                deadline,
+                allow_safe_mode=allow_safe_mode,
             )
         if len(desktops) != 2 or set(desktops.values()) != expected:
             raise HarnessError("desktop_wallpaper_surface_invalid")
@@ -5268,6 +5314,35 @@ class LiveXorgHarnessPort:
                     raise
                 if self._operations.monotonic() >= deadline:
                     raise
+            self._operations.pause(0.05)
+
+    def _wait_for_coherent_surface_epoch(
+        self,
+        window_type: bytes,
+        deadline: float,
+        *,
+        allow_safe_mode: bool = False,
+    ) -> tuple[ProcessIdentity, dict[int, WindowGeometry]]:
+        """Bind initial surfaces to one stable, currently supervised shell epoch."""
+
+        last_error: HarnessError | None = None
+        while True:
+            try:
+                shell = self._require_surface_shell(allow_safe_mode=allow_safe_mode)
+                surfaces = self._observe_surface_windows(window_type, shell)
+                if self._require_surface_shell(allow_safe_mode=allow_safe_mode) != shell:
+                    raise HarnessError("surface_shell_identity_changed")
+                return shell, surfaces
+            except HarnessError as error:
+                if str(error) not in {
+                    "surface_shell_identity_invalid",
+                    "surface_shell_identity_changed",
+                    "surface_window_owner_invalid",
+                }:
+                    raise
+                last_error = error
+                if self._operations.monotonic() >= deadline:
+                    raise last_error
             self._operations.pause(0.05)
 
     def _require_failure_replay_surfaces(

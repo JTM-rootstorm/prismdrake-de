@@ -2010,6 +2010,85 @@ class LivePortTests(unittest.TestCase):
         ):
             singleton_port.prepare_step(live_xorg.STEP_CONTRACTS["launcher"])
 
+        self.assertEqual(
+            port.assert_accessible,
+            (
+                "Transient notifications",
+                "tier_c_notification_presentation_timeout",
+            ),
+        )
+
+    def test_tier_c_quick_settings_waits_at_each_focus_boundary(self) -> None:
+        class SynchronizationPort(LiveXorgHarnessPort):
+            def __init__(self):
+                super().__init__(config(), FakeOperations())
+                self.events: list[tuple[str, object]] = []
+
+            def _xdotool(self, *arguments):
+                self.events.append(("key", arguments[-1]))
+                return CommandResult(0)
+
+            def observe_atspi(self, selector):
+                self.events.append(("focus", selector.name))
+                return live_xorg.AtspiCategoricalResult("atspi_control_ready")
+
+            def _wait_accessible_state(
+                self, selector, state_name, expected, timeout_error
+            ):
+                self.events.append(
+                    ("state", (selector.name, state_name, expected, timeout_error))
+                )
+
+            def _wait_accessible_absent(self, selector, timeout_error):
+                self.events.append(("absent", (selector.name, timeout_error)))
+
+            def _wait_primary_panel_x11_focus(self, timeout_error):
+                self.events.append(("x11_focus", timeout_error))
+
+        port = SynchronizationPort()
+        port._tier_c_identifier = "quick_settings"  # noqa: SLF001
+        port._tier_c_surface = (  # noqa: SLF001
+            0x510004,
+            WindowGeometry(1220, 452, 380, 400),
+        )
+
+        self.assertEqual(
+            port.send_reviewed_keys("quick_settings", ("TAB", "SPACE")),
+            live_xorg.TierCKeyboardObservation("tier_c_keyboard_complete", 2),
+        )
+        self.assertEqual(
+            port.complete_step("quick_settings"),
+            live_xorg.TierCPortResult("tier_c_step_complete"),
+        )
+        self.assertEqual(
+            port.events,
+            [
+                ("key", "Tab"),
+                ("focus", "Use Prismdrake Forge"),
+                ("key", "space"),
+                (
+                    "state",
+                    (
+                        "Use Prismdrake Forge",
+                        "CHECKED",
+                        True,
+                        "tier_c_profile_toggle_failed",
+                    ),
+                ),
+                ("focus", "Use Prismdrake Forge"),
+                ("key", "Escape"),
+                (
+                    "absent",
+                    (
+                        "Quick settings",
+                        "tier_c_quick_settings_dismissal_timeout",
+                    ),
+                ),
+                ("focus", "Open quick settings"),
+                ("x11_focus", "tier_c_quick_settings_focus_restore_timeout"),
+            ],
+        )
+
     def test_quotes_whitespace_fixture_and_rejects_desktop_field_code_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -2236,6 +2315,8 @@ class LivePortTests(unittest.TestCase):
                 [environment["DISPLAY"] for environment in traced_spawns],
                 [":140", ":1140"],
             )
+            self.assertNotIn("QT_XCB_NO_MITSHM", traced_spawns[0])
+            self.assertEqual(traced_spawns[1]["QT_XCB_NO_MITSHM"], "1")
             traced_commands = [
                 environment["DISPLAY"]
                 for argv, environment in operations.run_calls
@@ -2652,6 +2733,7 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertEqual(session_environment["QT_QPA_PLATFORM"], "xcb")
         self.assertEqual(session_environment["QT_QUICK_BACKEND"], "software")
+        self.assertNotIn("QT_XCB_NO_MITSHM", session_environment)
         self.assertEqual(
             session_environment["AT_SPI_BUS_ADDRESS"],
             "unix:path=/tmp/private-atspi",
@@ -4038,6 +4120,45 @@ class LivePortTests(unittest.TestCase):
             port._require_desktop_wallpaper_surfaces()  # noqa: SLF001
 
         self.assertGreaterEqual(calls, 2)
+        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
+
+    def test_initial_surface_observation_rebinds_after_supervised_shell_change(
+        self,
+    ) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        for identifier in (
+            "start_isolated_two_output_x11",
+            "start_installed_prismdrake_session",
+            "verify_component_readiness",
+        ):
+            port.run_step("installed_workflow", identifier)
+        initial = ProcessIdentity(
+            operations.component_pids["prismdrake-shell"],
+            operations.component_start_times["prismdrake-shell"],
+        )
+        original = port._observe_surface_windows  # noqa: SLF001
+        observed_shells: list[ProcessIdentity] = []
+
+        def replace_during_first_scan(window_type, shell):
+            observed_shells.append(shell)
+            surfaces = original(window_type, shell)
+            if len(observed_shells) == 1:
+                operations.component_start_times["prismdrake-shell"] += 1
+            return surfaces
+
+        with patch.object(
+            port,
+            "_observe_surface_windows",
+            side_effect=replace_during_first_scan,
+        ):
+            port._require_desktop_wallpaper_surfaces()  # noqa: SLF001
+
+        replacement = ProcessIdentity(initial.pid, initial.start_time + 1)
+        self.assertEqual(observed_shells, [initial, replacement])
+        self.assertEqual(port._surface_shell_identity, replacement)  # noqa: SLF001
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_restart_surface_requirements_resample_transient_old_shell_owner(
