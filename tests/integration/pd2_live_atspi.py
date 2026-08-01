@@ -314,17 +314,7 @@ def _select_control(
     *,
     require_enabled: bool = True,
 ) -> Any:
-    matches: list[Any] = []
-    for node in _walk(application):
-        if _node_name(node) != selector.name or not _role_matches(
-            atspi, node, selector.role
-        ):
-            continue
-        if not _has_state(atspi, node, "SHOWING") or not _has_state(
-            atspi, node, "VISIBLE"
-        ):
-            continue
-        matches.append(node)
+    matches = _matching_visible_controls(atspi, application, selector)
     if selector.require_focused:
         focused = [
             node
@@ -346,6 +336,23 @@ def _select_control(
     if selector.action is not None and selector.action not in _action_names(control):
         _fail("atspi_action_missing")
     return control
+
+
+def _matching_visible_controls(
+    atspi: Any, application: Any, selector: ControlSelector
+) -> list[Any]:
+    matches: list[Any] = []
+    for node in _walk(application):
+        if _node_name(node) != selector.name or not _role_matches(
+            atspi, node, selector.role
+        ):
+            continue
+        if not _has_state(atspi, node, "SHOWING") or not _has_state(
+            atspi, node, "VISIBLE"
+        ):
+            continue
+        matches.append(node)
+    return matches
 
 
 def _resolve_control(
@@ -615,12 +622,12 @@ def _worker_request(
     if operation == "observe_absent":
         return observe_control_absence(atspi, owner, selector), {}
     if operation == "reject_stale_action":
-        try:
-            invoke_reviewed_action(atspi, owner, selector)
-        except LiveAtspiError as error:
-            if str(error) == "atspi_control_identity":
-                return CategoricalResult("atspi_stale_control_rejected"), {}
-            raise
+        _validate_selector(selector, True)
+        application = _find_application(atspi)
+        _verify_owner(application, owner)
+        if not _matching_visible_controls(atspi, application, selector):
+            return CategoricalResult("atspi_stale_control_rejected"), {}
+        invoke_reviewed_action(atspi, owner, selector)
         _fail("atspi_stale_control_live")
     if operation == "capture_reference":
         if len(references) >= MAX_WORKER_REFERENCES:

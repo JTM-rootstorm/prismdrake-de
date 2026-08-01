@@ -320,6 +320,36 @@ class LiveAtspiHelperTests(unittest.TestCase):
             ),
         )
 
+    def test_worker_accepts_only_zero_visible_matches_as_a_stale_action(self) -> None:
+        request = {
+            "operation": "reject_stale_action",
+            "selector": self.worker_selector(),
+            "shell_pid": 2004,
+        }
+        self.application.children.clear()
+        rejected, values = _worker_request(self.atspi, request, {})
+        self.assertEqual(rejected.category, "atspi_stale_control_rejected")
+        self.assertEqual(values, {})
+
+        self.application.children.append(self.control)
+        self.assert_category(
+            "atspi_stale_control_live",
+            lambda: _worker_request(self.atspi, request, {}),
+        )
+
+        self.application.children.append(
+            FakeNode(
+                "Open applications",
+                FakeRole.PUSH_BUTTON,
+                states=set(VISIBLE),
+                action=FakeAction(["Press"]),
+            )
+        )
+        self.assert_category(
+            "atspi_control_identity",
+            lambda: _worker_request(self.atspi, request, {}),
+        )
+
     def test_observes_exact_showing_control_with_exact_shell_owner(self) -> None:
         calls: list[FakeNode] = []
 
