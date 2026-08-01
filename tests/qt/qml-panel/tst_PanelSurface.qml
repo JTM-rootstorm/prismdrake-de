@@ -455,6 +455,31 @@ TestCase {
         compare(panelFixture.lastActivationTitle, "Editor document")
     }
 
+    function test_groupPopupExposesTheExactFocusedMemberForReconciliation() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const editor = panel.taskAt(0)
+        verify(editor.requestPrimary())
+        const popup = findChild(editor, "panelTaskGroupPopup")
+        tryCompare(popup, "opened", true)
+        const firstMember = popup.memberAt(0)
+        const secondMember = popup.memberAt(1)
+        tryCompare(firstMember, "activeFocus", true)
+        compare(editor.focusTarget, firstMember.member)
+
+        keyClick(Qt.Key_Down)
+        tryCompare(secondMember, "activeFocus", true)
+        compare(editor.focusTarget, secondMember.member)
+
+        keyClick(Qt.Key_Menu)
+        const secondActivate = findChild(secondMember, "panelTaskGroupActivate")
+        tryCompare(secondActivate, "activeFocus", true)
+        compare(editor.focusTarget, secondMember.member)
+        verify(panelFixture.groupedTaskModel.rememberFocus(editor.focusTarget, true))
+    }
+
     function test_groupedTaskAndPopupExposeCompleteKeyboardStateTransitions() {
         groupedTasks = true
         verify(panelFixture.publishRepresentativeGroups())

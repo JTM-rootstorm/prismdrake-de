@@ -13,6 +13,14 @@ Popup {
     property bool rightToLeft: false
     property int pendingMemberFocus: 0
     property bool restoreFocusWhenClosed: true
+    readonly property var focusedMember: {
+        for (let index = 0; index < memberRepeater.count; ++index) {
+            const candidate = memberRepeater.itemAt(index)
+            if (candidate !== null && candidate.activeFocus)
+                return candidate.member
+        }
+        return null
+    }
 
     signal closedToOrigin
     signal closedToWindowManager

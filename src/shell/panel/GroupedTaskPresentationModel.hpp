@@ -179,6 +179,7 @@ class GroupedTaskPresentationModel final : public QAbstractListModel {
     std::optional<std::string> focus_group_key_;
     bool focus_popup_open_{false};
     bool applying_snapshot_{false};
+    bool accepting_focus_capture_{false};
 
     friend class GroupedTaskMemberPresentation;
     friend class GroupedTaskPresentation;

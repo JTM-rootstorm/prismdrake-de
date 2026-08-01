@@ -272,7 +272,9 @@ GroupedTaskPresentationModel::applySnapshot(std::shared_ptr<const GroupedTaskSna
     }
 
     applying_snapshot_ = true;
+    accepting_focus_capture_ = true;
     emit publicationReconciliationStarted();
+    accepting_focus_capture_ = false;
     for (std::size_t index = groups_.size(); index > 0U; --index) {
         const auto row = index - 1U;
         if (std::ranges::none_of(snapshot->groups, [this, row](const auto &group) {
@@ -353,17 +355,26 @@ GroupedTaskPresentation *GroupedTaskPresentationModel::groupAt(int row) const no
 }
 
 bool GroupedTaskPresentationModel::rememberFocus(QObject *target, bool groupPopupOpen) {
-    if (QThread::currentThread() != thread() || applying_snapshot_) {
+    if (QThread::currentThread() != thread() || (applying_snapshot_ && !accepting_focus_capture_)) {
         return false;
     }
-    focus_lifetime_.reset();
-    focus_group_key_.reset();
-    focus_popup_open_ = groupPopupOpen;
     if (auto *member = qobject_cast<GroupedTaskMemberPresentation *>(target)) {
+        if (member->owner_ != this) {
+            return false;
+        }
+        focus_lifetime_.reset();
+        focus_group_key_.reset();
+        focus_popup_open_ = groupPopupOpen;
         focus_lifetime_ = member->lifetime_;
         return true;
     }
     if (auto *group = qobject_cast<GroupedTaskPresentation *>(target)) {
+        if (group->owner_ != this) {
+            return false;
+        }
+        focus_lifetime_.reset();
+        focus_group_key_.reset();
+        focus_popup_open_ = groupPopupOpen;
         if (!group->members_.empty()) {
             focus_lifetime_ = group->members_.front()->lifetime_;
         } else {

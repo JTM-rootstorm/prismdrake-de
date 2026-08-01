@@ -383,16 +383,49 @@ TEST(GroupedTaskPresentationModelTest, RecoversExactMemberAcrossWhenFullRegroupi
     ASSERT_TRUE(model.applySnapshot(wide.value()));
     ASSERT_EQ(model.rowCount(), 2);
     QPointer<GroupedTaskPresentation> oldFocused = model.groupAt(1);
-    ASSERT_TRUE(model.rememberFocus(oldFocused, true));
+    ASSERT_NE(oldFocused, nullptr);
+    const auto oldMembers = oldFocused->members();
+    ASSERT_EQ(oldMembers.size(), 1);
+    QPointer<QObject> oldFocusedMember = oldMembers.front().value<QObject *>();
+    ASSERT_NE(oldFocusedMember, nullptr);
     QSignalSpy recovery{&model, &GroupedTaskPresentationModel::focusRecoveryRequested};
+    bool capturedDuringReconciliation = false;
+    QObject::connect(&model, &GroupedTaskPresentationModel::publicationReconciliationStarted,
+                     &model, [&model, &oldFocusedMember, &capturedDuringReconciliation] {
+                         capturedDuringReconciliation = model.rememberFocus(oldFocusedMember, true);
+                     });
 
     ASSERT_TRUE(model.applySnapshot(narrow.value()));
+    EXPECT_TRUE(capturedDuringReconciliation);
     EXPECT_TRUE(oldFocused.isNull());
+    EXPECT_TRUE(oldFocusedMember.isNull());
     ASSERT_EQ(recovery.count(), 1);
     const auto arguments = recovery.takeFirst();
     EXPECT_EQ(arguments[0].toInt(), 0);
     EXPECT_EQ(arguments[1].toInt(), 1);
     EXPECT_TRUE(arguments[2].toBool());
+}
+
+TEST(GroupedTaskPresentationModelTest, RejectsFocusPresentationsOwnedByAnotherModel) {
+    const std::vector fixtures{TaskFixture{10U, 100U, "Editor", "editor.desktop"}};
+    x11::TaskModel owner;
+    const auto taskState = taskSnapshot(owner, fixtures);
+    const auto built = buildGroupedTasks(input(taskState, associations(fixtures),
+                                               catalog({{"editor.desktop", "Editor"}}), pins({}),
+                                               config::GroupingMode::always, 1000.0, 1U));
+    ASSERT_TRUE(built);
+
+    GroupedTaskPresentationModel model;
+    GroupedTaskPresentationModel foreign;
+    ASSERT_TRUE(model.applySnapshot(built.value()));
+    ASSERT_TRUE(foreign.applySnapshot(built.value()));
+    auto *foreignGroup = foreign.groupAt(0);
+    ASSERT_NE(foreignGroup, nullptr);
+    const auto foreignMembers = foreignGroup->members();
+    ASSERT_EQ(foreignMembers.size(), 1);
+
+    EXPECT_FALSE(model.rememberFocus(foreignGroup, false));
+    EXPECT_FALSE(model.rememberFocus(foreignMembers.front().value<QObject *>(), true));
 }
 
 TEST(GroupedTaskPresentationModelTest, AcceptsReplacementSettingsOwnerGeneration) {
