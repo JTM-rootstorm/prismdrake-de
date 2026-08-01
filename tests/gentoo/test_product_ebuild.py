@@ -82,6 +82,16 @@ class ProductEbuildContractTests(unittest.TestCase):
                     phase_body(self.source, phase),
                 )
 
+    def test_retained_test_build_requires_the_live_atspi_registration(self) -> None:
+        self.assertIn(
+            "-DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=ON",
+            phase_body(self.source, "src_test"),
+        )
+        self.assertIn(
+            "-DPRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=OFF",
+            phase_body(self.source, "src_configure"),
+        )
+
     def test_qt_product_dependencies_keep_the_6_11_floor(self) -> None:
         expected = {
             ">=dev-qt/qtbase-6.11:6",

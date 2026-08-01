@@ -7,7 +7,7 @@
     "TaskControllerOpenboxStabilizationIntegrationTest"
   ],
   "inventory_kind": "pd2_exact_ctest_inventory",
-  "canonical_inventory_sha256": "96c88b987411973313e1dafed347c11d9864b836fc3b8880b006fad0134d9f99",
+  "canonical_inventory_sha256": "2980edd3c6a40e3d272193377c62923049e353de9c285e2770482656e2d4cd9a",
   "ordered_test_names_sha256": "971a6be796f54e2a514f39ffb67859cb96608bb66ecf2db9b2fe9a6884f88cf0",
   "schema_version": 1
 }

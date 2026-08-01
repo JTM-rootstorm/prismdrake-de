@@ -341,6 +341,11 @@ to every ordered test name, command, and CTest behavior property. Exact source
 and build roots and the single source-bound configured revision are normalized
 before hashing so disposable paths and a later exact revision do not change the
 reviewed contract; diagnostic source-line and backtrace metadata is excluded.
+The canonical inventory is captured from the ebuild's retained `USE=test`
+tree, where `PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=ON` makes the real 45-second,
+serial live AT-SPI command part of the contract. A dependency-degraded developer
+tree that registers the five-second skip command is intentionally not an
+equivalent package-test inventory.
 Unknown or newly introduced behavior properties therefore require an explicit
 contract review. The collectors additionally hash project-owned command files
 and the controlled fixture, then parse CTest JUnit output. A disabled, failed,
