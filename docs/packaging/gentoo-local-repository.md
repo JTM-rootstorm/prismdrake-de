@@ -180,8 +180,20 @@ export EGIT_OVERRIDE_REPO_JTM_ROOTSTORM_PRISMDRAKE_DE=\
 export EGIT_OVERRIDE_COMMIT_JTM_ROOTSTORM_PRISMDRAKE_DE=\
 "$PRISMDRAKE_REVISION"
 
-USE="test" FEATURES="test keepwork" \
-  emerge --ask --verbose --oneshot --newuse \
+install -d -m 0755 /etc/portage/env /etc/portage/package.env
+cat >/etc/portage/env/prismdrake-package-validation.env <<EOF
+USE="test"
+FEATURES="test keepwork"
+EGIT_OVERRIDE_REPO_JTM_ROOTSTORM_PRISMDRAKE_DE=\
+"$EGIT_OVERRIDE_REPO_JTM_ROOTSTORM_PRISMDRAKE_DE"
+EGIT_OVERRIDE_COMMIT_JTM_ROOTSTORM_PRISMDRAKE_DE=\
+"$EGIT_OVERRIDE_COMMIT_JTM_ROOTSTORM_PRISMDRAKE_DE"
+EOF
+printf '%s\n' \
+  'x11-misc/prismdrake prismdrake-package-validation.env' \
+  >/etc/portage/package.env/prismdrake-package-validation
+
+emerge --ask --verbose --oneshot --newuse \
   =x11-misc/prismdrake-9999::prismdrake-local
 ```
 
@@ -191,12 +203,15 @@ git-r3 requires a repository transport and cannot fetch a bundle directly as
 attestation artifact. The read-only bare clone is only its local git-r3
 transport and must resolve the same exact commit.
 
-The overrides are command-environment inputs, not package configuration. Keep
-them and the bare transport available for the later ordinary reinstall and
-record the override variable names, bundle digest, and resolved commit; do not
-record a private host path in the public evidence. A pushed canonical revision
-may omit the repository override, but it must still bind the exact commit used
-by the evidence.
+The validation environment is bound only to the Prismdrake atom. A command-line
+`USE=test` would apply to dependency packages too and can make unrelated Gentoo
+test flags conflict with their own `REQUIRED_USE`; do not use it for this gate.
+Keep the package environment and bare transport available through the evidence
+stages, then restore the preserved Portage inputs after the lifecycle record has
+validated. Record the override variable names, bundle digest, and resolved
+commit; do not record a private host path in public evidence. A pushed canonical
+revision may omit the repository override, but it must still bind the exact
+commit used by the evidence.
 The evidence root is traversal-only so the ordinary package-test user can reach
 its private mode-0700 subdirectory; root-owned evidence files remain mode 0600.
 
@@ -338,8 +353,8 @@ The QA stage runs canonical `/usr/bin/pkgdev manifest` and `/usr/bin/pkgcheck
 scan --exit error,warning,style,info` against a disposable repository copy;
 any QA report fails the stage. The resolution stage verifies the
 `prismdrake-local` path and ebuild bytes through `/usr/bin/portageq`, then runs
-the fixed `/usr/bin/emerge` pretend command once with `USE=-test` and once with
-`USE=test`.
+the fixed `/usr/bin/emerge` pretend command once with the command-line
+`USE=-test` override and once with the package-local validation environment.
 
 The two `chown` targets above are disposable guest copies dedicated to the
 lifecycle run, never the host checkout or Portage's live repository. They make
@@ -629,14 +644,15 @@ Run a reviewed resolution and targeted package test with:
 
 ```sh
 USE="-test" emerge --pretend --verbose --tree --newuse x11-misc/prismdrake
-USE="test" emerge --pretend --verbose --tree --newuse x11-misc/prismdrake
-USE="test" FEATURES="test keepwork" \
-  emerge --ask --verbose --oneshot --newuse x11-misc/prismdrake
+emerge --pretend --verbose --tree --newuse x11-misc/prismdrake
+emerge --ask --verbose --oneshot --newuse x11-misc/prismdrake
 ```
 
 Hash normalized captures from both pretend graphs separately. The default
-resolution proves the ordinary runtime boundary; the `USE=test` resolution and
-install add only build/test tooling and execute the package suite.
+resolution proves the ordinary runtime boundary; the package-scoped `USE=test`
+resolution and install add only build/test tooling and execute the package
+suite. Configure that scoped state through the validation `package.env` binding
+shown above; never enable `test` globally for the dependency graph.
 
 Portage's mandatory libsandbox injects `LD_PRELOAD` and `SANDBOX_*` entries into
 executed children. The ebuild therefore excludes exactly four upstream tests:

@@ -1036,10 +1036,11 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                     return ""
                 if command[0] == "/usr/bin/portageq":
                     return str(installed_repository) + "\n"
-                if command[0] == "/usr/bin/env":
+                if command[0] in ("/usr/bin/env", "/usr/bin/emerge"):
                     return ("[ebuild N] x11-misc/prismdrake-9999"
                             "::prismdrake-local " +
-                            ("test\n" if command[1] == "USE=test" else "-test\n"))
+                            ("test\n" if command[0] == "/usr/bin/emerge"
+                             else "-test\n"))
                 raise AssertionError(command)
 
             def hash_file(path: Path) -> str:
@@ -1077,9 +1078,14 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             self.assertNotEqual(records[0]["dependency_graph_sha256"],
                                 records[1]["dependency_graph_sha256"])
             emerge_calls = [command for command, _cwd in calls
-                            if command[0] == "/usr/bin/env"]
-            self.assertEqual([command[1] for command in emerge_calls],
-                             ["USE=-test", "USE=test"])
+                            if command[0] in ("/usr/bin/env", "/usr/bin/emerge")]
+            self.assertEqual(
+                [command[:3] for command in emerge_calls],
+                [
+                    ["/usr/bin/env", "USE=-test", "/usr/bin/emerge"],
+                    ["/usr/bin/emerge", "--pretend", "--verbose"],
+                ],
+            )
 
             real_reinstall_output = (
                 '[ebuild R *] x11-misc/prismdrake-9999::prismdrake-local '
@@ -1118,7 +1124,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             self.assertEqual(plural_summary_records[0]["mode"], "default")
 
             def zero_change_use_test(command: list[str], cwd: Path | None) -> str:
-                if command[0] == "/usr/bin/env" and command[1] == "USE=test":
+                if command[0] == "/usr/bin/emerge":
                     return (
                         "Calculating dependencies... done!\n"
                         "Total: 0 packages, Size of downloads: 0 KiB\n"
@@ -1165,7 +1171,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                     def invalid_resolution(
                             command: list[str], cwd: Path | None,
                             output: str = invalid_output) -> str:
-                        if command[0] == "/usr/bin/env" and command[1] == "USE=test":
+                        if command[0] == "/usr/bin/emerge":
                             return output
                         return runner(command, cwd)
 
@@ -1190,7 +1196,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 )
 
             def same_graph(command: list[str], cwd: Path | None) -> str:
-                if command[0] == "/usr/bin/env":
+                if command[0] in ("/usr/bin/env", "/usr/bin/emerge"):
                     return (
                         "[ebuild N] x11-misc/prismdrake-9999"
                         "::prismdrake-local\n"

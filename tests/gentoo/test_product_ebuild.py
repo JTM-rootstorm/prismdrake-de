@@ -325,12 +325,16 @@ class PackagingGuideContractTests(unittest.TestCase):
             "x11-misc/prismdrake",
             self.source,
         )
+        self.assertIn('USE="test"', self.source)
+        self.assertIn('FEATURES="test keepwork"', self.source)
         self.assertIn(
-            'USE="test" emerge --pretend --verbose --tree --newuse '
-            "x11-misc/prismdrake",
+            "x11-misc/prismdrake prismdrake-package-validation.env",
             self.source,
         )
-        self.assertIn('USE="test" FEATURES="test keepwork"', self.source)
+        self.assertNotIn(
+            'USE="test" emerge --pretend --verbose --tree --newuse',
+            self.source,
+        )
 
     def test_reinstall_demo_uses_durable_fixture_and_exact_input_checkout(self) -> None:
         durable_copy = self.source.index(

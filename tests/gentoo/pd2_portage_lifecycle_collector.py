@@ -609,11 +609,14 @@ def capture_portage_resolutions(
     _require(hash_file(installed_ebuild) == source["ebuild_sha256"],
              "portage_repository_ebuild_mismatch")
     records = []
-    for mode, use_value, use_test in (
-            ("default", "USE=-test", False), ("use_test", "USE=test", True)):
-        output = command_runner([
-            str(ENV_PATH), use_value, str(emerge), "--pretend", "--verbose", "--tree",
-            "--newuse", f"={PACKAGE_VERSIONED_ATOM}::{source['repository_name']}",
+    commands = (
+        ("default", False, [str(ENV_PATH), "USE=-test", str(emerge)]),
+        ("use_test", True, [str(emerge)]),
+    )
+    for mode, use_test, command in commands:
+        output = command_runner(command + [
+            "--pretend", "--verbose", "--tree", "--newuse",
+            f"={PACKAGE_VERSIONED_ATOM}::{source['repository_name']}",
         ], None)
         zero_change = _validate_portage_resolution_output(
             output, source["repository_name"],
