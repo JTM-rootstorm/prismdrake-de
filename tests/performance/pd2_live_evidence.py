@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import re
 import stat
@@ -31,6 +32,17 @@ from pd2_evidence_contract import (
 
 MAX_OBSERVER_OUTPUT_BYTES = 65_536
 LIVE_METHOD_ID = "pd2-live-v1"
+ORDINARY_OBSERVER_TIMEOUT_SECONDS = 15.0
+PERFORMANCE_OBSERVER_TIMEOUT_SECONDS = 75.0
+INTERNATIONALIZATION_OBSERVER_TIMEOUT_SECONDS = 195.0
+MAXIMUM_OBSERVER_TIMEOUT_SECONDS = INTERNATIONALIZATION_OBSERVER_TIMEOUT_SECONDS
+ROLE_OBSERVER_TIMEOUT_SECONDS = {
+    "environment": ORDINARY_OBSERVER_TIMEOUT_SECONDS,
+    "performance": PERFORMANCE_OBSERVER_TIMEOUT_SECONDS,
+    "accessibility": ORDINARY_OBSERVER_TIMEOUT_SECONDS,
+    "internationalization": INTERNATIONALIZATION_OBSERVER_TIMEOUT_SECONDS,
+    "cleanup": ORDINARY_OBSERVER_TIMEOUT_SECONDS,
+}
 REVISION_PATTERN = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 SKIP_CODES = {
     "not_applicable",
@@ -496,15 +508,22 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 class CommandLiveEvidencePort:
-    """Run exact, bounded live observer commands without a shell."""
+    """Run exact, role-bounded live observer commands without a shell."""
 
     def __init__(
         self,
         commands: ObserverCommands,
         environment: Mapping[str, str] | None = None,
-        timeout_seconds: float = 15.0,
+        timeout_seconds: float | None = None,
     ) -> None:
-        _require(timeout_seconds > 0, "live_observer_timeout_invalid")
+        if timeout_seconds is not None:
+            _require(
+                not isinstance(timeout_seconds, bool)
+                and isinstance(timeout_seconds, (int, float))
+                and math.isfinite(timeout_seconds)
+                and 0 < timeout_seconds <= MAXIMUM_OBSERVER_TIMEOUT_SECONDS,
+                "live_observer_timeout_invalid",
+            )
         for command_value in (
             commands.environment,
             commands.performance,
@@ -531,11 +550,19 @@ class CommandLiveEvidencePort:
             )
         self._commands = commands
         self._environment = dict(environment or {})
-        self._timeout = timeout_seconds
+        self._timeouts = (
+            dict(ROLE_OBSERVER_TIMEOUT_SECONDS)
+            if timeout_seconds is None
+            else dict.fromkeys(ROLE_OBSERVER_TIMEOUT_SECONDS, float(timeout_seconds))
+        )
 
     def _run(
-        self, command_value: Path | ObserverCommand, arguments: Sequence[str]
+        self,
+        role: str,
+        command_value: Path | ObserverCommand,
+        arguments: Sequence[str],
     ) -> BoundResult:
+        _require(role in self._timeouts, "live_observer_role_invalid")
         command = _observer_command(command_value)
         try:
             completed = subprocess.run(
@@ -548,7 +575,7 @@ class CommandLiveEvidencePort:
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=self._timeout,
+                timeout=self._timeouts[role],
                 check=False,
             )
         except (OSError, subprocess.SubprocessError) as error:
@@ -589,34 +616,42 @@ class CommandLiveEvidencePort:
         )
 
     def environment(self) -> BoundResult:
-        return self._run(self._commands.environment, ())
+        return self._run("environment", self._commands.environment, ())
 
     def performance(self, group: str, endpoint: str | None) -> BoundResult:
         arguments = ["--group", group]
         if endpoint is not None:
             arguments.extend(("--endpoint", endpoint))
-        return self._run(self._commands.performance, arguments)
+        return self._run("performance", self._commands.performance, arguments)
 
     def accessibility(self, surface: str, check: str) -> BoundResult:
         return self._run(
+            "accessibility",
             self._commands.accessibility,
             ("--surface", surface, "--check", check),
         )
 
     def accessibility_matrix(self) -> BoundResult:
-        return self._run(self._commands.accessibility, ("--matrix",))
+        return self._run("accessibility", self._commands.accessibility, ("--matrix",))
 
     def live_atspi(self) -> BoundResult:
-        return self._run(self._commands.accessibility, ("--global", "live_atspi"))
+        return self._run(
+            "accessibility", self._commands.accessibility, ("--global", "live_atspi")
+        )
 
     def screen_reader_workflow(self) -> BoundResult:
         return self._run(
+            "accessibility",
             self._commands.accessibility,
             ("--global", "screen_reader_workflow"),
         )
 
     def internationalization(self, check: str) -> BoundResult:
-        return self._run(self._commands.internationalization, ("--check", check))
+        return self._run(
+            "internationalization",
+            self._commands.internationalization,
+            ("--check", check),
+        )
 
     def cleanup(self) -> BoundResult:
-        return self._run(self._commands.cleanup, ())
+        return self._run("cleanup", self._commands.cleanup, ())

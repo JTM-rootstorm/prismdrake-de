@@ -27,6 +27,7 @@ from pd2_evidence_contract import (  # noqa: E402
 )
 from pd2_live_evidence import (  # noqa: E402
     LIVE_METHOD_ID,
+    MAXIMUM_OBSERVER_TIMEOUT_SECONDS,
     PERFORMANCE_GROUPS,
     BoundResult,
     CommandLiveEvidencePort,
@@ -425,6 +426,66 @@ class CommandAdapterTests(unittest.TestCase):
                 "rtl_fixture",
             ],
         )
+
+    def test_outer_timeouts_are_bounded_by_role_and_outlive_nested_work(self) -> None:
+        binding = {
+            "source_revision": REVISION,
+            "reference_environment_id": ENVIRONMENT_ID,
+            "method_id": LIVE_METHOD_ID,
+        }
+        payload = json.dumps({"binding": binding, "result": passed()}).encode("utf-8")
+        commands = ObserverCommands(*([Path("/bin/true")] * 5))
+        port = CommandLiveEvidencePort(commands)
+        with mock.patch.object(
+            subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0, payload, b""),
+        ) as run:
+            port.environment()
+            port.performance("session_ready", None)
+            port.accessibility_matrix()
+            port.internationalization("rtl_fixture")
+            port.cleanup()
+
+        self.assertEqual(
+            [call.kwargs["timeout"] for call in run.call_args_list],
+            [15.0, 75.0, 15.0, 195.0, 15.0],
+        )
+
+    def test_explicit_timeout_override_remains_finite_and_bounded(self) -> None:
+        commands = ObserverCommands(*([Path("/bin/true")] * 5))
+        binding = {
+            "source_revision": REVISION,
+            "reference_environment_id": ENVIRONMENT_ID,
+            "method_id": LIVE_METHOD_ID,
+        }
+        payload = json.dumps({"binding": binding, "result": passed()}).encode("utf-8")
+        with mock.patch.object(
+            subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0, payload, b""),
+        ) as run:
+            CommandLiveEvidencePort(
+                commands, timeout_seconds=MAXIMUM_OBSERVER_TIMEOUT_SECONDS
+            ).cleanup()
+        self.assertEqual(
+            run.call_args.kwargs["timeout"], MAXIMUM_OBSERVER_TIMEOUT_SECONDS
+        )
+
+        for invalid in (
+            0,
+            -1,
+            float("nan"),
+            float("inf"),
+            MAXIMUM_OBSERVER_TIMEOUT_SECONDS + 0.001,
+            1e300,
+            True,
+        ):
+            with self.subTest(timeout=invalid):
+                with self.assertRaisesRegex(
+                    EvidenceError, "^live_observer_timeout_invalid$"
+                ):
+                    CommandLiveEvidencePort(commands, timeout_seconds=invalid)
 
     def test_unified_observer_accepts_only_dedicated_accessibility_override(self) -> None:
         options = SimpleNamespace(
