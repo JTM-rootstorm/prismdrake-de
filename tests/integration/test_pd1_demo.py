@@ -931,6 +931,61 @@ class EvidenceContractTests(unittest.TestCase):
             APP_TITLES[1], False,
         )
 
+    def test_keyboard_context_walks_grouped_application_actions_to_minimize(self) -> None:
+        atspi = object()
+        xdotool = Path("/usr/bin/xdotool")
+        title = APP_TITLES[0]
+        focused_actions = iter((
+            f"Open a new {title} window",
+            f"Pin {title}",
+            f"Minimize {title}",
+        ))
+        with mock.patch.object(pd1_demo, "current_shell_panel", return_value="4194305"), \
+                mock.patch.object(
+                    pd1_demo, "wait_until",
+                    side_effect=lambda predicate, *_args, **_kwargs: predicate(),
+                ), mock.patch.object(
+                    pd1_demo, "focused_task_context_action",
+                    side_effect=lambda *_args: next(focused_actions),
+                ), mock.patch.object(
+                    pd1_demo, "focused_window_id", return_value="4194305",
+                ), mock.patch.object(pd1_demo, "send_focused_key") as key_sender:
+            self.assertEqual(
+                pd1_demo.require_task_context_menu_focus(
+                    atspi, xdotool, "4194305", ProcessIdentity(100, 1, 0),
+                    title, True,
+                ),
+                "4194305",
+            )
+        self.assertEqual(
+            key_sender.call_args_list,
+            [mock.call(xdotool, "Tab"), mock.call(xdotool, "Tab")],
+        )
+
+    def test_pointer_context_requires_visible_action_without_keyboard_navigation(self) -> None:
+        atspi = object()
+        xdotool = Path("/usr/bin/xdotool")
+        with mock.patch.object(pd1_demo, "current_shell_panel", return_value="4194305"), \
+                mock.patch.object(
+                    pd1_demo, "wait_until",
+                    side_effect=lambda predicate, *_args, **_kwargs: predicate(),
+                ), mock.patch.object(
+                    pd1_demo, "showing_named_action_nodes", return_value=[object()],
+                ), mock.patch.object(
+                    pd1_demo, "focused_task_context_action",
+                ) as focus_probe, mock.patch.object(
+                    pd1_demo, "send_focused_key",
+                ) as key_sender:
+            self.assertEqual(
+                pd1_demo.require_task_context_menu_focus(
+                    atspi, xdotool, "4194305", ProcessIdentity(100, 1, 0),
+                    APP_TITLES[1], False,
+                ),
+                "4194305",
+            )
+        focus_probe.assert_not_called()
+        key_sender.assert_not_called()
+
     def test_pointer_context_open_rejects_invalid_shell_identity_before_emission(self) -> None:
         with mock.patch.object(pd1_demo, "window_process_id") as owner_probe, \
                 mock.patch.object(pd1_demo, "window_ids", return_value=["4194305"]), \

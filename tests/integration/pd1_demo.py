@@ -749,6 +749,27 @@ def has_showing_focused_action(atspi: Any, name: str, action: str = "Press") -> 
     return len(matches) == 1
 
 
+def focused_task_context_action(atspi: Any, title: str) -> str | None:
+    """Return the sole reviewed task-menu action that owns accessible focus."""
+
+    require(title in APP_TITLES, "task_context_action_invalid")
+    names = (
+        f"Open a new {title} window",
+        f"Pin {title}",
+        f"Unpin {title}",
+        f"Minimize {title}",
+        f"Close {title}",
+    )
+    focused_actions = [
+        name
+        for name in names
+        for node in showing_named_action_nodes(atspi, name, "Press")
+        if node.get_state_set().contains(atspi.StateType.FOCUSED)
+    ]
+    require(len(focused_actions) <= 1, "task_context_focus_identity_invalid")
+    return focused_actions[0] if focused_actions else None
+
+
 def has_showing_focused_node(atspi: Any, name: str) -> bool:
     matches = [
         node for node in named_nodes(atspi, name)
@@ -1015,8 +1036,33 @@ def require_task_context_menu_focus(atspi: Any, xdotool: Path, panel: str,
     )
     action_name = f"{expected_action} {title}"
     try:
-        wait_until(lambda: has_showing_focused_action(atspi, action_name),
-                   "task_context_menu_focus_timeout")
+        if require_keyboard_focus:
+            # The grouped task menu intentionally puts application actions before
+            # single-window actions. Walk its bounded keyboard order instead of
+            # assuming that Minimize or Close is the first enabled item.
+            for attempt in range(4):
+                focused_action = wait_until(
+                    lambda: focused_task_context_action(atspi, title),
+                    "task_context_menu_focus_timeout",
+                )
+                if focused_action == action_name:
+                    break
+                if attempt == 3:
+                    raise DemoError("task_context_menu_focus_timeout")
+                focused_window = focused_window_id(xdotool)
+                require(
+                    focused_window == panel
+                    or window_process_id(xdotool, focused_window)
+                    == shell_identity.process_id,
+                    "action_shell_window_owner_invalid",
+                )
+                send_focused_key(xdotool, "Tab")
+        else:
+            wait_until(
+                lambda: len(showing_named_action_nodes(atspi, action_name, "Press"))
+                == 1,
+                "task_context_menu_focus_timeout",
+            )
     except DemoError:
         nodes = named_nodes(atspi, action_name)
         interactive = named_action_nodes(atspi, action_name, "Press")
