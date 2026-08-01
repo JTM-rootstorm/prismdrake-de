@@ -13,6 +13,8 @@ TestCase {
     property int dndRequests: 0
     property int centerRequests: 0
     property int logoutRequests: 0
+    property bool makeProfileRequestPending: false
+    property bool makeDndRequestPending: false
 
     QtObject {
         id: profileAdapter
@@ -68,9 +70,24 @@ TestCase {
         property QtObject logout: logoutAdapter
         property QtObject diagnostics: diagnosticsAdapter
 
-        function requestLustreProfile() { ++testCase.profileRequests; return true }
-        function requestForgeProfile() { ++testCase.profileRequests; return true }
-        function requestDoNotDisturb(enabled) { ++testCase.dndRequests; return enabled }
+        function requestLustreProfile() {
+            ++testCase.profileRequests
+            if (testCase.makeProfileRequestPending)
+                profileAdapter.pending = true
+            return true
+        }
+        function requestForgeProfile() {
+            ++testCase.profileRequests
+            if (testCase.makeProfileRequestPending)
+                profileAdapter.pending = true
+            return true
+        }
+        function requestDoNotDisturb(enabled) {
+            ++testCase.dndRequests
+            if (testCase.makeDndRequestPending)
+                dndAdapter.pending = true
+            return true
+        }
         function requestNotificationCenter() { ++testCase.centerRequests; return true }
         function requestLogout() { ++testCase.logoutRequests; return true }
     }
@@ -117,6 +134,9 @@ TestCase {
         dndRequests = 0
         centerRequests = 0
         logoutRequests = 0
+        makeProfileRequestPending = false
+        makeDndRequestPending = false
+        surface.visible = true
         profileAdapter.interactive = true
         profileAdapter.pending = false
         profileAdapter.failed = false
@@ -243,6 +263,67 @@ TestCase {
         dndAdapter.checked = false
         wait(0)
         compare(dndRequests, 0)
+    }
+
+    function test_pendingProfileActivationRestoresFocusAfterPublication() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        compare(surface.controlAt(1).activeFocus, true)
+
+        keyClick(Qt.Key_Space)
+        compare(profileRequests, 1)
+        compare(profileAdapter.pending, true)
+        compare(surface.controlAt(1).activeFocus, false)
+
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        tryCompare(surface.controlAt(1), "activeFocus", true)
+    }
+
+    function test_pendingFocusRecoveryDoesNotStealIntentionalFocus() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        compare(profileAdapter.pending, true)
+
+        surface.focusControl(3, Qt.TabFocusReason)
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        wait(0)
+        compare(surface.controlAt(3).activeFocus, true)
+        compare(surface.controlAt(1).activeFocus, false)
+    }
+
+    function test_pendingFocusRecoveryDoesNotRefocusAfterDismissal() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        compare(profileAdapter.pending, true)
+
+        keyClick(Qt.Key_Escape)
+        compare(closeSpy.count, 1)
+        compare(surface.pendingProfileFocusRecovery, -1)
+        surface.focusControl(3, Qt.TabFocusReason)
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        wait(0)
+        compare(surface.controlAt(3).activeFocus, true)
+        compare(surface.controlAt(1).activeFocus, false)
+    }
+
+    function test_pendingDndActivationRestoresFocusAfterPublication() {
+        makeDndRequestPending = true
+        surface.focusControl(2, Qt.TabFocusReason)
+        compare(surface.controlAt(2).activeFocus, true)
+
+        keyClick(Qt.Key_Space)
+        compare(dndRequests, 1)
+        compare(dndAdapter.pending, true)
+        compare(surface.controlAt(2).activeFocus, false)
+
+        dndAdapter.checked = true
+        dndAdapter.pending = false
+        tryCompare(surface.controlAt(2), "activeFocus", true)
     }
 
     function test_arrowTraversalAndRightToLeftProfileOrder() {

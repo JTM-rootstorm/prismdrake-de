@@ -10,6 +10,8 @@ FocusScope {
     required property var quickSettingsModel
     required property var themeGeneration
     property int layoutDirection: Qt.locale().textDirection
+    property int pendingProfileFocusRecovery: -1
+    property bool pendingDoNotDisturbFocusRecovery: false
 
     readonly property var tokens: themeGeneration.notification
     readonly property int focusableControlCount: 5
@@ -69,7 +71,13 @@ FocusScope {
 
     function closeFromEscape(event) {
         event.accepted = true
+        cancelPendingFocusRecovery()
         closeRequested()
+    }
+
+    function cancelPendingFocusRecovery() {
+        pendingProfileFocusRecovery = -1
+        pendingDoNotDisturbFocusRecovery = false
     }
 
     function activateButton(control, event) {
@@ -81,7 +89,40 @@ FocusScope {
     function activateDoNotDisturb(event) {
         event.accepted = true
         if (doNotDisturb.enabled)
-            quickSettingsModel.requestDoNotDisturb(!doNotDisturb.checked)
+            requestDoNotDisturb(!doNotDisturb.checked)
+    }
+
+    function requestProfile(index, requestedProfile) {
+        const candidate = controlAt(index)
+        const hadFocus = candidate !== null && candidate.activeFocus
+        const accepted = requestedProfile === "lustre"
+            ? quickSettingsModel.requestLustreProfile()
+            : quickSettingsModel.requestForgeProfile()
+        pendingProfileFocusRecovery = accepted && hadFocus
+                                      && quickSettingsModel.profile.pending
+                                      ? index : -1
+    }
+
+    function requestDoNotDisturb(enabled) {
+        const hadFocus = doNotDisturb.activeFocus
+        const accepted = quickSettingsModel.requestDoNotDisturb(enabled)
+        pendingDoNotDisturbFocusRecovery = accepted && hadFocus
+                                                && quickSettingsModel.doNotDisturb.pending
+    }
+
+    function restorePendingFocus(index) {
+        Qt.callLater(function() {
+            if (!root.visible || root.Window.window === null
+                    || !root.Window.window.active)
+                return
+            for (let candidateIndex = 0;
+                 candidateIndex < focusableControlCount; ++candidateIndex) {
+                const focusedCandidate = controlAt(candidateIndex)
+                if (focusedCandidate !== null && focusedCandidate.activeFocus)
+                    return
+            }
+            focusControl(index, Qt.OtherFocusReason)
+        })
     }
 
     function accessibleAdapterDescription(adapter) {
@@ -104,6 +145,33 @@ FocusScope {
 
     Keys.priority: Keys.BeforeItem
     Keys.onEscapePressed: event => closeFromEscape(event)
+    onVisibleChanged: {
+        if (!visible)
+            cancelPendingFocusRecovery()
+    }
+
+    Connections {
+        target: root.quickSettingsModel.profile
+        function onPendingChanged() {
+            if (!root.quickSettingsModel.profile.pending
+                    && root.pendingProfileFocusRecovery >= 0) {
+                const index = root.pendingProfileFocusRecovery
+                root.pendingProfileFocusRecovery = -1
+                root.restorePendingFocus(index)
+            }
+        }
+    }
+
+    Connections {
+        target: root.quickSettingsModel.doNotDisturb
+        function onPendingChanged() {
+            if (!root.quickSettingsModel.doNotDisturb.pending
+                    && root.pendingDoNotDisturbFocusRecovery) {
+                root.pendingDoNotDisturbFocusRecovery = false
+                root.restorePendingFocus(2)
+            }
+        }
+    }
 
     Accessible.role: Accessible.Pane
     Accessible.name: qsTr("Quick settings")
@@ -184,7 +252,7 @@ FocusScope {
                 Keys.onRightPressed: event => root.handleHorizontal(0, 1, event)
                 Keys.onReturnPressed: event => root.activateButton(lustreProfile, event)
                 Keys.onEnterPressed: event => root.activateButton(lustreProfile, event)
-                onClicked: root.quickSettingsModel.requestLustreProfile()
+                onClicked: root.requestProfile(0, "lustre")
             }
 
             RadioButton {
@@ -218,7 +286,7 @@ FocusScope {
                 Keys.onRightPressed: event => root.handleHorizontal(1, 1, event)
                 Keys.onReturnPressed: event => root.activateButton(forgeProfile, event)
                 Keys.onEnterPressed: event => root.activateButton(forgeProfile, event)
-                onClicked: root.quickSettingsModel.requestForgeProfile()
+                onClicked: root.requestProfile(1, "forge")
             }
         }
 
@@ -253,7 +321,7 @@ FocusScope {
             Accessible.checked: checked
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
-            Accessible.onToggleAction: root.quickSettingsModel.requestDoNotDisturb(!checked)
+            Accessible.onToggleAction: root.requestDoNotDisturb(!checked)
 
             Keys.priority: Keys.BeforeItem
             Keys.onTabPressed: event => root.handleForward(2, event)
@@ -263,7 +331,7 @@ FocusScope {
             Keys.onDownPressed: event => root.handleVertical(2, 1, event)
             Keys.onReturnPressed: event => root.activateDoNotDisturb(event)
             Keys.onEnterPressed: event => root.activateDoNotDisturb(event)
-            onClicked: root.quickSettingsModel.requestDoNotDisturb(checked)
+            onClicked: root.requestDoNotDisturb(checked)
         }
 
         Label {

@@ -539,6 +539,10 @@ Result<void> Pd2ShellRuntime::finishSettingsPublication(
     if (!quick) {
         return quick;
     }
+    // Persistent QML views still reference the prior QObject graph until their
+    // themeGeneration properties are replaced below. Keep that graph alive
+    // across the complete synchronous property handoff.
+    auto previousTheme = std::move(theme_);
     theme_ = std::move(pending->theme);
     settings_snapshot_ = pending->settings;
     settings_available_ = true;
@@ -559,6 +563,7 @@ Result<void> Pd2ShellRuntime::finishSettingsPublication(
             }
         }
     }
+    previousTheme.reset();
     auto grouped = reconcileGroupedTasks();
     if (!grouped) {
         return grouped;
