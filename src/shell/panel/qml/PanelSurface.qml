@@ -256,6 +256,8 @@ FocusScope {
     }
 
     function recoverGroupedTaskFocus(groupIndex) {
+        if (pendingFocusIndex < 0)
+            return
         pendingFocusIndex = -1
         pendingFocusSerial = 0
         pendingActionMenuRecovery = false
@@ -269,6 +271,8 @@ FocusScope {
     }
 
     function recoverGroupedPopupFocus(groupIndex, memberIndex) {
+        if (pendingFocusIndex < 0)
+            return
         pendingFocusIndex = -1
         pendingFocusSerial = 0
         pendingActionMenuRecovery = false
@@ -281,6 +285,8 @@ FocusScope {
     }
 
     function recoverGroupedContextMenuFocus(groupIndex, actionIndex) {
+        if (pendingFocusIndex < 0)
+            return
         pendingFocusIndex = -1
         pendingFocusSerial = 0
         pendingActionMenuRecovery = false

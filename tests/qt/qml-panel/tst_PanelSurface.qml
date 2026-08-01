@@ -15,6 +15,12 @@ TestCase {
     property bool groupedTasks: false
     property bool explicitProductionAffordances: false
     property bool developmentDiagnostics: true
+    property var secondaryPanel: null
+
+    Component {
+        id: secondaryPanelComponent
+        Panel.PanelSurface {}
+    }
 
     Panel.PanelSurface {
         id: panel
@@ -124,6 +130,13 @@ TestCase {
         groupedLaunchRequested.clear()
         groupedPinChangeRequested.clear()
         tryCompare(panel, "taskCount", 3)
+    }
+
+    function cleanup() {
+        if (secondaryPanel !== null) {
+            secondaryPanel.destroy()
+            secondaryPanel = null
+        }
     }
 
     function test_installedAffordancesRequireExplicitRuntimeFlags() {
@@ -438,7 +451,24 @@ TestCase {
         verify(panelFixture.publishRepresentativeGroups())
         tryCompare(panel, "taskCount", 2)
 
+        secondaryPanel = secondaryPanelComponent.createObject(testCase, {
+            "x": 10,
+            "y": 80,
+            "width": 1400,
+            "height": panel.implicitHeight,
+            "themeGeneration": panelFixture.themeGeneration,
+            "taskModel": panelFixture.taskModel,
+            "groupedTaskModel": panelFixture.groupedTaskModel,
+            "outputName": "DP-2",
+            "clockText": "1:05 PM",
+            "productionAffordancesVisible": true
+        })
+        verify(secondaryPanel !== null)
+        tryCompare(secondaryPanel, "taskCount", 2)
+
         const terminal = panel.taskAt(1)
+        const secondaryTerminal = secondaryPanel.taskAt(1)
+        compare(groupedContextMenu(secondaryTerminal).opened, false)
         verify(terminal.openActionMenu())
         const terminalOpenNew = findChild(terminal, "panelGroupedTaskOpenNew")
         const terminalPin = findChild(terminal, "panelGroupedTaskPinToggle")
@@ -461,6 +491,8 @@ TestCase {
         tryCompare(recoveredMinimize, "activeFocus", true)
         compare(recoveredMinimize.Accessible.focused, true)
         compare(recoveredTerminal.focusedContextActionIndex, 2)
+        compare(groupedContextMenu(secondaryPanel.taskAt(1)).opened, false)
+        compare(secondaryPanel.taskAt(1).focusedContextActionIndex, -1)
 
         verify(panel.restoreActionMenuFocus())
         compare(recoveredMinimize.activeFocus, true)
