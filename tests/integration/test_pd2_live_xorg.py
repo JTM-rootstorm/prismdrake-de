@@ -4020,10 +4020,24 @@ class LivePortTests(unittest.TestCase):
             config(installed_paths()), operations, FakeAccessibility(operations)
         )
 
-        self.assertEqual(
-            port.run_step("failure_replay", "enter_and_exit_safe_mode"),
-            Observation(True, True),
-        )
+        original = port._require_panel_surfaces  # noqa: SLF001
+        safe_mode_panel_calls = 0
+
+        def delayed_safe_mode_panel(*, allow_safe_mode=False):
+            nonlocal safe_mode_panel_calls
+            if allow_safe_mode:
+                safe_mode_panel_calls += 1
+                if safe_mode_panel_calls == 1:
+                    raise HarnessError("panel_surface_invalid")
+            return original(allow_safe_mode=allow_safe_mode)
+
+        with patch.object(
+            port, "_require_panel_surfaces", side_effect=delayed_safe_mode_panel
+        ):
+            self.assertEqual(
+                port.run_step("failure_replay", "enter_and_exit_safe_mode"),
+                Observation(True, True),
+            )
         session_spawns = [
             child
             for child, (argv, _environment) in zip(
@@ -4036,6 +4050,7 @@ class LivePortTests(unittest.TestCase):
         self.assertIsNone(session_spawns[1].returncode)
         self.assertEqual(operations.shell_crashes, 0)
         self.assertEqual(len(operations.fail_identity_calls), 4)
+        self.assertEqual(safe_mode_panel_calls, 2)
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
 
     def test_safe_mode_fails_closed_when_the_marker_is_not_published(self) -> None:

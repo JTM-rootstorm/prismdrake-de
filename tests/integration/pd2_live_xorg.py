@@ -2401,7 +2401,9 @@ class LiveXorgHarnessPort:
             self._exhaust_shell_restart_budget()
             self._wait_for_safe_mode()
             self._require_desktop_wallpaper_surfaces(allow_safe_mode=True)
-            self._require_panel_surfaces(allow_safe_mode=True)
+            self._wait_panel_surfaces_unchanged(
+                "safe_mode_panel_surface_timeout", allow_safe_mode=True
+            )
             self.cleanup("safe_mode_epoch")
             self._start_environment(two_outputs=True)
             self._start_session()
@@ -5306,7 +5308,9 @@ class LiveXorgHarnessPort:
             ):
                 raise HarnessError("panel_strut_invalid")
 
-    def _wait_panel_surfaces_unchanged(self, timeout_error: str) -> None:
+    def _wait_panel_surfaces_unchanged(
+        self, timeout_error: str, *, allow_safe_mode: bool = False
+    ) -> None:
         """Wait for the prior exact shell surfaces after a WM ownership change."""
 
         transient_errors = {
@@ -5317,7 +5321,7 @@ class LiveXorgHarnessPort:
         last_error: HarnessError | None = None
         while self._operations.monotonic() < deadline:
             try:
-                self._require_panel_surfaces()
+                self._require_panel_surfaces(allow_safe_mode=allow_safe_mode)
                 return
             except HarnessError as error:
                 if str(error) not in transient_errors:
