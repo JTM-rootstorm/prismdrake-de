@@ -14,7 +14,7 @@ import unittest
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -227,6 +227,8 @@ class FakeOperations:
             "prismdrake-notifyd": 20_030,
             "prismdrake-shell": 20_040,
         }
+        self.surface_epoch_history = [frozenset(self.surface_list)]
+        self.component_epoch_history = [self._component_identity_snapshot()]
         self.controlled_windows: dict[str, int] = {}
         self.controlled_hidden: set[int] = set()
         self.window_state_payloads: dict[int, bytes] = {}
@@ -276,7 +278,12 @@ class FakeOperations:
         if argv and Path(argv[0]).name == "prismdrake-session":
             self.shell_crashes = 0
             if self.safe_mode_surface_active:
-                self.surface_list = tuple(SURFACE_GEOMETRIES)
+                for name in self.component_start_times:
+                    self.component_start_times[name] += 1
+                self.component_epoch_history.append(
+                    self._component_identity_snapshot()
+                )
+                self._publish_surface_epoch(2, primary_only=False)
                 self.safe_mode_surface_active = False
             root = Path(env["XDG_RUNTIME_DIR"]) / "prismdrake"
             root.mkdir(mode=0o700)
@@ -333,7 +340,7 @@ class FakeOperations:
         if command[:3] == ("/usr/bin/prismdrake-shellctl", "panel", "focus"):
             self.panel_focus_pending = True
             if not self.panel_focus_never_arrives and self.panel_focus_read_delay == 0:
-                self.focused_window = PANEL_LEFT
+                self.focused_window = self._primary_panel_window()
                 self.panel_focus_pending = False
         if command[-1] == "--query":
             if self.xorg_stopped and not self.xorg_query_survives_stop:
@@ -368,7 +375,7 @@ class FakeOperations:
             if command[1:] == ("getwindowfocus",):
                 if self.panel_focus_pending and not self.panel_focus_never_arrives:
                     if self.panel_focus_read_delay == 0:
-                        self.focused_window = PANEL_LEFT
+                        self.focused_window = self._primary_panel_window()
                         self.panel_focus_pending = False
                     else:
                         self.panel_focus_read_delay -= 1
@@ -513,6 +520,53 @@ class FakeOperations:
             surfaces.extend((desktop, panel))
         self.surface_list = surfaces
 
+    def _component_identity_snapshot(self) -> frozenset[ProcessIdentity]:
+        return frozenset(
+            ProcessIdentity(self.component_pids[name], start_time)
+            for name, start_time in self.component_start_times.items()
+        )
+
+    def _publish_surface_epoch(self, epoch: int, *, primary_only: bool) -> None:
+        offset = epoch * 0x100
+        geometries = {
+            window + offset: geometry
+            for window, geometry in SURFACE_GEOMETRIES.items()
+        }
+        types = {
+            window + offset: window_type
+            for window, window_type in SURFACE_TYPES.items()
+        }
+        panel_left = PANEL_LEFT + offset
+        panel_right = PANEL_RIGHT + offset
+        self.surface_geometries = geometries
+        self.surface_types = types
+        self.window_geometry_payloads = {
+            window: xwininfo_payload(window, geometry)
+            for window, geometry in geometries.items()
+        }
+        self.panel_strut_bottoms = {
+            panel_left: 48,
+            panel_right: 48,
+        }
+        self.surface_list = tuple(
+            window
+            for window in geometries
+            if not primary_only or window != panel_right
+        )
+        self.surface_epoch_history.append(frozenset(self.surface_list))
+
+    def _primary_panel_window(self) -> int:
+        expected = WindowGeometry(0, 852, 1600, 48)
+        matches = [
+            window
+            for window in self.surface_list
+            if self.surface_types.get(window) == b"_NET_WM_WINDOW_TYPE_DOCK"
+            and self.surface_geometries.get(window) == expected
+        ]
+        if len(matches) != 1:
+            raise AssertionError("expected one primary panel surface")
+        return matches[0]
+
     def stop(self, child: FakeChild, timeout: float) -> bool:
         del timeout
         self.stop_calls.append(child)
@@ -598,11 +652,10 @@ class FakeOperations:
                     if self.shell_crashes == 4:
                         self.component_start_times["prismdrake-settingsd"] += 1
                         self.component_start_times["prismdrake-notifyd"] += 1
-                        self.surface_list = tuple(
-                            window
-                            for window in self.surface_list
-                            if window != PANEL_RIGHT
+                        self.component_epoch_history.append(
+                            self._component_identity_snapshot()
                         )
+                        self._publish_surface_epoch(1, primary_only=True)
                         self.safe_mode_surface_active = True
                         if self.safe_mode_published:
                             self._publish_safe_mode_marker()
@@ -3483,6 +3536,75 @@ class LivePortTests(unittest.TestCase):
                 )
         self.assertGreater(observe.call_count, 1)
 
+    def test_surface_shell_wait_retries_only_missing_identity(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        expected = ProcessIdentity(2004, 20_040)
+
+        with patch.object(
+            port,
+            "_require_surface_shell",
+            side_effect=(
+                HarnessError("surface_shell_identity_invalid"),
+                HarnessError("surface_shell_identity_invalid"),
+                expected,
+            ),
+        ) as observe:
+            self.assertEqual(
+                port._wait_for_surface_shell(allow_safe_mode=True),  # noqa: SLF001
+                expected,
+            )
+        self.assertEqual(observe.call_count, 3)
+        self.assertEqual(
+            observe.call_args_list,
+            [call(allow_safe_mode=True), call(allow_safe_mode=True), call(allow_safe_mode=True)],
+        )
+        self.assertEqual(operations.now, 0.10)
+
+        with patch.object(
+            port,
+            "_require_surface_shell",
+            side_effect=HarnessError("prismdrake_session_readiness_lost"),
+        ) as observe:
+            with self.assertRaisesRegex(
+                HarnessError, "^prismdrake_session_readiness_lost$"
+            ):
+                port._wait_for_surface_shell()  # noqa: SLF001
+        self.assertEqual(observe.call_count, 1)
+        self.assertEqual(operations.now, 0.10)
+
+        with patch.object(
+            port,
+            "_require_surface_shell",
+            side_effect=HarnessError("surface_shell_identity_invalid"),
+        ) as observe:
+            with self.assertRaisesRegex(
+                HarnessError, "^surface_shell_identity_invalid$"
+            ):
+                port._wait_for_surface_shell()  # noqa: SLF001
+        self.assertGreater(observe.call_count, 1)
+
+    def test_panel_surface_wait_fails_fast_for_shell_identity_change(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        with patch.object(
+            port,
+            "_require_panel_surfaces",
+            side_effect=HarnessError("surface_shell_identity_changed"),
+        ) as observe:
+            with self.assertRaisesRegex(
+                HarnessError, "^surface_shell_identity_changed$"
+            ):
+                port._wait_panel_surfaces_unchanged(  # noqa: SLF001
+                    "panel_surface_timeout"
+                )
+        self.assertEqual(observe.call_count, 1)
+        self.assertEqual(operations.now, 0.0)
+
     def test_session_readiness_rejects_safe_mode(self) -> None:
         operations = FakeOperations(session_marker="safe-mode")
         port = LiveXorgHarnessPort(
@@ -4182,7 +4304,81 @@ class LivePortTests(unittest.TestCase):
         self.assertEqual(operations.shell_crashes, 0)
         self.assertEqual(len(operations.fail_identity_calls), 4)
         self.assertEqual(safe_mode_panel_calls, 2)
+        self.assertEqual(len(operations.surface_epoch_history), 3)
+        self.assertTrue(
+            all(
+                left.isdisjoint(right)
+                for index, left in enumerate(operations.surface_epoch_history)
+                for right in operations.surface_epoch_history[index + 1 :]
+            )
+        )
+        self.assertEqual(len(operations.component_epoch_history), 3)
+        self.assertTrue(
+            all(
+                left.isdisjoint(right)
+                for index, left in enumerate(operations.component_epoch_history)
+                for right in operations.component_epoch_history[index + 1 :]
+            )
+        )
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+
+    def test_safe_mode_primary_panel_contract_fails_closed(self) -> None:
+        for mutation, expected in (
+            ("both", "panel_surface_invalid"),
+            ("zero", "panel_surface_invalid"),
+            ("right_only", "panel_surface_invalid"),
+            ("bad_struts", "panel_strut_invalid"),
+        ):
+            with self.subTest(mutation=mutation):
+                operations = FakeOperations()
+                port = LiveXorgHarnessPort(
+                    config(installed_paths()),
+                    operations,
+                    FakeAccessibility(operations),
+                )
+                port._start_environment(two_outputs=True)  # noqa: SLF001
+                port._start_session()  # noqa: SLF001
+                port._wait_for_session_readiness()  # noqa: SLF001
+                port._exhaust_shell_restart_budget()  # noqa: SLF001
+                port._wait_for_safe_mode()  # noqa: SLF001
+                port._require_desktop_wallpaper_surfaces(  # noqa: SLF001
+                    allow_safe_mode=True
+                )
+
+                desktops = {
+                    window
+                    for window in operations.surface_geometries
+                    if operations.surface_types[window]
+                    == b"_NET_WM_WINDOW_TYPE_DESKTOP"
+                }
+                panels = {
+                    window: geometry
+                    for window, geometry in operations.surface_geometries.items()
+                    if operations.surface_types[window]
+                    == b"_NET_WM_WINDOW_TYPE_DOCK"
+                }
+                left = next(
+                    window for window, geometry in panels.items() if geometry.x == 0
+                )
+                right = next(
+                    window for window, geometry in panels.items() if geometry.x == 1600
+                )
+                if mutation == "both":
+                    operations.surface_list = (*desktops, left, right)
+                elif mutation == "zero":
+                    operations.surface_list = tuple(desktops)
+                elif mutation == "right_only":
+                    operations.surface_list = (*desktops, right)
+                else:
+                    operations.panel_strut_bottom = 47
+
+                with self.assertRaisesRegex(HarnessError, f"^{expected}$"):
+                    port._require_panel_surfaces(  # noqa: SLF001
+                        allow_safe_mode=True, primary_only=True
+                    )
+                self.assertEqual(
+                    port.cleanup("failure_replay"), Observation(True, True)
+                )
 
     def test_safe_mode_fails_closed_when_the_marker_is_not_published(self) -> None:
         operations = FakeOperations()

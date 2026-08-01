@@ -5379,7 +5379,7 @@ class LiveXorgHarnessPort:
         allow_safe_mode: bool = False,
         primary_only: bool = False,
     ) -> None:
-        """Wait for the prior exact shell surfaces after a WM ownership change."""
+        """Wait for the expected panel layout while transient surfaces republish."""
 
         transient_errors = {
             "desktop_surface_epoch_changed",
