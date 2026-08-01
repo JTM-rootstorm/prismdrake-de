@@ -293,13 +293,17 @@ dbus-run-session -- python3 tests/integration/run_with_xvfb.py \
   --perf "$(command -v perf)" --sleep "$(command -v sleep)" \
   --revision "$(git rev-parse HEAD)" \
   --environment-id gentoo-amd64-qemu-system \
-  --startup-output "$PWD/pd1-startup.json" \
-  --idle-output "$PWD/pd1-idle-wakeups.json"
+  --startup-output "/absolute/private/evidence/pd1-startup.json" \
+  --idle-output "/absolute/private/evidence/pd1-idle-wakeups.json"
 ```
 
 The explicit 80-second harness bound covers the five-second settling interval,
 60-second trace window, startup, and bounded cleanup. It does not change the
 ordinary Openbox harness default or the startup-only CTest lane.
+Both output paths must be absolute, outside the clean source checkout, and must
+not already exist. Repeated trials require fresh startup and idle filenames;
+the collectors publish create-only evidence and final source attestation rejects
+untracked evidence written into the checkout.
 
 Tracepoint or permission unavailability remains a reported blocker, not a
 reason to substitute another metric. Production evidence is exactly 60 seconds;

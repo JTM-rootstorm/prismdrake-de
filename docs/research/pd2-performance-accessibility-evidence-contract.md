@@ -142,7 +142,12 @@ endpoints. It requests one closed matrix observation containing all 364 ordered
 surface checks, including RTL and long-string observations, then separately
 requests live AT-SPI, a screen-reader workflow, and the six internationalization
 checks. A command must emit one bounded JSON envelope and no standard-error
-diagnostics. No shell is involved.
+diagnostics. No shell is involved. The outer adapter gives ordinary environment,
+accessibility, and cleanup roles 15 seconds. The performance role receives 75
+seconds so its bounded 60-second model and asset runners terminate first, while
+the internationalization role receives 195 seconds so its bounded 180-second
+exact CTest selection terminates first. These role limits are finite and do not
+replace the nested observer deadlines.
 
 The reference performance observer has a closed route for every requested
 performance endpoint. With two controlled search sizes it emits 18 observed
@@ -211,8 +216,12 @@ python3 tests/performance/pd2_runtime_performance.py \
 
 Collect the strict 60-second idle artifact through the same-tree workflow in
 the [PD1 performance-evidence method](pd1-performance-evidence-method.md#idle-wakeups)
-three or more times. Then assemble the repeated role totals without retaining
-paths, PIDs, thread IDs, XIDs, or diagnostic payloads:
+three or more times. Give every trial fresh startup and idle output paths in
+the private evidence root outside the clean checkout; for example, use
+`pd2-startup-1.json` and `pd2-idle-1.json`, then repeat sequentially with
+suffixes `2` and `3`. All six files are create-only. Then assemble the repeated
+role totals without retaining paths, PIDs, thread IDs, XIDs, or diagnostic
+payloads:
 
 ```bash
 python3 tests/performance/pd2_idle_series.py \
@@ -246,9 +255,7 @@ uses Linux boot-time nanoseconds aligned with `/proc` process-start ticks.
 cmake -S . -B build/performance-gcc -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DPRISMDRAKE_WARNINGS_AS_ERRORS=ON
-cmake --build build/performance-gcc --target \
-  prismdrake-pd1-performance-evidence prismdrake-pd2-asset-performance \
-  prismdrake-controlled-window-fixture
+cmake --build build/performance-gcc --parallel
 PRISMDRAKE_PD1_REVISION=$(python3 -c \
   'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["source_revision"])' \
   /absolute/private/evidence/pd1-performance.json)
@@ -273,6 +280,15 @@ env \
     --accessibility-observer "$PWD/tests/accessibility/pd2_accessibility_observer.py" \
     --output "/absolute/private/evidence/pd2-performance-accessibility.json"
 ```
+
+The complete build is required because the final observer executes the exact
+translation and four QML CTest selections from this tree, while idle collection
+uses its session, settingsd, notifyd, and shell executables. Run the final
+collector inside a separately controlled, authorization-free Xvfb plus Openbox
+epoch that remains alive for the complete command. Earlier installed-demo,
+runtime, and idle epochs clean up their displays and window managers. Do not
+rely on an authenticated ambient display: the strict observer environment
+forwards `DISPLAY` but deliberately does not forward `HOME` or `XAUTHORITY`.
 
 The two PD2 inputs above must be the validated initial installed demonstration
 and the collector-owned package-test stage for the same source revision. This
