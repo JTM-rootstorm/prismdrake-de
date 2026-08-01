@@ -364,7 +364,39 @@ TEST(GroupedTaskPresentationModelTest, EmitsOnlyTypedIntentsAndKeepsIdentitiesPr
     EXPECT_FALSE(pinValue);
 }
 
-TEST(GroupedTaskPresentationModelTest, RecoversExactMemberAcrossWhenFullRegrouping) {
+TEST(GroupedTaskPresentationModelTest, RecoversTaskRootOnceAcrossPublication) {
+    const std::vector fixtures{TaskFixture{10U, 100U, "Editor", "editor.desktop"}};
+    x11::TaskModel owner;
+    const auto taskState = taskSnapshot(owner, fixtures);
+    const auto associationState = associations(fixtures);
+    const auto catalogState = catalog({{"editor.desktop", "Editor"}});
+    const auto pinState = pins({});
+    const auto first = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                               config::GroupingMode::always, 1000.0, 1U));
+    const auto second = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                                config::GroupingMode::always, 1000.0, 2U));
+    const auto third = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                               config::GroupingMode::always, 1000.0, 3U));
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    ASSERT_TRUE(third);
+
+    GroupedTaskPresentationModel model;
+    ASSERT_TRUE(model.applySnapshot(first.value()));
+    auto *focused = model.groupAt(0);
+    ASSERT_NE(focused, nullptr);
+    QSignalSpy recovery{&model, &GroupedTaskPresentationModel::taskFocusRecoveryRequested};
+
+    ASSERT_TRUE(model.rememberTaskFocus(focused));
+    ASSERT_TRUE(model.applySnapshot(second.value()));
+    ASSERT_EQ(recovery.count(), 1);
+    EXPECT_EQ(recovery.at(0).at(0).toInt(), 0);
+
+    ASSERT_TRUE(model.applySnapshot(third.value()));
+    EXPECT_EQ(recovery.count(), 1);
+}
+
+TEST(GroupedTaskPresentationModelTest, RecoversExactGroupPopupMemberOnceAcrossWhenFullRegrouping) {
     const std::vector fixtures{TaskFixture{10U, 100U, "Editor A", "editor.desktop"},
                                TaskFixture{11U, 110U, "Editor B", "editor.desktop"}};
     x11::TaskModel owner;
@@ -388,25 +420,96 @@ TEST(GroupedTaskPresentationModelTest, RecoversExactMemberAcrossWhenFullRegroupi
     ASSERT_EQ(oldMembers.size(), 1);
     QPointer<QObject> oldFocusedMember = oldMembers.front().value<QObject *>();
     ASSERT_NE(oldFocusedMember, nullptr);
-    QSignalSpy recovery{&model, &GroupedTaskPresentationModel::focusRecoveryRequested};
-    bool capturedDuringReconciliation = false;
-    QObject::connect(&model, &GroupedTaskPresentationModel::publicationReconciliationStarted,
-                     &model, [&model, &oldFocusedMember, &capturedDuringReconciliation] {
-                         capturedDuringReconciliation = model.rememberFocus(oldFocusedMember, true);
-                     });
+    QSignalSpy recovery{&model, &GroupedTaskPresentationModel::groupPopupFocusRecoveryRequested};
 
+    ASSERT_TRUE(model.rememberGroupPopupFocus(oldFocusedMember));
     ASSERT_TRUE(model.applySnapshot(narrow.value()));
-    EXPECT_TRUE(capturedDuringReconciliation);
     EXPECT_TRUE(oldFocused.isNull());
     EXPECT_TRUE(oldFocusedMember.isNull());
     ASSERT_EQ(recovery.count(), 1);
     const auto arguments = recovery.takeFirst();
     EXPECT_EQ(arguments[0].toInt(), 0);
     EXPECT_EQ(arguments[1].toInt(), 1);
-    EXPECT_TRUE(arguments[2].toBool());
+
+    const auto subsequent =
+        buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                config::GroupingMode::when_full, 91.0, 3U));
+    ASSERT_TRUE(subsequent);
+    ASSERT_TRUE(model.applySnapshot(subsequent.value()));
+    EXPECT_EQ(recovery.count(), 0);
 }
 
-TEST(GroupedTaskPresentationModelTest, RejectsFocusPresentationsOwnedByAnotherModel) {
+TEST(GroupedTaskPresentationModelTest, RecoversExactContextMenuActionOnceAcrossPublication) {
+    const std::vector fixtures{TaskFixture{10U, 100U, "Editor", "editor.desktop"}};
+    x11::TaskModel owner;
+    const auto taskState = taskSnapshot(owner, fixtures);
+    const auto associationState = associations(fixtures);
+    const auto catalogState = catalog({{"editor.desktop", "Editor"}});
+    const auto pinState = pins({});
+    const auto first = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                               config::GroupingMode::always, 1000.0, 1U));
+    const auto second = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                                config::GroupingMode::always, 1000.0, 2U));
+    const auto third = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                               config::GroupingMode::always, 1000.0, 3U));
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    ASSERT_TRUE(third);
+
+    GroupedTaskPresentationModel model;
+    ASSERT_TRUE(model.applySnapshot(first.value()));
+    auto *focusedGroup = model.groupAt(0);
+    ASSERT_NE(focusedGroup, nullptr);
+    QSignalSpy recovery{&model, &GroupedTaskPresentationModel::contextMenuFocusRecoveryRequested};
+
+    ASSERT_TRUE(model.rememberContextMenuFocus(focusedGroup, 2));
+    ASSERT_TRUE(model.applySnapshot(second.value()));
+    ASSERT_EQ(recovery.count(), 1);
+    EXPECT_EQ(recovery.at(0).at(0).toInt(), 0);
+    EXPECT_EQ(recovery.at(0).at(1).toInt(), 2);
+
+    ASSERT_TRUE(model.applySnapshot(third.value()));
+    EXPECT_EQ(recovery.count(), 1);
+}
+
+TEST(GroupedTaskPresentationModelTest, PreservesRecoveryCapturedByPublicationAppliedHandler) {
+    const std::vector fixtures{TaskFixture{10U, 100U, "Editor", "editor.desktop"}};
+    x11::TaskModel owner;
+    const auto taskState = taskSnapshot(owner, fixtures);
+    const auto associationState = associations(fixtures);
+    const auto catalogState = catalog({{"editor.desktop", "Editor"}});
+    const auto pinState = pins({});
+    const auto first = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                               config::GroupingMode::always, 1000.0, 1U));
+    const auto second = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                                config::GroupingMode::always, 1000.0, 2U));
+    const auto third = buildGroupedTasks(input(taskState, associationState, catalogState, pinState,
+                                               config::GroupingMode::always, 1000.0, 3U));
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    ASSERT_TRUE(third);
+
+    GroupedTaskPresentationModel model;
+    ASSERT_TRUE(model.applySnapshot(first.value()));
+    bool captured = false;
+    QObject::connect(&model, &GroupedTaskPresentationModel::publicationApplied, &model,
+                     [&model, &captured] {
+                         if (!captured) {
+                             captured = model.rememberContextMenuFocus(model.groupAt(0), 2);
+                         }
+                     });
+    QSignalSpy recovery{&model, &GroupedTaskPresentationModel::contextMenuFocusRecoveryRequested};
+
+    ASSERT_TRUE(model.applySnapshot(second.value()));
+    EXPECT_TRUE(captured);
+    EXPECT_EQ(recovery.count(), 0);
+    ASSERT_TRUE(model.applySnapshot(third.value()));
+    ASSERT_EQ(recovery.count(), 1);
+    EXPECT_EQ(recovery.at(0).at(0).toInt(), 0);
+    EXPECT_EQ(recovery.at(0).at(1).toInt(), 2);
+}
+
+TEST(GroupedTaskPresentationModelTest, RejectsInvalidFocusRecoveryOwnerKindAndActionIndex) {
     const std::vector fixtures{TaskFixture{10U, 100U, "Editor", "editor.desktop"}};
     x11::TaskModel owner;
     const auto taskState = taskSnapshot(owner, fixtures);
@@ -419,13 +522,28 @@ TEST(GroupedTaskPresentationModelTest, RejectsFocusPresentationsOwnedByAnotherMo
     GroupedTaskPresentationModel foreign;
     ASSERT_TRUE(model.applySnapshot(built.value()));
     ASSERT_TRUE(foreign.applySnapshot(built.value()));
+    auto *group = model.groupAt(0);
     auto *foreignGroup = foreign.groupAt(0);
+    ASSERT_NE(group, nullptr);
     ASSERT_NE(foreignGroup, nullptr);
+    const auto members = group->members();
     const auto foreignMembers = foreignGroup->members();
+    ASSERT_EQ(members.size(), 1);
     ASSERT_EQ(foreignMembers.size(), 1);
+    auto *member = members.front().value<QObject *>();
+    auto *foreignMember = foreignMembers.front().value<QObject *>();
+    ASSERT_NE(member, nullptr);
+    ASSERT_NE(foreignMember, nullptr);
 
-    EXPECT_FALSE(model.rememberFocus(foreignGroup, false));
-    EXPECT_FALSE(model.rememberFocus(foreignMembers.front().value<QObject *>(), true));
+    EXPECT_FALSE(model.rememberTaskFocus(nullptr));
+    EXPECT_FALSE(model.rememberTaskFocus(member));
+    EXPECT_FALSE(model.rememberTaskFocus(foreignGroup));
+    EXPECT_FALSE(model.rememberGroupPopupFocus(group));
+    EXPECT_FALSE(model.rememberGroupPopupFocus(foreignMember));
+    EXPECT_FALSE(model.rememberContextMenuFocus(member, 0));
+    EXPECT_FALSE(model.rememberContextMenuFocus(foreignGroup, 0));
+    EXPECT_FALSE(model.rememberContextMenuFocus(group, -1));
+    EXPECT_FALSE(model.rememberContextMenuFocus(group, 4));
 }
 
 TEST(GroupedTaskPresentationModelTest, AcceptsReplacementSettingsOwnerGeneration) {

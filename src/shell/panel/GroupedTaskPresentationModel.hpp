@@ -147,13 +147,19 @@ class GroupedTaskPresentationModel final : public QAbstractListModel {
         return snapshot_;
     }
 
-    /// Records an opaque group/member QObject before publication reconciliation.
-    Q_INVOKABLE bool rememberFocus(QObject *target, bool groupPopupOpen);
+    /// Records an opaque group presentation as the keyboard recovery target.
+    Q_INVOKABLE bool rememberTaskFocus(QObject *group);
+    /// Records an opaque member presentation inside an open group popup.
+    Q_INVOKABLE bool rememberGroupPopupFocus(QObject *member);
+    /// Records an opaque group presentation and exact grouped-menu action.
+    Q_INVOKABLE bool rememberContextMenuFocus(QObject *group, int actionIndex);
 
   signals:
     void publicationReconciliationStarted();
     void publicationApplied();
-    void focusRecoveryRequested(int groupIndex, int memberIndex, bool reopenGroupPopup);
+    void taskFocusRecoveryRequested(int groupIndex);
+    void groupPopupFocusRecoveryRequested(int groupIndex, int memberIndex);
+    void contextMenuFocusRecoveryRequested(int groupIndex, int actionIndex);
     void launchRequested(prismdrake::launcher::DesktopFileId desktopFileId);
     void pinChangeRequested(prismdrake::launcher::DesktopFileId desktopFileId, bool pinned);
     void activationRequested(prismdrake::x11::TaskLifetimeId lifetime,
@@ -175,9 +181,14 @@ class GroupedTaskPresentationModel final : public QAbstractListModel {
 
     std::shared_ptr<const GroupedTaskSnapshot> snapshot_;
     std::vector<std::unique_ptr<GroupedTaskPresentation>> groups_;
-    std::optional<x11::TaskLifetimeId> focus_lifetime_;
-    std::optional<std::string> focus_group_key_;
-    bool focus_popup_open_{false};
+    enum class FocusRecoveryKind { taskRoot, groupPopup, contextMenu };
+    struct FocusRecovery final {
+        FocusRecoveryKind kind;
+        std::optional<x11::TaskLifetimeId> lifetime;
+        std::optional<std::string> groupKey;
+        int actionIndex{-1};
+    };
+    std::optional<FocusRecovery> focus_recovery_;
     bool applying_snapshot_{false};
     bool accepting_focus_capture_{false};
 

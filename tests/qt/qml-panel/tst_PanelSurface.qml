@@ -264,7 +264,7 @@ TestCase {
         compare(menuContent.Accessible.role, Accessible.PopupMenu)
         compare(menuContent.Accessible.name, "Application actions for Notes")
         compare(menuContent.Accessible.description,
-                "Open a new window or change the pinned state")
+                "Available actions for this application group")
 
         const openNew = findChild(pinned, "panelGroupedTaskOpenNew")
         const pin = findChild(pinned, "panelGroupedTaskPinToggle")
@@ -337,10 +337,31 @@ TestCase {
         const terminalMinimize = findChild(terminal, "panelGroupedTaskMinimize")
         const terminalClose = findChild(terminal, "panelGroupedTaskClose")
         tryCompare(terminalOpenNew, "activeFocus", true)
+        compare(terminalOpenNew.Accessible.focused, true)
         keyClick(Qt.Key_Tab)
         tryCompare(terminalPin, "activeFocus", true)
+        compare(terminalOpenNew.Accessible.focused, false)
+        compare(terminalPin.Accessible.focused, true)
         keyClick(Qt.Key_Tab)
         tryCompare(terminalMinimize, "activeFocus", true)
+        compare(terminalPin.Accessible.focused, false)
+        compare(terminalMinimize.Accessible.focused, true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(terminalClose, "activeFocus", true)
+        compare(terminalMinimize.Accessible.focused, false)
+        compare(terminalClose.Accessible.focused, true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(terminalOpenNew, "activeFocus", true)
+        keyClick(Qt.Key_Backtab)
+        tryCompare(terminalClose, "activeFocus", true)
+        keyClick(Qt.Key_Left)
+        tryCompare(terminalMinimize, "activeFocus", true)
+        keyClick(Qt.Key_Right)
+        tryCompare(terminalClose, "activeFocus", true)
+        keyClick(Qt.Key_Backtab)
+        tryCompare(terminalMinimize, "activeFocus", true)
+        compare(terminalClose.Accessible.focused, false)
+        compare(terminalMinimize.Accessible.focused, true)
         compare(terminalMinimize.visible, true)
         compare(terminalMinimize.enabled, true)
         compare(terminalMinimize.Accessible.role, Accessible.MenuItem)
@@ -361,6 +382,143 @@ TestCase {
         tryCompare(panelFixture, "closeCount", 1)
         compare(panelFixture.lastCloseTitle, "Terminal")
         compare(panelFixture.lastCloseGeneration, panelFixture.taskGeneration)
+    }
+
+    function test_groupedActionMenuFocusFollowsPopupOpenedLifecycle() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const terminal = panel.taskAt(1)
+        const menu = groupedContextMenu(terminal)
+        const openNew = findChild(terminal, "panelGroupedTaskOpenNew")
+        terminal.forceActiveFocus(Qt.OtherFocusReason)
+
+        // Closing in the same turn must cancel the deferred item focus.
+        menu.open()
+        menu.close()
+        terminal.forceActiveFocus(Qt.OtherFocusReason)
+        wait(1)
+        compare(terminal.activeFocus, true)
+        compare(openNew.activeFocus, false)
+        compare(openNew.Accessible.focused, false)
+
+        // A subsequent complete open must publish real item and AT-SPI focus.
+        menu.open()
+        tryCompare(menu, "opened", true)
+        tryCompare(openNew, "activeFocus", true)
+        compare(openNew.Accessible.focused, true)
+        menu.close()
+        tryCompare(menu, "opened", false)
+    }
+
+    function test_groupedActionMenuArrowNavigationFollowsVisualDirectionInRtl() {
+        groupedTasks = true
+        panel.layoutDirection = Qt.RightToLeft
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const terminal = panel.taskAt(1)
+        const openNew = findChild(terminal, "panelGroupedTaskOpenNew")
+        const pin = findChild(terminal, "panelGroupedTaskPinToggle")
+        const close = findChild(terminal, "panelGroupedTaskClose")
+        verify(terminal.openActionMenu())
+        tryCompare(openNew, "activeFocus", true)
+
+        keyClick(Qt.Key_Right)
+        tryCompare(close, "activeFocus", true)
+        keyClick(Qt.Key_Left)
+        tryCompare(openNew, "activeFocus", true)
+        keyClick(Qt.Key_Left)
+        tryCompare(pin, "activeFocus", true)
+    }
+
+    function test_groupedContextMenuRetainsExactActionAcrossSnapshotRepublish() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const terminal = panel.taskAt(1)
+        verify(terminal.openActionMenu())
+        const terminalOpenNew = findChild(terminal, "panelGroupedTaskOpenNew")
+        const terminalPin = findChild(terminal, "panelGroupedTaskPinToggle")
+        const terminalMinimize = findChild(terminal, "panelGroupedTaskMinimize")
+        tryCompare(terminalOpenNew, "activeFocus", true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(terminalPin, "activeFocus", true)
+        keyClick(Qt.Key_Tab)
+        tryCompare(terminalMinimize, "activeFocus", true)
+        compare(terminal.focusedContextActionIndex, 2)
+
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const recoveredTerminal = panel.taskAt(1)
+        const recoveredMenu = groupedContextMenu(recoveredTerminal)
+        const recoveredMinimize = findChild(recoveredTerminal,
+                                             "panelGroupedTaskMinimize")
+        tryCompare(recoveredMenu, "opened", true)
+        tryCompare(recoveredMinimize, "activeFocus", true)
+        compare(recoveredMinimize.Accessible.focused, true)
+        compare(recoveredTerminal.focusedContextActionIndex, 2)
+
+        verify(panel.restoreActionMenuFocus())
+        compare(recoveredMinimize.activeFocus, true)
+        compare(recoveredMinimize.Accessible.focused, true)
+    }
+
+    function test_groupedContextMenuRetainsPendingActionAcrossSnapshotRepublish() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const terminal = panel.taskAt(1)
+        verify(terminal.recoverContextMenuFocus(2))
+        verify(panelFixture.publishRepresentativeGroups())
+
+        const recoveredTerminal = panel.taskAt(1)
+        const recoveredMenu = groupedContextMenu(recoveredTerminal)
+        const recoveredMinimize = findChild(recoveredTerminal,
+                                             "panelGroupedTaskMinimize")
+        tryCompare(recoveredMenu, "opened", true)
+        tryCompare(recoveredMinimize, "activeFocus", true)
+        compare(recoveredMinimize.Accessible.focused, true)
+        compare(recoveredTerminal.focusedContextActionIndex, 2)
+    }
+
+    function test_groupPopupRetainsPendingMemberAcrossSnapshotRepublish() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const editor = panel.taskAt(0)
+        verify(editor.openGroupPopup(1))
+        verify(panelFixture.publishRepresentativeGroups())
+
+        const recoveredEditor = panel.taskAt(0)
+        const recoveredPopup = findChild(recoveredEditor, "panelTaskGroupPopup")
+        tryCompare(recoveredPopup, "opened", true)
+        const secondMember = recoveredPopup.memberAt(1)
+        verify(secondMember !== null)
+        tryCompare(secondMember, "activeFocus", true)
+        compare(recoveredEditor.focusTarget, secondMember.member)
+    }
+
+    function test_groupedFocusFallsBackWhenFocusedGroupIsRemoved() {
+        groupedTasks = true
+        verify(panelFixture.publishRepresentativeGroups())
+        tryCompare(panel, "taskCount", 2)
+
+        const editor = panel.taskAt(0)
+        editor.forceActiveFocus(Qt.OtherFocusReason)
+        compare(editor.activeFocus, true)
+        verify(panelFixture.publishPinnedOnlyGroup())
+
+        tryCompare(panel, "taskCount", 1)
+        const remaining = panel.taskAt(0)
+        tryCompare(remaining, "activeFocus", true)
+        compare(remaining.Accessible.focused, true)
+        compare(panel.pendingFocusIndex, -1)
     }
 
     function test_runningTaskExportsRealAccessibleExpandedState() {
@@ -496,7 +654,7 @@ TestCase {
         const secondActivate = findChild(secondMember, "panelTaskGroupActivate")
         tryCompare(secondActivate, "activeFocus", true)
         compare(editor.focusTarget, secondMember.member)
-        verify(panelFixture.groupedTaskModel.rememberFocus(editor.focusTarget, true))
+        verify(panelFixture.groupedTaskModel.rememberGroupPopupFocus(editor.focusTarget))
     }
 
     function test_groupedTaskAndPopupExposeCompleteKeyboardStateTransitions() {

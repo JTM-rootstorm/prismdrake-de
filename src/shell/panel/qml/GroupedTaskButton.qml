@@ -19,12 +19,25 @@ Control {
     readonly property bool down: primaryTap.pressed
     readonly property bool actionMenuOpen: contextMenu.opened
     readonly property bool groupPopupOpen: groupPopup.opened
+    readonly property int focusedContextActionIndex: openNewAction.activeFocus ? 0
+                                                     : (pinAction.activeFocus ? 1
+                                                        : (minimizeAction.activeFocus ? 2
+                                                           : (closeAction.activeFocus ? 3 : -1)))
     readonly property bool prismdrakeAccessibleExpandable: true
     readonly property bool prismdrakeAccessibleExpanded: actionMenuOpen || groupPopupOpen
-    readonly property var focusTarget: groupPopup.opened && groupPopup.focusedMember !== null
-                                       ? groupPopup.focusedMember : presentation
+    readonly property var focusTarget: groupPopup.opened
+                                       ? (groupPopup.focusedMember !== null
+                                          ? groupPopup.focusedMember
+                                          : (presentation !== null
+                                             && presentation.members.length > 0
+                                             ? presentation.members[Math.max(
+                                                   0, Math.min(groupPopup.pendingMemberFocus,
+                                                               presentation.members.length - 1))]
+                                             : null))
+                                       : presentation
     readonly property real availableWindowWidth: Window.window !== null
                                                   ? Window.window.width : width
+    property int pendingContextActionIndex: 0
 
     signal focusExitForward
     signal focusExitBackward
@@ -33,24 +46,79 @@ Control {
     signal actionMenuDismissedToWindowManager
     signal clicked
 
-    function openActionMenu() {
+    function actionAt(index) {
+        switch (index) {
+        case 0: return openNewAction
+        case 1: return pinAction
+        case 2: return minimizeAction
+        case 3: return closeAction
+        default: return null
+        }
+    }
+
+    function openActionMenu(actionIndex = 0) {
         if (presentation === null)
             return false
+        pendingContextActionIndex = Math.max(0, Math.min(3, actionIndex))
         groupPopup.dismiss()
         actionMenuOpening()
         contextMenu.open()
-        if (openNewAction.enabled)
-            openNewAction.forceActiveFocus(Qt.OtherFocusReason)
-        else if (pinAction.enabled)
-            pinAction.forceActiveFocus(Qt.OtherFocusReason)
-        else if (minimizeAction.enabled)
-            minimizeAction.forceActiveFocus(Qt.OtherFocusReason)
-        else
-            closeAction.forceActiveFocus(Qt.OtherFocusReason)
         return true
     }
 
+    function focusPendingContextAction() {
+        if (!contextMenu.opened)
+            return false
+        for (let index = pendingContextActionIndex; index < 4; ++index) {
+            const candidate = actionAt(index)
+            if (candidate !== null && candidate.enabled) {
+                candidate.forceActiveFocus(Qt.OtherFocusReason)
+                return true
+            }
+        }
+        for (let index = pendingContextActionIndex - 1; index >= 0; --index) {
+            const candidate = actionAt(index)
+            if (candidate !== null && candidate.enabled) {
+                candidate.forceActiveFocus(Qt.OtherFocusReason)
+                return true
+            }
+        }
+        return false
+    }
+
+    function moveContextActionFocus(currentIndex, direction, reason) {
+        for (let offset = 1; offset <= 4; ++offset) {
+            const candidateIndex = (currentIndex + direction * offset + 16) % 4
+            const candidate = actionAt(candidateIndex)
+            if (candidate !== null && candidate.enabled) {
+                candidate.forceActiveFocus(reason)
+                return true
+            }
+        }
+        return false
+    }
+
+    function handleContextActionKey(event, actionIndex) {
+        if (event.key === Qt.Key_Escape) {
+            closeActionMenu(true)
+            event.accepted = true
+        } else if (event.key === Qt.Key_Tab) {
+            moveContextActionFocus(actionIndex, 1, Qt.TabFocusReason)
+            event.accepted = true
+        } else if (event.key === Qt.Key_Backtab) {
+            moveContextActionFocus(actionIndex, -1, Qt.BacktabFocusReason)
+            event.accepted = true
+        } else if (event.key === Qt.Key_Right) {
+            moveContextActionFocus(actionIndex, rightToLeft ? -1 : 1, Qt.TabFocusReason)
+            event.accepted = true
+        } else if (event.key === Qt.Key_Left) {
+            moveContextActionFocus(actionIndex, rightToLeft ? 1 : -1, Qt.BacktabFocusReason)
+            event.accepted = true
+        }
+    }
+
     function closeActionMenu(restoreFocus) {
+        actionFocusTimer.stop()
         contextMenu.close()
         if (restoreFocus)
             focusRestoreTimer.restart()
@@ -61,11 +129,26 @@ Control {
         closeActionMenu(restoreFocus)
     }
 
-    function recoverFocus(memberIndex, reopenGroup) {
-        if (reopenGroup && presentation !== null && presentation.primaryOpensGroup)
-            return openGroupPopup(Math.max(0, memberIndex))
+    function recoverTaskFocus() {
         forceActiveFocus(Qt.OtherFocusReason)
         return true
+    }
+
+    function recoverGroupPopupFocus(memberIndex) {
+        if (presentation === null || !presentation.primaryOpensGroup)
+            return false
+        return openGroupPopup(Math.max(0, memberIndex))
+    }
+
+    function recoverContextMenuFocus(actionIndex) {
+        if (presentation === null || actionIndex < 0 || actionIndex > 3)
+            return false
+        pendingContextActionIndex = actionIndex
+        if (contextMenu.opened) {
+            actionFocusTimer.restart()
+            return true
+        }
+        return openActionMenu(actionIndex)
     }
 
     function openGroupPopup(memberIndex) {
@@ -103,8 +186,11 @@ Control {
         const groupDescription = groupPopupOpen
             ? qsTr("Application group %1. Status: %2. Window list shown.")
                 .arg(title).arg(statusText)
-            : qsTr("Application group %1. Status: %2.")
-                .arg(title).arg(statusText)
+            : (actionMenuOpen
+               ? qsTr("Application group %1. Status: %2. Window actions shown.")
+                   .arg(title).arg(statusText)
+               : qsTr("Application group %1. Status: %2.")
+                   .arg(title).arg(statusText))
         return usesGenericApplicationIcon
             ? qsTr("Generic application icon. %1").arg(groupDescription)
             : groupDescription
@@ -163,6 +249,16 @@ Control {
         interval: 0
         repeat: false
         onTriggered: root.forceActiveFocus(Qt.OtherFocusReason)
+    }
+
+    Timer {
+        id: actionFocusTimer
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (!root.focusPendingContextAction())
+                root.closeActionMenu(true)
+        }
     }
 
     contentItem: Row {
@@ -263,7 +359,11 @@ Control {
         modal: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         padding: root.tokens.menuItemPadding
-        onClosed: root.actionMenuClosed()
+        onOpened: actionFocusTimer.restart()
+        onClosed: {
+            actionFocusTimer.stop()
+            root.actionMenuClosed()
+        }
 
         background: Rectangle {
             color: root.tokens.surfaceColor
@@ -277,7 +377,7 @@ Control {
 
             Accessible.role: Accessible.PopupMenu
             Accessible.name: qsTr("Application actions for %1").arg(root.title)
-            Accessible.description: qsTr("Open a new window or change the pinned state")
+            Accessible.description: qsTr("Available actions for this application group")
 
             Button {
                 id: openNewAction
@@ -290,7 +390,10 @@ Control {
                 Accessible.name: qsTr("Open a new %1 window").arg(root.title)
                 Accessible.description: qsTr("Launch the associated desktop application")
                 Accessible.focusable: enabled
+                Accessible.focused: activeFocus
                 Accessible.onPressAction: openNewAction.clicked()
+                Keys.priority: Keys.BeforeItem
+                Keys.onPressed: event => root.handleContextActionKey(event, 0)
                 onClicked: {
                     if (root.presentation.requestOpenNew())
                         root.closeActionMenu(true)
@@ -314,7 +417,10 @@ Control {
                 Accessible.checkable: true
                 Accessible.checked: root.presentation !== null && root.presentation.pinned
                 Accessible.focusable: enabled
+                Accessible.focused: activeFocus
                 Accessible.onPressAction: pinAction.clicked()
+                Keys.priority: Keys.BeforeItem
+                Keys.onPressed: event => root.handleContextActionKey(event, 1)
                 onClicked: {
                     if (root.presentation.requestPinToggle())
                         root.closeActionMenu(true)
@@ -334,7 +440,10 @@ Control {
                 Accessible.name: qsTr("Minimize %1").arg(root.title)
                 Accessible.description: qsTr("Request that the only application window minimize")
                 Accessible.focusable: enabled
+                Accessible.focused: activeFocus
                 Accessible.onPressAction: minimizeAction.clicked()
+                Keys.priority: Keys.BeforeItem
+                Keys.onPressed: event => root.handleContextActionKey(event, 2)
                 onClicked: {
                     if (root.presentation.requestOnlyWindowMinimization())
                         root.closeActionMenu(true)
@@ -353,7 +462,10 @@ Control {
                 Accessible.name: qsTr("Close %1").arg(root.title)
                 Accessible.description: qsTr("Request that the only application window close")
                 Accessible.focusable: enabled
+                Accessible.focused: activeFocus
                 Accessible.onPressAction: closeAction.clicked()
+                Keys.priority: Keys.BeforeItem
+                Keys.onPressed: event => root.handleContextActionKey(event, 3)
                 onClicked: {
                     if (root.presentation.requestOnlyWindowClose())
                         root.closeActionMenu(true)

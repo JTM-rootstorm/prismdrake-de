@@ -117,9 +117,17 @@ FocusScope {
                         && (candidate.activeFocus || candidate.actionMenuOpen
                             || candidate.groupPopupOpen)) {
                     pendingFocusIndex = index
-                    pendingActionMenuRecovery = candidate.groupPopupOpen
-                    groupedTaskModel.rememberFocus(candidate.focusTarget,
-                                                   candidate.groupPopupOpen)
+                    if (candidate.groupPopupOpen) {
+                        groupedTaskModel.rememberGroupPopupFocus(candidate.focusTarget)
+                    } else if (candidate.actionMenuOpen) {
+                        groupedTaskModel.rememberContextMenuFocus(
+                                    candidate.presentation,
+                                    candidate.focusedContextActionIndex >= 0
+                                    ? candidate.focusedContextActionIndex
+                                    : candidate.pendingContextActionIndex)
+                    } else {
+                        groupedTaskModel.rememberTaskFocus(candidate.presentation)
+                    }
                     return
                 }
             }
@@ -230,12 +238,11 @@ FocusScope {
         return true
     }
 
-    function recoverGroupedFocus(groupIndex, memberIndex, reopenGroupPopup) {
-        const candidate = root.taskAt(groupIndex)
-        if (candidate !== null) {
-            root.revealTask(candidate)
-            candidate.recoverFocus(memberIndex, reopenGroupPopup)
-        } else if (root.taskCount > 0) {
+    function recoverGroupedFallback(groupIndex) {
+        pendingFocusIndex = -1
+        pendingFocusSerial = 0
+        pendingActionMenuRecovery = false
+        if (root.taskCount > 0) {
             const fallback = root.taskAt(Math.min(groupIndex, root.taskCount - 1))
             fallback.forceActiveFocus(Qt.OtherFocusReason)
             root.revealTask(fallback)
@@ -246,6 +253,43 @@ FocusScope {
         } else {
             launcher.forceActiveFocus(Qt.OtherFocusReason)
         }
+    }
+
+    function recoverGroupedTaskFocus(groupIndex) {
+        pendingFocusIndex = -1
+        pendingFocusSerial = 0
+        pendingActionMenuRecovery = false
+        const candidate = root.taskAt(groupIndex)
+        if (candidate !== null) {
+            root.revealTask(candidate)
+            candidate.recoverTaskFocus()
+            return
+        }
+        recoverGroupedFallback(groupIndex)
+    }
+
+    function recoverGroupedPopupFocus(groupIndex, memberIndex) {
+        pendingFocusIndex = -1
+        pendingFocusSerial = 0
+        pendingActionMenuRecovery = false
+        const candidate = root.taskAt(groupIndex)
+        if (candidate !== null && candidate.recoverGroupPopupFocus(memberIndex)) {
+            root.revealTask(candidate)
+            return
+        }
+        recoverGroupedFallback(groupIndex)
+    }
+
+    function recoverGroupedContextMenuFocus(groupIndex, actionIndex) {
+        pendingFocusIndex = -1
+        pendingFocusSerial = 0
+        pendingActionMenuRecovery = false
+        const candidate = root.taskAt(groupIndex)
+        if (candidate !== null && candidate.recoverContextMenuFocus(actionIndex)) {
+            root.revealTask(candidate)
+            return
+        }
+        recoverGroupedFallback(groupIndex)
     }
 
     implicitWidth: 960
@@ -259,6 +303,16 @@ FocusScope {
         interval: 0
         repeat: false
         onTriggered: root.recoverFocus()
+    }
+
+    Timer {
+        id: groupedFocusRecoveryTimer
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (root.groupedTasksActive && root.pendingFocusIndex >= 0)
+                root.recoverGroupedFallback(root.pendingFocusIndex)
+        }
     }
 
     Connections {
@@ -276,8 +330,17 @@ FocusScope {
         function onPublicationReconciliationStarted() {
             root.captureFocusRecovery()
         }
-        function onFocusRecoveryRequested(groupIndex, memberIndex, reopenGroupPopup) {
-            root.recoverGroupedFocus(groupIndex, memberIndex, reopenGroupPopup)
+        function onPublicationApplied() {
+            groupedFocusRecoveryTimer.restart()
+        }
+        function onTaskFocusRecoveryRequested(groupIndex) {
+            root.recoverGroupedTaskFocus(groupIndex)
+        }
+        function onGroupPopupFocusRecoveryRequested(groupIndex, memberIndex) {
+            root.recoverGroupedPopupFocus(groupIndex, memberIndex)
+        }
+        function onContextMenuFocusRecoveryRequested(groupIndex, actionIndex) {
+            root.recoverGroupedContextMenuFocus(groupIndex, actionIndex)
         }
     }
 

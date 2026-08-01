@@ -314,34 +314,49 @@ GroupedTaskPresentationModel::applySnapshot(std::shared_ptr<const GroupedTaskSna
     }
     snapshot_ = std::move(snapshot);
     applying_snapshot_ = false;
-    emit publicationApplied();
 
+    auto focusRecovery = std::exchange(focus_recovery_, std::nullopt);
     int groupIndex = -1;
     int memberIndex = -1;
-    if (focus_lifetime_) {
-        const auto recovered = groupForTaskLifetime(*snapshot_, *focus_lifetime_);
+    if (focusRecovery && focusRecovery->lifetime) {
+        const auto recovered = groupForTaskLifetime(*snapshot_, *focusRecovery->lifetime);
         if (recovered) {
             groupIndex = static_cast<int>(*recovered);
             const auto &members = snapshot_->groups[*recovered].members;
             const auto member =
-                std::ranges::find(members, *focus_lifetime_, &PanelTaskMember::lifetime);
+                std::ranges::find(members, *focusRecovery->lifetime, &PanelTaskMember::lifetime);
             memberIndex = member == members.end()
                               ? -1
                               : static_cast<int>(std::distance(members.begin(), member));
         }
-    } else if (focus_group_key_) {
-        const auto recovered =
-            std::ranges::find(snapshot_->groups, *focus_group_key_, &PanelTaskGroup::internalKey);
+    }
+    if (groupIndex < 0 && focusRecovery && focusRecovery->groupKey) {
+        const auto recovered = std::ranges::find(snapshot_->groups, *focusRecovery->groupKey,
+                                                 &PanelTaskGroup::internalKey);
         if (recovered != snapshot_->groups.end()) {
             groupIndex = static_cast<int>(std::distance(snapshot_->groups.begin(), recovered));
         }
     }
-    if (groupIndex >= 0) {
-        emit focusRecoveryRequested(groupIndex, memberIndex, focus_popup_open_);
+    emit publicationApplied();
+    if (groupIndex >= 0 && focusRecovery) {
+        switch (focusRecovery->kind) {
+        case FocusRecoveryKind::taskRoot:
+            emit taskFocusRecoveryRequested(groupIndex);
+            break;
+        case FocusRecoveryKind::groupPopup:
+            if (memberIndex < 0 &&
+                !snapshot_->groups[static_cast<std::size_t>(groupIndex)].members.empty()) {
+                memberIndex = 0;
+            }
+            if (memberIndex >= 0) {
+                emit groupPopupFocusRecoveryRequested(groupIndex, memberIndex);
+            }
+            break;
+        case FocusRecoveryKind::contextMenu:
+            emit contextMenuFocusRecoveryRequested(groupIndex, focusRecovery->actionIndex);
+            break;
+        }
     }
-    focus_lifetime_.reset();
-    focus_group_key_.reset();
-    focus_popup_open_ = false;
     return foundation::Result<void>::success();
 }
 
@@ -354,7 +369,26 @@ GroupedTaskPresentation *GroupedTaskPresentationModel::groupAt(int row) const no
     return groups_[static_cast<std::size_t>(row)].get();
 }
 
-bool GroupedTaskPresentationModel::rememberFocus(QObject *target, bool groupPopupOpen) {
+bool GroupedTaskPresentationModel::rememberTaskFocus(QObject *target) {
+    if (QThread::currentThread() != thread() || (applying_snapshot_ && !accepting_focus_capture_)) {
+        return false;
+    }
+    if (auto *group = qobject_cast<GroupedTaskPresentation *>(target)) {
+        if (group->owner_ != this) {
+            return false;
+        }
+        const auto lifetime =
+            group->members_.empty()
+                ? std::optional<x11::TaskLifetimeId>{}
+                : std::optional<x11::TaskLifetimeId>{group->members_.front()->lifetime_};
+        focus_recovery_ =
+            FocusRecovery{FocusRecoveryKind::taskRoot, lifetime, group->internal_key_, -1};
+        return true;
+    }
+    return false;
+}
+
+bool GroupedTaskPresentationModel::rememberGroupPopupFocus(QObject *target) {
     if (QThread::currentThread() != thread() || (applying_snapshot_ && !accepting_focus_capture_)) {
         return false;
     }
@@ -362,24 +396,35 @@ bool GroupedTaskPresentationModel::rememberFocus(QObject *target, bool groupPopu
         if (member->owner_ != this) {
             return false;
         }
-        focus_lifetime_.reset();
-        focus_group_key_.reset();
-        focus_popup_open_ = groupPopupOpen;
-        focus_lifetime_ = member->lifetime_;
+        std::optional<std::string> groupKey;
+        if (snapshot_) {
+            const auto groupIndex = groupForTaskLifetime(*snapshot_, member->lifetime_);
+            if (groupIndex) {
+                groupKey = snapshot_->groups[*groupIndex].internalKey;
+            }
+        }
+        focus_recovery_ =
+            FocusRecovery{FocusRecoveryKind::groupPopup, member->lifetime_, groupKey, -1};
         return true;
+    }
+    return false;
+}
+
+bool GroupedTaskPresentationModel::rememberContextMenuFocus(QObject *target, int actionIndex) {
+    if (QThread::currentThread() != thread() || (applying_snapshot_ && !accepting_focus_capture_) ||
+        actionIndex < 0 || actionIndex > 3) {
+        return false;
     }
     if (auto *group = qobject_cast<GroupedTaskPresentation *>(target)) {
         if (group->owner_ != this) {
             return false;
         }
-        focus_lifetime_.reset();
-        focus_group_key_.reset();
-        focus_popup_open_ = groupPopupOpen;
-        if (!group->members_.empty()) {
-            focus_lifetime_ = group->members_.front()->lifetime_;
-        } else {
-            focus_group_key_ = group->internal_key_;
-        }
+        const auto lifetime =
+            group->members_.empty()
+                ? std::optional<x11::TaskLifetimeId>{}
+                : std::optional<x11::TaskLifetimeId>{group->members_.front()->lifetime_};
+        focus_recovery_ = FocusRecovery{FocusRecoveryKind::contextMenu, lifetime,
+                                        group->internal_key_, actionIndex};
         return true;
     }
     return false;
