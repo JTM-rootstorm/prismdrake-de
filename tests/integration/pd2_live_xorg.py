@@ -372,6 +372,16 @@ class SystemAccessibilityOperations:
     def initialize(self, environment: Mapping[str, str]) -> bool:
         """Bind libatspi to the verified private registry before clients start."""
 
+        if self._atspi is not None:
+            shutdown = getattr(self._atspi, "exit", None)
+            if not callable(shutdown):
+                raise HarnessError("live_atspi_reinitialization_failed")
+            try:
+                shutdown()
+            except Exception:
+                raise HarnessError("live_atspi_reinitialization_failed") from None
+            self._atspi = None
+            self._application_error = None
         with self._environment(environment):
             self._binding()
         return True

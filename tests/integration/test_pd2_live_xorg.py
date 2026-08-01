@@ -50,6 +50,7 @@ from pd2_live_xorg import (  # noqa: E402
     QUICK_SETTINGS_WINDOW_TITLE,
     SESSION_SHUTDOWN_SEQUENCE,
     SETTINGS_WORKFLOW_CONFIG,
+    SystemAccessibilityOperations,
     SystemNotificationFailureReplayPort,
     WindowGeometry,
     XrandrOutput,
@@ -1090,6 +1091,53 @@ class AccessibilityBusAddressParserTests(unittest.TestCase):
                     HarnessError, "^private_accessibility_bus_address_invalid$"
                 ):
                     live_xorg._parse_accessibility_bus_address(payload)  # noqa: SLF001
+
+
+class SystemAccessibilityOperationsTests(unittest.TestCase):
+    environment = {
+        "AT_SPI_BUS_ADDRESS": "unix:path=/tmp/private-atspi",
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/private-session",
+        "DISPLAY": ":99",
+    }
+
+    def test_reinitializes_binding_for_each_private_bus_epoch(self) -> None:
+        operations = SystemAccessibilityOperations()
+
+        class OldBinding:
+            exits = 0
+
+            def exit(self) -> None:
+                self.exits += 1
+
+        old = OldBinding()
+        replacement = object()
+        operations._atspi = old  # noqa: SLF001
+        operations._application_error = "atspi_child_bound"  # noqa: SLF001
+
+        def rebind() -> object:
+            self.assertIsNone(operations._atspi)  # noqa: SLF001
+            operations._atspi = replacement  # noqa: SLF001
+            return replacement
+
+        with patch.object(operations, "_binding", side_effect=rebind):
+            self.assertTrue(operations.initialize(self.environment))
+
+        self.assertEqual(old.exits, 1)
+        self.assertIs(operations._atspi, replacement)  # noqa: SLF001
+        self.assertIsNone(operations.application_error_category())
+
+    def test_reinitialization_fails_closed_without_working_exit(self) -> None:
+        for binding in (
+            object(),
+            type("BrokenBinding", (), {"exit": lambda self: 1 / 0})(),
+        ):
+            with self.subTest(binding=type(binding).__name__):
+                operations = SystemAccessibilityOperations()
+                operations._atspi = binding  # noqa: SLF001
+                with self.assertRaisesRegex(
+                    HarnessError, "^live_atspi_reinitialization_failed$"
+                ):
+                    operations.initialize(self.environment)
 
 
 class SurfaceParserTests(unittest.TestCase):
