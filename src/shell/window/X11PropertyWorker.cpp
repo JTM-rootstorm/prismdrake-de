@@ -3,11 +3,14 @@
 #include "AtomCache.hpp"
 #include "DesktopProperties.hpp"
 #include "DockProperties.hpp"
+#include "InitialWindowStateProperties.hpp"
 #include "X11Connection.hpp"
 
 #include <QMetaObject>
 
+#include <algorithm>
 #include <exception>
+#include <set>
 #include <utility>
 
 #include <sys/socket.h>
@@ -49,15 +52,28 @@ inline constexpr std::size_t maximumPropertyOperationsPerTransaction = 128U;
         return x11::DesktopProperties::publish(connection, atoms, operation.window);
     case X11PropertyOperationKind::removeDesktop:
         return x11::DesktopProperties::remove(connection, atoms, operation.window);
+    case X11PropertyOperationKind::publishInitialSkipTaskbar:
+        return x11::InitialWindowStateProperties::publishSkipTaskbar(connection, atoms,
+                                                                     operation.window);
     }
     return invalidJob();
 }
 
-[[nodiscard]] X11PropertyOperation rollbackFor(const X11PropertyOperation &operation) {
-    return {operation.kind == X11PropertyOperationKind::publishDock
-                ? X11PropertyOperationKind::removeDock
-                : X11PropertyOperationKind::removeDesktop,
-            operation.window, std::nullopt};
+[[nodiscard]] std::optional<X11PropertyOperation>
+rollbackFor(const X11PropertyOperation &operation) {
+    switch (operation.kind) {
+    case X11PropertyOperationKind::publishDock:
+        return X11PropertyOperation{X11PropertyOperationKind::removeDock, operation.window,
+                                    std::nullopt};
+    case X11PropertyOperationKind::publishDesktop:
+        return X11PropertyOperation{X11PropertyOperationKind::removeDesktop, operation.window,
+                                    std::nullopt};
+    case X11PropertyOperationKind::removeDock:
+    case X11PropertyOperationKind::removeDesktop:
+    case X11PropertyOperationKind::publishInitialSkipTaskbar:
+        return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -115,11 +131,42 @@ Result<void> X11PropertyWorker::submit(std::uint64_t token,
         return invalidJob();
     }
     for (const auto &operation : operations) {
+        if (operation.kind == X11PropertyOperationKind::publishInitialSkipTaskbar) {
+            return invalidJob();
+        }
         const bool reservationRequired = operation.kind == X11PropertyOperationKind::publishDock;
         if (operation.dockReservation.has_value() != reservationRequired) {
             return invalidJob();
         }
     }
+    return enqueue(token, std::move(operations), true);
+}
+
+Result<void> X11PropertyWorker::submitInitialSkipTaskbar(std::uint64_t token,
+                                                         std::vector<x11::WindowId> windows) {
+    if (token == 0U || windows.empty() ||
+        windows.size() > maximumPropertyOperationsPerTransaction) {
+        return invalidJob();
+    }
+    std::set<x11::WindowId::Value> identifiers;
+    const bool distinct = std::ranges::all_of(windows, [&identifiers](const auto window) {
+        return identifiers.insert(window.value()).second;
+    });
+    if (!distinct) {
+        return invalidJob();
+    }
+    std::vector<X11PropertyOperation> operations;
+    operations.reserve(windows.size());
+    for (const auto window : windows) {
+        operations.push_back(
+            {X11PropertyOperationKind::publishInitialSkipTaskbar, window, std::nullopt});
+    }
+    return enqueue(token, std::move(operations), false);
+}
+
+Result<void> X11PropertyWorker::enqueue(std::uint64_t token,
+                                        std::vector<X11PropertyOperation> operations,
+                                        bool rollbackOnFailure) {
     {
         std::scoped_lock lock{mutex_};
         if (stopping_) {
@@ -130,7 +177,7 @@ Result<void> X11PropertyWorker::submit(std::uint64_t token,
                 {ErrorCode::too_large, "The bounded X11 property queue is full.",
                  "Coalesce surface generations before submitting more work."});
         }
-        jobs_.push_back({token, std::move(operations)});
+        jobs_.push_back({token, std::move(operations), rollbackOnFailure});
     }
     wake_.notify_one();
     return Result<void>::success();
@@ -192,10 +239,11 @@ void X11PropertyWorker::run(std::stop_token stopToken) {
                 published.push_back(operation);
             }
         }
-        if (!result) {
+        if (!result && job->rollbackOnFailure) {
             for (auto operation = published.rbegin(); operation != published.rend(); ++operation) {
-                const auto rollback = applyOperation(*connection, *atoms, rollbackFor(*operation));
-                (void)rollback;
+                if (const auto rollback = rollbackFor(*operation)) {
+                    static_cast<void>(applyOperation(*connection, *atoms, *rollback));
+                }
             }
         }
         deliver(job->token, std::move(result));

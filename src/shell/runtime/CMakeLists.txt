@@ -1,4 +1,6 @@
 add_library(prismdrake-shell-runtime-composition STATIC
+    SingletonTaskPolicyGate.cpp
+    SingletonTaskPolicyGate.hpp
     ShellReadinessGate.cpp
     ShellReadinessGate.hpp
     ShellRuntimeComposition.cpp
@@ -50,6 +52,7 @@ target_link_libraries(prismdrake-shell-runtime
         Prismdrake::grouped-task-presentation
         Prismdrake::shell-control
         Prismdrake::shell-panel-window
+        Prismdrake::shell-x11-property-worker
         Prismdrake::shell-settings-client
         Prismdrake::shell-task-controller
         Prismdrake::shell-theme

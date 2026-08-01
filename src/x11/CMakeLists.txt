@@ -10,6 +10,8 @@ add_library(prismdrake-x11 STATIC
     DockPropertiesInternal.hpp
     DesktopProperties.cpp
     DesktopProperties.hpp
+    InitialWindowStateProperties.cpp
+    InitialWindowStateProperties.hpp
     EwmhCapabilities.cpp
     EwmhCapabilities.hpp
     EwmhCapabilitiesInternal.hpp

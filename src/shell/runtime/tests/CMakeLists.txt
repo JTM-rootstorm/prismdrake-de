@@ -1,6 +1,7 @@
 find_package(GTest QUIET)
 if(GTest_FOUND)
     add_executable(prismdrake-shell-runtime-composition-tests
+        tests/SingletonTaskPolicyGateTests.cpp
         tests/ShellReadinessGateTests.cpp
         tests/ShellRuntimeCompositionTests.cpp)
     target_link_libraries(prismdrake-shell-runtime-composition-tests

@@ -44,6 +44,7 @@ prismdrake_enable_sanitizers(prismdrake-controlled-window-fixture)
 
 add_executable(prismdrake-x11-integration-tests
     DockPropertiesTests.cpp
+    InitialWindowStatePropertiesTests.cpp
     EwmhCapabilitiesTests.cpp
     EwmhTaskSourceTests.cpp
     EwmhWindowRequestsTests.cpp

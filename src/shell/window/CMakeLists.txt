@@ -47,4 +47,16 @@ if(BUILD_TESTING)
     set_tests_properties(PanelSurfaceHostTest PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 15)
+
+    add_executable(prismdrake-x11-property-worker-tests
+        tests/X11PropertyWorkerTests.cpp)
+    target_link_libraries(prismdrake-x11-property-worker-tests
+        PRIVATE GTest::gtest Prismdrake::shell-x11-property-worker Qt6::Core)
+    prismdrake_configure_cpp_target(prismdrake-x11-property-worker-tests)
+    prismdrake_enable_warnings(prismdrake-x11-property-worker-tests)
+    prismdrake_enable_sanitizers(prismdrake-x11-property-worker-tests)
+
+    add_test(NAME X11PropertyWorkerTest
+        COMMAND prismdrake-x11-property-worker-tests)
+    set_tests_properties(X11PropertyWorkerTest PROPERTIES TIMEOUT 5)
 endif()
