@@ -3242,6 +3242,39 @@ class LivePortTests(unittest.TestCase):
                     port.cleanup("installed_workflow"), Observation(True, True)
                 )
 
+    def test_window_manager_surface_recovery_retries_only_transient_state(self) -> None:
+        operations = FakeOperations()
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        with patch.object(
+            port,
+            "_require_panel_surfaces",
+            side_effect=(
+                HarnessError("x11_window_list_invalid"),
+                HarnessError("desktop_surface_epoch_changed"),
+                None,
+            ),
+        ) as observe:
+            port._wait_panel_surfaces_unchanged(  # noqa: SLF001
+                "window_manager_surface_recovery_timeout"
+            )
+        self.assertEqual(observe.call_count, 3)
+        self.assertEqual(operations.now, 0.1)
+
+        with patch.object(
+            port,
+            "_require_panel_surfaces",
+            side_effect=HarnessError("surface_window_owner_invalid"),
+        ) as observe:
+            with self.assertRaisesRegex(
+                HarnessError, "^surface_window_owner_invalid$"
+            ):
+                port._wait_panel_surfaces_unchanged(  # noqa: SLF001
+                    "window_manager_surface_recovery_timeout"
+                )
+        self.assertEqual(observe.call_count, 1)
+
     def test_session_readiness_rejects_safe_mode(self) -> None:
         operations = FakeOperations(session_marker="safe-mode")
         port = LiveXorgHarnessPort(

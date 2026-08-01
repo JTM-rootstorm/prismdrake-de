@@ -2297,7 +2297,9 @@ class LiveXorgHarnessPort:
                 raise HarnessError("window_manager_replacement_invalid")
             self._require_topology(two_outputs=True)
             self._require_controlled_windows_unchanged(windows)
-            self._require_panel_surfaces()
+            self._wait_panel_surfaces_unchanged(
+                "window_manager_surface_recovery_timeout"
+            )
             self._focus_controlled_panel_task("window_manager_task_focus_timeout")
             self._invoke_accessible(
                 ControlSelector(
@@ -5309,6 +5311,30 @@ class LiveXorgHarnessPort:
                 geometry.x + geometry.width - 1,
             ):
                 raise HarnessError("panel_strut_invalid")
+
+    def _wait_panel_surfaces_unchanged(self, timeout_error: str) -> None:
+        """Wait for the prior exact shell surfaces after a WM ownership change."""
+
+        transient_errors = {
+            "desktop_surface_epoch_changed",
+            "panel_surface_invalid",
+            "x11_window_geometry_query_failed",
+            "x11_window_list_invalid",
+            "x11_window_list_query_failed",
+            "x11_window_property_query_failed",
+        }
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        last_error: HarnessError | None = None
+        while self._operations.monotonic() < deadline:
+            try:
+                self._require_panel_surfaces()
+                return
+            except HarnessError as error:
+                if str(error) not in transient_errors:
+                    raise
+                last_error = error
+            self._operations.pause(0.05)
+        raise HarnessError(timeout_error) from last_error
 
     def _require_surface_shell(
         self, *, allow_safe_mode: bool = False
