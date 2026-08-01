@@ -4261,7 +4261,7 @@ class LiveXorgHarnessPort:
         original_siblings = self._component_identities()
         previous = original_siblings["prismdrake-shell"]
         for crash in range(4):
-            if not self._operations.stop_identity(
+            if not self._operations.fail_identity(
                 previous, executable, self._config.stop_timeout
             ):
                 raise HarnessError("safe_mode_crash_signal_failed")

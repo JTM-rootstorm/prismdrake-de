@@ -4035,6 +4035,7 @@ class LivePortTests(unittest.TestCase):
         self.assertEqual(session_spawns[0].returncode, 0)
         self.assertIsNone(session_spawns[1].returncode)
         self.assertEqual(operations.shell_crashes, 0)
+        self.assertEqual(len(operations.fail_identity_calls), 4)
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
 
     def test_safe_mode_fails_closed_when_the_marker_is_not_published(self) -> None:
