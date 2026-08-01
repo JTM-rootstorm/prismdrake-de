@@ -1011,6 +1011,7 @@ Result<void> Pd2ShellRuntime::presentSingleton(const PendingSingletonPresentatio
     if (!view) {
         return Result<void>::failure(surfaceError());
     }
+    const bool wasVisible = view->isVisible();
     auto positioned = position(presentation.family, presentation.output.value());
     if (!positioned) {
         return positioned;
@@ -1021,6 +1022,9 @@ Result<void> Pd2ShellRuntime::presentSingleton(const PendingSingletonPresentatio
         return Result<void>::success();
     }
     view->requestActivate();
+    if (!shouldInitializeSingletonControlFocus(wasVisible, presentation.focus)) {
+        return Result<void>::success();
+    }
     const char *method = "focusFirstControl";
     if (presentation.family == composition::SurfaceFamily::launcher) {
         method = "focusSearch";

@@ -9,6 +9,13 @@
 namespace prismdrake::shell::runtime {
 namespace {
 
+TEST(SingletonPresentationFocusPolicyTest, InitializesOnlyHiddenFocusedPresentation) {
+    EXPECT_FALSE(shouldInitializeSingletonControlFocus(false, false));
+    EXPECT_TRUE(shouldInitializeSingletonControlFocus(false, true));
+    EXPECT_FALSE(shouldInitializeSingletonControlFocus(true, false));
+    EXPECT_FALSE(shouldInitializeSingletonControlFocus(true, true));
+}
+
 [[nodiscard]] std::shared_ptr<const prismdrake::desktop::WallpaperSnapshot>
 wallpaper(std::uint64_t generation, const char *color) {
     return std::make_shared<const prismdrake::desktop::WallpaperSnapshot>(

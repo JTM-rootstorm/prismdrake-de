@@ -37,6 +37,13 @@ class QScreen;
 
 namespace prismdrake::shell::runtime {
 
+/// A focused presentation of a hidden singleton initializes child focus. Replaying focus for an
+/// already-visible singleton must preserve the control selected by the user.
+[[nodiscard]] constexpr bool shouldInitializeSingletonControlFocus(bool wasVisible,
+                                                                   bool focusRequested) noexcept {
+    return focusRequested && !wasVisible;
+}
+
 /// Owner-epoch gate for the decoded wallpaper candidate used by runtime surface updates.
 /// The desktop host retains its last complete mapped snapshot independently while this gate is
 /// empty during a settings-owner gap or replacement decode.
