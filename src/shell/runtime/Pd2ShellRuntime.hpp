@@ -30,6 +30,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <vector>
 
 class QQuickView;
 class QScreen;
@@ -81,6 +82,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
 
   private:
     struct PendingSettingsPublication;
+    struct PendingSingletonPresentation;
     explicit Pd2ShellRuntime(ShellRuntimeOptions options);
     [[nodiscard]] foundation::Result<void> initialize();
     void handleSettings();
@@ -96,7 +98,12 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     [[nodiscard]] foundation::Result<std::unique_ptr<QQuickView>>
     makePanel(std::string_view outputName, QScreen &screen);
     [[nodiscard]] foundation::Result<void> ensureSingletonViews();
+    [[nodiscard]] foundation::Result<void>
+    submitSingletonTaskPolicy(std::vector<x11::WindowId> windows);
     void handleSingletonTaskPolicyPublication(std::uint64_t token, foundation::Result<void> result);
+    [[nodiscard]] foundation::Result<void> replayPendingSingletonPresentations();
+    [[nodiscard]] foundation::Result<void>
+    presentSingleton(const PendingSingletonPresentation &presentation);
     void reconcileTransientPresentation();
     [[nodiscard]] foundation::Result<void> applyWallpaper();
     [[nodiscard]] foundation::Result<void> maybePublishReady();
@@ -166,6 +173,7 @@ class Pd2ShellRuntime final : public QObject, public ShellRuntimePresentationPor
     std::unique_ptr<QQuickView> logout_view_;
     SingletonTaskPolicyGate singleton_task_policy_gate_;
     std::uint64_t next_singleton_task_policy_token_{1U};
+    std::vector<PendingSingletonPresentation> pending_singleton_presentations_;
     std::optional<outputs::SurfaceRegistrySnapshot> surface_snapshot_;
     SettingsWallpaperEpochGate wallpaper_candidate_;
     std::shared_ptr<const prismdrake::settings::SettingsSnapshot> settings_snapshot_;

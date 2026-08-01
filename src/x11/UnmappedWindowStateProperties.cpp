@@ -1,4 +1,4 @@
-#include "InitialWindowStateProperties.hpp"
+#include "UnmappedWindowStateProperties.hpp"
 
 #include "AtomCache.hpp"
 #include "PropertyReader.hpp"
@@ -18,7 +18,7 @@ namespace {
 using foundation::ErrorCode;
 using foundation::Result;
 
-inline constexpr std::size_t maximumInitialWindowStates = 16U;
+inline constexpr std::size_t maximumUnmappedWindowStates = 16U;
 
 struct FreeDeleter final {
     void operator()(void *pointer) const noexcept { std::free(pointer); }
@@ -29,39 +29,39 @@ using WindowAttributes = std::unique_ptr<xcb_get_window_attributes_reply_t, Free
 
 [[nodiscard]] Result<void> invalidContext() {
     return Result<void>::failure({ErrorCode::invalid_argument,
-                                  "The initial X11 window-state context is invalid.",
+                                  "The unmapped X11 window-state context is invalid.",
                                   "Use an atom cache created from the same live X11 connection."});
 }
 
 [[nodiscard]] Result<void> invalidTarget() {
     return Result<void>::failure({ErrorCode::invalid_argument,
-                                  "The initial X11 window-state target is invalid.",
+                                  "The unmapped X11 window-state target is invalid.",
                                   "Use a non-root, unmapped, managed shell window."});
 }
 
 [[nodiscard]] Result<void> invalidState() {
     return Result<void>::failure(
-        {ErrorCode::validation_error, "The existing initial X11 window state is invalid.",
-         "Discard the unpublished shell surface instead of replacing malformed state."});
+        {ErrorCode::validation_error, "The existing unmapped X11 window state is invalid.",
+         "Discard the unmapped shell surface instead of replacing malformed state."});
 }
 
 [[nodiscard]] Result<void> oversizedState() {
     return Result<void>::failure(
-        {ErrorCode::too_large, "The existing initial X11 window state exceeds its bound.",
-         "Discard the unpublished shell surface instead of extending unbounded state."});
+        {ErrorCode::too_large, "The existing unmapped X11 window state exceeds its bound.",
+         "Discard the unmapped shell surface instead of extending unbounded state."});
 }
 
 [[nodiscard]] Result<void> transportFailure() {
     return Result<void>::failure(
-        {ErrorCode::io_error, "The initial X11 window-state operation failed.",
-         "Discard the unpublished shell surface and rebuild it on a live X11 connection."});
+        {ErrorCode::io_error, "The unmapped X11 window-state operation failed.",
+         "Discard the unmapped shell surface and rebuild it on a live X11 connection."});
 }
 
 } // namespace
 
-Result<void> InitialWindowStateProperties::publishSkipTaskbar(X11Connection &connection,
-                                                              const AtomCache &atoms,
-                                                              WindowId window) {
+Result<void> UnmappedWindowStateProperties::publishSkipTaskbar(X11Connection &connection,
+                                                               const AtomCache &atoms,
+                                                               WindowId window) {
     const auto identity = connection.identity();
     if (identity == 0U || !atoms.belongsTo(identity) || window == connection.screen().rootWindow) {
         return identity == 0U || !atoms.belongsTo(identity) ? invalidContext() : invalidTarget();
@@ -87,8 +87,8 @@ Result<void> InitialWindowStateProperties::publishSkipTaskbar(X11Connection &con
     }
 
     const PropertySpec stateSpec{AtomName::atom, PropertyFormat::bits_32,
-                                 maximumInitialWindowStates,
-                                 maximumInitialWindowStates * sizeof(std::uint32_t)};
+                                 maximumUnmappedWindowStates,
+                                 maximumUnmappedWindowStates * sizeof(std::uint32_t)};
     std::vector<std::uint32_t> states;
     auto existing =
         PropertyReader::read(connection, atoms, window, AtomName::net_wm_state, stateSpec);
@@ -108,7 +108,7 @@ Result<void> InitialWindowStateProperties::publishSkipTaskbar(X11Connection &con
         return invalidState();
     }
     if (std::ranges::find(states, skipTaskbar->value()) == states.end()) {
-        if (states.size() >= maximumInitialWindowStates) {
+        if (states.size() >= maximumUnmappedWindowStates) {
             return oversizedState();
         }
         states.push_back(skipTaskbar->value());

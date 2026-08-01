@@ -88,6 +88,13 @@ struct Pd2ShellRuntime::PendingSettingsPublication final {
     prismdrake::desktop::WallpaperRequest wallpaperRequest;
 };
 
+struct Pd2ShellRuntime::PendingSingletonPresentation final {
+    composition::SurfaceFamily family;
+    composition::OutputName output;
+    x11::WindowId window;
+    bool focus;
+};
+
 Pd2ShellRuntime::Pd2ShellRuntime(ShellRuntimeOptions options)
     : options_(std::move(options)), task_model_(this), grouped_tasks_(this), settings_client_(this),
       quick_settings_(this),
@@ -442,6 +449,7 @@ void Pd2ShellRuntime::loseSettings() {
     panels_->clear();
     grouped_tasks_.clearSettingsOwner();
     quick_settings_.clearSettingsOwner();
+    pending_singleton_presentations_.clear();
     singleton_task_policy_gate_.invalidate();
     if (singleton_task_policy_gate_.pending()) {
         for (auto *view :
@@ -830,17 +838,8 @@ Result<void> Pd2ShellRuntime::ensureSingletonViews() {
         }
         taskPolicyWindows.push_back(nativeWindow.value());
     }
-    const auto publicationToken = next_singleton_task_policy_token_;
-    next_singleton_task_policy_token_ =
-        publicationToken == std::numeric_limits<std::uint64_t>::max() ? 0U : publicationToken + 1U;
-    auto begun = singleton_task_policy_gate_.begin(publicationToken);
-    if (!begun) {
-        return begun;
-    }
-    auto submitted = singleton_property_worker_->submitInitialSkipTaskbar(
-        publicationToken, std::move(taskPolicyWindows));
+    auto submitted = submitSingletonTaskPolicy(std::move(taskPolicyWindows));
     if (!submitted) {
-        static_cast<void>(singleton_task_policy_gate_.complete(publicationToken, false, true));
         return submitted;
     }
     const auto trackPlacement = [this](QQuickView &view, composition::SurfaceFamily family) {
@@ -891,6 +890,26 @@ Result<void> Pd2ShellRuntime::ensureSingletonViews() {
     return Result<void>::success();
 }
 
+Result<void> Pd2ShellRuntime::submitSingletonTaskPolicy(std::vector<x11::WindowId> windows) {
+    if (!singleton_property_worker_ || next_singleton_task_policy_token_ == 0U) {
+        return Result<void>::failure(surfaceError());
+    }
+    const auto publicationToken = next_singleton_task_policy_token_;
+    next_singleton_task_policy_token_ =
+        publicationToken == std::numeric_limits<std::uint64_t>::max() ? 0U : publicationToken + 1U;
+    auto begun = singleton_task_policy_gate_.begin(publicationToken);
+    if (!begun) {
+        return begun;
+    }
+    auto submitted =
+        singleton_property_worker_->submitUnmappedSkipTaskbar(publicationToken, std::move(windows));
+    if (!submitted) {
+        static_cast<void>(singleton_task_policy_gate_.complete(publicationToken, false, true));
+        return submitted;
+    }
+    return Result<void>::success();
+}
+
 void Pd2ShellRuntime::handleSingletonTaskPolicyPublication(std::uint64_t token,
                                                            Result<void> result) {
     const auto disposition =
@@ -899,6 +918,7 @@ void Pd2ShellRuntime::handleSingletonTaskPolicyPublication(std::uint64_t token,
         return;
     }
     if (disposition == SingletonTaskPolicyGate::CompletionDisposition::discard) {
+        pending_singleton_presentations_.clear();
         launcher_view_.reset();
         quick_settings_view_.reset();
         notification_center_view_.reset();
@@ -908,7 +928,17 @@ void Pd2ShellRuntime::handleSingletonTaskPolicyPublication(std::uint64_t token,
         return;
     }
     if (disposition == SingletonTaskPolicyGate::CompletionDisposition::fatal) {
+        pending_singleton_presentations_.clear();
         shutdown("singleton task-policy X11 publication", result.error());
+        return;
+    }
+    auto replayed = replayPendingSingletonPresentations();
+    if (!replayed) {
+        pending_singleton_presentations_.clear();
+        shutdown("singleton task-policy presentation", replayed.error());
+        return;
+    }
+    if (singleton_task_policy_gate_.pending()) {
         return;
     }
     reconcileTransientPresentation();
@@ -916,6 +946,84 @@ void Pd2ShellRuntime::handleSingletonTaskPolicyPublication(std::uint64_t token,
     if (!ready) {
         shutdown("transient notification readiness", ready.error());
     }
+}
+
+Result<void> Pd2ShellRuntime::replayPendingSingletonPresentations() {
+    if (pending_singleton_presentations_.empty()) {
+        return Result<void>::success();
+    }
+    std::vector<PendingSingletonPresentation> active;
+    active.reserve(pending_singleton_presentations_.size());
+    std::vector<x11::WindowId> changedWindows;
+    for (auto pending : pending_singleton_presentations_) {
+        if (pending.family == composition::SurfaceFamily::transientNotificationAction &&
+            notifications_.presentation().transientModel()->rowCount() == 0) {
+            continue;
+        }
+        const auto surfaces = composition_.state().activeSurfaces();
+        const auto desired =
+            std::ranges::find(surfaces, pending.family, &composition::ActiveSurface::family);
+        if (desired == surfaces.end()) {
+            continue;
+        }
+        pending.output = desired->output;
+        auto *view = surface(pending.family);
+        if (!view || view->isVisible()) {
+            return Result<void>::failure(surfaceError());
+        }
+        auto currentWindow = windowId(*view);
+        if (!currentWindow) {
+            return Result<void>::failure(currentWindow.error());
+        }
+        if (currentWindow.value() != pending.window) {
+            changedWindows.push_back(currentWindow.value());
+        }
+        pending.window = currentWindow.value();
+        active.push_back(std::move(pending));
+    }
+    pending_singleton_presentations_ = std::move(active);
+    if (pending_singleton_presentations_.empty()) {
+        return Result<void>::success();
+    }
+
+    if (!changedWindows.empty()) {
+        return submitSingletonTaskPolicy(std::move(changedWindows));
+    }
+
+    auto presentations = std::move(pending_singleton_presentations_);
+    pending_singleton_presentations_.clear();
+    for (const auto &presentation : presentations) {
+        auto presented = presentSingleton(presentation);
+        if (!presented) {
+            return presented;
+        }
+    }
+    return Result<void>::success();
+}
+
+Result<void> Pd2ShellRuntime::presentSingleton(const PendingSingletonPresentation &presentation) {
+    auto *view = surface(presentation.family);
+    if (!view) {
+        return Result<void>::failure(surfaceError());
+    }
+    auto positioned = position(presentation.family, presentation.output.value());
+    if (!positioned) {
+        return positioned;
+    }
+    view->show();
+    view->raise();
+    if (!presentation.focus) {
+        return Result<void>::success();
+    }
+    view->requestActivate();
+    const char *method = "focusFirstControl";
+    if (presentation.family == composition::SurfaceFamily::launcher) {
+        method = "focusSearch";
+    } else if (presentation.family == composition::SurfaceFamily::transientNotificationAction) {
+        method = "focusFirstCard";
+    }
+    QMetaObject::invokeMethod(view->rootObject(), method, Qt::QueuedConnection);
+    return Result<void>::success();
 }
 
 void Pd2ShellRuntime::reconcileTransientPresentation() {
@@ -982,7 +1090,12 @@ control::ShellRequestFailure Pd2ShellRuntime::validatePresentation(
                                    : control::ShellRequestFailure::none;
                     }
                     if (!singleton_task_policy_gate_.ready()) {
-                        return control::ShellRequestFailure::busy;
+                        const auto pending =
+                            std::ranges::find(pending_singleton_presentations_, value.family,
+                                              &PendingSingletonPresentation::family);
+                        if (pending == pending_singleton_presentations_.end()) {
+                            return control::ShellRequestFailure::busy;
+                        }
                     }
                     if (surface(value.family) == nullptr) {
                         return control::ShellRequestFailure::internal;
@@ -1034,6 +1147,76 @@ Pd2ShellRuntime::apply(std::span<const composition::CompositionIntent> intents) 
     if (validation != control::ShellRequestFailure::none) {
         return validation;
     }
+
+    std::vector<PendingSingletonPresentation> deferred;
+    bool invalidDeferredPresentation = false;
+    for (const auto &intent : intents) {
+        std::visit(
+            [this, &deferred, &invalidDeferredPresentation](const auto &value) {
+                using Intent = std::decay_t<decltype(value)>;
+                if constexpr (std::is_same_v<Intent, composition::PresentSurfaceIntent> ||
+                              std::is_same_v<Intent, composition::FocusSurfaceIntent>) {
+                    if (value.family == composition::SurfaceFamily::actionMenu) {
+                        return;
+                    }
+                    auto *view = surface(value.family);
+                    if (!view || view->isVisible()) {
+                        return;
+                    }
+                    const auto pending =
+                        std::ranges::find(pending_singleton_presentations_, value.family,
+                                          &PendingSingletonPresentation::family);
+                    if (pending != pending_singleton_presentations_.end()) {
+                        pending->output = value.output;
+                        if constexpr (std::is_same_v<Intent, composition::FocusSurfaceIntent>) {
+                            pending->focus = true;
+                        }
+                        return;
+                    }
+                    const auto existing = std::ranges::find(deferred, value.family,
+                                                            &PendingSingletonPresentation::family);
+                    if (existing != deferred.end()) {
+                        existing->output = value.output;
+                        if constexpr (std::is_same_v<Intent, composition::FocusSurfaceIntent>) {
+                            existing->focus = true;
+                        }
+                        return;
+                    }
+                    view->destroy();
+                    auto positioned = position(value.family, value.output.value());
+                    if (!positioned) {
+                        invalidDeferredPresentation = true;
+                        return;
+                    }
+                    auto nativeWindow = windowId(*view);
+                    if (!nativeWindow) {
+                        invalidDeferredPresentation = true;
+                        return;
+                    }
+                    deferred.push_back({value.family, value.output, nativeWindow.value(),
+                                        std::is_same_v<Intent, composition::FocusSurfaceIntent>});
+                }
+            },
+            intent);
+    }
+    if (invalidDeferredPresentation) {
+        return control::ShellRequestFailure::internal;
+    }
+    if (!deferred.empty()) {
+        std::vector<x11::WindowId> windows;
+        windows.reserve(deferred.size());
+        for (const auto &presentation : deferred) {
+            windows.push_back(presentation.window);
+        }
+        pending_singleton_presentations_ = std::move(deferred);
+        auto submitted = submitSingletonTaskPolicy(std::move(windows));
+        if (!submitted) {
+            pending_singleton_presentations_.clear();
+            shutdown("singleton task-policy submission", submitted.error());
+            return control::ShellRequestFailure::internal;
+        }
+    }
+
     for (const auto &intent : intents) {
         const auto failure = std::visit(
             [this](const auto &value) -> control::ShellRequestFailure {
@@ -1047,23 +1230,30 @@ Pd2ShellRuntime::apply(std::span<const composition::CompositionIntent> intents) 
                     if (!view) {
                         return control::ShellRequestFailure::internal;
                     }
-                    static_cast<void>(position(value.family, value.output.value()));
-                    view->show();
-                    view->raise();
-                    if constexpr (std::is_same_v<Intent, composition::FocusSurfaceIntent>) {
-                        view->requestActivate();
-                        const char *method = "focusFirstControl";
-                        if (value.family == composition::SurfaceFamily::launcher) {
-                            method = "focusSearch";
-                        } else if (value.family ==
-                                   composition::SurfaceFamily::transientNotificationAction) {
-                            method = "focusFirstCard";
+                    const auto deferred =
+                        std::ranges::find(pending_singleton_presentations_, value.family,
+                                          &PendingSingletonPresentation::family);
+                    if (deferred == pending_singleton_presentations_.end()) {
+                        auto nativeWindow = windowId(*view);
+                        if (!nativeWindow) {
+                            return control::ShellRequestFailure::internal;
                         }
-                        QMetaObject::invokeMethod(view->rootObject(), method, Qt::QueuedConnection);
+                        auto presented = presentSingleton(
+                            {value.family, value.output, nativeWindow.value(),
+                             std::is_same_v<Intent, composition::FocusSurfaceIntent>});
+                        if (!presented) {
+                            return control::ShellRequestFailure::internal;
+                        }
                     }
                 } else if constexpr (std::is_same_v<Intent, composition::MoveSurfaceIntent>) {
                     if (value.family != composition::SurfaceFamily::actionMenu) {
                         static_cast<void>(position(value.family, value.to.value()));
+                        const auto pending =
+                            std::ranges::find(pending_singleton_presentations_, value.family,
+                                              &PendingSingletonPresentation::family);
+                        if (pending != pending_singleton_presentations_.end()) {
+                            pending->output = value.to;
+                        }
                     }
                 } else if constexpr (std::is_same_v<Intent, composition::DismissSurfaceIntent>) {
                     if (auto *view = surface(value.family)) {

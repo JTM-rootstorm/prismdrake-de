@@ -14,7 +14,7 @@ class X11Connection;
 class DesktopProperties;
 class DockProperties;
 class EwmhWindowRequests;
-class InitialWindowStateProperties;
+class UnmappedWindowStateProperties;
 class PropertyReader;
 
 /// Closed atom vocabulary used by the PD1 standards-only X11 adapter.
@@ -88,7 +88,7 @@ class AtomCache final {
     friend class DesktopProperties;
     friend class DockProperties;
     friend class EwmhWindowRequests;
-    friend class InitialWindowStateProperties;
+    friend class UnmappedWindowStateProperties;
     friend class PropertyReader;
 
     static constexpr std::size_t atomCount = static_cast<std::size_t>(AtomName::count);

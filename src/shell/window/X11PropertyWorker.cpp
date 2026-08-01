@@ -3,12 +3,13 @@
 #include "AtomCache.hpp"
 #include "DesktopProperties.hpp"
 #include "DockProperties.hpp"
-#include "InitialWindowStateProperties.hpp"
+#include "UnmappedWindowStateProperties.hpp"
 #include "X11Connection.hpp"
 
 #include <QMetaObject>
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <set>
 #include <utility>
@@ -23,6 +24,8 @@ using foundation::Result;
 
 inline constexpr std::size_t maximumQueuedPropertyTransactions = 64U;
 inline constexpr std::size_t maximumPropertyOperationsPerTransaction = 128U;
+inline constexpr std::size_t maximumUnmappedPublicationAttempts = 32U;
+inline constexpr auto unmappedPublicationRetryDelay = std::chrono::milliseconds{5};
 
 [[nodiscard]] Result<void> invalidJob() {
     return Result<void>::failure(
@@ -34,6 +37,41 @@ inline constexpr std::size_t maximumPropertyOperationsPerTransaction = 128U;
     return Result<void>::failure(
         {ErrorCode::cancelled, "The X11 property worker is unavailable.",
          "Discard the pending surfaces and rebuild them after X11 recovery."});
+}
+
+[[nodiscard]] bool isTransientUnmappedPublicationFailure(const Result<void> &result) noexcept {
+    return !result && (result.error().code == ErrorCode::invalid_argument ||
+                       result.error().code == ErrorCode::io_error);
+}
+
+[[nodiscard]] bool
+isUnmappedPublication(std::span<const X11PropertyOperation> operations) noexcept {
+    return !operations.empty() && std::ranges::all_of(operations, [](const auto &operation) {
+        return operation.kind == X11PropertyOperationKind::publishUnmappedSkipTaskbar;
+    });
+}
+
+template <typename Attempt>
+[[nodiscard]] Result<void> retryUnmappedPublication(std::stop_token stopToken, Attempt &&attempt) {
+    if (stopToken.stop_requested()) {
+        return stoppedWorker();
+    }
+    auto result = attempt();
+    std::size_t attempts = 1U;
+    std::mutex retryMutex;
+    std::condition_variable_any retryWake;
+    while (attempts < maximumUnmappedPublicationAttempts &&
+           isTransientUnmappedPublicationFailure(result)) {
+        std::unique_lock lock{retryMutex};
+        static_cast<void>(retryWake.wait_for(lock, stopToken, unmappedPublicationRetryDelay,
+                                             [] { return false; }));
+        if (stopToken.stop_requested()) {
+            return stoppedWorker();
+        }
+        result = attempt();
+        ++attempts;
+    }
+    return result;
 }
 
 [[nodiscard]] Result<void> applyOperation(x11::X11Connection &connection,
@@ -52,9 +90,9 @@ inline constexpr std::size_t maximumPropertyOperationsPerTransaction = 128U;
         return x11::DesktopProperties::publish(connection, atoms, operation.window);
     case X11PropertyOperationKind::removeDesktop:
         return x11::DesktopProperties::remove(connection, atoms, operation.window);
-    case X11PropertyOperationKind::publishInitialSkipTaskbar:
-        return x11::InitialWindowStateProperties::publishSkipTaskbar(connection, atoms,
-                                                                     operation.window);
+    case X11PropertyOperationKind::publishUnmappedSkipTaskbar:
+        return x11::UnmappedWindowStateProperties::publishSkipTaskbar(connection, atoms,
+                                                                      operation.window);
     }
     return invalidJob();
 }
@@ -70,7 +108,7 @@ rollbackFor(const X11PropertyOperation &operation) {
                                     std::nullopt};
     case X11PropertyOperationKind::removeDock:
     case X11PropertyOperationKind::removeDesktop:
-    case X11PropertyOperationKind::publishInitialSkipTaskbar:
+    case X11PropertyOperationKind::publishUnmappedSkipTaskbar:
         return std::nullopt;
     }
     return std::nullopt;
@@ -131,7 +169,7 @@ Result<void> X11PropertyWorker::submit(std::uint64_t token,
         return invalidJob();
     }
     for (const auto &operation : operations) {
-        if (operation.kind == X11PropertyOperationKind::publishInitialSkipTaskbar) {
+        if (operation.kind == X11PropertyOperationKind::publishUnmappedSkipTaskbar) {
             return invalidJob();
         }
         const bool reservationRequired = operation.kind == X11PropertyOperationKind::publishDock;
@@ -142,8 +180,8 @@ Result<void> X11PropertyWorker::submit(std::uint64_t token,
     return enqueue(token, std::move(operations), true);
 }
 
-Result<void> X11PropertyWorker::submitInitialSkipTaskbar(std::uint64_t token,
-                                                         std::vector<x11::WindowId> windows) {
+Result<void> X11PropertyWorker::submitUnmappedSkipTaskbar(std::uint64_t token,
+                                                          std::vector<x11::WindowId> windows) {
     if (token == 0U || windows.empty() ||
         windows.size() > maximumPropertyOperationsPerTransaction) {
         return invalidJob();
@@ -159,7 +197,7 @@ Result<void> X11PropertyWorker::submitInitialSkipTaskbar(std::uint64_t token,
     operations.reserve(windows.size());
     for (const auto window : windows) {
         operations.push_back(
-            {X11PropertyOperationKind::publishInitialSkipTaskbar, window, std::nullopt});
+            {X11PropertyOperationKind::publishUnmappedSkipTaskbar, window, std::nullopt});
     }
     return enqueue(token, std::move(operations), false);
 }
@@ -220,7 +258,13 @@ void X11PropertyWorker::run(std::stop_token stopToken) {
             jobs_.pop_front();
         }
         if (test_transaction_) {
-            deliver(job->token, test_transaction_(stopToken, job->operations));
+            auto execute = [this, &stopToken, &job] {
+                return test_transaction_(stopToken, job->operations);
+            };
+            auto result = isUnmappedPublication(job->operations)
+                              ? retryUnmappedPublication(stopToken, execute)
+                              : execute();
+            deliver(job->token, std::move(result));
             continue;
         }
         if (setupError) {
@@ -230,7 +274,12 @@ void X11PropertyWorker::run(std::stop_token stopToken) {
         std::vector<X11PropertyOperation> published;
         Result<void> result = Result<void>::success();
         for (const auto &operation : job->operations) {
-            result = applyOperation(*connection, *atoms, operation);
+            const auto apply = [&connection, &atoms, &operation] {
+                return applyOperation(*connection, *atoms, operation);
+            };
+            result = operation.kind == X11PropertyOperationKind::publishUnmappedSkipTaskbar
+                         ? retryUnmappedPublication(stopToken, apply)
+                         : apply();
             if (!result) {
                 break;
             }

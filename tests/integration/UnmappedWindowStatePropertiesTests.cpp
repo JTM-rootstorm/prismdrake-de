@@ -1,4 +1,4 @@
-#include "InitialWindowStateProperties.hpp"
+#include "UnmappedWindowStateProperties.hpp"
 
 #include "AtomCache.hpp"
 #include "X11Connection.hpp"
@@ -36,8 +36,9 @@ using ConnectionHandle = std::unique_ptr<xcb_connection_t, ConnectionDeleter>;
 using InternReply = std::unique_ptr<xcb_intern_atom_reply_t, FreeDeleter>;
 using PropertyReply = std::unique_ptr<xcb_get_property_reply_t, FreeDeleter>;
 using ProtocolError = std::unique_ptr<xcb_generic_error_t, FreeDeleter>;
+using WindowAttributes = std::unique_ptr<xcb_get_window_attributes_reply_t, FreeDeleter>;
 
-class InitialWindowStatePropertiesIntegrationTest : public ::testing::Test {
+class UnmappedWindowStatePropertiesIntegrationTest : public ::testing::Test {
   protected:
     void SetUp() override {
         display_ = std::getenv("DISPLAY");
@@ -124,6 +125,16 @@ class InitialWindowStatePropertiesIntegrationTest : public ::testing::Test {
         return values;
     }
 
+    [[nodiscard]] std::uint8_t mapState() const {
+        xcb_generic_error_t *rawError = nullptr;
+        WindowAttributes reply{xcb_get_window_attributes_reply(
+            observer_.get(), xcb_get_window_attributes(observer_.get(), window_), &rawError)};
+        ProtocolError error{rawError};
+        EXPECT_FALSE(error);
+        EXPECT_TRUE(reply);
+        return reply ? reply->map_state : static_cast<std::uint8_t>(XCB_MAP_STATE_UNVIEWABLE);
+    }
+
     [[nodiscard]] foundation::Result<void> publish(WindowId window) const {
         auto connection = X11Connection::connect(display_);
         if (!connection) {
@@ -133,8 +144,8 @@ class InitialWindowStatePropertiesIntegrationTest : public ::testing::Test {
         if (!atoms) {
             return foundation::Result<void>::failure(atoms.error());
         }
-        return InitialWindowStateProperties::publishSkipTaskbar(connection.value(), atoms.value(),
-                                                                window);
+        return UnmappedWindowStateProperties::publishSkipTaskbar(connection.value(), atoms.value(),
+                                                                 window);
     }
 
     const char *display_ = nullptr;
@@ -149,7 +160,7 @@ class InitialWindowStatePropertiesIntegrationTest : public ::testing::Test {
     xcb_atom_t demandsAttention_ = XCB_ATOM_NONE;
 };
 
-TEST_F(InitialWindowStatePropertiesIntegrationTest,
+TEST_F(UnmappedWindowStatePropertiesIntegrationTest,
        PreservesBoundedStateAndPublishesSkipTaskbarIdempotentlyBeforeMapping) {
     const auto window = createWindow();
     const std::array initial{modal_, demandsAttention_};
@@ -161,14 +172,38 @@ TEST_F(InitialWindowStatePropertiesIntegrationTest,
     EXPECT_EQ(stateValues(), (std::vector<std::uint32_t>{modal_, demandsAttention_, skipTaskbar_}));
 }
 
-TEST_F(InitialWindowStatePropertiesIntegrationTest, PublishesSkipTaskbarWhenStateIsAbsent) {
+TEST_F(UnmappedWindowStatePropertiesIntegrationTest,
+       PublishesAgainAfterWithdrawalAndPreservesReplacementState) {
+    const auto window = createWindow();
+    const std::array initial{modal_};
+    replaceState(atom_, initial);
+    ASSERT_TRUE(publish(window));
+    ASSERT_EQ(stateValues(), (std::vector<std::uint32_t>{modal_, skipTaskbar_}));
+
+    ProtocolError mapError{
+        xcb_request_check(observer_.get(), xcb_map_window_checked(observer_.get(), window_))};
+    ASSERT_FALSE(mapError);
+    ASSERT_EQ(mapState(), XCB_MAP_STATE_VIEWABLE);
+
+    ProtocolError unmapError{
+        xcb_request_check(observer_.get(), xcb_unmap_window_checked(observer_.get(), window_))};
+    ASSERT_FALSE(unmapError);
+    ASSERT_EQ(mapState(), XCB_MAP_STATE_UNMAPPED);
+
+    const std::array replacement{demandsAttention_, modal_};
+    replaceState(atom_, replacement);
+    ASSERT_TRUE(publish(window));
+    EXPECT_EQ(stateValues(), (std::vector<std::uint32_t>{demandsAttention_, modal_, skipTaskbar_}));
+}
+
+TEST_F(UnmappedWindowStatePropertiesIntegrationTest, PublishesSkipTaskbarWhenStateIsAbsent) {
     const auto window = createWindow();
 
     ASSERT_TRUE(publish(window));
     EXPECT_EQ(stateValues(), (std::vector<std::uint32_t>{skipTaskbar_}));
 }
 
-TEST_F(InitialWindowStatePropertiesIntegrationTest, RejectsMappedAndOverrideRedirectTargets) {
+TEST_F(UnmappedWindowStatePropertiesIntegrationTest, RejectsMappedAndOverrideRedirectTargets) {
     const auto mapped = createWindow();
     ProtocolError mapError{
         xcb_request_check(observer_.get(), xcb_map_window_checked(observer_.get(), window_))};
@@ -186,12 +221,12 @@ TEST_F(InitialWindowStatePropertiesIntegrationTest, RejectsMappedAndOverrideRedi
     EXPECT_EQ(overrideResult.error().code, foundation::ErrorCode::invalid_argument);
 }
 
-TEST_F(InitialWindowStatePropertiesIntegrationTest, RejectsRootAndForeignAtomCache) {
+TEST_F(UnmappedWindowStatePropertiesIntegrationTest, RejectsRootAndForeignAtomCache) {
     auto connection = X11Connection::connect(display_);
     ASSERT_TRUE(connection);
     auto atoms = AtomCache::create(connection.value());
     ASSERT_TRUE(atoms);
-    const auto rootResult = InitialWindowStateProperties::publishSkipTaskbar(
+    const auto rootResult = UnmappedWindowStateProperties::publishSkipTaskbar(
         connection.value(), atoms.value(), connection.value().screen().rootWindow);
     ASSERT_FALSE(rootResult);
     EXPECT_EQ(rootResult.error().code, foundation::ErrorCode::invalid_argument);
@@ -201,13 +236,13 @@ TEST_F(InitialWindowStatePropertiesIntegrationTest, RejectsRootAndForeignAtomCac
     auto foreignAtoms = AtomCache::create(foreignConnection.value());
     ASSERT_TRUE(foreignAtoms);
     const auto target = createWindow();
-    const auto foreignResult = InitialWindowStateProperties::publishSkipTaskbar(
+    const auto foreignResult = UnmappedWindowStateProperties::publishSkipTaskbar(
         connection.value(), foreignAtoms.value(), target);
     ASSERT_FALSE(foreignResult);
     EXPECT_EQ(foreignResult.error().code, foundation::ErrorCode::invalid_argument);
 }
 
-TEST_F(InitialWindowStatePropertiesIntegrationTest, RejectsMalformedStateLists) {
+TEST_F(UnmappedWindowStatePropertiesIntegrationTest, RejectsMalformedStateLists) {
     const auto malformedWindow = createWindow();
     const std::array malformed{modal_};
     replaceState(cardinal_, malformed);
@@ -228,7 +263,7 @@ TEST_F(InitialWindowStatePropertiesIntegrationTest, RejectsMalformedStateLists) 
     EXPECT_EQ(noneResult.error().code, foundation::ErrorCode::validation_error);
 }
 
-TEST_F(InitialWindowStatePropertiesIntegrationTest, RejectsBoundedAndTruncatedOversizedState) {
+TEST_F(UnmappedWindowStatePropertiesIntegrationTest, RejectsBoundedAndTruncatedOversizedState) {
     const auto window = createWindow();
     std::array<std::uint32_t, 16U> bounded{};
     for (std::size_t index = 0; index < bounded.size(); ++index) {
@@ -249,7 +284,7 @@ TEST_F(InitialWindowStatePropertiesIntegrationTest, RejectsBoundedAndTruncatedOv
     EXPECT_EQ(truncatedResult.error().code, foundation::ErrorCode::validation_error);
 }
 
-TEST_F(InitialWindowStatePropertiesIntegrationTest, RejectsDestroyedTarget) {
+TEST_F(UnmappedWindowStatePropertiesIntegrationTest, RejectsDestroyedTarget) {
     const auto window = createWindow();
     ProtocolError destroyError{
         xcb_request_check(observer_.get(), xcb_destroy_window_checked(observer_.get(), window_))};

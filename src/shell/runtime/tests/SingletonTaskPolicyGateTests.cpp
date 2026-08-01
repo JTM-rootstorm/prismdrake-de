@@ -81,5 +81,22 @@ TEST(SingletonTaskPolicyGateTest, StaleCompletionCannotChangeCurrentGeneration) 
     EXPECT_EQ(gate.complete(5U, true, true), Disposition::ready);
 }
 
+TEST(SingletonTaskPolicyGateTest, RearmCycleBlocksRemapUntilCurrentPublicationCompletes) {
+    SingletonTaskPolicyGate gate;
+
+    ASSERT_TRUE(gate.begin(6U));
+    ASSERT_EQ(gate.complete(6U, true, true), Disposition::ready);
+    ASSERT_TRUE(gate.ready());
+
+    ASSERT_TRUE(gate.begin(7U));
+    EXPECT_TRUE(gate.pending());
+    EXPECT_FALSE(gate.ready());
+    EXPECT_FALSE(gate.begin(8U));
+    EXPECT_EQ(gate.complete(6U, true, true), Disposition::stale);
+    EXPECT_FALSE(gate.ready());
+    EXPECT_EQ(gate.complete(7U, true, true), Disposition::ready);
+    EXPECT_TRUE(gate.ready());
+}
+
 } // namespace
 } // namespace prismdrake::shell::runtime

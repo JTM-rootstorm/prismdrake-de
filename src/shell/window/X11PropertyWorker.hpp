@@ -30,7 +30,7 @@ enum class X11PropertyOperationKind : std::uint8_t {
     removeDock,
     publishDesktop,
     removeDesktop,
-    publishInitialSkipTaskbar,
+    publishUnmappedSkipTaskbar,
 };
 
 struct X11PropertyOperation final {
@@ -57,10 +57,11 @@ class X11PropertyWorker final {
 
     [[nodiscard]] foundation::Result<void> submit(std::uint64_t token,
                                                   std::vector<X11PropertyOperation> operations);
-    /// Publishes one non-rollbackable policy to a bounded set of unpublished native windows.
-    /// Retain every target through completion and discard all targets on failure.
+    /// Publishes one non-rollbackable policy to a bounded set of unmapped native windows.
+    /// Retain every target through completion and discard all targets on failure. This applies
+    /// equally to first publication and to a fresh unmapped target created after withdrawal.
     [[nodiscard]] foundation::Result<void>
-    submitInitialSkipTaskbar(std::uint64_t token, std::vector<x11::WindowId> windows);
+    submitUnmappedSkipTaskbar(std::uint64_t token, std::vector<x11::WindowId> windows);
 
   private:
     struct Job final {
