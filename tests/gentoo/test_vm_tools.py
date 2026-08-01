@@ -283,6 +283,13 @@ class ScriptPolicyTests(unittest.TestCase):
         self.assertNotIn("*/* **", source)
         self.assertNotIn("ACCEPT_KEYWORDS=", source)
 
+    def test_bootstrap_enables_the_qt_linguist_catalog_compiler(self) -> None:
+        source = BOOTSTRAP.read_text(encoding="utf-8")
+        self.assertIn(
+            "dev-qt/qttools:6 linguist opengl qdbus qtdiag qtplugininfo",
+            source,
+        )
+
     def test_verifier_contains_no_apply_commands(self) -> None:
         source = VERIFY.read_text(encoding="utf-8")
         for forbidden in ("--ask", "pkgdev manifest", "emaint sync", "emerge --sync"):
