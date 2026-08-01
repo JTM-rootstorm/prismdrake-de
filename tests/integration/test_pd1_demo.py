@@ -986,6 +986,113 @@ class EvidenceContractTests(unittest.TestCase):
         focus_probe.assert_not_called()
         key_sender.assert_not_called()
 
+    def test_task_context_diagnostic_is_bounded_and_redacts_atspi_text(self) -> None:
+        title = APP_TITLES[0]
+        action_name = f"Minimize {title}"
+        state_type = mock.Mock(FOCUSED=1, SHOWING=2, VISIBLE=3)
+        atspi = mock.Mock(StateType=state_type)
+
+        target = mock.Mock()
+        target.get_state_set.return_value.contains.side_effect = (
+            lambda state: state in (state_type.SHOWING, state_type.VISIBLE)
+        )
+        task_focus = mock.Mock()
+        task_focus.get_name.return_value = title
+        task_focus.get_state_set.return_value.contains.side_effect = (
+            lambda state: state == state_type.FOCUSED
+        )
+        private_focus = mock.Mock()
+        private_focus.get_name.return_value = "private focused accessible name"
+        private_focus.get_role_name.side_effect = AssertionError("role must not be read")
+        private_focus.get_state_set.return_value.contains.side_effect = (
+            lambda state: state == state_type.FOCUSED
+        )
+
+        def named(_atspi: object, name: str) -> list[object]:
+            if name == action_name:
+                return [target]
+            if name == "Minimize":
+                return [object()]
+            return []
+
+        def showing(_atspi: object, name: str, _action: str) -> list[object]:
+            return [target] if name == action_name else []
+
+        with mock.patch.object(pd1_demo, "named_nodes", side_effect=named), \
+                mock.patch.object(pd1_demo, "named_action_nodes", return_value=[target]), \
+                mock.patch.object(pd1_demo, "showing_named_action_nodes",
+                                  side_effect=showing), \
+                mock.patch.object(pd1_demo, "application", return_value=object()), \
+                mock.patch.object(pd1_demo, "walk",
+                                  return_value=[task_focus, private_focus]), \
+                mock.patch.object(pd1_demo, "action_names",
+                                  return_value=["Press", "private action name"]), \
+                mock.patch.object(pd1_demo, "task_accessible_description",
+                                  return_value="Window actions shown. private description"):
+            diagnostic = pd1_demo.task_context_menu_diagnostic(
+                atspi, title, action_name,
+            )
+
+        self.assertEqual(
+            diagnostic,
+            "PD1 task-menu diagnostic: named_count=1 interactive_count=1 "
+            "showing_count=1 visible_count=1 focused_count=0 bare_counts=1,0 "
+            "menu_marker=1 reviewed_states=0/0,0/0,0/0,1/0,0/0 "
+            "focus_buckets=2,1,0,0,1 action_profile=2,1",
+        )
+        self.assertLessEqual(len(diagnostic), 512)
+        for private_text in (
+                "private focused accessible name", "private action name",
+                "private description"):
+            self.assertNotIn(private_text, diagnostic)
+        private_focus.get_role_name.assert_not_called()
+
+    def test_task_context_diagnostic_degrades_failed_probes_to_closed_markers(self) -> None:
+        atspi = mock.Mock()
+        with mock.patch.object(pd1_demo, "named_nodes",
+                               side_effect=RuntimeError("private path")), \
+                mock.patch.object(pd1_demo, "named_action_nodes",
+                                  side_effect=RuntimeError("private action")), \
+                mock.patch.object(pd1_demo, "showing_named_action_nodes",
+                                  side_effect=RuntimeError("private state")), \
+                mock.patch.object(pd1_demo, "application",
+                                  side_effect=RuntimeError("private owner")), \
+                mock.patch.object(pd1_demo, "task_accessible_description",
+                                  side_effect=RuntimeError("private description")):
+            diagnostic = pd1_demo.task_context_menu_diagnostic(
+                atspi, APP_TITLES[0], f"Minimize {APP_TITLES[0]}",
+            )
+
+        self.assertEqual(
+            diagnostic,
+            "PD1 task-menu diagnostic: named_count=? interactive_count=? "
+            "showing_count=? visible_count=? focused_count=? bare_counts=?,? "
+            "menu_marker=? reviewed_states=?/?,?/?,?/?,?/?,?/? "
+            "focus_buckets=?,?,?,?,? action_profile=?,?",
+        )
+        self.assertNotIn("private", diagnostic)
+
+    def test_context_diagnostic_failure_does_not_mask_original_demo_error(self) -> None:
+        error = io.StringIO()
+        with mock.patch.object(
+                    pd1_demo, "wait_until",
+                    side_effect=("4194305", DemoError("task_context_menu_focus_timeout")),
+                ), mock.patch.object(
+                    pd1_demo, "task_context_menu_diagnostic",
+                    side_effect=RuntimeError("private diagnostic failure"),
+                ), contextlib.redirect_stderr(error):
+            with self.assertRaisesRegex(
+                    DemoError, "^task_context_menu_focus_timeout$"):
+                pd1_demo.require_task_context_menu_focus(
+                    object(), Path("/usr/bin/xdotool"), "4194305",
+                    ProcessIdentity(100, 1, 0), APP_TITLES[0], True,
+                )
+
+        self.assertEqual(
+            error.getvalue(),
+            "PD1 task-menu diagnostic: unavailable=1\n",
+        )
+
     def test_pointer_context_open_rejects_invalid_shell_identity_before_emission(self) -> None:
         with mock.patch.object(pd1_demo, "window_process_id") as owner_probe, \
                 mock.patch.object(pd1_demo, "window_ids", return_value=["4194305"]), \

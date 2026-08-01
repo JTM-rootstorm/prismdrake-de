@@ -1011,6 +1011,133 @@ def task_reactivation_diagnostic(active_target: bool, hidden_target: bool,
     )
 
 
+def task_context_menu_diagnostic(atspi: Any, title: str,
+                                 action_name: str) -> str:
+    """Return bounded, redacted AT-SPI state for a failed task-menu probe."""
+
+    def nodes_or_none(operation: Callable[[], list[Any]]) -> list[Any] | None:
+        try:
+            nodes = operation()
+            if not isinstance(nodes, list) or len(nodes) > 1024:
+                return None
+            return nodes
+        except Exception:
+            return None
+
+    def count_or_unknown(operation: Callable[[], int], maximum: int = 1024) -> str:
+        try:
+            value = operation()
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+                return "?"
+            return str(value)
+        except Exception:
+            return "?"
+
+    def state_count(nodes: list[Any] | None, state_name: str) -> str:
+        if nodes is None:
+            return "?"
+        return count_or_unknown(
+            lambda: sum(
+                node.get_state_set().contains(getattr(atspi.StateType, state_name))
+                for node in nodes
+            ),
+        )
+
+    nodes = nodes_or_none(lambda: named_nodes(atspi, action_name))
+    interactive = nodes_or_none(
+        lambda: named_action_nodes(atspi, action_name, "Press"),
+    )
+    reviewed_action_names = (
+        f"Open a new {title} window",
+        f"Pin {title}",
+        f"Unpin {title}",
+        f"Minimize {title}",
+        f"Close {title}",
+    )
+
+    reviewed_action_states = []
+    for reviewed_name in reviewed_action_names:
+        showing = nodes_or_none(
+            lambda reviewed_name=reviewed_name:
+                showing_named_action_nodes(atspi, reviewed_name, "Press"),
+        )
+        reviewed_showing_count = (
+            count_or_unknown(lambda showing=showing: len(showing))
+            if showing is not None else "?"
+        )
+        reviewed_action_states.append(
+            f"{reviewed_showing_count}/{state_count(showing, 'FOCUSED')}"
+        )
+
+    def focused_category_counts() -> tuple[int, int, int, int, int]:
+        owner = application(atspi)
+        focused_nodes = [] if owner is None else [
+            node for node in walk(owner)
+            if node.get_state_set().contains(atspi.StateType.FOCUSED)
+        ]
+        counts = [0, 0, 0, 0]
+        for focused_node in focused_nodes:
+            focused_name = focused_node.get_name() or ""
+            if focused_name == title:
+                category = 0
+            elif focused_name == f"Application actions for {title}":
+                category = 1
+            elif focused_name in reviewed_action_names:
+                category = 2
+            else:
+                category = 3
+            counts[category] += 1
+        return (len(focused_nodes), *counts)
+
+    try:
+        focused_counts = focused_category_counts()
+        require(all(0 <= value <= 1024 for value in focused_counts),
+                "atspi_node_bound")
+        focused_summary = ",".join(str(value) for value in focused_counts)
+    except Exception:
+        focused_summary = "?,?,?,?,?"
+
+    def action_summary() -> tuple[int, int]:
+        if nodes is None:
+            raise DemoError("atspi_node_bound")
+        reviewed_actions = [action_names(node) for node in nodes]
+        action_count = sum(len(actions) for actions in reviewed_actions)
+        require(action_count <= 16384, "atspi_action_bound")
+        return action_count, sum("Press" in actions for actions in reviewed_actions)
+
+    try:
+        action_count, press_capable_count = action_summary()
+        action_profile = f"{action_count},{press_capable_count}"
+    except Exception:
+        action_profile = "?,?"
+
+    task_description = ""
+    description_available = True
+    try:
+        task_description = task_accessible_description(atspi, title)
+    except Exception:
+        description_available = False
+    menu_marker = (
+        str(int("Window actions shown." in task_description))
+        if description_available else "?"
+    )
+
+    return (
+        "PD1 task-menu diagnostic: "
+        f"named_count={len(nodes) if nodes is not None else '?'} "
+        f"interactive_count={len(interactive) if interactive is not None else '?'} "
+        f"showing_count={state_count(interactive, 'SHOWING')} "
+        f"visible_count={state_count(interactive, 'VISIBLE')} "
+        f"focused_count={state_count(interactive, 'FOCUSED')} "
+        f"bare_counts={count_or_unknown(lambda: len(named_nodes(atspi, 'Minimize')))},"
+        f"{count_or_unknown(lambda: len(named_nodes(atspi, 'Close')))} "
+        f"menu_marker={menu_marker} "
+        f"reviewed_states={','.join(reviewed_action_states)} "
+        f"focus_buckets={focused_summary} "
+        f"action_profile={action_profile}"
+    )
+
+
 def open_task_context_menu(atspi: Any, xdotool: Path, panel: str,
                            shell_identity: ProcessIdentity, title: str,
                            expected_action: str = "Minimize") -> str:
@@ -1064,30 +1191,14 @@ def require_task_context_menu_focus(atspi: Any, xdotool: Path, panel: str,
                 "task_context_menu_focus_timeout",
             )
     except DemoError:
-        nodes = named_nodes(atspi, action_name)
-        interactive = named_action_nodes(atspi, action_name, "Press")
-        showing_count = sum(
-            node.get_state_set().contains(atspi.StateType.SHOWING) for node in interactive
-        )
-        visible_count = sum(
-            node.get_state_set().contains(atspi.StateType.VISIBLE) for node in interactive
-        )
-        focused_count = sum(
-            node.get_state_set().contains(atspi.StateType.FOCUSED) for node in interactive
-        )
-        bare_minimize_count = len(named_nodes(atspi, "Minimize"))
-        bare_close_count = len(named_nodes(atspi, "Close"))
-        task_description = task_accessible_description(atspi, title)
-        print(
-            "PD1 task-menu diagnostic: "
-            f"named_count={len(nodes)} interactive_count={len(interactive)} "
-            f"showing_count={showing_count} visible_count={visible_count} "
-            f"focused_count={focused_count} "
-            f"bare_counts={bare_minimize_count},{bare_close_count} "
-            f"menu_marker={int('Window actions shown.' in task_description)} "
-            f"action_sets={';'.join(','.join(action_names(node)) for node in nodes)}",
-            file=sys.stderr,
-        )
+        try:
+            diagnostic = task_context_menu_diagnostic(atspi, title, action_name)
+        except Exception:
+            diagnostic = "PD1 task-menu diagnostic: unavailable=1"
+        try:
+            print(diagnostic, file=sys.stderr)
+        except Exception:
+            pass
         raise
     if require_keyboard_focus:
         focused_window = focused_window_id(xdotool)
