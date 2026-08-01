@@ -14,7 +14,15 @@ TestCase {
     property int centerRequests: 0
     property int logoutRequests: 0
     property bool makeProfileRequestPending: false
+    property bool completeProfileRequestSynchronously: false
+    property bool forgeFocusedAtRequest: false
+    property bool acceptProfileRequest: true
+    property bool rejectProfileAsUnavailable: false
     property bool makeDndRequestPending: false
+    property bool completeDndRequestSynchronously: false
+    property bool dndFocusedAtRequest: false
+    property bool acceptDndRequest: true
+    property bool rejectDndAsUnavailable: false
 
     QtObject {
         id: profileAdapter
@@ -74,6 +82,12 @@ TestCase {
 
         function requestLustreProfile() {
             ++testCase.profileRequests
+            if (!testCase.acceptProfileRequest) {
+                if (testCase.rejectProfileAsUnavailable)
+                    profileAdapter.interactive = false
+                profileAdapter.changed()
+                return false
+            }
             if (testCase.makeProfileRequestPending) {
                 profileAdapter.pending = true
                 profileAdapter.changed()
@@ -82,17 +96,41 @@ TestCase {
         }
         function requestForgeProfile() {
             ++testCase.profileRequests
+            testCase.forgeFocusedAtRequest = surface.controlAt(1).activeFocus
+            if (!testCase.acceptProfileRequest) {
+                if (testCase.rejectProfileAsUnavailable)
+                    profileAdapter.interactive = false
+                profileAdapter.changed()
+                return false
+            }
             if (testCase.makeProfileRequestPending) {
                 profileAdapter.pending = true
                 profileAdapter.changed()
+                if (testCase.completeProfileRequestSynchronously) {
+                    profileAdapter.valueId = "forge"
+                    profileAdapter.pending = false
+                    profileAdapter.changed()
+                }
             }
             return true
         }
         function requestDoNotDisturb(enabled) {
             ++testCase.dndRequests
+            testCase.dndFocusedAtRequest = surface.controlAt(2).activeFocus
+            if (!testCase.acceptDndRequest) {
+                if (testCase.rejectDndAsUnavailable)
+                    dndAdapter.interactive = false
+                dndAdapter.changed()
+                return false
+            }
             if (testCase.makeDndRequestPending) {
                 dndAdapter.pending = true
                 dndAdapter.changed()
+                if (testCase.completeDndRequestSynchronously) {
+                    dndAdapter.checked = enabled
+                    dndAdapter.pending = false
+                    dndAdapter.changed()
+                }
             }
             return true
         }
@@ -143,7 +181,15 @@ TestCase {
         centerRequests = 0
         logoutRequests = 0
         makeProfileRequestPending = false
+        completeProfileRequestSynchronously = false
+        forgeFocusedAtRequest = false
+        acceptProfileRequest = true
+        rejectProfileAsUnavailable = false
         makeDndRequestPending = false
+        completeDndRequestSynchronously = false
+        dndFocusedAtRequest = false
+        acceptDndRequest = true
+        rejectDndAsUnavailable = false
         surface.visible = true
         profileAdapter.interactive = true
         profileAdapter.pending = false
@@ -297,7 +343,150 @@ TestCase {
         compare(surface.controlAt(1).Accessible.focused, true)
     }
 
-    function test_pendingProfileActivationRecoversFromRadioGroupFallback() {
+    function test_pendingProfileActivationSurvivesSynchronousCompletion() {
+        makeProfileRequestPending = true
+        completeProfileRequestSynchronously = true
+        surface.focusControl(1, Qt.TabFocusReason)
+
+        keyClick(Qt.Key_Space)
+
+        compare(profileRequests, 1)
+        compare(profileAdapter.pending, false)
+        compare(profileAdapter.valueId, "forge")
+        tryCompare(surface.controlAt(1), "activeFocus", true)
+        tryCompare(surface.controlAt(1), "visualFocus", true)
+        compare(surface.controlAt(1).Accessible.focused, true)
+    }
+
+    function test_pendingProfileActivationAnchorsAutomaticFallback() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+
+        keyClick(Qt.Key_Space)
+
+        compare(profileAdapter.pending, true)
+        compare(forgeFocusedAtRequest, false)
+        compare(surface.activeFocus, true)
+        compare(surface.controlAt(1).Accessible.focused, true)
+        compare(surface.pendingFocusIndicatorVisible, true)
+        verify(surface.Window.window.activeFocusItem !== surface.controlAt(0))
+        verify(surface.Window.window.activeFocusItem !== surface.controlAt(1))
+
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        profileAdapter.changed()
+        tryCompare(surface.controlAt(1), "activeFocus", true)
+        tryCompare(surface.controlAt(1), "visualFocus", true)
+        compare(surface.pendingFocusIndicatorVisible, false)
+    }
+
+    function test_rejectedProfileActivationRestoresOriginImmediately() {
+        acceptProfileRequest = false
+        surface.focusControl(1, Qt.TabFocusReason)
+
+        keyClick(Qt.Key_Space)
+
+        compare(profileRequests, 1)
+        compare(forgeFocusedAtRequest, false)
+        compare(surface.pendingProfileFocusRecovery, -1)
+        compare(surface.controlAt(1).activeFocus, true)
+        compare(surface.controlAt(1).visualFocus, true)
+        wait(0)
+        compare(surface.controlAt(1).activeFocus, true)
+    }
+
+    function test_unavailableRejectedProfileUsesNextEnabledControl() {
+        acceptProfileRequest = false
+        rejectProfileAsUnavailable = true
+        surface.focusControl(1, Qt.TabFocusReason)
+
+        keyClick(Qt.Key_Space)
+
+        compare(surface.pendingProfileFocusRecovery, -1)
+        compare(surface.controlAt(2).activeFocus, true)
+        compare(surface.controlAt(2).visualFocus, true)
+        wait(0)
+        compare(surface.controlAt(2).activeFocus, true)
+    }
+
+    function test_nonPendingProfileActivationRestoresOriginImmediately() {
+        surface.focusControl(1, Qt.TabFocusReason)
+
+        keyClick(Qt.Key_Space)
+
+        compare(profileRequests, 1)
+        compare(forgeFocusedAtRequest, false)
+        compare(surface.pendingProfileFocusRecovery, -1)
+        compare(surface.controlAt(1).activeFocus, true)
+        compare(surface.controlAt(1).visualFocus, true)
+    }
+
+    function test_pendingProfileAnchorNavigationCancelsRecovery() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+
+        keyClick(Qt.Key_Tab)
+
+        compare(surface.pendingProfileFocusRecovery, -1)
+        compare(surface.controlAt(2).activeFocus, true)
+        compare(surface.controlAt(2).visualFocus, true)
+    }
+
+    function test_completionWithDisabledProfileUsesNextEnabledControl() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+
+        profileAdapter.interactive = false
+        profileAdapter.pending = false
+        profileAdapter.changed()
+
+        tryCompare(surface.controlAt(2), "activeFocus", true)
+        tryCompare(surface.controlAt(2), "visualFocus", true)
+        compare(surface.pendingFocusIndicatorVisible, false)
+    }
+
+    function test_navigationBeforeDeferredRestoreUsesOriginalProfileIndex() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        profileAdapter.changed()
+        keyClick(Qt.Key_Tab)
+
+        compare(surface.controlAt(2).activeFocus, true)
+        compare(surface.pendingFocusIndicatorVisible, false)
+    }
+
+    function test_horizontalNavigationBeforeDeferredRestoreUsesProfileOrigin() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        profileAdapter.changed()
+        keyClick(Qt.Key_Left)
+
+        compare(surface.controlAt(0).activeFocus, true)
+        compare(surface.pendingFocusIndicatorVisible, false)
+
+        surface.layoutDirection = Qt.RightToLeft
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        profileAdapter.pending = false
+        profileAdapter.changed()
+        keyClick(Qt.Key_Left)
+
+        compare(surface.controlAt(2).activeFocus, true)
+        compare(surface.pendingFocusIndicatorVisible, false)
+    }
+
+    function test_pendingProfileActivationDoesNotStealDirectSiblingFocus() {
         makeProfileRequestPending = true
         surface.focusControl(1, Qt.TabFocusReason)
         keyClick(Qt.Key_Space)
@@ -307,14 +496,14 @@ TestCase {
         profileAdapter.valueId = "forge"
         profileAdapter.changed()
 
-        // A real X11 Qt session can finish its automatic radio-group fallback
-        // after the publication signal but before deferred recovery runs.
-        // This is framework fallback, not a new user navigation request.
+        // Direct focus movement is user intent; only the private pending-focus
+        // anchor authorizes automatic recovery.
         surface.controlAt(0).forceActiveFocus(Qt.OtherFocusReason)
         compare(surface.controlAt(0).activeFocus, true)
 
-        tryCompare(surface.controlAt(1), "activeFocus", true)
-        tryCompare(surface.controlAt(1), "visualFocus", true)
+        wait(0)
+        compare(surface.controlAt(0).activeFocus, true)
+        compare(surface.controlAt(1).activeFocus, false)
     }
 
     function test_pendingFocusRecoveryDoesNotStealIntentionalFocus() {
@@ -433,6 +622,8 @@ TestCase {
         profileAdapter.changed()
         surface.Window.window.visible = false
         wait(0)
+        compare(surface.pendingFocusAnchorOrigin, -1)
+        compare(surface.pendingFocusIndicatorVisible, false)
 
         surface.Window.window.visible = true
         surface.Window.window.requestActivate()
@@ -461,6 +652,123 @@ TestCase {
         tryCompare(surface.controlAt(2), "activeFocus", true)
         tryCompare(surface.controlAt(2), "visualFocus", true)
         compare(surface.controlAt(2).Accessible.focused, true)
+    }
+
+    function test_pendingDndActivationSurvivesSynchronousCompletion() {
+        makeDndRequestPending = true
+        completeDndRequestSynchronously = true
+        surface.focusControl(2, Qt.TabFocusReason)
+
+        keyClick(Qt.Key_Space)
+
+        compare(dndRequests, 1)
+        compare(dndFocusedAtRequest, false)
+        compare(dndAdapter.pending, false)
+        compare(dndAdapter.checked, true)
+        tryCompare(surface.controlAt(2), "activeFocus", true)
+        tryCompare(surface.controlAt(2), "visualFocus", true)
+    }
+
+    function test_rejectedDndActivationRestoresOriginImmediately() {
+        acceptDndRequest = false
+        surface.focusControl(2, Qt.TabFocusReason)
+
+        keyClick(Qt.Key_Space)
+
+        compare(dndRequests, 1)
+        compare(dndFocusedAtRequest, false)
+        compare(surface.pendingDoNotDisturbFocusRecovery, false)
+        compare(surface.controlAt(2).activeFocus, true)
+        compare(surface.controlAt(2).visualFocus, true)
+        wait(0)
+        compare(surface.controlAt(2).activeFocus, true)
+    }
+
+    function test_unavailableRejectedDndUsesNextEnabledControl() {
+        acceptDndRequest = false
+        rejectDndAsUnavailable = true
+        surface.focusControl(2, Qt.TabFocusReason)
+
+        keyClick(Qt.Key_Space)
+
+        compare(surface.pendingDoNotDisturbFocusRecovery, false)
+        compare(surface.controlAt(3).activeFocus, true)
+        compare(surface.controlAt(3).visualFocus, true)
+        wait(0)
+        compare(surface.controlAt(3).activeFocus, true)
+    }
+
+    function test_nonPendingDndActivationRestoresOriginImmediately() {
+        surface.focusControl(2, Qt.TabFocusReason)
+
+        keyClick(Qt.Key_Space)
+
+        compare(dndRequests, 1)
+        compare(dndFocusedAtRequest, false)
+        compare(surface.pendingDoNotDisturbFocusRecovery, false)
+        compare(surface.controlAt(2).activeFocus, true)
+        compare(surface.controlAt(2).visualFocus, true)
+    }
+
+    function test_pendingDndAnchorNavigationCancelsRecovery() {
+        makeDndRequestPending = true
+        surface.focusControl(2, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+
+        keyClick(Qt.Key_Tab)
+
+        compare(surface.pendingDoNotDisturbFocusRecovery, false)
+        compare(surface.controlAt(3).activeFocus, true)
+        compare(surface.controlAt(3).visualFocus, true)
+    }
+
+    function test_completionWithDisabledDndUsesNextEnabledControl() {
+        makeDndRequestPending = true
+        surface.focusControl(2, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+
+        dndAdapter.interactive = false
+        dndAdapter.pending = false
+        dndAdapter.changed()
+
+        tryCompare(surface.controlAt(3), "activeFocus", true)
+        tryCompare(surface.controlAt(3), "visualFocus", true)
+        compare(surface.pendingFocusIndicatorVisible, false)
+    }
+
+    function test_pendingDndAnchorPreservesHorizontalKeySemantics() {
+        makeDndRequestPending = true
+        surface.focusControl(2, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+
+        keyClick(Qt.Key_Left)
+        compare(surface.pendingDoNotDisturbFocusRecovery, true)
+        compare(surface.pendingFocusIndicatorVisible, true)
+
+        dndAdapter.checked = true
+        dndAdapter.pending = false
+        dndAdapter.changed()
+        tryCompare(surface.controlAt(2), "activeFocus", true)
+    }
+
+    function test_pendingLogicalFocusRejectsDuplicateAccessibleActions() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        compare(profileRequests, 1)
+        compare(surface.controlAt(1).Accessible.focused, true)
+
+        surface.controlAt(1).Accessible.pressAction()
+        compare(profileRequests, 1)
+
+        makeDndRequestPending = true
+        surface.focusControl(2, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        compare(dndRequests, 1)
+        compare(surface.controlAt(2).Accessible.focused, true)
+
+        surface.controlAt(2).Accessible.toggleAction()
+        compare(dndRequests, 1)
     }
 
     function test_arrowTraversalAndRightToLeftProfileOrder() {

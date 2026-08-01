@@ -16,11 +16,14 @@ FocusScope {
     property bool pendingDoNotDisturbFocusRecovery: false
     property bool pendingDoNotDisturbVisualFocusRecovery: false
     property int pendingDoNotDisturbFocusRecoverySerial: -1
+    property int pendingFocusAnchorOrigin: -1
     property int focusRecoverySerial: 0
 
     readonly property var tokens: themeGeneration.notification
     readonly property int focusableControlCount: 5
     readonly property bool opaqueFallbackActive: tokens.fallbackActive
+    readonly property bool pendingFocusIndicatorVisible:
+        pendingFocusAnchor.activeFocus && pendingFocusAnchorOrigin >= 0
 
     signal closeRequested
     signal focusExitForward
@@ -39,6 +42,10 @@ FocusScope {
         case 4: return logout
         default: return null
         }
+    }
+
+    function pendingFocusOrigin() {
+        return pendingFocusAnchorOrigin
     }
 
     function focusControl(index, reason) {
@@ -95,6 +102,7 @@ FocusScope {
         pendingDoNotDisturbFocusRecovery = false
         pendingDoNotDisturbVisualFocusRecovery = false
         pendingDoNotDisturbFocusRecoverySerial = -1
+        pendingFocusAnchorOrigin = -1
     }
 
     function activateButton(control, event) {
@@ -115,16 +123,47 @@ FocusScope {
         const candidate = controlAt(index)
         const hadFocus = candidate !== null && candidate.activeFocus
         const hadVisualFocus = candidate !== null && candidate.visualFocus
+        // Arm recovery before entering the control port.  A fast local
+        // completion may publish the replacement generation reentrantly.
+        pendingProfileFocusRecovery = hadFocus ? index : -1
+        pendingProfileVisualFocusRecovery = hadFocus && hadVisualFocus
+        pendingProfileFocusRecoverySerial = hadFocus ? recoverySerial : -1
+        pendingFocusAnchorOrigin = hadFocus ? index : -1
+        if (hadFocus) {
+            pendingFocusAnchor.forceActiveFocus(Qt.OtherFocusReason)
+        }
         const accepted = requestedProfile === "lustre"
             ? quickSettingsModel.requestLustreProfile()
             : quickSettingsModel.requestForgeProfile()
-        pendingProfileFocusRecovery = accepted && hadFocus
-                                      && quickSettingsModel.profile.pending
-                                      ? index : -1
-        pendingProfileVisualFocusRecovery = pendingProfileFocusRecovery >= 0
-                                            && hadVisualFocus
-        pendingProfileFocusRecoverySerial = pendingProfileFocusRecovery >= 0
-                                            ? recoverySerial : -1
+        if (!accepted) {
+            // Also invalidates a deferred recovery queued by a synchronous
+            // rejected publication.
+            cancelPendingFocusRecovery()
+            if (pendingFocusAnchor.activeFocus && candidate.enabled) {
+                candidate.forceActiveFocus(hadVisualFocus
+                                           ? Qt.TabFocusReason
+                                           : Qt.OtherFocusReason)
+            } else if (pendingFocusAnchor.activeFocus) {
+                focusFallbackFrom(index, hadVisualFocus)
+            }
+            return
+        }
+        if (!quickSettingsModel.profile.pending
+                && pendingProfileFocusRecoverySerial === recoverySerial) {
+            // No pending transition and no completion signal consumed the
+            // pre-armed recovery (for example, selecting the current profile).
+            pendingProfileFocusRecovery = -1
+            pendingProfileVisualFocusRecovery = false
+            pendingProfileFocusRecoverySerial = -1
+            if (pendingFocusAnchor.activeFocus && candidate.enabled) {
+                candidate.forceActiveFocus(hadVisualFocus
+                                           ? Qt.TabFocusReason
+                                           : Qt.OtherFocusReason)
+                pendingFocusAnchorOrigin = -1
+            } else if (pendingFocusAnchor.activeFocus) {
+                focusFallbackFrom(index, hadVisualFocus)
+            }
+        }
     }
 
     function requestDoNotDisturb(enabled) {
@@ -132,47 +171,95 @@ FocusScope {
         const recoverySerial = focusRecoverySerial
         const hadFocus = doNotDisturb.activeFocus
         const hadVisualFocus = doNotDisturb.visualFocus
+        pendingDoNotDisturbFocusRecovery = hadFocus
+        pendingDoNotDisturbVisualFocusRecovery = hadFocus && hadVisualFocus
+        pendingDoNotDisturbFocusRecoverySerial = hadFocus ? recoverySerial : -1
+        pendingFocusAnchorOrigin = hadFocus ? 2 : -1
+        if (hadFocus) {
+            pendingFocusAnchor.forceActiveFocus(Qt.OtherFocusReason)
+        }
         const accepted = quickSettingsModel.requestDoNotDisturb(enabled)
-        pendingDoNotDisturbFocusRecovery = accepted && hadFocus
-                                                && quickSettingsModel.doNotDisturb.pending
-        pendingDoNotDisturbVisualFocusRecovery = pendingDoNotDisturbFocusRecovery
-                                                  && hadVisualFocus
-        pendingDoNotDisturbFocusRecoverySerial =
-            pendingDoNotDisturbFocusRecovery ? recoverySerial : -1
+        if (!accepted) {
+            cancelPendingFocusRecovery()
+            if (pendingFocusAnchor.activeFocus && doNotDisturb.enabled) {
+                doNotDisturb.forceActiveFocus(hadVisualFocus
+                                              ? Qt.TabFocusReason
+                                              : Qt.OtherFocusReason)
+            } else if (pendingFocusAnchor.activeFocus) {
+                focusFallbackFrom(2, hadVisualFocus)
+            }
+            return
+        }
+        if (!quickSettingsModel.doNotDisturb.pending
+                && pendingDoNotDisturbFocusRecoverySerial === recoverySerial) {
+            pendingDoNotDisturbFocusRecovery = false
+            pendingDoNotDisturbVisualFocusRecovery = false
+            pendingDoNotDisturbFocusRecoverySerial = -1
+            if (pendingFocusAnchor.activeFocus && doNotDisturb.enabled) {
+                doNotDisturb.forceActiveFocus(hadVisualFocus
+                                              ? Qt.TabFocusReason
+                                              : Qt.OtherFocusReason)
+                pendingFocusAnchorOrigin = -1
+            } else if (pendingFocusAnchor.activeFocus) {
+                focusFallbackFrom(2, hadVisualFocus)
+            }
+        }
+    }
+
+    function focusFallbackFrom(index, visualFocus) {
+        const reason = visualFocus ? Qt.TabFocusReason : Qt.OtherFocusReason
+        for (let candidateIndex = index + 1;
+             candidateIndex < focusableControlCount; ++candidateIndex) {
+            const candidate = controlAt(candidateIndex)
+            if (candidate !== null && candidate.enabled) {
+                focusControl(candidateIndex, reason)
+                return
+            }
+        }
+        for (let candidateIndex = index - 1; candidateIndex >= 0; --candidateIndex) {
+            const candidate = controlAt(candidateIndex)
+            if (candidate !== null && candidate.enabled) {
+                focusControl(candidateIndex, reason)
+                return
+            }
+        }
+        cancelPendingFocusRecovery()
+        focusExitForward()
     }
 
     function restorePendingFocus(index, restoreVisualFocus, recoverySerial,
-                                 allowProfileGroupFallback, attemptsRemaining) {
+                                 attemptsRemaining) {
         Qt.callLater(function() {
-            if (recoverySerial !== root.focusRecoverySerial
-                    || root.Window.window === null
-                    || !root.Window.window.visible
-                    || !root.Window.window.active)
+            if (recoverySerial !== root.focusRecoverySerial)
                 return
+            if (root.Window.window === null || !root.Window.window.visible) {
+                root.cancelPendingFocusRecovery()
+                return
+            }
             const candidate = controlAt(index)
             if (candidate === null || !candidate.enabled) {
                 if (attemptsRemaining > 0)
                     root.restorePendingFocus(index, restoreVisualFocus,
                                              recoverySerial,
-                                             allowProfileGroupFallback,
                                              attemptsRemaining - 1)
+                else if (pendingFocusAnchor.activeFocus)
+                    root.focusFallbackFrom(index, restoreVisualFocus)
                 return
             }
             const activeFocusItem = root.Window.window.activeFocusItem
-            const profileGroupFallback = allowProfileGroupFallback
-                && (activeFocusItem === lustreProfile
-                    || activeFocusItem === forgeProfile)
-            if (!candidate.activeFocus
-                    && activeFocusItem !== null
-                    && activeFocusItem !== root
-                    && !profileGroupFallback)
+            if (!candidate.activeFocus && activeFocusItem !== pendingFocusAnchor) {
+                if (root.pendingFocusAnchorOrigin === index)
+                    root.pendingFocusAnchorOrigin = -1
                 return
+            }
             if (candidate.activeFocus && restoreVisualFocus
                     && !candidate.visualFocus)
                 candidate.focus = false
             candidate.forceActiveFocus(restoreVisualFocus
                                        ? Qt.TabFocusReason
                                        : Qt.OtherFocusReason)
+            if (root.pendingFocusAnchorOrigin === index)
+                root.pendingFocusAnchorOrigin = -1
         })
     }
 
@@ -196,9 +283,68 @@ FocusScope {
 
     Keys.priority: Keys.BeforeItem
     Keys.onEscapePressed: event => closeFromEscape(event)
+
+    Item {
+        id: pendingFocusAnchor
+        width: 0
+        height: 0
+        Accessible.ignored: true
+
+        Keys.priority: Keys.BeforeItem
+        Keys.onTabPressed: event => root.handleForward(
+            root.pendingFocusOrigin(), event)
+        Keys.onBacktabPressed: event => root.handleBackward(
+            root.pendingFocusOrigin(), event)
+        Keys.onEscapePressed: event => root.closeFromEscape(event)
+        Keys.onUpPressed: event => root.handleVertical(
+            root.pendingFocusOrigin(), -1, event)
+        Keys.onDownPressed: event => root.handleVertical(
+            root.pendingFocusOrigin(), 1, event)
+        Keys.onLeftPressed: event => {
+            if (root.pendingFocusAnchorOrigin === 0
+                    || root.pendingFocusAnchorOrigin === 1)
+                root.handleHorizontal(root.pendingFocusOrigin(), -1, event)
+            else
+                event.accepted = true
+        }
+        Keys.onRightPressed: event => {
+            if (root.pendingFocusAnchorOrigin === 0
+                    || root.pendingFocusAnchorOrigin === 1)
+                root.handleHorizontal(root.pendingFocusOrigin(), 1, event)
+            else
+                event.accepted = true
+        }
+    }
+
+    Rectangle {
+        id: pendingFocusIndicator
+        readonly property Item target: root.pendingFocusAnchorOrigin >= 0
+            ? root.controlAt(root.pendingFocusAnchorOrigin) : null
+        x: target !== null ? target.mapToItem(root, 0, 0).x : 0
+        y: target !== null ? target.mapToItem(root, 0, 0).y : 0
+        width: target !== null ? target.width : 0
+        height: target !== null ? target.height : 0
+        z: 100
+        visible: pendingFocusAnchor.activeFocus
+                 && root.pendingFocusAnchorOrigin >= 0
+        color: "transparent"
+        border.color: root.tokens.focusColor
+        border.width: Math.max(2, root.tokens.borderWidth)
+        radius: root.tokens.cardRadius
+        Accessible.ignored: true
+    }
+
     onVisibleChanged: {
         if (!visible)
             cancelPendingFocusRecovery()
+    }
+
+    Connections {
+        target: root.Window.window
+        function onVisibleChanged() {
+            if (root.Window.window === null || !root.Window.window.visible)
+                root.cancelPendingFocusRecovery()
+        }
     }
 
     Connections {
@@ -212,11 +358,10 @@ FocusScope {
                 root.pendingProfileFocusRecovery = -1
                 root.pendingProfileVisualFocusRecovery = false
                 root.pendingProfileFocusRecoverySerial = -1
-                // Qt may move focus between the disabled radio siblings only
-                // after this signal.  Authorize that exact fallback in the
-                // deferred callback, where the settled focus is observable.
+                // The private anchor owns focus across the disabled-control
+                // gap; restore only while that lease remains intact.
                 root.restorePendingFocus(index, restoreVisualFocus,
-                                         recoverySerial, true, 2)
+                                         recoverySerial, 2)
             }
         }
     }
@@ -234,7 +379,7 @@ FocusScope {
                 root.pendingDoNotDisturbVisualFocusRecovery = false
                 root.pendingDoNotDisturbFocusRecoverySerial = -1
                 root.restorePendingFocus(2, restoreVisualFocus,
-                                         recoverySerial, false, 2)
+                                         recoverySerial, 2)
             }
         }
     }
@@ -304,9 +449,14 @@ FocusScope {
                 Accessible.description: root.accessibleAdapterDescription(
                                             root.quickSettingsModel.profile)
                 Accessible.checked: checked
-                Accessible.focusable: enabled
-                Accessible.focused: activeFocus
-                Accessible.onPressAction: clicked()
+                Accessible.focusable: enabled || (pendingFocusAnchor.activeFocus
+                                                    && pendingFocusAnchorOrigin === 0)
+                Accessible.focused: activeFocus || (pendingFocusAnchor.activeFocus
+                                                     && pendingFocusAnchorOrigin === 0)
+                Accessible.onPressAction: {
+                    if (enabled)
+                        clicked()
+                }
 
                 Keys.priority: Keys.BeforeItem
                 Keys.onTabPressed: event => root.handleForward(0, event)
@@ -338,9 +488,14 @@ FocusScope {
                 Accessible.description: root.accessibleAdapterDescription(
                                             root.quickSettingsModel.profile)
                 Accessible.checked: checked
-                Accessible.focusable: enabled
-                Accessible.focused: activeFocus
-                Accessible.onPressAction: clicked()
+                Accessible.focusable: enabled || (pendingFocusAnchor.activeFocus
+                                                    && pendingFocusAnchorOrigin === 1)
+                Accessible.focused: activeFocus || (pendingFocusAnchor.activeFocus
+                                                     && pendingFocusAnchorOrigin === 1)
+                Accessible.onPressAction: {
+                    if (enabled)
+                        clicked()
+                }
 
                 Keys.priority: Keys.BeforeItem
                 Keys.onTabPressed: event => root.handleForward(1, event)
@@ -385,9 +540,14 @@ FocusScope {
             Accessible.description: root.accessibleAdapterDescription(
                                         root.quickSettingsModel.doNotDisturb)
             Accessible.checked: checked
-            Accessible.focusable: enabled
-            Accessible.focused: activeFocus
-            Accessible.onToggleAction: root.requestDoNotDisturb(!checked)
+            Accessible.focusable: enabled || (pendingFocusAnchor.activeFocus
+                                                && pendingFocusAnchorOrigin === 2)
+            Accessible.focused: activeFocus || (pendingFocusAnchor.activeFocus
+                                                 && pendingFocusAnchorOrigin === 2)
+            Accessible.onToggleAction: {
+                if (enabled)
+                    root.requestDoNotDisturb(!checked)
+            }
 
             Keys.priority: Keys.BeforeItem
             Keys.onTabPressed: event => root.handleForward(2, event)
