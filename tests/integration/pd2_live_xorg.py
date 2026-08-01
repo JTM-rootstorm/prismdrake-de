@@ -2495,6 +2495,19 @@ class LiveXorgHarnessPort:
         if settingsd is None or shell is None:
             raise HarnessError("component_identity_unavailable")
         configuration_directory = self._runtime / "config" / "prismdrake"
+        runtime_directory = self._runtime / "prismdrake"
+        try:
+            runtime_directory.mkdir(mode=0o700)
+            runtime_metadata = runtime_directory.lstat()
+        except OSError as error:
+            raise HarnessError("private_session_runtime_invalid") from error
+        if (
+            stat.S_ISLNK(runtime_metadata.st_mode)
+            or not stat.S_ISDIR(runtime_metadata.st_mode)
+            or runtime_metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(runtime_metadata.st_mode) != 0o700
+        ):
+            raise HarnessError("private_session_runtime_invalid")
         try:
             configuration_directory.mkdir(mode=0o700)
             configuration = configuration_directory / "config.toml"

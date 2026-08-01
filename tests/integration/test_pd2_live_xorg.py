@@ -2833,6 +2833,11 @@ class LivePortTests(unittest.TestCase):
         configuration = (
             Path(environment["XDG_CONFIG_HOME"]) / "prismdrake" / "config.toml"
         )
+        runtime = Path(environment["XDG_RUNTIME_DIR"]) / "prismdrake"
+        runtime_metadata = runtime.lstat()
+        self.assertTrue(stat.S_ISDIR(runtime_metadata.st_mode))
+        self.assertFalse(stat.S_ISLNK(runtime_metadata.st_mode))
+        self.assertEqual(stat.S_IMODE(runtime_metadata.st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(configuration.stat().st_mode), 0o600)
         self.assertEqual(
             configuration.read_text(encoding="ascii"),
