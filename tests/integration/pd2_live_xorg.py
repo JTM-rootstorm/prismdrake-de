@@ -20,29 +20,21 @@ import signal
 import socket
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from pd2_demo import EXECUTABLE_NAMES, HarnessError, Observation
 from pd2_live_atspi import (
+    ALL_CATEGORIES as AT_SPI_CATEGORIES,
     APPLICATION_ERROR_CATEGORIES,
     CategoricalResult as AtspiCategoricalResult,
-    ControlReference,
     ControlSelector,
-    LiveAtspiError,
-    capture_control_reference,
-    invoke_reviewed_action,
-    observe_application_owner,
-    observe_control_absence,
-    observe_control_reference,
-    observe_control_state,
-    observe_showing_control,
-    reject_stale_control_reference,
+    MAX_WORKER_MESSAGE_BYTES as MAX_AT_SPI_WORKER_MESSAGE_BYTES,
 )
 from pd2_live_dbus import LiveDbusProbe, PrivateBusEndpoint
 from pd2_live_notification_workflow import (
@@ -268,6 +260,8 @@ class AccessibilityOperations(Protocol):
 
     def initialize(self, environment: Mapping[str, str]) -> bool: ...
 
+    def close(self) -> bool: ...
+
     def application_error_category(self) -> str | None: ...
 
     def observe_application(
@@ -325,115 +319,270 @@ SessionTransitionMonitorFactory = Callable[
 ]
 
 
-class SystemAccessibilityOperations:
-    """Real AT-SPI adapter that returns only fixed categorical outcomes."""
+AT_SPI_ENVIRONMENT_NAMES = (
+    "AT_SPI_BUS_ADDRESS",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "DISPLAY",
+)
+AT_SPI_WORKER_TIMEOUT_SECONDS = 3.0
 
-    def __init__(self) -> None:
-        self._atspi: object | None = None
+
+@dataclass(frozen=True, repr=False)
+class _WorkerControlReference:
+    """One opaque worker-local reference scoped to an exact bus epoch."""
+
+    epoch: int
+    reference_id: int
+
+
+class _AtspiWorkerProcess:
+    """Bounded JSON-line client for one process-isolated libatspi epoch."""
+
+    def __init__(self, environment: Mapping[str, str]) -> None:
+        worker_environment = dict(environment)
+        worker_path = Path(__file__).resolve().with_name("pd2_live_atspi.py")
+        try:
+            self._process = subprocess.Popen(  # noqa: S603 - attested exact helper
+                (sys.executable, str(worker_path)),
+                env=worker_environment,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+        except OSError as error:
+            raise HarnessError("live_atspi_worker_start_failed") from error
+        self._buffer = bytearray()
+        try:
+            response = self._read_response()
+        except Exception:
+            self.close()
+            raise
+        if response != {"category": "atspi_worker_ready", "status": "passed"}:
+            self.close()
+            raise HarnessError("live_atspi_worker_start_failed")
+
+    @staticmethod
+    def _validate_response(document: object) -> dict[str, object]:
+        if (
+            not isinstance(document, dict)
+            or not {"category", "status"} <= set(document)
+            or not set(document) <= {"category", "reference_id", "status"}
+            or document.get("category") not in AT_SPI_CATEGORIES
+            or document.get("status") not in {"passed", "failed"}
+        ):
+            raise HarnessError("live_atspi_worker_protocol_invalid")
+        if "reference_id" in document and (
+            isinstance(document["reference_id"], bool)
+            or not isinstance(document["reference_id"], int)
+            or document["reference_id"] <= 0
+            or document["status"] != "passed"
+        ):
+            raise HarnessError("live_atspi_worker_protocol_invalid")
+        return document
+
+    def _read_response(self) -> dict[str, object]:
+        stdout = self._process.stdout
+        if stdout is None:
+            raise HarnessError("live_atspi_worker_protocol_invalid")
+        deadline = time.monotonic() + AT_SPI_WORKER_TIMEOUT_SECONDS
+        while b"\n" not in self._buffer:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                raise HarnessError("live_atspi_worker_timeout")
+            ready, _, _ = select.select((stdout,), (), (), remaining)
+            if not ready:
+                raise HarnessError("live_atspi_worker_timeout")
+            block = os.read(stdout.fileno(), MAX_AT_SPI_WORKER_MESSAGE_BYTES)
+            if not block:
+                raise HarnessError("live_atspi_worker_exited")
+            self._buffer.extend(block)
+            if len(self._buffer) > MAX_AT_SPI_WORKER_MESSAGE_BYTES:
+                raise HarnessError("live_atspi_worker_protocol_invalid")
+        payload, _, remainder = self._buffer.partition(b"\n")
+        self._buffer = bytearray(remainder)
+        try:
+            document = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise HarnessError("live_atspi_worker_protocol_invalid") from error
+        return self._validate_response(document)
+
+    def request(self, document: Mapping[str, object]) -> dict[str, object]:
+        stdin = self._process.stdin
+        if stdin is None or self._process.poll() is not None:
+            raise HarnessError("live_atspi_worker_exited")
+        try:
+            payload = json.dumps(
+                document, separators=(",", ":"), sort_keys=True
+            ).encode("ascii")
+        except (TypeError, UnicodeEncodeError) as error:
+            raise HarnessError("live_atspi_worker_protocol_invalid") from error
+        if len(payload) + 1 > MAX_AT_SPI_WORKER_MESSAGE_BYTES:
+            raise HarnessError("live_atspi_worker_protocol_invalid")
+        try:
+            stdin.write(payload + b"\n")
+            stdin.flush()
+        except (BrokenPipeError, OSError) as error:
+            raise HarnessError("live_atspi_worker_exited") from error
+        response = self._read_response()
+        has_reference = "reference_id" in response
+        expects_reference = (
+            document.get("operation") == "capture_reference"
+            and response.get("status") == "passed"
+        )
+        if has_reference != expects_reference:
+            raise HarnessError("live_atspi_worker_protocol_invalid")
+        return response
+
+    def close(self) -> bool:
+        process = self._process
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+        clean = True
+        try:
+            process.wait(timeout=AT_SPI_WORKER_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            clean = False
+            process.terminate()
+            try:
+                process.wait(timeout=AT_SPI_WORKER_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=AT_SPI_WORKER_TIMEOUT_SECONDS)
+        if process.stdout is not None:
+            process.stdout.close()
+        return clean and process.returncode == 0
+
+
+def _selector_document(selector: ControlSelector) -> dict[str, object]:
+    return {
+        "action": selector.action,
+        "name": selector.name,
+        "require_description": selector.require_description,
+        "require_focused": selector.require_focused,
+        "role": selector.role,
+    }
+
+
+class SystemAccessibilityOperations:
+    """Real AT-SPI adapter isolated to one helper process per private bus."""
+
+    def __init__(
+        self,
+        worker_factory: Callable[[Mapping[str, str]], object] | None = None,
+    ) -> None:
+        self._worker_factory = worker_factory or _AtspiWorkerProcess
+        self._worker: object | None = None
+        self._environment: dict[str, str] | None = None
+        self._epoch = 0
         self._application_error: str | None = None
 
     @staticmethod
-    @contextmanager
-    def _environment(environment: Mapping[str, str]):
+    def _select_environment(environment: Mapping[str, str]) -> dict[str, str]:
         if not all(
             isinstance(environment.get(name), str) and environment[name]
-            for name in ("AT_SPI_BUS_ADDRESS", "DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
+            for name in AT_SPI_ENVIRONMENT_NAMES
         ):
             raise HarnessError("live_atspi_environment_invalid")
-        selected = {
-            name: environment[name]
-            for name in ("AT_SPI_BUS_ADDRESS", "DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
-        }
-        previous = {name: os.environ.get(name) for name in selected}
-        try:
-            os.environ.update(selected)
-            yield
-        finally:
-            for name, value in previous.items():
-                if value is None:
-                    os.environ.pop(name, None)
-                else:
-                    os.environ[name] = value
-
-    def _binding(self) -> object:
-        if self._atspi is None:
-            try:
-                import gi
-
-                gi.require_version("Atspi", "2.0")
-                from gi.repository import Atspi
-
-                Atspi.init()
-            except Exception as error:
-                raise HarnessError("live_atspi_unavailable") from error
-            self._atspi = Atspi
-        return self._atspi
+        return {name: environment[name] for name in AT_SPI_ENVIRONMENT_NAMES}
 
     def initialize(self, environment: Mapping[str, str]) -> bool:
-        """Bind libatspi to the verified private registry before clients start."""
+        """Start a fresh libatspi process for the verified private bus epoch."""
 
-        if self._atspi is not None:
-            shutdown = getattr(self._atspi, "exit", None)
-            if not callable(shutdown):
-                raise HarnessError("live_atspi_reinitialization_failed")
-            try:
-                shutdown()
-            except Exception:
-                raise HarnessError("live_atspi_reinitialization_failed") from None
-            self._atspi = None
-            self._application_error = None
-        with self._environment(environment):
-            self._binding()
+        selected = self._select_environment(environment)
+        if self._worker is not None and not self.close():
+            raise HarnessError("live_atspi_worker_cleanup_failed")
+        try:
+            self._worker = self._worker_factory(selected)
+        except HarnessError:
+            raise
+        except Exception as error:
+            raise HarnessError("live_atspi_worker_start_failed") from error
+        self._environment = selected
+        self._epoch += 1
+        self._application_error = None
         return True
+
+    def close(self) -> bool:
+        worker = self._worker
+        self._worker = None
+        self._environment = None
+        self._application_error = None
+        if worker is None:
+            return True
+        close = getattr(worker, "close", None)
+        if not callable(close):
+            return False
+        try:
+            return close() is True
+        except Exception:
+            return False
+
+    def _request(
+        self, environment: Mapping[str, str], operation: str, **values: object
+    ) -> dict[str, object]:
+        selected = self._select_environment(environment)
+        if selected != self._environment or self._worker is None:
+            raise HarnessError("live_atspi_environment_invalid")
+        request = getattr(self._worker, "request", None)
+        if not callable(request):
+            raise HarnessError("live_atspi_worker_protocol_invalid")
+        response = request({"operation": operation, **values})
+        if not isinstance(response, dict):
+            raise HarnessError("live_atspi_worker_protocol_invalid")
+        if response.get("category") in {
+            "atspi_worker_initialization_failed",
+            "atspi_worker_internal_failure",
+            "atspi_worker_protocol_invalid",
+        }:
+            raise HarnessError("live_atspi_worker_protocol_invalid")
+        return response
 
     def application_error_category(self) -> str | None:
         return self._application_error
 
-    @staticmethod
-    def _owner(shell_pid: int):
-        def matches(application: object) -> bool:
-            return application.get_process_id() == shell_pid
-
-        return matches
-
     def observe(
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> bool:
-        try:
-            with self._environment(environment):
-                observe_showing_control(
-                    self._binding(), self._owner(shell_pid), selector
-                )
-        except LiveAtspiError:
-            return False
-        return True
+        response = self._request(
+            environment,
+            "observe",
+            shell_pid=shell_pid,
+            selector=_selector_document(selector),
+        )
+        return response == {"category": "atspi_control_ready", "status": "passed"}
 
     def observe_application(
         self, shell_pid: int, environment: Mapping[str, str]
     ) -> bool:
-        try:
-            with self._environment(environment):
-                observe_application_owner(self._binding(), self._owner(shell_pid))
-        except LiveAtspiError as error:
-            category = str(error)
-            self._application_error = (
-                category if category in APPLICATION_ERROR_CATEGORIES else None
-            )
-            return False
-        self._application_error = None
-        return True
+        response = self._request(
+            environment, "observe_application", shell_pid=shell_pid
+        )
+        category = response.get("category")
+        passed = response == {
+            "category": "atspi_application_ready",
+            "status": "passed",
+        }
+        self._application_error = (
+            None
+            if passed or category not in APPLICATION_ERROR_CATEGORIES
+            else str(category)
+        )
+        return passed
 
     def invoke(
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> bool:
-        try:
-            with self._environment(environment):
-                invoke_reviewed_action(
-                    self._binding(), self._owner(shell_pid), selector
-                )
-        except LiveAtspiError:
-            return False
-        return True
+        response = self._request(
+            environment,
+            "invoke",
+            shell_pid=shell_pid,
+            selector=_selector_document(selector),
+        )
+        return response == {"category": "atspi_action_invoked", "status": "passed"}
 
     def observe_state(
         self,
@@ -443,79 +592,100 @@ class SystemAccessibilityOperations:
         expected: bool,
         environment: Mapping[str, str],
     ) -> bool:
-        try:
-            with self._environment(environment):
-                observe_control_state(
-                    self._binding(),
-                    self._owner(shell_pid),
-                    selector,
-                    state_name,
-                    expected,
-                )
-        except LiveAtspiError:
-            return False
-        return True
+        response = self._request(
+            environment,
+            "observe_state",
+            shell_pid=shell_pid,
+            selector=_selector_document(selector),
+            state_name=state_name,
+            expected=expected,
+        )
+        return response == {
+            "category": "atspi_control_state_observed",
+            "status": "passed",
+        }
 
     def observe_absent(
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> bool:
-        try:
-            with self._environment(environment):
-                observe_control_absence(
-                    self._binding(), self._owner(shell_pid), selector
-                )
-        except LiveAtspiError:
-            return False
-        return True
+        response = self._request(
+            environment,
+            "observe_absent",
+            shell_pid=shell_pid,
+            selector=_selector_document(selector),
+        )
+        return response == {"category": "atspi_control_absent", "status": "passed"}
 
     def reject_stale_action(
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> bool:
-        try:
-            with self._environment(environment):
-                invoke_reviewed_action(
-                    self._binding(), self._owner(shell_pid), selector
-                )
-        except LiveAtspiError as error:
-            return str(error) == "atspi_control_identity"
-        return False
+        response = self._request(
+            environment,
+            "reject_stale_action",
+            shell_pid=shell_pid,
+            selector=_selector_document(selector),
+        )
+        return response == {
+            "category": "atspi_stale_control_rejected",
+            "status": "passed",
+        }
 
     def capture_reference(
         self, shell_pid: int, selector: ControlSelector, environment: Mapping[str, str]
     ) -> object | None:
-        try:
-            with self._environment(environment):
-                return capture_control_reference(
-                    self._binding(), self._owner(shell_pid), selector
-                )
-        except LiveAtspiError:
+        response = self._request(
+            environment,
+            "capture_reference",
+            shell_pid=shell_pid,
+            selector=_selector_document(selector),
+        )
+        reference_id = response.get("reference_id")
+        if (
+            response.get("category") != "atspi_control_reference_ready"
+            or response.get("status") != "passed"
+            or isinstance(reference_id, bool)
+            or not isinstance(reference_id, int)
+            or reference_id <= 0
+        ):
             return None
+        return _WorkerControlReference(self._epoch, reference_id)
 
     def observe_reference(
         self, shell_pid: int, reference: object, environment: Mapping[str, str]
     ) -> bool:
-        if not isinstance(reference, ControlReference):
+        if (
+            not isinstance(reference, _WorkerControlReference)
+            or reference.epoch != self._epoch
+        ):
             return False
-        try:
-            with self._environment(environment):
-                observe_control_reference(
-                    self._binding(), self._owner(shell_pid), reference
-                )
-        except LiveAtspiError:
-            return False
-        return True
+        response = self._request(
+            environment,
+            "observe_reference",
+            shell_pid=shell_pid,
+            reference_id=reference.reference_id,
+        )
+        return response == {
+            "category": "atspi_control_reference_ready",
+            "status": "passed",
+        }
 
     def reject_stale_reference(
         self, reference: object, environment: Mapping[str, str]
     ) -> bool:
-        if not isinstance(reference, ControlReference):
+        if (
+            not isinstance(reference, _WorkerControlReference)
+            or reference.epoch != self._epoch
+        ):
             return False
-        try:
-            with self._environment(environment):
-                reject_stale_control_reference(self._binding(), reference)
-        except LiveAtspiError:
-            return False
-        return True
+        response = self._request(
+            environment,
+            "reject_stale_reference",
+            reference_id=reference.reference_id,
+        )
+        return response == {
+            "category": "atspi_stale_control_rejected",
+            "status": "passed",
+        }
 
 
 class SystemOperations:
@@ -2986,6 +3156,7 @@ class LiveXorgHarnessPort:
 
     def cleanup_clients(self) -> TierCClientCleanupObservation:
         clean = True
+        clean = self._accessibility.close() and clean
         if self._settings_epoch is not None:
             clean = self._settings_epoch.close() and clean
             self._settings_epoch = None
@@ -3736,6 +3907,7 @@ class LiveXorgHarnessPort:
         if lifecycle_cleanup:
             self._capture_cleanup_boundary()
         clean = True
+        clean = self._accessibility.close() and clean
         if self._settings_epoch is not None:
             clean = self._settings_epoch.close() and clean
             self._settings_epoch = None

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 import stat
 import sys
@@ -641,10 +642,15 @@ class FakeAccessibility:
         self.initialization_environments: list[dict[str, str]] = []
         self.initialization_spawn_counts: list[int] = []
         self.application_error: str | None = None
+        self.close_calls = 0
 
     def initialize(self, environment: Mapping[str, str]) -> bool:
         self.initialization_environments.append(dict(environment))
         self.initialization_spawn_counts.append(len(self.operations.spawn_calls))
+        return True
+
+    def close(self) -> bool:
+        self.close_calls += 1
         return True
 
     def application_error_category(self) -> str | None:
@@ -1100,44 +1106,230 @@ class SystemAccessibilityOperationsTests(unittest.TestCase):
         "DISPLAY": ":99",
     }
 
-    def test_reinitializes_binding_for_each_private_bus_epoch(self) -> None:
-        operations = SystemAccessibilityOperations()
+    class Worker:
+        def __init__(self, environment: Mapping[str, str]) -> None:
+            self.environment = dict(environment)
+            self.requests: list[dict[str, object]] = []
+            self.closed = False
+            self.application_response = {
+                "category": "atspi_application_ready",
+                "status": "passed",
+            }
 
-        class OldBinding:
-            exits = 0
+        def request(self, document: Mapping[str, object]) -> dict[str, object]:
+            request = dict(document)
+            self.requests.append(request)
+            categories = {
+                "observe": "atspi_control_ready",
+                "invoke": "atspi_action_invoked",
+                "observe_state": "atspi_control_state_observed",
+                "observe_absent": "atspi_control_absent",
+                "reject_stale_action": "atspi_stale_control_rejected",
+                "observe_reference": "atspi_control_reference_ready",
+                "reject_stale_reference": "atspi_stale_control_rejected",
+            }
+            operation = request["operation"]
+            if operation == "observe_application":
+                return self.application_response
+            if operation == "capture_reference":
+                return {
+                    "category": "atspi_control_reference_ready",
+                    "reference_id": 7,
+                    "status": "passed",
+                }
+            return {"category": categories[operation], "status": "passed"}
 
-            def exit(self) -> None:
-                self.exits += 1
+        def close(self) -> bool:
+            self.closed = True
+            return True
 
-        old = OldBinding()
-        replacement = object()
-        operations._atspi = old  # noqa: SLF001
-        operations._application_error = "atspi_child_bound"  # noqa: SLF001
-
-        def rebind() -> object:
-            self.assertIsNone(operations._atspi)  # noqa: SLF001
-            operations._atspi = replacement  # noqa: SLF001
-            return replacement
-
-        with patch.object(operations, "_binding", side_effect=rebind):
-            self.assertTrue(operations.initialize(self.environment))
-
-        self.assertEqual(old.exits, 1)
-        self.assertIs(operations._atspi, replacement)  # noqa: SLF001
-        self.assertIsNone(operations.application_error_category())
-
-    def test_reinitialization_fails_closed_without_working_exit(self) -> None:
-        for binding in (
-            object(),
-            type("BrokenBinding", (), {"exit": lambda self: 1 / 0})(),
+    def test_worker_process_receives_only_reviewed_epoch_environment(self) -> None:
+        process = object()
+        ready = {"category": "atspi_worker_ready", "status": "passed"}
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "PYTHONPATH": "/tmp/unreviewed",
+                    "PYTHONINSPECT": "1",
+                    "QT_PLUGIN_PATH": "/tmp/unreviewed-qt",
+                },
+            ),
+            patch.object(live_xorg.subprocess, "Popen", return_value=process) as spawn,
+            patch.object(
+                live_xorg._AtspiWorkerProcess,  # noqa: SLF001
+                "_read_response",
+                return_value=ready,
+            ),
         ):
-            with self.subTest(binding=type(binding).__name__):
-                operations = SystemAccessibilityOperations()
-                operations._atspi = binding  # noqa: SLF001
-                with self.assertRaisesRegex(
-                    HarnessError, "^live_atspi_reinitialization_failed$"
-                ):
-                    operations.initialize(self.environment)
+            worker = live_xorg._AtspiWorkerProcess(self.environment)  # noqa: SLF001
+
+        self.assertIs(worker._process, process)  # noqa: SLF001
+        self.assertEqual(spawn.call_args.kwargs["env"], self.environment)
+
+    def test_worker_process_rejects_operation_response_shape_mismatch(self) -> None:
+        class Process:
+            stdin = io.BytesIO()
+
+            @staticmethod
+            def poll() -> None:
+                return None
+
+        worker = live_xorg._AtspiWorkerProcess.__new__(  # noqa: SLF001
+            live_xorg._AtspiWorkerProcess  # noqa: SLF001
+        )
+        worker._process = Process()  # noqa: SLF001
+        invalid = (
+            (
+                {"operation": "observe_application", "shell_pid": 2004},
+                {
+                    "category": "atspi_application_ready",
+                    "reference_id": 1,
+                    "status": "passed",
+                },
+            ),
+            (
+                {
+                    "operation": "capture_reference",
+                    "selector": {},
+                    "shell_pid": 2004,
+                },
+                {
+                    "category": "atspi_control_reference_ready",
+                    "status": "passed",
+                },
+            ),
+        )
+        for request, response in invalid:
+            with (
+                self.subTest(request=request),
+                patch.object(worker, "_read_response", return_value=response),
+                self.assertRaisesRegex(
+                    HarnessError, "^live_atspi_worker_protocol_invalid$"
+                ),
+            ):
+                worker.request(request)
+
+    def test_starts_fresh_worker_for_each_private_bus_epoch(self) -> None:
+        workers: list[SystemAccessibilityOperationsTests.Worker] = []
+
+        def factory(environment: Mapping[str, str]):
+            worker = self.Worker(environment)
+            workers.append(worker)
+            return worker
+
+        operations = SystemAccessibilityOperations(factory)
+        self.assertTrue(operations.initialize(self.environment))
+        self.assertTrue(operations.initialize({**self.environment, "DISPLAY": ":100"}))
+
+        self.assertEqual(len(workers), 2)
+        self.assertTrue(workers[0].closed)
+        self.assertFalse(workers[1].closed)
+        self.assertEqual(workers[0].environment, self.environment)
+        self.assertEqual(workers[1].environment["DISPLAY"], ":100")
+        self.assertTrue(operations.close())
+        self.assertTrue(workers[1].closed)
+
+    def test_routes_only_categorical_results_and_epoch_scoped_references(self) -> None:
+        workers: list[SystemAccessibilityOperationsTests.Worker] = []
+
+        def factory(environment: Mapping[str, str]):
+            worker = self.Worker(environment)
+            workers.append(worker)
+            return worker
+
+        operations = SystemAccessibilityOperations(factory)
+        selector = live_xorg.ControlSelector("Open applications", "push_button")
+        operations.initialize(self.environment)
+        self.assertTrue(operations.observe_application(2004, self.environment))
+        reference = operations.capture_reference(2004, selector, self.environment)
+        self.assertIsNotNone(reference)
+        self.assertTrue(operations.observe_reference(2004, reference, self.environment))
+        self.assertTrue(operations.reject_stale_reference(reference, self.environment))
+
+        operations.initialize({**self.environment, "DISPLAY": ":100"})
+        self.assertFalse(
+            operations.observe_reference(
+                2004, reference, {**self.environment, "DISPLAY": ":100"}
+            )
+        )
+        self.assertEqual(
+            [request["operation"] for request in workers[0].requests],
+            [
+                "observe_application",
+                "capture_reference",
+                "observe_reference",
+                "reject_stale_reference",
+            ],
+        )
+
+    def test_preserves_reviewed_application_failure_category(self) -> None:
+        worker = self.Worker(self.environment)
+        worker.application_response = {
+            "category": "atspi_node_unavailable",
+            "status": "failed",
+        }
+        operations = SystemAccessibilityOperations(lambda environment: worker)
+        operations.initialize(self.environment)
+
+        self.assertFalse(operations.observe_application(2004, self.environment))
+        self.assertEqual(
+            operations.application_error_category(), "atspi_node_unavailable"
+        )
+
+    def test_rejects_environment_drift_and_malformed_worker_responses(self) -> None:
+        operations = SystemAccessibilityOperations(self.Worker)
+        operations.initialize(self.environment)
+        with self.assertRaisesRegex(HarnessError, "^live_atspi_environment_invalid$"):
+            operations.observe_application(
+                2004, {**self.environment, "DISPLAY": ":100"}
+            )
+
+        invalid = (
+            {},
+            {"category": "private_value", "status": "passed"},
+            {
+                "category": "atspi_control_reference_ready",
+                "reference_id": 0,
+                "status": "passed",
+            },
+        )
+        for response in invalid:
+            with self.subTest(response=response), self.assertRaisesRegex(
+                HarnessError, "^live_atspi_worker_protocol_invalid$"
+            ):
+                live_xorg._AtspiWorkerProcess._validate_response(  # noqa: SLF001
+                    response
+                )
+
+    def test_harness_closes_worker_before_private_bus_teardown(self) -> None:
+        operations = FakeOperations()
+        events: list[str] = []
+
+        class Accessibility(FakeAccessibility):
+            def close(self) -> bool:
+                events.append("accessibility")
+                return super().close()
+
+        original_stop = operations.stop
+
+        def stop(child: FakeChild, timeout: float) -> bool:
+            executable = Path(operations.spawn_calls[child.pid - 1000][0][0]).name
+            events.append(executable)
+            return original_stop(child, timeout)
+
+        operations.stop = stop  # type: ignore[method-assign]
+        accessibility = Accessibility(operations)
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, accessibility
+        )
+        bus = FakeChild(1000)
+        operations.children.append(bus)
+        operations.spawn_calls.append((("/usr/bin/dbus-daemon",), {}))
+        port._bus = bus  # noqa: SLF001
+
+        self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
+        self.assertEqual(events, ["accessibility", "dbus-daemon"])
 
 
 class SurfaceParserTests(unittest.TestCase):

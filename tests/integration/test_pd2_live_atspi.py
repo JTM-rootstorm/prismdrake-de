@@ -20,6 +20,7 @@ from pd2_live_atspi import (  # noqa: E402
     MAX_ACTIONS,
     MAX_CHILDREN,
     MAX_NAME_LENGTH,
+    MAX_WORKER_REFERENCES,
     invoke_reviewed_action,
     observe_application_owner,
     observe_control_absence,
@@ -28,6 +29,7 @@ from pd2_live_atspi import (  # noqa: E402
     observe_showing_control,
     reject_stale_control_reference,
     validate_categorical_result,
+    _worker_request,
 )
 
 
@@ -120,6 +122,7 @@ class FakeNode:
         reported_children: int | None = None,
         disappears: bool = False,
         description: str = "",
+        process_id: int = 2004,
     ) -> None:
         self.name = name
         self.role = role
@@ -129,6 +132,7 @@ class FakeNode:
         self.reported_children = reported_children
         self.disappears = disappears
         self.description = description
+        self.process_id = process_id
 
     def get_name(self) -> str:
         if self.disappears:
@@ -156,6 +160,9 @@ class FakeNode:
 
     def get_action_iface(self) -> FakeAction | None:
         return self.action
+
+    def get_process_id(self) -> int:
+        return self.process_id
 
 
 VISIBLE = {
@@ -198,6 +205,120 @@ class LiveAtspiHelperTests(unittest.TestCase):
         with self.assertRaises(LiveAtspiError) as raised:
             operation()
         self.assertEqual(str(raised.exception), category)
+
+    def worker_selector(self) -> dict[str, object]:
+        return {
+            "action": self.selector.action,
+            "name": self.selector.name,
+            "require_description": self.selector.require_description,
+            "require_focused": self.selector.require_focused,
+            "role": self.selector.role,
+        }
+
+    def test_worker_keeps_live_references_behind_opaque_handles(self) -> None:
+        references = {}
+        captured, values = _worker_request(
+            self.atspi,
+            {
+                "operation": "capture_reference",
+                "selector": self.worker_selector(),
+                "shell_pid": 2004,
+            },
+            references,
+        )
+        self.assertEqual(captured.category, "atspi_control_reference_ready")
+        self.assertEqual(values, {"reference_id": 1})
+        self.assertEqual(tuple(references), (1,))
+
+        observed, values = _worker_request(
+            self.atspi,
+            {
+                "operation": "observe_reference",
+                "reference_id": 1,
+                "shell_pid": 2004,
+            },
+            references,
+        )
+        self.assertEqual(observed.category, "atspi_control_reference_ready")
+        self.assertEqual(values, {})
+        self.assertIsNone(references[1])
+        self.assert_category(
+            "atspi_reference_invalid",
+            lambda: _worker_request(
+                self.atspi,
+                {
+                    "operation": "observe_reference",
+                    "reference_id": 1,
+                    "shell_pid": 2004,
+                },
+                references,
+            ),
+        )
+
+        captured, values = _worker_request(
+            self.atspi,
+            {
+                "operation": "capture_reference",
+                "selector": self.worker_selector(),
+                "shell_pid": 2004,
+            },
+            references,
+        )
+        self.assertEqual(captured.category, "atspi_control_reference_ready")
+        self.assertEqual(values, {"reference_id": 2})
+        self.control.states.add(FakeStateType.DEFUNCT)
+        rejected, values = _worker_request(
+            self.atspi,
+            {"operation": "reject_stale_reference", "reference_id": 2},
+            references,
+        )
+        self.assertEqual(rejected.category, "atspi_stale_control_rejected")
+        self.assertEqual(values, {})
+        self.assertIsNone(references[2])
+
+    def test_worker_rejects_malformed_requests_and_bounds_references(self) -> None:
+        invalid_requests = (
+            ({}, "atspi_worker_protocol_invalid"),
+            ({"operation": "private_operation"}, "atspi_worker_protocol_invalid"),
+            (
+                {"operation": "observe_application", "shell_pid": 0},
+                "atspi_owner_identity",
+            ),
+            (
+                {
+                    "extra": True,
+                    "operation": "observe_application",
+                    "shell_pid": 2004,
+                },
+                "atspi_worker_protocol_invalid",
+            ),
+            (
+                {"operation": "reject_stale_reference", "reference_id": 1},
+                "atspi_reference_invalid",
+            ),
+        )
+        for request, category in invalid_requests:
+            with self.subTest(request=request):
+                self.assert_category(
+                    category,
+                    lambda request=request: _worker_request(
+                        self.atspi, request, {}
+                    ),
+                )
+
+        references = {index: None for index in range(1, MAX_WORKER_REFERENCES + 1)}
+        self.assert_category(
+            "atspi_reference_bound",
+            lambda: _worker_request(
+                self.atspi,
+                {
+                    "operation": "capture_reference",
+                    "selector": self.worker_selector(),
+                    "shell_pid": 2004,
+                },
+                references,
+            ),
+        )
 
     def test_observes_exact_showing_control_with_exact_shell_owner(self) -> None:
         calls: list[FakeNode] = []

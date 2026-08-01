@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -55,6 +57,54 @@ APPLICATION_ERROR_CATEGORIES = frozenset(
         "atspi_owner_probe_unavailable",
     }
 )
+FAILURE_CATEGORIES = frozenset(
+    {
+        "atspi_action_bound",
+        "atspi_action_identity",
+        "atspi_action_missing",
+        "atspi_action_name_bound",
+        "atspi_action_not_reviewed",
+        "atspi_action_rejected",
+        "atspi_action_unavailable",
+        "atspi_application_identity",
+        "atspi_application_missing",
+        "atspi_child_bound",
+        "atspi_control_identity",
+        "atspi_control_present",
+        "atspi_control_state",
+        "atspi_control_state_mismatch",
+        "atspi_depth_bound",
+        "atspi_description_bound",
+        "atspi_description_missing",
+        "atspi_focus_state",
+        "atspi_name_bound",
+        "atspi_node_bound",
+        "atspi_node_unavailable",
+        "atspi_owner_identity",
+        "atspi_owner_probe_unavailable",
+        "atspi_reference_invalid",
+        "atspi_reference_bound",
+        "atspi_reference_state",
+        "atspi_result_invalid",
+        "atspi_role_unavailable",
+        "atspi_selector_invalid",
+        "atspi_stale_control_live",
+        "atspi_state_not_reviewed",
+        "atspi_state_unavailable",
+        "atspi_tree_cycle",
+    }
+)
+WORKER_CATEGORIES = frozenset(
+    {
+        "atspi_worker_initialization_failed",
+        "atspi_worker_internal_failure",
+        "atspi_worker_protocol_invalid",
+        "atspi_worker_ready",
+    }
+)
+ALL_CATEGORIES = RESULT_CATEGORIES | FAILURE_CATEGORIES | WORKER_CATEGORIES
+MAX_WORKER_MESSAGE_BYTES = 4096
+MAX_WORKER_REFERENCES = 64
 
 
 class LiveAtspiError(RuntimeError):
@@ -462,3 +512,185 @@ def validate_categorical_result(result: CategoricalResult) -> None:
         _fail("atspi_result_invalid")
     if set(result.as_dict()) != {"category", "status"}:
         _fail("atspi_result_invalid")
+
+
+def _worker_write(category: str, status: str, **values: Any) -> None:
+    """Write one bounded categorical response to the private parent pipe."""
+
+    if category not in ALL_CATEGORIES or status not in {"passed", "failed"}:
+        category = "atspi_worker_internal_failure"
+        status = "failed"
+        values = {}
+    document = {"category": category, "status": status, **values}
+    payload = json.dumps(document, separators=(",", ":"), sort_keys=True).encode(
+        "ascii"
+    )
+    if len(payload) + 1 > MAX_WORKER_MESSAGE_BYTES:
+        payload = b'{"category":"atspi_worker_internal_failure","status":"failed"}'
+    sys.stdout.buffer.write(payload + b"\n")
+    sys.stdout.buffer.flush()
+
+
+def _worker_selector(value: Any) -> ControlSelector:
+    if not isinstance(value, dict) or set(value) != {
+        "action",
+        "name",
+        "require_description",
+        "require_focused",
+        "role",
+    }:
+        _fail("atspi_selector_invalid")
+    selector = ControlSelector(
+        name=value["name"],
+        role=value["role"],
+        action=value["action"],
+        require_focused=value["require_focused"],
+        require_description=value["require_description"],
+    )
+    _validate_selector(selector, require_action=False)
+    return selector
+
+
+def _worker_owner(shell_pid: int) -> OwnerProbe:
+    if isinstance(shell_pid, bool) or not isinstance(shell_pid, int) or shell_pid <= 0:
+        _fail("atspi_owner_identity")
+
+    def matches(application: Any) -> bool:
+        return application.get_process_id() == shell_pid
+
+    return matches
+
+
+def _worker_request(
+    atspi: Any, request: Any, references: dict[int, ControlReference | None]
+) -> tuple[CategoricalResult, dict[str, int]]:
+    if not isinstance(request, dict) or not isinstance(
+        operation := request.get("operation"), str
+    ):
+        _fail("atspi_worker_protocol_invalid")
+    expected_keys = {
+        "observe_application": {"operation", "shell_pid"},
+        "observe": {"operation", "selector", "shell_pid"},
+        "invoke": {"operation", "selector", "shell_pid"},
+        "observe_state": {
+            "expected",
+            "operation",
+            "selector",
+            "shell_pid",
+            "state_name",
+        },
+        "observe_absent": {"operation", "selector", "shell_pid"},
+        "reject_stale_action": {"operation", "selector", "shell_pid"},
+        "capture_reference": {"operation", "selector", "shell_pid"},
+        "observe_reference": {"operation", "reference_id", "shell_pid"},
+        "reject_stale_reference": {"operation", "reference_id"},
+    }
+    if operation not in expected_keys or set(request) != expected_keys[operation]:
+        _fail("atspi_worker_protocol_invalid")
+
+    owner = None
+    if "shell_pid" in request:
+        owner = _worker_owner(request["shell_pid"])
+    selector = None
+    if "selector" in request:
+        selector = _worker_selector(request["selector"])
+
+    if operation == "observe_application":
+        return observe_application_owner(atspi, owner), {}
+    if operation == "observe":
+        return observe_showing_control(atspi, owner, selector), {}
+    if operation == "invoke":
+        return invoke_reviewed_action(atspi, owner, selector), {}
+    if operation == "observe_state":
+        return (
+            observe_control_state(
+                atspi,
+                owner,
+                selector,
+                request["state_name"],
+                request["expected"],
+            ),
+            {},
+        )
+    if operation == "observe_absent":
+        return observe_control_absence(atspi, owner, selector), {}
+    if operation == "reject_stale_action":
+        try:
+            invoke_reviewed_action(atspi, owner, selector)
+        except LiveAtspiError as error:
+            if str(error) == "atspi_control_identity":
+                return CategoricalResult("atspi_stale_control_rejected"), {}
+            raise
+        _fail("atspi_stale_control_live")
+    if operation == "capture_reference":
+        if len(references) >= MAX_WORKER_REFERENCES:
+            _fail("atspi_reference_bound")
+        reference = capture_control_reference(atspi, owner, selector)
+        reference_id = max(references, default=0) + 1
+        references[reference_id] = reference
+        return CategoricalResult("atspi_control_reference_ready"), {
+            "reference_id": reference_id
+        }
+
+    reference_id = request["reference_id"]
+    if (
+        isinstance(reference_id, bool)
+        or not isinstance(reference_id, int)
+        or reference_id <= 0
+        or (reference := references.get(reference_id)) is None
+    ):
+        _fail("atspi_reference_invalid")
+    if operation == "observe_reference":
+        result = observe_control_reference(atspi, owner, reference)
+    else:
+        result = reject_stale_control_reference(atspi, reference)
+    references[reference_id] = None
+    return result, {}
+
+
+def run_worker() -> int:
+    """Serve one AT-SPI bus epoch; process exit is the only rebind boundary."""
+
+    try:
+        import gi
+
+        gi.require_version("Atspi", "2.0")
+        from gi.repository import Atspi
+
+        if Atspi.init() != 0:
+            raise RuntimeError("AT-SPI initialization failed")
+    except Exception:
+        _worker_write("atspi_worker_initialization_failed", "failed")
+        return 1
+    _worker_write("atspi_worker_ready", "passed")
+    references: dict[int, ControlReference | None] = {}
+    while payload := sys.stdin.buffer.readline(MAX_WORKER_MESSAGE_BYTES + 1):
+        if len(payload) > MAX_WORKER_MESSAGE_BYTES or not payload.endswith(b"\n"):
+            _worker_write("atspi_worker_protocol_invalid", "failed")
+            return 1
+        try:
+            request = json.loads(payload)
+        except (UnicodeError, json.JSONDecodeError):
+            _worker_write("atspi_worker_protocol_invalid", "failed")
+            return 1
+        try:
+            result, values = _worker_request(Atspi, request, references)
+            validate_categorical_result(result)
+        except LiveAtspiError as error:
+            category = str(error)
+            _worker_write(
+                category
+                if category in ALL_CATEGORIES
+                else "atspi_worker_internal_failure",
+                "failed",
+            )
+            continue
+        except Exception:
+            _worker_write("atspi_worker_internal_failure", "failed")
+            continue
+        _worker_write(result.category, "passed", **values)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_worker())
