@@ -142,12 +142,16 @@ endpoints. It requests one closed matrix observation containing all 364 ordered
 surface checks, including RTL and long-string observations, then separately
 requests live AT-SPI, a screen-reader workflow, and the six internationalization
 checks. A command must emit one bounded JSON envelope and no standard-error
-diagnostics. No shell is involved. The outer adapter gives ordinary environment,
-accessibility, and cleanup roles 15 seconds. The performance role receives 75
-seconds so its bounded 60-second model and asset runners terminate first, while
-the internationalization role receives 195 seconds so its bounded 180-second
-exact CTest selection terminates first. These role limits are finite and do not
-replace the nested observer deadlines.
+diagnostics. No shell is involved. Every outer role limit includes a fixed
+15-second margin beyond its longest sequential nested-command path. Environment
+receives 90 seconds for five possible 15-second probes. Performance receives
+125 seconds for five 10-second source-attestation commands followed by a
+60-second model or asset runner. Accessibility receives 25 seconds for the
+unified observer's possible 10-second dependency probe; the dedicated observer
+does not launch subprocesses. Internationalization receives 245 seconds for the
+same 50-second source attestation followed by a 180-second exact CTest
+selection. Cleanup remains a file-only 15-second outer bound. These role limits
+are finite and do not replace the nested observer deadlines.
 
 The reference performance observer has a closed route for every requested
 performance endpoint. With two controlled search sizes it emits 18 observed
@@ -188,6 +192,19 @@ validated multi-sample PD1 idle baseline exists, the final record must identify
 that comparison as unavailable instead of labeling the observed total a
 regression pass. PD2-specific shell work must not add an unbounded repeating
 timer.
+
+Build the complete performance tree before collecting either the installed
+runtime trials or the idle trials. The runtime collector consumes the controlled
+window fixture from this tree, the idle workflow consumes its session,
+settingsd, notifyd, and shell executables, and the final observer later executes
+the exact translation and four QML CTest selections from the same tree:
+
+```bash
+cmake -S . -B build/performance-gcc -G Ninja \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DPRISMDRAKE_WARNINGS_AS_ERRORS=ON
+cmake --build build/performance-gcc --parallel
+```
 
 The installed demonstration artifact is authoritative for exact source
 revision, installed executable hashes, workflow postconditions, and cleanup.
@@ -238,9 +255,9 @@ with a collector-generated unique trial identifier. The series binds the
 ordered trial identities by digest and rejects a repeated path, inode, or trial
 identifier. Idle totals cover session, settingsd, notifyd, and shell.
 
-Build the production and model runners, bind all four performance sources, and
-choose at least two ordered model-supported search sizes. The model runner's
-closed controlled sizes are 16, 64, and 256:
+After collecting the installed-runtime and idle-series inputs, bind all four
+performance sources and choose at least two ordered model-supported search
+sizes. The model runner's closed controlled sizes are 16, 64, and 256:
 
 The runtime collector measures session readiness from the session launch
 request, shell presentation from the kernel-recorded shell process start to the
@@ -252,43 +269,52 @@ durations use Python's monotonic nanosecond clock, while the shell-start endpoin
 uses Linux boot-time nanoseconds aligned with `/proc` process-start ticks.
 
 ```bash
-cmake -S . -B build/performance-gcc -G Ninja \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DPRISMDRAKE_WARNINGS_AS_ERRORS=ON
-cmake --build build/performance-gcc --parallel
 PRISMDRAKE_PD1_REVISION=$(python3 -c \
   'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["source_revision"])' \
   /absolute/private/evidence/pd1-performance.json)
-env \
-  PRISMDRAKE_PD2_BUILD_DIRECTORY="$PWD/build/performance-gcc" \
-  PRISMDRAKE_PD2_PERFORMANCE_RUNNER="$PWD/build/performance-gcc/tests/performance/prismdrake-pd1-performance-evidence" \
-  PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER="$PWD/build/performance-gcc/tests/performance/prismdrake-pd2-asset-performance" \
-  PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE="/absolute/private/evidence/pd2-runtime-performance.json" \
-  PRISMDRAKE_PD2_IDLE_SERIES="/absolute/private/evidence/pd2-idle-series.json" \
-  PRISMDRAKE_PD2_PD1_EVIDENCE="/absolute/private/evidence/pd1-performance.json" \
-  PRISMDRAKE_PD2_INSTALLED_DEMO_EVIDENCE="/absolute/private/evidence/pd2-installed-demonstration.json" \
-  PRISMDRAKE_PD2_PACKAGE_TEST_EVIDENCE="/absolute/private/evidence/non-root/pd2-package-test.json" \
-  python3 tests/performance/collect_pd2_live_evidence.py \
-    --source-revision "$(git rev-parse HEAD)" \
-    --environment-id gentoo-amd64-qemu-system \
-    --pd1-reference-revision "$PRISMDRAKE_PD1_REVISION" \
-    --pd1-evidence-id pd1-reviewed-reference \
-    --search-catalog-size 16 --search-catalog-size 64 \
-    --reviewed-accessibility-profile pd2-reference-v1 \
-    --limitation "Reference VM measurements do not define release budgets" \
-    --observer "$PWD/tests/performance/pd2_reference_observer.py" \
-    --accessibility-observer "$PWD/tests/accessibility/pd2_accessibility_observer.py" \
-    --output "/absolute/private/evidence/pd2-performance-accessibility.json"
+/usr/bin/dbus-run-session -- \
+  /usr/bin/python3 "$PWD/tests/integration/run_with_xvfb.py" \
+    --openbox /usr/bin/openbox \
+    --xprop /usr/bin/xprop \
+    --test-timeout-seconds 4200 \
+    /usr/bin/Xvfb /usr/bin/env -- \
+      PRISMDRAKE_PD2_BUILD_DIRECTORY="$PWD/build/performance-gcc" \
+      PRISMDRAKE_PD2_PERFORMANCE_RUNNER="$PWD/build/performance-gcc/tests/performance/prismdrake-pd1-performance-evidence" \
+      PRISMDRAKE_PD2_ASSET_PERFORMANCE_RUNNER="$PWD/build/performance-gcc/tests/performance/prismdrake-pd2-asset-performance" \
+      PRISMDRAKE_PD2_RUNTIME_PERFORMANCE_EVIDENCE="/absolute/private/evidence/pd2-runtime-performance.json" \
+      PRISMDRAKE_PD2_IDLE_SERIES="/absolute/private/evidence/pd2-idle-series.json" \
+      PRISMDRAKE_PD2_PD1_EVIDENCE="/absolute/private/evidence/pd1-performance.json" \
+      PRISMDRAKE_PD2_INSTALLED_DEMO_EVIDENCE="/absolute/private/evidence/pd2-installed-demonstration.json" \
+      PRISMDRAKE_PD2_PACKAGE_TEST_EVIDENCE="/absolute/private/evidence/non-root/pd2-package-test.json" \
+      /usr/bin/python3 "$PWD/tests/performance/collect_pd2_live_evidence.py" \
+        --source-revision "$(git rev-parse HEAD)" \
+        --environment-id gentoo-amd64-qemu-system \
+        --pd1-reference-revision "$PRISMDRAKE_PD1_REVISION" \
+        --pd1-evidence-id pd1-reviewed-reference \
+        --search-catalog-size 16 --search-catalog-size 64 \
+        --reviewed-accessibility-profile pd2-reference-v1 \
+        --limitation "Reference VM measurements do not define release budgets" \
+        --observer "$PWD/tests/performance/pd2_reference_observer.py" \
+        --accessibility-observer "$PWD/tests/accessibility/pd2_accessibility_observer.py" \
+        --output "/absolute/private/evidence/pd2-performance-accessibility.json"
 ```
 
-The complete build is required because the final observer executes the exact
-translation and four QML CTest selections from this tree, while idle collection
-uses its session, settingsd, notifyd, and shell executables. Run the final
-collector inside a separately controlled, authorization-free Xvfb plus Openbox
-epoch that remains alive for the complete command. Earlier installed-demo,
-runtime, and idle epochs clean up their displays and window managers. Do not
-rely on an authenticated ambient display: the strict observer environment
-forwards `DISPLAY` but deliberately does not forward `HOME` or `XAUTHORITY`.
+The final collector runs inside a private session bus and one separately
+controlled, authorization-free Xvfb plus Openbox epoch. The reusable display
+wrapper obtains the display through `-displayfd`, waits until `xprop` observes
+Openbox's `_NET_SUPPORTING_WM_CHECK`, and applies the exact 4200-second
+compositional WP15 ceiling only because this command opts into it. Ordinary
+wrapper defaults remain 16 seconds without Openbox and 12 seconds with Openbox.
+The wrapper starts the collector in a dedicated process group. After ordinary
+collector cleanup, or immediately when the whole-command bound expires, it
+applies bounded group-wide `TERM` then `KILL` cleanup so an active observer or
+other descendant cannot outlive the collector. Xvfb and Openbox remain
+separately owned exact children with their existing bounded cleanup. The
+readiness probe and artifact do not expose the display number or root-window
+XID. Earlier installed-demo, runtime, and idle epochs clean up their own displays
+and window managers before this epoch begins. Do not rely on an authenticated
+ambient display: the strict observer environment forwards `DISPLAY` but
+deliberately does not forward `HOME` or `XAUTHORITY`.
 
 The two PD2 inputs above must be the validated initial installed demonstration
 and the collector-owned package-test stage for the same source revision. This

@@ -15,15 +15,16 @@ from pathlib import Path
 
 # A cold CI runner can take several seconds to initialize fonts and publish the
 # display number even though the server is healthy. Keep the default lanes
-# within CTest's 30-second envelope; long external workflows must opt into the
-# separately bounded harness timeout argument.
+# within CTest's 30-second envelope. The compositional WP15 collector may opt
+# into its separately bounded 4200-second ceiling without changing those lanes.
 STARTUP_TIMEOUT_SECONDS = 8
 TEST_TIMEOUT_SECONDS = 16
 OPENBOX_READY_TIMEOUT_SECONDS = 2
 OPENBOX_TEST_TIMEOUT_SECONDS = 12
-MAXIMUM_TEST_TIMEOUT_SECONDS = 90
+MAXIMUM_TEST_TIMEOUT_SECONDS = 4200
 TERMINATE_TIMEOUT_SECONDS = 3
 KILL_TIMEOUT_SECONDS = 2
+PROCESS_GROUP_POLL_SECONDS = 0.01
 
 
 def fail(message: str) -> int:
@@ -49,7 +50,9 @@ def parse_test_timeout_seconds(value: str) -> int:
         raise HarnessArgumentError("the test timeout must be a strict positive ASCII integer")
     parsed = int(value, 10)
     if parsed > MAXIMUM_TEST_TIMEOUT_SECONDS:
-        raise HarnessArgumentError("the test timeout exceeds the fixed 90-second bound")
+        raise HarnessArgumentError(
+            f"the test timeout exceeds the fixed {MAXIMUM_TEST_TIMEOUT_SECONDS}-second bound"
+        )
     return parsed
 
 
@@ -134,6 +137,73 @@ def process_status(return_code: int | None) -> str:
     return f"exited with status {return_code}"
 
 
+def start_test_process(
+    executable: Path, arguments: list[str], environment: dict[str, str]
+) -> subprocess.Popen[bytes]:
+    """Start the wrapped command as leader of one cleanup-owned process group."""
+
+    return subprocess.Popen(
+        [str(executable), *arguments],
+        stdin=subprocess.DEVNULL,
+        env=environment,
+        start_new_session=True,
+    )
+
+
+def process_group_exists(group_id: int) -> bool:
+    """Return whether one exact process group still has any members."""
+
+    try:
+        os.killpg(group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_for_test_process_group_exit(
+    process: subprocess.Popen[bytes], timeout_seconds: float
+) -> bool:
+    """Bound waiting for both the direct test child and its process group."""
+
+    deadline = time.monotonic() + timeout_seconds
+    while process_group_exists(process.pid):
+        process.poll()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(PROCESS_GROUP_POLL_SECONDS, remaining))
+    remaining = max(0.0, deadline - time.monotonic())
+    try:
+        process.wait(timeout=remaining)
+    except subprocess.TimeoutExpired:
+        return False
+    return True
+
+
+def terminate_test_process_group(
+    process: subprocess.Popen[bytes],
+    terminate_timeout_seconds: float = TERMINATE_TIMEOUT_SECONDS,
+    kill_timeout_seconds: float = KILL_TIMEOUT_SECONDS,
+) -> bool:
+    """Terminate the exact test process group with bounded TERM/KILL escalation."""
+
+    if not process_group_exists(process.pid):
+        return wait_for_test_process_group_exit(process, terminate_timeout_seconds)
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    if wait_for_test_process_group_exit(process, terminate_timeout_seconds):
+        return True
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    return wait_for_test_process_group_exit(process, kill_timeout_seconds)
+
+
 def main() -> int:
     try:
         separator = sys.argv.index("--")
@@ -189,6 +259,7 @@ def main() -> int:
         text=True,
     )
     openbox_process: subprocess.Popen[str] | None = None
+    test_process: subprocess.Popen[bytes] | None = None
     try:
         if server.stdout is None:
             return fail("server display channel is unavailable")
@@ -235,35 +306,43 @@ def main() -> int:
                 time.sleep(0.02)
             else:
                 return fail("Openbox did not publish _NET_SUPPORTING_WM_CHECK")
-        completed = subprocess.run(
-            [str(test), *test_arguments],
-            stdin=subprocess.DEVNULL,
-            env=environment,
-            timeout=selected_test_timeout(options),
-            check=False,
-        )
-        if completed.returncode < 0:
+        test_process = start_test_process(test, test_arguments, environment)
+        try:
+            test_return_code = test_process.wait(timeout=selected_test_timeout(options))
+        except subprocess.TimeoutExpired:
+            cleanup_complete = terminate_test_process_group(test_process)
+            if cleanup_complete:
+                test_process = None
+            openbox_status = (
+                process_status(openbox_process.poll())
+                if openbox_process is not None
+                else "not requested"
+            )
+            cleanup_status = "complete" if cleanup_complete else "incomplete"
+            return fail(
+                "test exceeded its bounded timeout; "
+                f"test process-group cleanup {cleanup_status}; "
+                f"Xvfb {process_status(server.poll())}; Openbox {openbox_status}"
+            )
+        cleanup_complete = terminate_test_process_group(test_process)
+        if cleanup_complete:
+            test_process = None
+        if not cleanup_complete:
+            return fail("test process-group cleanup exceeded its fixed bound")
+        if test_return_code < 0:
             openbox_status = (
                 process_status(openbox_process.poll())
                 if openbox_process is not None
                 else "not requested"
             )
             return fail(
-                f"{failed_test_status(completed.returncode)}; "
+                f"{failed_test_status(test_return_code)}; "
                 f"Xvfb {process_status(server.poll())}; Openbox {openbox_status}"
             )
-        return completed.returncode
-    except subprocess.TimeoutExpired:
-        openbox_status = (
-            process_status(openbox_process.poll())
-            if openbox_process is not None
-            else "not requested"
-        )
-        return fail(
-            "test exceeded its bounded timeout; "
-            f"Xvfb {process_status(server.poll())}; Openbox {openbox_status}"
-        )
+        return test_return_code
     finally:
+        if test_process is not None:
+            terminate_test_process_group(test_process)
         if openbox_process is not None and openbox_process.poll() is None:
             openbox_process.terminate()
             try:
