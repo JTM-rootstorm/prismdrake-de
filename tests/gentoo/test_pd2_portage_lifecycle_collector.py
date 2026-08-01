@@ -78,6 +78,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
         (build / "CMakeCache.txt").write_text(
             "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
             f"{revision}\n"
+            "PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST:BOOL=ON\n"
             f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n"
             f"_Python3_EXECUTABLE:INTERNAL={python}\n",
             encoding="utf-8",
@@ -904,6 +905,7 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
             cache.write_text(
                 "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
                 f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n"
+                "PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST:BOOL=ON\n"
                 f"_Python3_EXECUTABLE:INTERNAL={python}\n",
                 encoding="utf-8",
             )
@@ -917,6 +919,44 @@ class Pd2LifecycleCollectorTests(unittest.TestCase):
                 collector._canonical_ctest_inventory_sha256(
                     forged, build, source,
                 )
+
+    def test_ctest_contract_requires_live_atspi_test_build(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            build = root / "build"
+            source.mkdir()
+            build.mkdir()
+            revision = "5" * 40
+            python = self.create_python(root)
+            inventory = [{"name": "ContractTest.Ordinary", "command": ["/bin/true"]}]
+            cache = build / "CMakeCache.txt"
+            prefix = (
+                "PRISMDRAKE_CONFIGURED_SOURCE_REVISION:INTERNAL="
+                f"{revision}\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n"
+                f"_Python3_EXECUTABLE:INTERNAL={python}\n"
+            )
+
+            invalid_entries = (
+                "",
+                "PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST:BOOL=OFF\n",
+                "PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST:BOOL=ON\n"
+                "PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST:BOOL=ON\n",
+            )
+            for entry in invalid_entries:
+                with self.subTest(entry=entry):
+                    cache.write_text(prefix + entry, encoding="utf-8")
+                    with self.assertRaisesRegex(
+                            Pd2CollectorError,
+                            "^test_build_live_atspi_requirement_invalid$"):
+                        collector._canonical_ctest_inventory_sha256(
+                            inventory, build, source,
+                        )
+
+            self.write_test_cache(build, source, revision, python)
+            collector._canonical_ctest_inventory_sha256(
+                inventory, build, source,
+            )
 
     def test_ctest_contract_rejects_untrusted_configured_python(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -242,6 +242,9 @@ test -z "$(/usr/bin/git -C "$PRISMDRAKE_SOURCE_CHECKOUT" \
   status --porcelain=v1 --untracked-files=all)"
 test "$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' \
   "$PRISMDRAKE_TEST_BUILD/CMakeCache.txt")" = "$PRISMDRAKE_SOURCE_CHECKOUT"
+test "$(sed -n \
+  's/^PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST:BOOL=//p' \
+  "$PRISMDRAKE_TEST_BUILD/CMakeCache.txt")" = ON
 
 install -d -m 0700 "$PRISMDRAKE_EVIDENCE_ROOT/harness"
 install -m 0700 "$PRISMDRAKE_CONTROLLED_FIXTURE" \
@@ -369,9 +372,12 @@ checkout remains clean before the later root-owned WP15 source attestation.
 The CTest collectors require the retained build's exact clean source directory
 and configured revision, compare the complete ordered inventory to
 `tests/gentoo/pd2-ctest-inventory-v1.json`, and bind the source-owned contract
-to every ordered test name, command, and CTest behavior property. Exact source
-and build roots and the single source-bound configured revision are normalized
-before hashing so disposable paths and a later exact revision do not change the
+to every ordered test name, command, and CTest behavior property. They also
+require exactly one `PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST:BOOL=ON` cache entry,
+so a dependency-degraded developer registration cannot satisfy the package
+contract. Exact source and build roots and the single source-bound configured
+revision are normalized before hashing so disposable paths and a later exact
+revision do not change the
 reviewed contract; diagnostic source-line and backtrace metadata is excluded.
 The canonical inventory is captured from the ebuild's retained `USE=test`
 tree, where `PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST=ON` makes the real 45-second,

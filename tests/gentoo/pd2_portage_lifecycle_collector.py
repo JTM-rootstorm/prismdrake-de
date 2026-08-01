@@ -819,6 +819,8 @@ def _configured_test_build_metadata(
         "CMAKE_HOME_DIRECTORY:INTERNAL=")]
     python_matches = [line.partition("=")[2] for line in lines if line.startswith(
         "_Python3_EXECUTABLE:INTERNAL=")]
+    live_atspi_matches = [line.partition("=")[2] for line in lines if line.startswith(
+        "PRISMDRAKE_REQUIRE_LIVE_ATSPI_TEST:BOOL=")]
     _require(source_matches == [str(source_checkout)], "test_build_source_mismatch")
     _require(len(revision_matches) == 1 and
              re.fullmatch(r"[0-9a-f]{40}", revision_matches[0]) is not None,
@@ -837,6 +839,8 @@ def _configured_test_build_metadata(
         python_metadata.st_mode & 0o111 != 0,
         "test_build_python_invalid",
     )
+    _require(live_atspi_matches == ["ON"],
+             "test_build_live_atspi_requirement_invalid")
     return revision_matches[0], python_matches[0]
 
 
