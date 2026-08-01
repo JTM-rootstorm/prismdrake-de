@@ -1961,13 +1961,20 @@ class LivePortTests(unittest.TestCase):
         class NotificationPolicyPort(LiveXorgHarnessPort):
             has_skip_taskbar = False
 
+            def __init__(self, *args):
+                super().__init__(*args)
+                self.events: list[str] = []
+
             def _run_notification_step(self, identifier):
+                self.events.append("create")
                 self.assert_notification_identifier = identifier
 
             def _invoke_shellctl(self, group, action):
+                self.events.append("panel_focus")
                 self.assert_panel_request = (group, action)
 
             def _wait_accessible(self, selector, timeout_error):
+                self.events.append("atspi_presentation")
                 self.assert_accessible = (selector.name, timeout_error)
 
             def _xdotool(self, *arguments):
@@ -1978,7 +1985,13 @@ class LivePortTests(unittest.TestCase):
                 self.assert_notification_title = title
                 return 0x510002, WindowGeometry(100, 100, 380, 400)
 
+            def _wait_tier_c_named_surface(self, title, timeout_error):
+                self.events.append("named_window")
+                self.assert_notification_window_timeout = timeout_error
+                return self._tier_c_named_surface(title)
+
             def _window_state_atoms(self, window):
+                self.events.append("task_policy")
                 self.assert_state_window = window
                 return (
                     frozenset({b"_NET_WM_STATE_SKIP_TASKBAR"})
@@ -1995,11 +2008,32 @@ class LivePortTests(unittest.TestCase):
             HarnessError, "^tier_c_transient_task_policy_invalid$"
         ):
             port.prepare_step(live_xorg.STEP_CONTRACTS["notification"])
+        self.assertEqual(
+            port.events,
+            [
+                "create",
+                "panel_focus",
+                "atspi_presentation",
+                "named_window",
+                "task_policy",
+            ],
+        )
 
         port.has_skip_taskbar = True
+        port.events.clear()
         self.assertEqual(
             port.prepare_step(live_xorg.STEP_CONTRACTS["notification"]),
             live_xorg.TierCPortResult("tier_c_step_prepared"),
+        )
+        self.assertEqual(
+            port.events,
+            [
+                "create",
+                "panel_focus",
+                "atspi_presentation",
+                "named_window",
+                "task_policy",
+            ],
         )
 
         singleton_port = NotificationPolicyPort(config(), FakeOperations())
@@ -2016,6 +2050,10 @@ class LivePortTests(unittest.TestCase):
                 "Transient notifications",
                 "tier_c_notification_presentation_timeout",
             ),
+        )
+        self.assertEqual(
+            port.assert_notification_window_timeout,
+            "tier_c_notification_window_timeout",
         )
 
     def test_tier_c_quick_settings_waits_at_each_focus_boundary(self) -> None:
@@ -2087,6 +2125,128 @@ class LivePortTests(unittest.TestCase):
                 ("focus", "Open quick settings"),
                 ("x11_focus", "tier_c_quick_settings_focus_restore_timeout"),
             ],
+        )
+
+    def test_tier_c_notification_center_waits_for_dismissal_and_focus(self) -> None:
+        class SynchronizationPort(LiveXorgHarnessPort):
+            def __init__(self):
+                super().__init__(config(), FakeOperations())
+                self.events: list[tuple[str, object]] = []
+
+            def _xdotool(self, *arguments):
+                self.events.append(("key", arguments[-1]))
+                return CommandResult(0)
+
+            def observe_atspi(self, selector):
+                self.events.append(("focus", selector.name))
+                return live_xorg.AtspiCategoricalResult("atspi_control_ready")
+
+            def _wait_accessible_state(
+                self, selector, state_name, expected, timeout_error
+            ):
+                self.events.append(
+                    ("state", (selector.name, state_name, expected, timeout_error))
+                )
+
+            def _wait_accessible_absent(self, selector, timeout_error):
+                self.events.append(("absent", (selector.name, timeout_error)))
+
+            def _wait_primary_panel_x11_focus(self, timeout_error):
+                self.events.append(("x11_focus", timeout_error))
+
+        port = SynchronizationPort()
+        port._tier_c_identifier = "notification_center"  # noqa: SLF001
+        port._tier_c_surface = (  # noqa: SLF001
+            0x510003,
+            WindowGeometry(1220, 452, 380, 400),
+        )
+
+        self.assertEqual(
+            port.send_reviewed_keys("notification_center", ("ENTER", "TAB")),
+            live_xorg.TierCKeyboardObservation("tier_c_keyboard_complete", 2),
+        )
+        self.assertEqual(
+            port.complete_step("notification_center"),
+            live_xorg.TierCPortResult("tier_c_step_complete"),
+        )
+        self.assertEqual(
+            port.events,
+            [
+                ("key", "Return"),
+                ("key", "Tab"),
+                (
+                    "state",
+                    (
+                        "Do not disturb",
+                        "CHECKED",
+                        True,
+                        "tier_c_notification_toggle_failed",
+                    ),
+                ),
+                ("focus", "Clear notification history"),
+                ("key", "Escape"),
+                (
+                    "absent",
+                    (
+                        "Notification center",
+                        "tier_c_notification_center_dismissal_timeout",
+                    ),
+                ),
+                ("focus", "Open notification center"),
+                (
+                    "x11_focus",
+                    "tier_c_notification_center_focus_restore_timeout",
+                ),
+            ],
+        )
+
+    def test_tier_c_notification_window_lookup_is_bounded(self) -> None:
+        class DelayedSurfacePort(LiveXorgHarnessPort):
+            def __init__(self):
+                super().__init__(config(), FakeOperations())
+                self.lookups = 0
+
+            def _visible_named_window_ids(self, title):
+                self.assert_title = title
+                self.lookups += 1
+                return () if self.lookups == 1 else (0x510002,)
+
+            def _tier_c_surface_window(self, window):
+                self.assert_surface_window = window
+                return window, WindowGeometry(100, 100, 380, 400)
+
+        port = DelayedSurfacePort()
+        self.assertEqual(
+            port._wait_tier_c_named_surface(  # noqa: SLF001
+                live_xorg.NOTIFICATION_WINDOW_TITLE,
+                "tier_c_notification_window_timeout",
+            ),
+            (0x510002, WindowGeometry(100, 100, 380, 400)),
+        )
+        self.assertEqual(port.lookups, 2)
+        self.assertEqual(port.assert_surface_window, 0x510002)
+        self.assertEqual(port._operations.now, 0.05)  # noqa: SLF001
+
+        class MissingSurfacePort(LiveXorgHarnessPort):
+            def _visible_named_window_ids(self, title):
+                self.assert_title = title
+                return ()
+
+        missing = MissingSurfacePort(config(), FakeOperations())
+        with self.assertRaisesRegex(
+            HarnessError, "^tier_c_notification_window_timeout$"
+        ):
+            missing._wait_tier_c_named_surface(  # noqa: SLF001
+                live_xorg.NOTIFICATION_WINDOW_TITLE,
+                "tier_c_notification_window_timeout",
+            )
+        self.assertGreaterEqual(
+            missing._operations.now,  # noqa: SLF001
+            missing._config.readiness_timeout,  # noqa: SLF001
+        )
+        self.assertLessEqual(
+            missing._operations.now,  # noqa: SLF001
+            missing._config.readiness_timeout + 0.05,  # noqa: SLF001
         )
 
     def test_quotes_whitespace_fixture_and_rejects_desktop_field_code_paths(self) -> None:
@@ -2302,6 +2462,10 @@ class LivePortTests(unittest.TestCase):
                 )
 
             self.assertEqual(len(traces), 1)
+            self.assertTrue(traces[0].client_environments)
+            self.assertEqual(
+                traces[0].client_environments[0]["QT_XCB_NO_MITSHM"], "1"
+            )
             self.assertEqual(traces[0].finish_calls, [True])
             self.assertTrue(traces[0].finished)
             trace_index = operations.events.index(("trace", ":1140"))
@@ -4161,58 +4325,9 @@ class LivePortTests(unittest.TestCase):
         self.assertEqual(port._surface_shell_identity, replacement)  # noqa: SLF001
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
-    def test_restart_surface_requirements_resample_transient_old_shell_owner(
+    def test_attested_surface_epoch_rejects_same_shell_owner_mismatch(
         self,
     ) -> None:
-        operations = FakeOperations()
-        port = LiveXorgHarnessPort(
-            config(installed_paths()), operations, FakeAccessibility(operations)
-        )
-        for identifier in (
-            "start_isolated_two_output_x11",
-            "start_installed_prismdrake_session",
-            "verify_component_readiness",
-        ):
-            port.run_step("installed_workflow", identifier)
-        original = port._observe_surface_windows  # noqa: SLF001
-        desktop_calls = 0
-
-        def delayed_desktop(window_type, shell):
-            nonlocal desktop_calls
-            desktop_calls += 1
-            if desktop_calls == 1:
-                raise HarnessError("surface_window_owner_invalid")
-            return original(window_type, shell)
-
-        with patch.object(
-            port, "_observe_surface_windows", side_effect=delayed_desktop
-        ):
-            port._require_desktop_wallpaper_surfaces()  # noqa: SLF001
-        self.assertEqual(desktop_calls, 2)
-
-        retries = {
-            b"_NET_WM_WINDOW_TYPE_DESKTOP": 1,
-            b"_NET_WM_WINDOW_TYPE_DOCK": 1,
-        }
-
-        def delayed_panel(window_type, shell):
-            if retries[window_type] > 0:
-                retries[window_type] -= 1
-                raise HarnessError("surface_window_owner_invalid")
-            return original(window_type, shell)
-
-        with patch.object(port, "_observe_surface_windows", side_effect=delayed_panel):
-            port._require_panel_surfaces()  # noqa: SLF001
-        self.assertEqual(
-            retries,
-            {
-                b"_NET_WM_WINDOW_TYPE_DESKTOP": 0,
-                b"_NET_WM_WINDOW_TYPE_DOCK": 0,
-            },
-        )
-        self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
-
-    def test_restart_surface_owner_retry_preserves_persistent_error(self) -> None:
         operations = FakeOperations()
         port = LiveXorgHarnessPort(
             config(installed_paths()), operations, FakeAccessibility(operations)
@@ -4233,12 +4348,8 @@ class LivePortTests(unittest.TestCase):
                 HarnessError, "^surface_window_owner_invalid$"
             ):
                 port._require_desktop_wallpaper_surfaces()  # noqa: SLF001
-        elapsed = operations.now - started
-        self.assertGreater(observe.call_count, 1)
-        self.assertGreaterEqual(elapsed, port._config.readiness_timeout)  # noqa: SLF001
-        self.assertLessEqual(  # One retry quantum permits floating-point rounding.
-            elapsed, port._config.readiness_timeout + 0.05  # noqa: SLF001
-        )
+        self.assertEqual(observe.call_count, 1)
+        self.assertEqual(operations.now, started)
         self.assertEqual(port.cleanup("installed_workflow"), Observation(True, True))
 
     def test_surface_observation_ignores_only_confirmed_vanished_windows(self) -> None:

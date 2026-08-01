@@ -2771,11 +2771,24 @@ class LiveXorgHarnessPort:
         windows = self._visible_named_window_ids(title)
         if len(windows) != 1:
             raise HarnessError("tier_c_surface_window_invalid")
-        window = windows[0]
+        return self._tier_c_surface_window(windows[0])
+
+    def _tier_c_surface_window(self, window: int) -> tuple[int, WindowGeometry]:
         shell = self._shell_identity()
         if self._window_cardinals(window, b"_NET_WM_PID", 1) != (shell.pid,):
             raise HarnessError("tier_c_surface_owner_invalid")
         return window, self._tier_c_window_geometry(window)
+
+    def _wait_tier_c_named_surface(
+        self, title: str, timeout_error: str
+    ) -> tuple[int, WindowGeometry]:
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while self._operations.monotonic() < deadline:
+            windows = self._visible_named_window_ids(title)
+            if len(windows) == 1:
+                return self._tier_c_surface_window(windows[0])
+            self._operations.pause(0.05)
+        raise HarnessError(timeout_error)
 
     def _tier_c_window_geometry(self, window: int) -> WindowGeometry:
         result = self._run_x11(
@@ -2872,7 +2885,10 @@ class LiveXorgHarnessPort:
                 ControlSelector("Transient notifications", "notification"),
                 "tier_c_notification_presentation_timeout",
             )
-            surface = self._tier_c_named_surface(NOTIFICATION_WINDOW_TITLE)
+            surface = self._wait_tier_c_named_surface(
+                NOTIFICATION_WINDOW_TITLE,
+                "tier_c_notification_window_timeout",
+            )
         elif identifier == "notification_center":
             self._invoke_shellctl("notifications", "open")
             self._wait_accessible(
@@ -5018,11 +5034,12 @@ class LiveXorgHarnessPort:
             self._start_private_bus()
         environment = self._private_bus_environment()
         if self._tier_c_trace is not None:
-            environment = self._traced_x11_environment(environment)
             # x11trace proxies the X11 byte stream but cannot relay MIT-SHM file
             # descriptors. Force ordinary image transport only for the traced
-            # session and its Qt children.
+            # session and its Qt children, and pass it through the trace
+            # supervisor's bounded environment validation.
             environment["QT_XCB_NO_MITSHM"] = "1"
+            environment = self._traced_x11_environment(environment)
         environment.update(
             {
                 "QT_QUICK_BACKEND": "software",
@@ -5340,7 +5357,21 @@ class LiveXorgHarnessPort:
                     "surface_window_owner_invalid",
                 }:
                     raise
-                last_error = error
+                if str(error) == "surface_window_owner_invalid":
+                    try:
+                        current_shell = self._require_surface_shell(
+                            allow_safe_mode=allow_safe_mode
+                        )
+                    except HarnessError as identity_error:
+                        if str(identity_error) != "surface_shell_identity_invalid":
+                            raise
+                        last_error = identity_error
+                    else:
+                        if current_shell == shell:
+                            raise
+                        last_error = HarnessError("surface_shell_identity_changed")
+                else:
+                    last_error = error
                 if self._operations.monotonic() >= deadline:
                     raise last_error
             self._operations.pause(0.05)
@@ -5505,17 +5536,10 @@ class LiveXorgHarnessPort:
     def _wait_for_owned_surface_windows(
         self, window_type: bytes, shell: ProcessIdentity, deadline: float
     ) -> dict[int, WindowGeometry]:
-        """Resample a retiring shell's still-listed surfaces within one deadline."""
+        """Observe surfaces for one already-attested shell without masking foreign owners."""
 
-        while True:
-            try:
-                return self._observe_surface_windows(window_type, shell)
-            except HarnessError as error:
-                if str(error) != "surface_window_owner_invalid":
-                    raise
-                if self._operations.monotonic() >= deadline:
-                    raise
-            self._operations.pause(0.05)
+        del deadline
+        return self._observe_surface_windows(window_type, shell)
 
     def _observe_surface_windows(
         self, window_type: bytes, shell: ProcessIdentity
