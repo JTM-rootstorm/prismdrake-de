@@ -5318,10 +5318,6 @@ class LiveXorgHarnessPort:
         transient_errors = {
             "desktop_surface_epoch_changed",
             "panel_surface_invalid",
-            "x11_window_geometry_query_failed",
-            "x11_window_list_invalid",
-            "x11_window_list_query_failed",
-            "x11_window_property_query_failed",
         }
         deadline = self._operations.monotonic() + self._config.readiness_timeout
         last_error: HarnessError | None = None

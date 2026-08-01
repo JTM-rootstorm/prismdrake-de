@@ -3251,7 +3251,7 @@ class LivePortTests(unittest.TestCase):
             port,
             "_require_panel_surfaces",
             side_effect=(
-                HarnessError("x11_window_list_invalid"),
+                HarnessError("panel_surface_invalid"),
                 HarnessError("desktop_surface_epoch_changed"),
                 None,
             ),
@@ -3274,6 +3274,19 @@ class LivePortTests(unittest.TestCase):
                     "window_manager_surface_recovery_timeout"
                 )
         self.assertEqual(observe.call_count, 1)
+
+        with patch.object(
+            port,
+            "_require_panel_surfaces",
+            side_effect=HarnessError("desktop_surface_epoch_changed"),
+        ) as observe:
+            with self.assertRaisesRegex(
+                HarnessError, "^window_manager_surface_recovery_timeout$"
+            ):
+                port._wait_panel_surfaces_unchanged(  # noqa: SLF001
+                    "window_manager_surface_recovery_timeout"
+                )
+        self.assertGreater(observe.call_count, 1)
 
     def test_session_readiness_rejects_safe_mode(self) -> None:
         operations = FakeOperations(session_marker="safe-mode")
