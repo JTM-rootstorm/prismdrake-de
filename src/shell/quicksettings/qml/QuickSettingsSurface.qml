@@ -11,7 +11,12 @@ FocusScope {
     required property var themeGeneration
     property int layoutDirection: Qt.locale().textDirection
     property int pendingProfileFocusRecovery: -1
+    property bool pendingProfileVisualFocusRecovery: false
+    property int pendingProfileFocusRecoverySerial: -1
     property bool pendingDoNotDisturbFocusRecovery: false
+    property bool pendingDoNotDisturbVisualFocusRecovery: false
+    property int pendingDoNotDisturbFocusRecoverySerial: -1
+    property int focusRecoverySerial: 0
 
     readonly property var tokens: themeGeneration.notification
     readonly property int focusableControlCount: 5
@@ -37,9 +42,16 @@ FocusScope {
     }
 
     function focusControl(index, reason) {
+        cancelPendingFocusRecovery()
         const candidate = controlAt(index)
-        if (candidate !== null && candidate.enabled)
+        if (candidate !== null && candidate.enabled) {
+            if (candidate.activeFocus
+                    && (reason === Qt.TabFocusReason
+                        || reason === Qt.BacktabFocusReason)
+                    && !candidate.visualFocus)
+                candidate.focus = false
             candidate.forceActiveFocus(reason)
+        }
     }
 
     function focusNextFrom(index, direction, reason) {
@@ -48,7 +60,7 @@ FocusScope {
              candidateIndex += direction) {
             const candidate = controlAt(candidateIndex)
             if (candidate !== null && candidate.enabled) {
-                candidate.forceActiveFocus(reason)
+                focusControl(candidateIndex, reason)
                 return true
             }
         }
@@ -76,8 +88,13 @@ FocusScope {
     }
 
     function cancelPendingFocusRecovery() {
+        ++focusRecoverySerial
         pendingProfileFocusRecovery = -1
+        pendingProfileVisualFocusRecovery = false
+        pendingProfileFocusRecoverySerial = -1
         pendingDoNotDisturbFocusRecovery = false
+        pendingDoNotDisturbVisualFocusRecovery = false
+        pendingDoNotDisturbFocusRecoverySerial = -1
     }
 
     function activateButton(control, event) {
@@ -93,35 +110,63 @@ FocusScope {
     }
 
     function requestProfile(index, requestedProfile) {
+        cancelPendingFocusRecovery()
+        const recoverySerial = focusRecoverySerial
         const candidate = controlAt(index)
         const hadFocus = candidate !== null && candidate.activeFocus
+        const hadVisualFocus = candidate !== null && candidate.visualFocus
         const accepted = requestedProfile === "lustre"
             ? quickSettingsModel.requestLustreProfile()
             : quickSettingsModel.requestForgeProfile()
         pendingProfileFocusRecovery = accepted && hadFocus
                                       && quickSettingsModel.profile.pending
                                       ? index : -1
+        pendingProfileVisualFocusRecovery = pendingProfileFocusRecovery >= 0
+                                            && hadVisualFocus
+        pendingProfileFocusRecoverySerial = pendingProfileFocusRecovery >= 0
+                                            ? recoverySerial : -1
     }
 
     function requestDoNotDisturb(enabled) {
+        cancelPendingFocusRecovery()
+        const recoverySerial = focusRecoverySerial
         const hadFocus = doNotDisturb.activeFocus
+        const hadVisualFocus = doNotDisturb.visualFocus
         const accepted = quickSettingsModel.requestDoNotDisturb(enabled)
         pendingDoNotDisturbFocusRecovery = accepted && hadFocus
                                                 && quickSettingsModel.doNotDisturb.pending
+        pendingDoNotDisturbVisualFocusRecovery = pendingDoNotDisturbFocusRecovery
+                                                  && hadVisualFocus
+        pendingDoNotDisturbFocusRecoverySerial =
+            pendingDoNotDisturbFocusRecovery ? recoverySerial : -1
     }
 
-    function restorePendingFocus(index) {
+    function restorePendingFocus(index, restoreVisualFocus, recoverySerial,
+                                 attemptsRemaining) {
         Qt.callLater(function() {
-            if (!root.visible || root.Window.window === null
+            if (recoverySerial !== root.focusRecoverySerial
+                    || root.Window.window === null
+                    || !root.Window.window.visible
                     || !root.Window.window.active)
                 return
-            for (let candidateIndex = 0;
-                 candidateIndex < focusableControlCount; ++candidateIndex) {
-                const focusedCandidate = controlAt(candidateIndex)
-                if (focusedCandidate !== null && focusedCandidate.activeFocus)
-                    return
+            const candidate = controlAt(index)
+            if (candidate === null || !candidate.enabled) {
+                if (attemptsRemaining > 0)
+                    root.restorePendingFocus(index, restoreVisualFocus,
+                                             recoverySerial,
+                                             attemptsRemaining - 1)
+                return
             }
-            focusControl(index, Qt.OtherFocusReason)
+            if (!candidate.activeFocus
+                    && root.Window.window.activeFocusItem !== null
+                    && root.Window.window.activeFocusItem !== root)
+                return
+            if (candidate.activeFocus && restoreVisualFocus
+                    && !candidate.visualFocus)
+                candidate.focus = false
+            candidate.forceActiveFocus(restoreVisualFocus
+                                       ? Qt.TabFocusReason
+                                       : Qt.OtherFocusReason)
         })
     }
 
@@ -156,8 +201,13 @@ FocusScope {
             if (!root.quickSettingsModel.profile.pending
                     && root.pendingProfileFocusRecovery >= 0) {
                 const index = root.pendingProfileFocusRecovery
+                const restoreVisualFocus = root.pendingProfileVisualFocusRecovery
+                const recoverySerial = root.pendingProfileFocusRecoverySerial
                 root.pendingProfileFocusRecovery = -1
-                root.restorePendingFocus(index)
+                root.pendingProfileVisualFocusRecovery = false
+                root.pendingProfileFocusRecoverySerial = -1
+                root.restorePendingFocus(index, restoreVisualFocus,
+                                         recoverySerial, 2)
             }
         }
     }
@@ -167,8 +217,15 @@ FocusScope {
         function onChanged() {
             if (!root.quickSettingsModel.doNotDisturb.pending
                     && root.pendingDoNotDisturbFocusRecovery) {
+                const restoreVisualFocus =
+                    root.pendingDoNotDisturbVisualFocusRecovery
+                const recoverySerial =
+                    root.pendingDoNotDisturbFocusRecoverySerial
                 root.pendingDoNotDisturbFocusRecovery = false
-                root.restorePendingFocus(2)
+                root.pendingDoNotDisturbVisualFocusRecovery = false
+                root.pendingDoNotDisturbFocusRecoverySerial = -1
+                root.restorePendingFocus(2, restoreVisualFocus,
+                                         recoverySerial, 2)
             }
         }
     }

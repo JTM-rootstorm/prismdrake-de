@@ -15,6 +15,7 @@ TestCase {
 
     QtObject {
         id: profileAdapter
+        signal changed
         property string valueId: "lustre"
         property string valueText: "Prismdrake Lustre"
         property string description: "Choose the active Prismdrake profile."
@@ -26,6 +27,7 @@ TestCase {
 
     QtObject {
         id: dndAdapter
+        signal changed
         property string description: "Normal notifications may be presented."
         property string stateText: "Disabled"
         property bool interactive: true

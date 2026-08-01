@@ -277,16 +277,24 @@ TestCase {
         makeProfileRequestPending = true
         surface.focusControl(1, Qt.TabFocusReason)
         compare(surface.controlAt(1).activeFocus, true)
+        compare(surface.controlAt(1).visualFocus, true)
+        compare(surface.activeFocus, true)
+        compare(surface.Window.window.visible, true)
+        compare(surface.Window.window.active, true)
 
         keyClick(Qt.Key_Space)
         compare(profileRequests, 1)
         compare(profileAdapter.pending, true)
         compare(surface.controlAt(1).activeFocus, false)
+        compare(surface.pendingProfileFocusRecovery, 1)
+        compare(surface.pendingProfileVisualFocusRecovery, true)
 
         profileAdapter.valueId = "forge"
         profileAdapter.pending = false
         profileAdapter.changed()
         tryCompare(surface.controlAt(1), "activeFocus", true)
+        tryCompare(surface.controlAt(1), "visualFocus", true)
+        compare(surface.controlAt(1).Accessible.focused, true)
     }
 
     function test_pendingFocusRecoveryDoesNotStealIntentionalFocus() {
@@ -302,6 +310,62 @@ TestCase {
         wait(0)
         compare(surface.controlAt(3).activeFocus, true)
         compare(surface.controlAt(1).activeFocus, false)
+    }
+
+    function test_deferredFocusRecoveryDoesNotStealIntentionalFocus() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        compare(profileAdapter.pending, true)
+
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        profileAdapter.changed()
+        surface.focusControl(3, Qt.TabFocusReason)
+        wait(0)
+        compare(surface.controlAt(3).activeFocus, true)
+        compare(surface.controlAt(1).activeFocus, false)
+    }
+
+    function test_directFocusChangePreventsDeferredRecovery() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        compare(profileAdapter.pending, true)
+
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        profileAdapter.changed()
+        surface.controlAt(3).forceActiveFocus(Qt.TabFocusReason)
+        wait(0)
+        compare(surface.controlAt(3).activeFocus, true)
+        compare(surface.controlAt(1).activeFocus, false)
+    }
+
+    function test_newDomainActivationCancelsOlderRecovery() {
+        makeProfileRequestPending = true
+        makeDndRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        compare(profileAdapter.pending, true)
+        compare(surface.pendingProfileFocusRecovery, 1)
+
+        surface.controlAt(2).forceActiveFocus(Qt.TabFocusReason)
+        surface.requestDoNotDisturb(true)
+        compare(dndAdapter.pending, true)
+        compare(surface.pendingProfileFocusRecovery, -1)
+
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        profileAdapter.changed()
+        wait(0)
+        compare(surface.controlAt(1).activeFocus, false)
+
+        dndAdapter.checked = true
+        dndAdapter.pending = false
+        dndAdapter.changed()
+        tryCompare(surface.controlAt(2), "activeFocus", true)
+        tryCompare(surface.controlAt(2), "visualFocus", true)
     }
 
     function test_pendingFocusRecoveryDoesNotRefocusAfterDismissal() {
@@ -322,20 +386,45 @@ TestCase {
         compare(surface.controlAt(1).activeFocus, false)
     }
 
+    function test_windowHideDropsDeferredRecovery() {
+        makeProfileRequestPending = true
+        surface.focusControl(1, Qt.TabFocusReason)
+        keyClick(Qt.Key_Space)
+        compare(profileAdapter.pending, true)
+
+        profileAdapter.valueId = "forge"
+        profileAdapter.pending = false
+        profileAdapter.changed()
+        surface.Window.window.visible = false
+        wait(0)
+
+        surface.Window.window.visible = true
+        surface.Window.window.requestActivate()
+        surface.focusControl(3, Qt.TabFocusReason)
+        wait(0)
+        compare(surface.controlAt(3).activeFocus, true)
+        compare(surface.controlAt(1).activeFocus, false)
+    }
+
     function test_pendingDndActivationRestoresFocusAfterPublication() {
         makeDndRequestPending = true
         surface.focusControl(2, Qt.TabFocusReason)
         compare(surface.controlAt(2).activeFocus, true)
+        compare(surface.controlAt(2).visualFocus, true)
 
         keyClick(Qt.Key_Space)
         compare(dndRequests, 1)
         compare(dndAdapter.pending, true)
         compare(surface.controlAt(2).activeFocus, false)
+        compare(surface.pendingDoNotDisturbFocusRecovery, true)
+        compare(surface.pendingDoNotDisturbVisualFocusRecovery, true)
 
         dndAdapter.checked = true
         dndAdapter.pending = false
         dndAdapter.changed()
         tryCompare(surface.controlAt(2), "activeFocus", true)
+        tryCompare(surface.controlAt(2), "visualFocus", true)
+        compare(surface.controlAt(2).Accessible.focused, true)
     }
 
     function test_arrowTraversalAndRightToLeftProfileOrder() {
