@@ -2439,9 +2439,16 @@ class LiveXorgHarnessPort:
 
     def _replay_conflicting_notification_owner(self) -> None:
         try:
-            self._start_environment(two_outputs=True)
+            # This direct-only composition intentionally bypasses the session
+            # supervisor so the exact notifyd failure cannot trigger restart
+            # policy.  Add the secondary output after the shell exists: Qt's
+            # XCB backend then publishes an unambiguous screen-added epoch for
+            # the direct child before the conflict is introduced.
+            self._start_environment(two_outputs=False)
             self._start_private_bus()
             self._start_notification_conflict_siblings()
+            self._enable_secondary()
+            self._require_topology(two_outputs=True)
             siblings_before = self._notification_conflict_sibling_identities()
             executable = self._config.installed_executables.get("prismdrake-notifyd")
             if executable is None:
@@ -2472,7 +2479,10 @@ class LiveXorgHarnessPort:
                 },
                 shell=ProcessIdentity(shell_pid, shell_start_time),
             )
-            self._invoke_shellctl("notifications", "open")
+            # Notification controls are expected to be unavailable while the
+            # competing standard owner is present.  A non-notification command
+            # proves that the failure degraded only the dependent feature.
+            self._invoke_shellctl("launcher", "toggle")
         except Exception:
             raise HarnessError("live_notification_owner_conflict_failed") from None
 

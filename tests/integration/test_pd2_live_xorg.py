@@ -3826,6 +3826,12 @@ class LivePortTests(unittest.TestCase):
         )
         self.assertEqual(stat.S_IMODE(configuration.stat().st_mode), 0o600)
         self.assertEqual(configuration.read_text(encoding="ascii"), _session_config())
+        self.assertTrue(
+            any(
+                argv == ("/usr/bin/prismdrake-shellctl", "launcher", "toggle")
+                for argv, _environment in operations.run_calls
+            )
+        )
         self.assertEqual(port.cleanup("failure_replay"), Observation(True, True))
         self.assertEqual(operations.stop_calls, list(reversed(operations.children)))
 
