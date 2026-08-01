@@ -3505,7 +3505,11 @@ class LivePortTests(unittest.TestCase):
                     self.assertNotIn(old, operations.stop_identity_calls)
                 if identifier == "restart_notifyd":
                     self.assertIn("Notification center", accessibility.observed)
-                if identifier in {"restart_settingsd", "restart_notifyd"}:
+                if identifier in {
+                    "restart_settingsd",
+                    "restart_notifyd",
+                    "restart_shell",
+                }:
                     self.assertTrue(
                         any(
                             selector.name == CONTROLLED_APPLICATION_NAME

@@ -2273,10 +2273,7 @@ class LiveXorgHarnessPort:
             self._restart_component("prismdrake-shell")
             if self._component_identity("prismdrake-notifyd") != notifyd:
                 raise HarnessError("notifyd_replaced_during_shell_restart")
-            self._wait_accessible(
-                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
-                "pin_state_reacquisition_timeout",
-            )
+            self._focus_controlled_panel_task("pin_state_reacquisition_timeout")
             self._invoke_shellctl("panel", "focus")
             self._wait_accessible(
                 ControlSelector("Open applications", "push_button", require_focused=True),
