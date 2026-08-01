@@ -2402,7 +2402,9 @@ class LiveXorgHarnessPort:
             self._wait_for_safe_mode()
             self._require_desktop_wallpaper_surfaces(allow_safe_mode=True)
             self._wait_panel_surfaces_unchanged(
-                "safe_mode_panel_surface_timeout", allow_safe_mode=True
+                "safe_mode_panel_surface_timeout",
+                allow_safe_mode=True,
+                primary_only=True,
             )
             self.cleanup("safe_mode_epoch")
             self._start_environment(two_outputs=True)
@@ -5181,7 +5183,7 @@ class LiveXorgHarnessPort:
         self, *, allow_safe_mode: bool = False
     ) -> None:
         self._require_topology(two_outputs=True)
-        shell = self._require_surface_shell(allow_safe_mode=allow_safe_mode)
+        shell = self._wait_for_surface_shell(allow_safe_mode=allow_safe_mode)
         desktops = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DESKTOP", shell)
         expected = {
             WindowGeometry(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT),
@@ -5192,12 +5194,9 @@ class LiveXorgHarnessPort:
             if self._operations.monotonic() >= deadline:
                 raise HarnessError("desktop_wallpaper_surface_invalid")
             self._operations.pause(0.05)
-            try:
-                desktops = self._observe_surface_windows(
-                    b"_NET_WM_WINDOW_TYPE_DESKTOP", shell
-                )
-            except HarnessError:
-                desktops = {}
+            desktops = self._observe_surface_windows(
+                b"_NET_WM_WINDOW_TYPE_DESKTOP", shell
+            )
         if len(desktops) != 2 or set(desktops.values()) != expected:
             raise HarnessError("desktop_wallpaper_surface_invalid")
         # The production readiness byte is emitted only after wallpaper,
@@ -5206,6 +5205,20 @@ class LiveXorgHarnessPort:
         # observes the solid fallback on each output without capturing pixels.
         self._desktop_surfaces = desktops
         self._surface_shell_identity = shell
+
+    def _wait_for_surface_shell(
+        self, *, allow_safe_mode: bool = False
+    ) -> ProcessIdentity:
+        deadline = self._operations.monotonic() + self._config.readiness_timeout
+        while True:
+            try:
+                return self._require_surface_shell(allow_safe_mode=allow_safe_mode)
+            except HarnessError as error:
+                if str(error) != "surface_shell_identity_invalid":
+                    raise
+                if self._operations.monotonic() >= deadline:
+                    raise
+            self._operations.pause(0.05)
 
     def _require_failure_replay_surfaces(
         self,
@@ -5267,7 +5280,9 @@ class LiveXorgHarnessPort:
         self._desktop_surfaces = desktops
         self._surface_shell_identity = shell
 
-    def _require_panel_surfaces(self, *, allow_safe_mode: bool = False) -> None:
+    def _require_panel_surfaces(
+        self, *, allow_safe_mode: bool = False, primary_only: bool = False
+    ) -> None:
         if self._desktop_surfaces is None or self._surface_shell_identity is None:
             raise HarnessError("desktop_surface_observation_missing")
         self._require_topology(two_outputs=True)
@@ -5279,15 +5294,20 @@ class LiveXorgHarnessPort:
             raise HarnessError("desktop_surface_epoch_changed")
         panels = self._observe_surface_windows(b"_NET_WM_WINDOW_TYPE_DOCK", shell)
         expected_geometries = {
-            WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT),
-            WindowGeometry(
-                OUTPUT_WIDTH,
-                OUTPUT_HEIGHT - PANEL_HEIGHT,
-                OUTPUT_WIDTH,
-                PANEL_HEIGHT,
-            ),
+            WindowGeometry(0, OUTPUT_HEIGHT - PANEL_HEIGHT, OUTPUT_WIDTH, PANEL_HEIGHT)
         }
-        if len(panels) != 2 or set(panels.values()) != expected_geometries:
+        if not primary_only:
+            expected_geometries.add(
+                WindowGeometry(
+                    OUTPUT_WIDTH,
+                    OUTPUT_HEIGHT - PANEL_HEIGHT,
+                    OUTPUT_WIDTH,
+                    PANEL_HEIGHT,
+                )
+            )
+        if len(panels) != len(expected_geometries) or (
+            set(panels.values()) != expected_geometries
+        ):
             raise HarnessError("panel_surface_invalid")
         for window, geometry in panels.items():
             strut = self._window_cardinals(window, b"_NET_WM_STRUT", 4)
@@ -5309,7 +5329,11 @@ class LiveXorgHarnessPort:
                 raise HarnessError("panel_strut_invalid")
 
     def _wait_panel_surfaces_unchanged(
-        self, timeout_error: str, *, allow_safe_mode: bool = False
+        self,
+        timeout_error: str,
+        *,
+        allow_safe_mode: bool = False,
+        primary_only: bool = False,
     ) -> None:
         """Wait for the prior exact shell surfaces after a WM ownership change."""
 
@@ -5321,7 +5345,9 @@ class LiveXorgHarnessPort:
         last_error: HarnessError | None = None
         while self._operations.monotonic() < deadline:
             try:
-                self._require_panel_surfaces(allow_safe_mode=allow_safe_mode)
+                self._require_panel_surfaces(
+                    allow_safe_mode=allow_safe_mode, primary_only=primary_only
+                )
                 return
             except HarnessError as error:
                 if str(error) not in transient_errors:

@@ -246,10 +246,12 @@ class FakeOperations:
         self.xorg_loss_publishes_shell_response = True
         self.shell_crashes = 0
         self.safe_mode_published = True
+        self.safe_mode_surface_active = False
         self.events: list[tuple[str, object]] = []
         self.unavailable_displays: set[int] = set()
         self.sync_surfaces_from_queries = False
         self.notification_shellctl_status = 0
+        self.descendant_empty_reads = 0
 
     def spawn(self, argv: Sequence[str], env: Mapping[str, str]) -> FakeChild:
         self.events.append(("spawn", Path(argv[0]).name))
@@ -273,6 +275,9 @@ class FakeOperations:
                 self.bus_socket_identity = (1, 100)
         if argv and Path(argv[0]).name == "prismdrake-session":
             self.shell_crashes = 0
+            if self.safe_mode_surface_active:
+                self.surface_list = tuple(SURFACE_GEOMETRIES)
+                self.safe_mode_surface_active = False
             root = Path(env["XDG_RUNTIME_DIR"]) / "prismdrake"
             root.mkdir(mode=0o700)
             instance = root / f"session-{child.pid}-0"
@@ -541,6 +546,9 @@ class FakeOperations:
         argv, _environment = self.spawn_calls[child.pid - 1000]
         if child.poll() is not None or Path(argv[0]).name != "prismdrake-session":
             return ()
+        if executable.name == "prismdrake-shell" and self.descendant_empty_reads > 0:
+            self.descendant_empty_reads -= 1
+            return ()
         pid = self.component_pids.get(executable.name)
         start_time = self.component_start_times.get(executable.name)
         if pid is None or start_time is None:
@@ -586,6 +594,12 @@ class FakeOperations:
                     if self.shell_crashes == 4:
                         self.component_start_times["prismdrake-settingsd"] += 1
                         self.component_start_times["prismdrake-notifyd"] += 1
+                        self.surface_list = tuple(
+                            window
+                            for window in self.surface_list
+                            if window != PANEL_RIGHT
+                        )
+                        self.safe_mode_surface_active = True
                         if self.safe_mode_published:
                             self._publish_safe_mode_marker()
             if self.unrelated_replacement is not None:
@@ -3769,6 +3783,7 @@ class LivePortTests(unittest.TestCase):
             "verify_component_readiness",
         ):
             port.run_step("installed_workflow", identifier)
+        operations.descendant_empty_reads = 1
         original = port._observe_surface_windows  # noqa: SLF001
         calls = 0
 
@@ -4023,13 +4038,15 @@ class LivePortTests(unittest.TestCase):
         original = port._require_panel_surfaces  # noqa: SLF001
         safe_mode_panel_calls = 0
 
-        def delayed_safe_mode_panel(*, allow_safe_mode=False):
+        def delayed_safe_mode_panel(*, allow_safe_mode=False, primary_only=False):
             nonlocal safe_mode_panel_calls
             if allow_safe_mode:
                 safe_mode_panel_calls += 1
                 if safe_mode_panel_calls == 1:
                     raise HarnessError("panel_surface_invalid")
-            return original(allow_safe_mode=allow_safe_mode)
+            return original(
+                allow_safe_mode=allow_safe_mode, primary_only=primary_only
+            )
 
         with patch.object(
             port, "_require_panel_surfaces", side_effect=delayed_safe_mode_panel
