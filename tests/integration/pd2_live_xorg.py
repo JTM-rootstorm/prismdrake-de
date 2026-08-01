@@ -1618,6 +1618,25 @@ def parse_window_geometry(payload: bytes) -> WindowGeometry:
     return WindowGeometry(values["x"], values["y"], values["width"], values["height"])
 
 
+def is_valid_unmapped_window_geometry(payload: bytes) -> bool:
+    """Recognize a strict xwininfo record whose only invalidity is map state."""
+
+    lines = payload.splitlines()
+    unviewable_states = (
+        b"  Map State: IsUnMapped",
+        b"  Map State: IsUnviewable",
+    )
+    matches = [state for state in unviewable_states if lines.count(state) == 1]
+    if len(matches) != 1 or lines.count(b"  Map State: IsViewable") != 0:
+        return False
+    normalized = payload.replace(matches[0], b"  Map State: IsViewable")
+    try:
+        parse_window_geometry(normalized)
+    except HarnessError:
+        return False
+    return True
+
+
 def _session_config(
     history_mode: str = "session", *, reduced_motion: bool = False
 ) -> str:
@@ -5362,7 +5381,14 @@ class LiveXorgHarnessPort:
                 )
                 if geometry_result.returncode != 0:
                     raise HarnessError("x11_window_geometry_query_failed")
-                observed[window] = parse_window_geometry(geometry_result.stdout)
+                try:
+                    observed[window] = parse_window_geometry(geometry_result.stdout)
+                except HarnessError as error:
+                    if str(error) == "x11_window_geometry_invalid" and (
+                        is_valid_unmapped_window_geometry(geometry_result.stdout)
+                    ):
+                        continue
+                    raise
             except HarnessError as error:
                 if str(error) not in {
                     "x11_window_property_query_failed",

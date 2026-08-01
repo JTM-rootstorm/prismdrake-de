@@ -3837,6 +3837,30 @@ class LivePortTests(unittest.TestCase):
                 b"_NET_WM_WINDOW_TYPE_DESKTOP", ProcessIdentity(2004, 20_040)
             )
 
+    def test_surface_observation_omits_only_valid_explicitly_unmapped_windows(
+        self,
+    ) -> None:
+        operations = FakeOperations()
+        operations.window_geometry_payloads[PANEL_LEFT] = operations.window_geometry_payloads[
+            PANEL_LEFT
+        ].replace(b"Map State: IsViewable", b"Map State: IsUnMapped")
+        port = LiveXorgHarnessPort(
+            config(installed_paths()), operations, FakeAccessibility(operations)
+        )
+        port._display = ":99"  # noqa: SLF001
+
+        observed = port._observe_surface_windows(  # noqa: SLF001
+            b"_NET_WM_WINDOW_TYPE_DOCK", ProcessIdentity(2004, 20_040)
+        )
+
+        self.assertEqual(observed, {PANEL_RIGHT: SURFACE_GEOMETRIES[PANEL_RIGHT]})
+
+        operations.window_geometry_payloads[PANEL_LEFT] = b"unmapped\n"
+        with self.assertRaisesRegex(HarnessError, "^x11_window_geometry_invalid$"):
+            port._observe_surface_windows(  # noqa: SLF001
+                b"_NET_WM_WINDOW_TYPE_DOCK", ProcessIdentity(2004, 20_040)
+            )
+
     def test_malformed_pin_recovery_requires_a_valid_private_replacement(self) -> None:
         operations = FakeOperations()
         accessibility = FakeAccessibility(operations)
