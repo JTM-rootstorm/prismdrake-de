@@ -597,6 +597,28 @@ class LiveAtspiHelperTests(unittest.TestCase):
 
         self.assertEqual(result.category, "atspi_control_ready")
 
+    def test_focused_selector_disambiguates_per_output_control_replicas(self) -> None:
+        duplicate = FakeNode(
+            "Open applications",
+            FakeRole.PUSH_BUTTON,
+            states=VISIBLE - {FakeStateType.FOCUSED},
+            action=FakeAction(["Press"]),
+        )
+        self.application.children.append(duplicate)
+
+        result = observe_showing_control(
+            self.atspi, exact_owner(self.application), self.selector
+        )
+        self.assertEqual(result.category, "atspi_control_ready")
+
+        duplicate.states.add(FakeStateType.FOCUSED)
+        self.assert_category(
+            "atspi_control_identity",
+            lambda: observe_showing_control(
+                self.atspi, exact_owner(self.application), self.selector
+            ),
+        )
+
     def test_rejects_child_name_and_action_bounds(self) -> None:
         cases = (
             (

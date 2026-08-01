@@ -633,6 +633,7 @@ class FakeAccessibility:
         self.operations = operations
         self.pinned = False
         self.observed: list[str] = []
+        self.observed_selectors: list[object] = []
         self.application_observations = 0
         self.absent: list[str] = []
         self.states: list[tuple[str, str, bool]] = []
@@ -669,6 +670,7 @@ class FakeAccessibility:
         self, shell_pid: int, selector: object, environment: Mapping[str, str]
     ) -> bool:
         self.observed.append(selector.name)
+        self.observed_selectors.append(selector)
         if (
             shell_pid != self.operations.surface_owner
             or "DBUS_SESSION_BUS_ADDRESS" not in environment
@@ -3503,6 +3505,14 @@ class LivePortTests(unittest.TestCase):
                     self.assertNotIn(old, operations.stop_identity_calls)
                 if identifier == "restart_notifyd":
                     self.assertIn("Notification center", accessibility.observed)
+                if identifier in {"restart_settingsd", "restart_notifyd"}:
+                    self.assertTrue(
+                        any(
+                            selector.name == CONTROLLED_APPLICATION_NAME
+                            and selector.require_focused
+                            for selector in accessibility.observed_selectors
+                        )
+                    )
                 if identifier == "restart_shell":
                     self.assertTrue(accessibility.pinned)
                     self.assertIn(CONTROLLED_APPLICATION_NAME, accessibility.observed)

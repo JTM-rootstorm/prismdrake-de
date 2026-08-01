@@ -4387,10 +4387,11 @@ class LiveXorgHarnessPort:
         else:
             if self._component_identity("prismdrake-shell") != before["prismdrake-shell"]:
                 raise HarnessError("shell_replaced_during_service_restart")
-            self._wait_accessible(
-                ControlSelector(CONTROLLED_APPLICATION_NAME, "push_button"),
-                "shell_owner_reacquisition_timeout",
-            )
+            # The all-output policy intentionally exposes one copy of the
+            # shared task model in each panel.  Focus the exact primary panel
+            # before selecting its task so replicated accessible names remain
+            # fail-closed instead of becoming an ambiguous global selector.
+            self._focus_controlled_panel_task("shell_owner_reacquisition_timeout")
             self._require_panel_surfaces()
 
     def _require_controlled_windows_unchanged(
