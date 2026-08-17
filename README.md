@@ -1,73 +1,43 @@
 # Prismdrake Desktop Environment
 
-Prismdrake is a traditional desktop environment for Linux, initially focused on
-X11. It aims for a polished, expressive, accessible desktop with a
-standards-based baseline and optional, capability-negotiated enhancements when
-running with Glasswyrm.
+Prismdrake is a traditional desktop environment for Linux, initially focused on X11. It aims to provide a polished, expressive, accessible desktop with familiar workflows, clear failure behavior, and a standards-based interoperability baseline.
 
-Prismdrake is in **PD2: Core desktop shell**. The PD0 architecture decisions
-and PD1 scope were approved on 2026-07-16, and the exact Gentoo PD1 reference
-lifecycle passed on 2026-07-18. The maintainer activated PD2 on 2026-07-18 to
-integrate the panel, launcher, desktop, notification service, quick-settings
-framework, multi-output baseline, and logout path. The source tree now contains
-the integrated Experimental PD2 core-shell implementation for developer
-validation. Its final installed reference-environment exit record is still
-being collected. Prismdrake does not yet contain a usable desktop shell for
-ordinary users or a production-ready desktop environment.
+## Intent
 
-## Profiles
+Prismdrake is intended for users who prefer direct, discoverable panel-and-launcher workflows across GTK, Qt, SDL, and traditional X11 applications. It owns the desktop session and shell experience rather than a complete application suite.
 
-- **Prismdrake Lustre** (`lustre`) is the translucent, layered, prismatic
-  profile. Compositor blur is optional and always has a readable non-blur
-  fallback.
-- **Prismdrake Forge** (`forge`) is the mostly opaque, tactile, compact profile.
+The desktop uses original visual language shared by two profiles:
 
-Both profiles use one semantic token system and shared component code. They are
-original Prismdrake designs; familiar desktop ergonomics do not imply copied
-artwork, names, or geometry.
+- **Prismdrake Lustre** (`lustre`) is translucent, layered, and prismatic.
+- **Prismdrake Forge** (`forge`) is mostly opaque, tactile, and compact.
+
+Both profiles use the same semantic design tokens and component model. Accessibility, legible fallbacks, and predictable interaction remain requirements regardless of visual effects.
+
+Canonical project identifiers use the `prismdrake-*` package and executable prefix and the `org.prismdrake.*` D-Bus namespace. The canonical repository is `JTM-rootstorm/prismdrake-de`.
 
 ## Architecture boundary
 
-Prismdrake owns the session and desktop experience: the panel, launcher,
-desktop surface, task presentation, settings, notifications, toolkit
-integration, and fallback selection. Glasswyrm owns X11 server behavior,
-window-management policy, authoritative window state, composition, blur
-execution, capture, and other compositor effects.
+Prismdrake owns session startup, shell surfaces, application presentation, settings, notifications, toolkit integration, appearance, and fallback selection. External system services remain authoritative for audio, networking, Bluetooth, power, devices, authorization, and login. Prismdrake may present them through typed adapters but does not reimplement their authority.
 
-The standard X11 and freedesktop path is the baseline. Optional Glasswyrm
-interfaces use generic, versioned `GW_*` names and require capability
-negotiation. Prismdrake never implements backdrop blur by capturing and
-blurring the desktop itself.
+X11, ICCCM, EWMH, XDG, D-Bus, XSettings, and freedesktop protocols form the portable baseline. [Glasswyrm](https://github.com/JTM-rootstorm/glasswyrm) is optional, not a prerequisite. Any accepted Glasswyrm integration must use explicit, versioned, capability-negotiated interfaces and preserve a standards-based fallback. The architecture requires readable non-effect fallbacks.
 
-## Project map
+Glasswyrm or the active window manager and compositor retain authority over window state, focus, stacking, workspaces, composition, capture, and output policy. Prismdrake requests behavior and presents state without duplicating that authority.
 
-- [Project-wide specification](docs/PRISMDRAKE_PROJECT_SPECIFICATION.md)
+Prismdrake interfaces and builds are Experimental unless a dedicated support document states otherwise. The project makes no README-level claim of secure session locking, privileged controls, stable APIs, or completed reference-environment or hardware validation.
+
+## Documentation
+
+- [Product specification](docs/PRISMDRAKE_PROJECT_SPECIFICATION.md)
 - [Documentation index](docs/index.md)
-- [Architecture Decision Records](docs/adr/README.md)
-- [Roadmap](docs/roadmap/milestones.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
-
-Canonical names and namespaces are `Prismdrake Desktop Environment`,
-`prismdrake-*`, and `org.prismdrake.*`. The canonical repository is
-`JTM-rootstorm/prismdrake-de`.
-
-## Validation
-
-Repository contracts are validated with:
-
-```sh
-make validate
-```
-
-The validator uses Python 3.11 or newer and the standard library. It validates
-schemas, examples, interface XML, theme parity, Architecture Decision Record
-structure, and repository-local links. This remains contract validation; the
-Gentoo reference environment supplies authoritative Qt 6.11-or-newer product
-build and runtime evidence through the documented CMake and CTest paths.
-GitHub Actions is not required for current change or milestone validation.
+- [Product vision](docs/vision/product.md)
+- [Architecture overview](docs/architecture/overview.md)
+- [Compatibility architecture](docs/architecture/compatibility.md)
+- [Design principles](docs/vision/design-principles.md)
+- [Architecture decisions](docs/adr/README.md)
+- [Roadmap and project status](docs/roadmap/milestones.md)
+- [Building](docs/build/building.md)
+- [Testing](docs/build/testing.md)
 
 ## License
 
-Prismdrake is licensed under the [GNU General Public License, version 3](LICENSE).
-Third-party assets require compatible licensing and recorded provenance.
+Prismdrake is licensed under the [GNU General Public License v3.0](LICENSE). Third-party assets require compatible licensing and recorded provenance.
