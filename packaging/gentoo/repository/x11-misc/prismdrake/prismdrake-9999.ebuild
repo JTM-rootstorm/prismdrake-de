@@ -74,13 +74,67 @@ pkg_setup() {
 }
 
 src_prepare() {
-	default
+	cmake_src_prepare
 
 	# The P2 workspace has no third-party crates. Create the empty reviewed
 	# vendor source and let cargo.eclass force every later Cargo invocation
 	# offline rather than consulting a registry or ambient Cargo state.
 	mkdir -p "${ECARGO_VENDOR}" || die "could not create the empty Cargo vendor source"
 	cargo_gen_config
+	prismdrake_prepare_cargo_environment
+}
+
+prismdrake_prepare_cargo_environment() {
+	# Portage's compiler and sandbox flags remain authoritative. Remove only
+	# ambient Cargo/Rust execution hooks, credentials, network helpers, and
+	# target overrides that could replace reviewed tools or escape offline mode.
+	unset \
+		CARGO_BUILD_RUSTC \
+		CARGO_BUILD_RUSTDOC \
+		CARGO_BUILD_RUSTC_WRAPPER \
+		CARGO_HTTP_PROXY \
+		CARGO_REGISTRY_CREDENTIAL_PROVIDER \
+		CARGO_REGISTRY_TOKEN \
+		GIT_ASKPASS \
+		HTTP_PROXY \
+		HTTPS_PROXY \
+		ALL_PROXY \
+		NO_PROXY \
+		RUSTC_BOOTSTRAP \
+		RUSTC_WRAPPER \
+		RUSTC_WORKSPACE_WRAPPER \
+		RUSTDOCFLAGS \
+		SSH_ASKPASS \
+		SSH_AUTH_SOCK \
+		all_proxy \
+		http_proxy \
+		https_proxy \
+		no_proxy
+
+	local variable
+	for variable in ${!CARGO_CREDENTIAL_@} ${!CARGO_REGISTRIES_@}; do
+		unset "${variable}"
+	done
+	for variable in ${!CARGO_TARGET_@}; do
+		case ${variable} in
+			*_LINKER|*_RUNNER|*_RUSTFLAGS|*_RUSTDOCFLAGS) unset "${variable}" ;;
+		esac
+	done
+
+	[[ ${CARGO} == /* && ${CARGO##*/} == cargo && -x ${CARGO} ]] ||
+		die "cargo.eclass did not select an absolute executable"
+	[[ ${RUSTC} == /* && ${RUSTC##*/} == rustc && -x ${RUSTC} ]] ||
+		die "rust.eclass did not select an absolute compiler"
+	[[ ${CARGO%/*} == "${RUSTC%/*}" ]] ||
+		die "Cargo and rustc were selected from different toolchains"
+
+	RUSTDOC="${RUSTC%/*}/rustdoc"
+	[[ -x ${RUSTDOC} ]] || die "the selected Rust toolchain has no rustdoc"
+	export CARGO RUSTC RUSTDOC
+	export CARGO_HOME="${ECARGO_HOME}"
+	export CARGO_TARGET_DIR="${WORKDIR}/cargo_target"
+	export CARGO_INCREMENTAL=0
+	export CARGO_NET_OFFLINE=true
 }
 
 prismdrake_set_source_date_epoch() {
@@ -103,6 +157,7 @@ prismdrake_source_revision() {
 
 src_configure() {
 	prismdrake_set_source_date_epoch
+	prismdrake_prepare_cargo_environment
 	cargo_src_configure --workspace --locked --offline
 	local mycmakeargs=(
 		-DBUILD_TESTING=OFF
@@ -115,12 +170,14 @@ src_configure() {
 
 src_compile() {
 	prismdrake_set_source_date_epoch
+	prismdrake_prepare_cargo_environment
 	cargo_src_compile
 	cmake_src_compile
 }
 
 src_test() {
 	prismdrake_set_source_date_epoch
+	prismdrake_prepare_cargo_environment
 	cargo_src_test --all-targets
 	# The product build must retain packaged /usr paths, which do not exist
 	# before src_install. Exercise the source tree in a separate test build

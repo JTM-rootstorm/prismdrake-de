@@ -5,6 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import shlex
+import subprocess
+import tempfile
 import unittest
 
 
@@ -79,10 +82,13 @@ class ProductEbuildContractTests(unittest.TestCase):
     def test_cargo_uses_an_empty_offline_vendor_source(self) -> None:
         self.assertNotIn("cargo_live_src_unpack", self.source)
         prepare = phase_body(self.source, "src_prepare")
+        self.assertIn("cmake_src_prepare", prepare)
+        self.assertNotRegex(prepare, r"(?m)^\s*default\s*$")
         self.assertIn('mkdir -p "${ECARGO_VENDOR}"', prepare)
         self.assertIn("cargo_gen_config", prepare)
+        self.assertIn("prismdrake_prepare_cargo_environment", prepare)
 
-    def test_cargo_workspace_is_built_and_tested_once_without_network(self) -> None:
+    def test_cargo_workspace_has_one_locked_offline_build_and_test_call(self) -> None:
         setup = phase_body(self.source, "pkg_setup")
         self.assertEqual(setup.count("rust_pkg_setup"), 1)
 
@@ -103,6 +109,93 @@ class ProductEbuildContractTests(unittest.TestCase):
         self.assertNotIn("cargo install", self.source)
         self.assertNotIn("cargo_src_install", self.source)
         self.assertNotIn("rustup", self.source)
+
+    def test_cargo_environment_helper_removes_poison_and_binds_state(self) -> None:
+        build_root = ROOT / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="ebuild-cargo-environment-", dir=build_root
+        ) as temporary:
+            temporary_path = Path(temporary)
+            tool_directory = temporary_path / "toolchain" / "bin"
+            tool_directory.mkdir(parents=True)
+            for tool in ("cargo", "rustc", "rustdoc"):
+                path = tool_directory / tool
+                path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                path.chmod(0o755)
+
+            work = temporary_path / "work"
+            cargo_home = work / "cargo-home"
+            cargo_home.mkdir(parents=True)
+            helper = phase_body(
+                self.source, "prismdrake_prepare_cargo_environment"
+            )
+            removed = (
+                "RUSTC_WRAPPER",
+                "RUSTC_WORKSPACE_WRAPPER",
+                "CARGO_BUILD_RUSTC_WRAPPER",
+                "CARGO_CREDENTIAL_ALIAS_EVIL",
+                "CARGO_REGISTRIES_PRIVATE_TOKEN",
+                "CARGO_TARGET_FAKE_RUNNER",
+                "CARGO_TARGET_FAKE_LINKER",
+                "CARGO_TARGET_FAKE_RUSTFLAGS",
+                "HTTPS_PROXY",
+                "https_proxy",
+                "SSH_AUTH_SOCK",
+            )
+            assertions = "\n".join(
+                f'[[ -z "${{{name}+x}}" ]] || exit 41' for name in removed
+            )
+            script = f"""
+set -eu
+die() {{ exit 97; }}
+prismdrake_prepare_cargo_environment() {{
+{helper}
+}}
+prismdrake_prepare_cargo_environment
+{assertions}
+[[ $CARGO_HOME == {shlex.quote(str(cargo_home))} ]] || exit 42
+[[ $CARGO_TARGET_DIR == {shlex.quote(str(work / 'cargo_target'))} ]] || exit 43
+[[ $CARGO_NET_OFFLINE == true ]] || exit 44
+[[ $CARGO_INCREMENTAL == 0 ]] || exit 45
+[[ $RUSTDOC == {shlex.quote(str(tool_directory / 'rustdoc'))} ]] || exit 46
+"""
+            environment = {
+                "CARGO": str(tool_directory / "cargo"),
+                "RUSTC": str(tool_directory / "rustc"),
+                "ECARGO_HOME": str(cargo_home),
+                "WORKDIR": str(work),
+                **{name: "/poisoned/value" for name in removed},
+            }
+            result = subprocess.run(
+                ("/bin/bash", "--noprofile", "--norc", "-c", script),
+                cwd=ROOT,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=10,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                result.stderr.decode("utf-8", errors="replace"),
+            )
+
+    def test_every_cargo_phase_sanitizes_before_cargo_execution(self) -> None:
+        expected_calls = {
+            "src_configure": "cargo_src_configure",
+            "src_compile": "cargo_src_compile",
+            "src_test": "cargo_src_test",
+        }
+        for phase, cargo_call in expected_calls.items():
+            with self.subTest(phase=phase):
+                body = phase_body(self.source, phase)
+                self.assertLess(
+                    body.index("prismdrake_prepare_cargo_environment"),
+                    body.index(cargo_call),
+                )
 
     def test_product_and_test_builds_embed_the_exact_source_revision(self) -> None:
         helper = phase_body(self.source, "prismdrake_source_revision")

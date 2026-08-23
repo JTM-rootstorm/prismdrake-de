@@ -621,10 +621,14 @@ or execute an actual automated depclean to force resolution.
 `x11-misc/prismdrake-9999` uses `git-r3` with the canonical repository URI and
 enables the upstream install-path contract. It selects Gentoo Rust 1.96 or
 newer, generates `cargo.eclass`'s isolated offline configuration, and builds and
-tests the locked Rust workspace exactly once. The current dependency-free
-workspace uses an empty vendor source: Cargo performs no live registry or Git
-dependency acquisition. CMake remains the sole owner of installed product
-artifacts until an accepted Rust service or binary install contract exists.
+tests the locked Rust workspace through distinct eclass-owned phase calls. The
+test call runs only when Portage executes `src_test` for the package's authorized
+test configuration. The current dependency-free workspace uses an empty vendor
+source: Cargo performs no live registry or Git dependency acquisition. Each
+Cargo phase clears ambient wrappers, target overrides, credentials, proxies, and
+agent variables before rebinding the selected toolchain and project-local build
+state. CMake remains the sole owner of installed product artifacts until an
+accepted Rust service or binary install contract exists.
 Its runtime dependency set contains
 only the libraries and broker required by the five installed Experimental
 executables. Qt SVG is a direct shell dependency at the project-wide Qt 6.11
