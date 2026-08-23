@@ -2,6 +2,9 @@
 
 Prismdrake is a traditional desktop environment for Linux, initially focused on X11. It aims to provide a polished, expressive, accessible desktop with familiar workflows, clear failure behavior, and a standards-based interoperability baseline.
 
+Prismdrake is currently an Experimental development prototype. It does not yet
+contain a usable desktop shell.
+
 ## Intent
 
 Prismdrake is intended for users who prefer direct, discoverable panel-and-launcher workflows across GTK, Qt, SDL, and traditional X11 applications. It owns the desktop session and shell experience rather than a complete application suite.
@@ -19,7 +22,7 @@ Canonical project identifiers use the `prismdrake-*` package and executable pref
 
 Prismdrake owns session startup, shell surfaces, application presentation, settings, notifications, toolkit integration, appearance, and fallback selection. External system services remain authoritative for audio, networking, Bluetooth, power, devices, authorization, and login. Prismdrake may present them through typed adapters but does not reimplement their authority.
 
-X11, ICCCM, EWMH, XDG, D-Bus, XSettings, and freedesktop protocols form the portable baseline. [Glasswyrm](https://github.com/JTM-rootstorm/glasswyrm) is optional, not a prerequisite. Any accepted Glasswyrm integration must use explicit, versioned, capability-negotiated interfaces and preserve a standards-based fallback. The architecture requires readable non-effect fallbacks.
+X11, ICCCM, EWMH, XDG, D-Bus, XSettings, and freedesktop protocols form the portable baseline. [Glasswyrm](https://github.com/JTM-rootstorm/glasswyrm) is optional, not a prerequisite. Any accepted Glasswyrm integration must use explicit, versioned, capability-negotiated generic `GW_*` interfaces and preserve a standards-based fallback. The architecture requires readable non-effect fallbacks.
 
 Glasswyrm or the active window manager and compositor retain authority over window state, focus, stacking, workspaces, composition, capture, and output policy. Prismdrake requests behavior and presents state without duplicating that authority.
 
