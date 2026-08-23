@@ -78,6 +78,16 @@ class ProductEbuildContractTests(unittest.TestCase):
         floor = self.source.index('RUST_MIN_VER="1.96.0"')
         inheritance = self.source.index("inherit cargo cmake git-r3 python-any-r1")
         self.assertLess(floor, inheritance)
+        preinherit = self.source[:inheritance]
+        for assignment in (
+            'CRATES=""',
+            'CRATE_PATHS_OVERRIDE=""',
+            'CARGO_BOOTSTRAP=""',
+            'CARGO_OPTIONAL=""',
+            "declare -A GIT_CRATES=()",
+        ):
+            with self.subTest(assignment=assignment):
+                self.assertIn(assignment, preinherit)
 
     def test_cargo_uses_an_empty_offline_vendor_source(self) -> None:
         self.assertNotIn("cargo_live_src_unpack", self.source)
@@ -93,12 +103,16 @@ class ProductEbuildContractTests(unittest.TestCase):
         self.assertEqual(setup.count("rust_pkg_setup"), 1)
 
         configure = phase_body(self.source, "src_configure")
-        self.assertEqual(
-            configure.count(
-                "cargo_src_configure --workspace --locked --offline"
-            ),
-            1,
+        cargo_configure = re.search(
+            r"(?ms)^\tcargo_src_configure \\\n"
+            r"\t\t--manifest-path \"\$\{S\}/Cargo\.toml\" \\\n"
+            r"\t\t--workspace \\\n"
+            r"\t\t--locked \\\n"
+            r"\t\t--offline$",
+            configure,
         )
+        self.assertIsNotNone(cargo_configure)
+        self.assertEqual(configure.count("cargo_src_configure"), 1)
 
         compile_phase = phase_body(self.source, "src_compile")
         self.assertEqual(compile_phase.count("cargo_src_compile"), 1)
@@ -139,6 +153,11 @@ class ProductEbuildContractTests(unittest.TestCase):
                 "CARGO_TARGET_FAKE_RUNNER",
                 "CARGO_TARGET_FAKE_LINKER",
                 "CARGO_TARGET_FAKE_RUSTFLAGS",
+                "ECARGO_EXTRA_ARGS",
+                "AWS_SECRET_ACCESS_KEY",
+                "GITHUB_TOKEN",
+                "GOOGLE_APPLICATION_CREDENTIALS",
+                "OPENAI_API_KEY",
                 "HTTPS_PROXY",
                 "https_proxy",
                 "SSH_AUTH_SOCK",
@@ -149,11 +168,21 @@ class ProductEbuildContractTests(unittest.TestCase):
             script = f"""
 set -eu
 die() {{ exit 97; }}
+LD_PRELOAD=/portage/libsandbox.so
+SANDBOX_ON=1
+CC=/usr/bin/gcc
+CFLAGS=-O2
+RUSTFLAGS='-C debuginfo=1'
 prismdrake_prepare_cargo_environment() {{
 {helper}
 }}
 prismdrake_prepare_cargo_environment
 {assertions}
+[[ $LD_PRELOAD == /portage/libsandbox.so ]] || exit 40
+[[ $SANDBOX_ON == 1 ]] || exit 40
+[[ $CC == /usr/bin/gcc ]] || exit 40
+[[ $CFLAGS == -O2 ]] || exit 40
+[[ $RUSTFLAGS == '-C debuginfo=1' ]] || exit 40
 [[ $CARGO_HOME == {shlex.quote(str(cargo_home))} ]] || exit 42
 [[ $CARGO_TARGET_DIR == {shlex.quote(str(work / 'cargo_target'))} ]] || exit 43
 [[ $CARGO_NET_OFFLINE == true ]] || exit 44

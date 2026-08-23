@@ -79,10 +79,13 @@ The live product ebuild requires Gentoo Rust 1.96 or newer and uses
 `cargo.eclass` to generate an isolated offline Cargo configuration. Because the
 current lockfile has no external packages, the ebuild creates an empty vendor
 source and never invokes live Cargo dependency acquisition. Before every Cargo
-phase it removes ambient compiler wrappers, target runners/linkers, credential,
-proxy, and agent variables; then it rebinds the eclass-selected Cargo, rustc,
-rustdoc, Cargo home, target output, and offline mode. Portage's compiler flags
-and sandbox variables remain intact. Cargo owns one locked, offline workspace
+phase it removes ambient compiler wrappers, target runners/linkers, known
+Cargo/registry/transport credentials, proxies, agents, and extra eclass
+arguments; then it rebinds the eclass-selected Cargo, rustc, rustdoc, Cargo
+home, target output, exact workspace manifest, and offline mode. Pre-inherit
+crate, path-override, bootstrap, and optional-eclass inputs are explicitly empty.
+Portage's compiler flags and sandbox variables remain intact. Cargo owns one
+locked, offline workspace
 build. When Portage executes `src_test` for the package's authorized test
 configuration, Cargo also owns one all-target test invocation. CMake continues
 to own the installed C++/Qt product and documentation; no Rust artifact is

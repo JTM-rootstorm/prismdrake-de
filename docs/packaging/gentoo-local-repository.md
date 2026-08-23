@@ -625,9 +625,10 @@ tests the locked Rust workspace through distinct eclass-owned phase calls. The
 test call runs only when Portage executes `src_test` for the package's authorized
 test configuration. The current dependency-free workspace uses an empty vendor
 source: Cargo performs no live registry or Git dependency acquisition. Each
-Cargo phase clears ambient wrappers, target overrides, credentials, proxies, and
-agent variables before rebinding the selected toolchain and project-local build
-state. CMake remains the sole owner of installed product artifacts until an
+Cargo phase clears ambient wrappers, target overrides, known Cargo/registry and
+transport credentials, proxies, agents, and extra eclass arguments before
+rebinding the selected toolchain, exact workspace manifest, and project-local
+build state. CMake remains the sole owner of installed product artifacts until an
 accepted Rust service or binary install contract exists.
 Its runtime dependency set contains
 only the libraries and broker required by the five installed Experimental

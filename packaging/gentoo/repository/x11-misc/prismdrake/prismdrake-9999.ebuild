@@ -5,6 +5,11 @@ EAPI=8
 
 PYTHON_COMPAT=( python3_{11..15} )
 RUST_MIN_VER="1.96.0"
+CRATES=""
+CRATE_PATHS_OVERRIDE=""
+CARGO_BOOTSTRAP=""
+CARGO_OPTIONAL=""
+declare -A GIT_CRATES=()
 
 inherit cargo cmake git-r3 python-any-r1
 
@@ -95,6 +100,14 @@ prismdrake_prepare_cargo_environment() {
 		CARGO_HTTP_PROXY \
 		CARGO_REGISTRY_CREDENTIAL_PROVIDER \
 		CARGO_REGISTRY_TOKEN \
+		ECARGO_EXTRA_ARGS \
+		AWS_ACCESS_KEY_ID \
+		AWS_SECRET_ACCESS_KEY \
+		AWS_SESSION_TOKEN \
+		GH_TOKEN \
+		GITHUB_TOKEN \
+		GOOGLE_APPLICATION_CREDENTIALS \
+		OPENAI_API_KEY \
 		GIT_ASKPASS \
 		HTTP_PROXY \
 		HTTPS_PROXY \
@@ -158,7 +171,11 @@ prismdrake_source_revision() {
 src_configure() {
 	prismdrake_set_source_date_epoch
 	prismdrake_prepare_cargo_environment
-	cargo_src_configure --workspace --locked --offline
+	cargo_src_configure \
+		--manifest-path "${S}/Cargo.toml" \
+		--workspace \
+		--locked \
+		--offline
 	local mycmakeargs=(
 		-DBUILD_TESTING=OFF
 		-DPRISMDRAKE_SOURCE_REVISION="$(prismdrake_source_revision)"
