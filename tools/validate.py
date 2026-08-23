@@ -201,6 +201,32 @@ FORBIDDEN_CORE_RUNTIME_DEPENDENCIES = {
     "gnome-control-center",
     "libadwaita",
 }
+STALE_ACTIVE_PLAN_NAME = "PRISMDRAKE_RUST_FIRST_TRANSITION_PLAN.md"
+CURRENT_ACTIVE_PLAN_NAME = "PRISMDRAKE_RUST_FIRST_AND_WYRROOT_PORTING_PLAN.md"
+GENTOO_VM_DOCUMENT = "docs/development/gentoo-vm.md"
+OPERATIONAL_DOCUMENT_FILES = (
+    "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "docs/PRISMDRAKE_PROJECT_SPECIFICATION.md",
+    "docs/adr/README.md",
+    "docs/index.md",
+)
+OPERATIONAL_DOCUMENT_DIRECTORIES = (
+    "docs/architecture",
+    "docs/build",
+    "docs/development",
+    "docs/packaging",
+    "docs/roadmap",
+)
+VM_AUTHORITY_QUARANTINE_HEADING = "> **Authority quarantine:**"
+VM_AUTHORITY_QUARANTINE_NO_AUTHORIZATION = (
+    "No domain, SSH endpoint, package operation, or command in this document "
+    "is currently authorized for use."
+)
+VM_AUTHORITY_QUARANTINE_NOT_DESIGNATED = (
+    "`prismdrake-vm` environment is not a designated project VM"
+)
 
 REQUIRED_FILES = (
     ".editorconfig",
@@ -1121,6 +1147,109 @@ def validate_adrs(validation: Validation) -> None:
             validation.require("Proposed" in text, location, "Proposed ADR must be visibly labeled")
 
 
+def operational_document_paths() -> list[Path]:
+    paths = {ROOT / relative for relative in OPERATIONAL_DOCUMENT_FILES}
+    for relative in OPERATIONAL_DOCUMENT_DIRECTORIES:
+        directory = ROOT / relative
+        if directory.is_dir():
+            paths.update(directory.rglob("*.md"))
+    return sorted(path for path in paths if path.is_file())
+
+
+def is_current_operational_document(location: str) -> bool:
+    if location in OPERATIONAL_DOCUMENT_FILES:
+        return True
+    return location.endswith(".md") and any(
+        location.startswith(f"{directory}/") for directory in OPERATIONAL_DOCUMENT_DIRECTORIES
+    )
+
+
+def visible_introductory_quarantine(document: str) -> str | None:
+    lines = document.splitlines()
+    index = 0
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+
+    if (
+        index >= len(lines)
+        or re.fullmatch(r"# [^#].*", lines[index]) is None
+        or "<" in lines[index]
+        or ">" in lines[index]
+    ):
+        return None
+
+    index += 1
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+
+    if index >= len(lines) or not lines[index].startswith(
+        VM_AUTHORITY_QUARANTINE_HEADING
+    ):
+        return None
+
+    quarantine_lines: list[str] = []
+    for line in lines[index:]:
+        if not line.startswith(">"):
+            break
+        content = re.sub(r"^>\s?", "", line).strip()
+        if (
+            not content
+            or "<" in content
+            or ">" in content
+            or content.startswith(("```", "~~~"))
+        ):
+            return None
+        quarantine_lines.append(content)
+    return " ".join(quarantine_lines) if quarantine_lines else None
+
+
+def operational_document_security_errors(documents: dict[str, str]) -> list[str]:
+    errors: list[str] = []
+    for location, text in documents.items():
+        if is_current_operational_document(location) and STALE_ACTIVE_PLAN_NAME in text:
+            errors.append(
+                f"{location}: stale active plan name {STALE_ACTIVE_PLAN_NAME!r} is forbidden "
+                f"in current operational documentation; use {CURRENT_ACTIVE_PLAN_NAME!r}"
+            )
+
+    gentoo_vm = documents.get(GENTOO_VM_DOCUMENT)
+    if gentoo_vm is None:
+        errors.append(f"{GENTOO_VM_DOCUMENT}: operational VM document is missing")
+        return errors
+
+    normalized_quarantine = visible_introductory_quarantine(gentoo_vm)
+    if normalized_quarantine is None:
+        errors.append(
+            f"{GENTOO_VM_DOCUMENT}: must place a visible, prominent "
+            f"{VM_AUTHORITY_QUARANTINE_HEADING!r} blockquote as the first rendered "
+            "block immediately after the document H1; comments, code, raw HTML, prose, "
+            "lists, tables, paths, and endpoints must not precede it"
+        )
+    normalized_quarantine = normalized_quarantine or ""
+    if VM_AUTHORITY_QUARANTINE_NO_AUTHORIZATION not in normalized_quarantine:
+        errors.append(
+            f"{GENTOO_VM_DOCUMENT}: authority quarantine must state that no listed domain, "
+            "SSH endpoint, package operation, or command is currently authorized"
+        )
+    if VM_AUTHORITY_QUARANTINE_NOT_DESIGNATED not in normalized_quarantine:
+        errors.append(
+            f"{GENTOO_VM_DOCUMENT}: authority quarantine must state that "
+            "prismdrake-vm is not a designated project VM"
+        )
+    return errors
+
+
+def validate_operational_document_security(validation: Validation) -> None:
+    documents: dict[str, str] = {}
+    for path in operational_document_paths():
+        location = path.relative_to(ROOT).as_posix()
+        try:
+            documents[location] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            validation.error(location, f"cannot read operational document: {error}")
+    validation.errors.extend(operational_document_security_errors(documents))
+
+
 def text_contract_files() -> list[Path]:
     roots = [ROOT / ".github", ROOT / "Docs", ROOT / "docs", ROOT / "examples", ROOT / "interfaces", ROOT / "schemas", ROOT / "themes", ROOT / "tools"]
     files = [ROOT / name for name in ("README.md", "CONTRIBUTING.md", "SECURITY.md", "Makefile")]
@@ -1782,6 +1911,147 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
             f"dependency policy case {name!r} was not rejected with an actionable field",
         )
 
+    valid_operational_documents = {
+        "docs/roadmap/pd2.md": f"Active plan: `{CURRENT_ACTIVE_PLAN_NAME}`\n",
+        "docs/research/historical-plan-provenance.md": (
+            f"Historical predecessor: `{STALE_ACTIVE_PLAN_NAME}`\n"
+        ),
+        GENTOO_VM_DOCUMENT: (
+            "# Gentoo reference VM\n\n"
+            f"{VM_AUTHORITY_QUARANTINE_HEADING} "
+            f"{VM_AUTHORITY_QUARANTINE_NO_AUTHORIZATION}\n"
+            f"> The historical {VM_AUTHORITY_QUARANTINE_NOT_DESIGNATED} under the "
+            "workspace rules.\n\n"
+            "Historical environment summary and limitations.\n\n"
+            "## Historical procedures\n"
+        ),
+    }
+    validation.require(
+        not operational_document_security_errors(valid_operational_documents),
+        "self-test",
+        "valid operational-document security fixture failed validation",
+    )
+
+    operational_document_cases: list[tuple[str, dict[str, str], str]] = []
+    stale_plan_documents = copy.deepcopy(valid_operational_documents)
+    stale_plan_documents["docs/roadmap/pd2.md"] += f"Active plan: `{STALE_ACTIVE_PLAN_NAME}`\n"
+    operational_document_cases.append(
+        ("stale active plan name", stale_plan_documents, STALE_ACTIVE_PLAN_NAME)
+    )
+
+    missing_quarantine_documents = copy.deepcopy(valid_operational_documents)
+    missing_quarantine_documents[GENTOO_VM_DOCUMENT] = (
+        "# Gentoo reference VM\n\n## Historical procedures\n"
+    )
+    operational_document_cases.append(
+        ("missing VM authority quarantine", missing_quarantine_documents, "prominent")
+    )
+
+    weakened_authorization_documents = copy.deepcopy(valid_operational_documents)
+    weakened_authorization_documents[GENTOO_VM_DOCUMENT] = weakened_authorization_documents[
+        GENTOO_VM_DOCUMENT
+    ].replace("is currently authorized for use", "is normally authorized for use")
+    operational_document_cases.append(
+        (
+            "weakened VM operation authorization",
+            weakened_authorization_documents,
+            "currently authorized",
+        )
+    )
+
+    weakened_designation_documents = copy.deepcopy(valid_operational_documents)
+    weakened_designation_documents[GENTOO_VM_DOCUMENT] = weakened_designation_documents[
+        GENTOO_VM_DOCUMENT
+    ].replace("is not a designated project VM", "is not normally a designated project VM")
+    operational_document_cases.append(
+        (
+            "weakened VM designation",
+            weakened_designation_documents,
+            "not a designated project VM",
+        )
+    )
+
+    for name, opening_fence, closing_fence in (
+        ("backtick-fenced VM quarantine", "```text", "```"),
+        ("tilde-fenced VM quarantine", "~~~text", "~~~"),
+    ):
+        fenced_documents = copy.deepcopy(valid_operational_documents)
+        fenced_documents[GENTOO_VM_DOCUMENT] = (
+            "# Gentoo reference VM\n\n"
+            f"{opening_fence}\n"
+            f"{VM_AUTHORITY_QUARANTINE_HEADING} "
+            f"{VM_AUTHORITY_QUARANTINE_NO_AUTHORIZATION}\n"
+            f"> The historical {VM_AUTHORITY_QUARANTINE_NOT_DESIGNATED}.\n"
+            f"{closing_fence}\n\n"
+            "## Historical procedures\n"
+        )
+        operational_document_cases.append((name, fenced_documents, "visible, prominent"))
+
+    commented_documents = copy.deepcopy(valid_operational_documents)
+    commented_documents[GENTOO_VM_DOCUMENT] = (
+        "# Gentoo reference VM\n\n"
+        "<!--\n"
+        f"{VM_AUTHORITY_QUARANTINE_HEADING} "
+        f"{VM_AUTHORITY_QUARANTINE_NO_AUTHORIZATION}\n"
+        f"> The historical {VM_AUTHORITY_QUARANTINE_NOT_DESIGNATED}.\n"
+        "-->\n\n"
+        "## Historical procedures\n"
+    )
+    operational_document_cases.append(
+        ("HTML-commented VM quarantine", commented_documents, "visible, prominent")
+    )
+
+    indented_documents = copy.deepcopy(valid_operational_documents)
+    indented_documents[GENTOO_VM_DOCUMENT] = (
+        "# Gentoo reference VM\n\n"
+        f"    {VM_AUTHORITY_QUARANTINE_HEADING} "
+        f"{VM_AUTHORITY_QUARANTINE_NO_AUTHORIZATION}\n"
+        f"    > The historical {VM_AUTHORITY_QUARANTINE_NOT_DESIGNATED}.\n\n"
+        "## Historical procedures\n"
+    )
+    operational_document_cases.append(
+        ("indented-code VM quarantine", indented_documents, "visible, prominent")
+    )
+
+    for name, prefix in (
+        ("VM quarantine after arbitrary prose", "Historical environment summary."),
+        ("VM quarantine after endpoint prose", "SSH endpoint: root@127.0.0.1:10023."),
+        ("VM quarantine after path prose", "Guest transfer path: /mnt/shared."),
+        (
+            "VM quarantine after table",
+            "| Setting | Value |\n|---|---|\n| domain | prismdrake-vm |",
+        ),
+        ("VM quarantine after list", "- Connect to the listed SSH endpoint."),
+        ("VM quarantine after inline HTML comment", "<!-- historical VM note -->"),
+        ("VM quarantine after raw HTML", "<div>Historical VM endpoint</div>"),
+    ):
+        prefixed_documents = copy.deepcopy(valid_operational_documents)
+        prefixed_documents[GENTOO_VM_DOCUMENT] = prefixed_documents[
+            GENTOO_VM_DOCUMENT
+        ].replace(
+            f"\n\n{VM_AUTHORITY_QUARANTINE_HEADING}",
+            f"\n\n{prefix}\n\n{VM_AUTHORITY_QUARANTINE_HEADING}",
+        )
+        operational_document_cases.append((name, prefixed_documents, "immediately after"))
+
+    displaced_documents = copy.deepcopy(valid_operational_documents)
+    displaced_documents[GENTOO_VM_DOCUMENT] = displaced_documents[GENTOO_VM_DOCUMENT].replace(
+        f"\n\n{VM_AUTHORITY_QUARANTINE_HEADING}",
+        "\n\nConnect to the VM and run the listed command.\n\n"
+        f"{VM_AUTHORITY_QUARANTINE_HEADING}",
+    )
+    operational_document_cases.append(
+        ("VM quarantine after operational prose", displaced_documents, "immediately after")
+    )
+
+    for name, documents, expected_fragment in operational_document_cases:
+        errors = operational_document_security_errors(documents)
+        validation.require(
+            bool(errors) and any(expected_fragment in error for error in errors),
+            "self-test",
+            f"operational-document security case {name!r} was not rejected",
+        )
+
     try:
         wrong_namespace = ET.fromstring('<node><interface name="com.example.Settings1"/></node>')
     except ET.ParseError as error:  # pragma: no cover - literal is known valid
@@ -1942,6 +2212,7 @@ def validate_negative_self_tests(schemas: dict[str, Any], validation: Validation
         len(cases)
         + len(policy_cases)
         + len(dependency_policy_cases)
+        + len(operational_document_cases)
         + 1
         + len(dbus_cases)
         + len(pd2_dbus_cases)
@@ -1960,6 +2231,7 @@ def main() -> int:
     validate_xml(validation)
     validate_markdown_links(validation)
     validate_adrs(validation)
+    validate_operational_document_security(validation)
     validate_identity_and_hygiene(validation)
     negative_self_test_count = validate_negative_self_tests(schemas, validation)
 

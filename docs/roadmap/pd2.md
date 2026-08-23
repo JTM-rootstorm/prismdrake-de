@@ -1,5 +1,13 @@
 # PD2 active milestone tracker
 
+Implementation sequencing is now owned by the workspace-root
+`PRISMDRAKE_RUST_FIRST_AND_WYRROOT_PORTING_PLAN.md`. This tracker remains
+authoritative for the PD2 behavior and exit obligations carried into that
+transition; it no longer directs a separate C++-first completion pass.
+Initial Wyrmroot integration follows approximate functional Rust parity with
+the current C++ product. Full installed PD2 closure remains required for a PD2
+completion claim, but it is not the entry condition for that non-graphical port.
+
 Prismdrake entered **PD2: Core desktop shell** on 2026-07-18 after the
 maintainer selected the version 1.0.0 PD2 execution plan. PD1 completed on the
 Gentoo reference environment before activation. PD2 remains Experimental: its
@@ -20,7 +28,7 @@ evidence and is not a PD2 exit requirement.
 | Required and actual starting revision | `7b68d9eff54f5a3b89267c8c41ee49df64a6a659` |
 | Starting branch | `main` |
 | Tracked user changes | None |
-| Preserved untracked working areas | `Plans/`, `vm-passthrough/` |
+| Preserved untracked working areas | `vm-passthrough/`; active coordination plan is workspace-root `PRISMDRAKE_RUST_FIRST_AND_WYRROOT_PORTING_PLAN.md` |
 | Local contract validation | Passed; 39 negative rejection fixtures |
 | Required Qt floor | 6.11 |
 

@@ -1,5 +1,12 @@
 # Gentoo reference VM
 
+> **Authority quarantine:** No domain, SSH endpoint, package operation, or
+> command in this document is currently authorized for use. The historical
+> `prismdrake-vm` environment is not a designated project VM under the
+> workspace `AGENTS.md`. Reuse requires Mike to explicitly authorize the exact
+> target and state-changing effects in the active conversation; until then,
+> treat every operational procedure below as historical reference only.
+
 The Gentoo VM is Prismdrake's maintained reference environment for dependency
 resolution, toolkit evidence, X11 integration, installed PD2 validation, and
 local Portage QA. It is a development and system-test environment, not a
@@ -52,9 +59,12 @@ git clone --no-hardlinks . vm-passthrough/prismdrake-de
 `--no-hardlinks` keeps the nested clone's object storage independent of the host
 checkout. The corresponding guest workspace is `/mnt/shared/prismdrake-de` and
 retains normal Git status, history, executable bits, and symlink behavior. The
-clone contains committed state only: the host's untracked `Plans/` directory
-and all uncommitted changes are intentionally absent. Commit the intended test
-checkpoint before cloning or refreshing it.
+clone contains committed repository state only: the workspace-root
+`PRISMDRAKE_RUST_FIRST_AND_WYRROOT_PORTING_PLAN.md`, repository-local
+`vm-passthrough/`, and all uncommitted changes are intentionally absent. Commit
+the intended test checkpoint before cloning or refreshing it. VM authority and
+operation remain governed by the workspace `AGENTS.md`; this procedure does not
+authorize access.
 
 Refresh an existing nested clone from the host with a clean worktree and a
 fast-forward-only merge:
