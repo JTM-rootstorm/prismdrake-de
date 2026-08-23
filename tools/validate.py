@@ -302,12 +302,15 @@ REQUIRED_FILES = (
     "manifests/dependencies/prismdrake-shellctl.json",
     "manifests/dependencies/prismdrake-x11.json",
     "docs/build/dependencies.md",
+    "docs/build/validation-tiers.md",
     "docs/research/pd1-x11-connection-evidence.md",
     "themes/base.tokens.json",
     "themes/lustre.tokens.json",
     "themes/forge.tokens.json",
     "themes/accessibility.tokens.json",
     "tools/validate.py",
+    "tools/validation_tiers.py",
+    "tests/validation/test_validation_tiers.py",
 )
 
 ADR_SECTIONS = (

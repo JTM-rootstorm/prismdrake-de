@@ -1,4 +1,4 @@
-.PHONY: validate configure build test format-check
+.PHONY: validate validation-tier-test configure build test format-check
 
 PYTHON ?= python3
 CMAKE ?= cmake
@@ -7,6 +7,10 @@ BUILD_DIR ?= build/developer
 
 validate:
 	$(PYTHON) tools/validate.py
+	$(PYTHON) -m unittest discover -s tests/validation -p 'test_*.py'
+
+validation-tier-test:
+	$(PYTHON) -m unittest discover -s tests/validation -p 'test_*.py'
 
 configure:
 	$(CMAKE) -S . -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Debug

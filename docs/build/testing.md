@@ -3,6 +3,9 @@
 Contract validation and compiled tests are separate required layers. Run both
 for production implementation changes:
 
+The [validation-tier selector](validation-tiers.md) provides named, printable
+T0-T2 entry points and always refuses implicit T3 package or T4 live work.
+
 ```sh
 make validate
 cmake --preset gcc-debug

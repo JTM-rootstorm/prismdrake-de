@@ -69,6 +69,8 @@ production-ready desktop release or stable public interfaces.
 
 ## Testing
 
+- [Validation tiers and selectors](build/validation-tiers.md)
+- [Build and test commands](build/testing.md)
 - [PD1 X11 development harness](development/pd1-x11-harness.md)
 - [PD2 installed multi-output demonstration harness](development/pd2-installed-demonstration.md)
 - [PD1 diagnostics](development/diagnostics.md)
