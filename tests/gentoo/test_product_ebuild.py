@@ -71,6 +71,39 @@ class ProductEbuildContractTests(unittest.TestCase):
                 body = phase_body(self.source, phase)
                 self.assertIn("prismdrake_set_source_date_epoch", body)
 
+    def test_rust_toolchain_floor_is_set_before_cargo_eclass_inheritance(self) -> None:
+        floor = self.source.index('RUST_MIN_VER="1.96.0"')
+        inheritance = self.source.index("inherit cargo cmake git-r3 python-any-r1")
+        self.assertLess(floor, inheritance)
+
+    def test_cargo_uses_an_empty_offline_vendor_source(self) -> None:
+        self.assertNotIn("cargo_live_src_unpack", self.source)
+        prepare = phase_body(self.source, "src_prepare")
+        self.assertIn('mkdir -p "${ECARGO_VENDOR}"', prepare)
+        self.assertIn("cargo_gen_config", prepare)
+
+    def test_cargo_workspace_is_built_and_tested_once_without_network(self) -> None:
+        setup = phase_body(self.source, "pkg_setup")
+        self.assertEqual(setup.count("rust_pkg_setup"), 1)
+
+        configure = phase_body(self.source, "src_configure")
+        self.assertEqual(
+            configure.count(
+                "cargo_src_configure --workspace --locked --offline"
+            ),
+            1,
+        )
+
+        compile_phase = phase_body(self.source, "src_compile")
+        self.assertEqual(compile_phase.count("cargo_src_compile"), 1)
+
+        test_phase = phase_body(self.source, "src_test")
+        self.assertEqual(test_phase.count("cargo_src_test --all-targets"), 1)
+
+        self.assertNotIn("cargo install", self.source)
+        self.assertNotIn("cargo_src_install", self.source)
+        self.assertNotIn("rustup", self.source)
+
     def test_product_and_test_builds_embed_the_exact_source_revision(self) -> None:
         helper = phase_body(self.source, "prismdrake_source_revision")
         self.assertIn('git -C "${S}" rev-parse --verify HEAD', helper)

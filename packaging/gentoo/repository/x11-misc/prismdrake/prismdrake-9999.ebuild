@@ -4,8 +4,9 @@
 EAPI=8
 
 PYTHON_COMPAT=( python3_{11..15} )
+RUST_MIN_VER="1.96.0"
 
-inherit cmake git-r3 python-any-r1
+inherit cargo cmake git-r3 python-any-r1
 
 DESCRIPTION="Experimental Prismdrake PD2 core desktop shell"
 HOMEPAGE="https://github.com/JTM-rootstorm/prismdrake-de"
@@ -68,7 +69,18 @@ python_check_deps() {
 }
 
 pkg_setup() {
+	rust_pkg_setup
 	use test && python-any-r1_pkg_setup
+}
+
+src_prepare() {
+	default
+
+	# The P2 workspace has no third-party crates. Create the empty reviewed
+	# vendor source and let cargo.eclass force every later Cargo invocation
+	# offline rather than consulting a registry or ambient Cargo state.
+	mkdir -p "${ECARGO_VENDOR}" || die "could not create the empty Cargo vendor source"
+	cargo_gen_config
 }
 
 prismdrake_set_source_date_epoch() {
@@ -91,6 +103,7 @@ prismdrake_source_revision() {
 
 src_configure() {
 	prismdrake_set_source_date_epoch
+	cargo_src_configure --workspace --locked --offline
 	local mycmakeargs=(
 		-DBUILD_TESTING=OFF
 		-DPRISMDRAKE_SOURCE_REVISION="$(prismdrake_source_revision)"
@@ -102,11 +115,13 @@ src_configure() {
 
 src_compile() {
 	prismdrake_set_source_date_epoch
+	cargo_src_compile
 	cmake_src_compile
 }
 
 src_test() {
 	prismdrake_set_source_date_epoch
+	cargo_src_test --all-targets
 	# The product build must retain packaged /usr paths, which do not exist
 	# before src_install. Exercise the source tree in a separate test build
 	# instead of weakening the installed binary's path contract.

@@ -58,3 +58,33 @@ The next dependency-bearing change must add the complete direct and material
 transitive review required by ADR 0010 and the active plan before its lockfile
 is accepted. This zero-dependency proof does not establish the Gentoo package
 checkpoint or authorize any Portage operation.
+
+## Source-archive proof
+
+The exact revision `78d33653738c42e3851f5f6b7027b56a92fd313a` was exported
+with `git archive` on 2026-08-23. The resulting tar archive had SHA-256
+`575cd544159713d4a0d16ffa76d13f8e51ecfd3b589e8bfb73a8bc1acef20900`.
+After extraction beneath ignored project-local build state, the source tree
+contained no `.git` metadata. `cargo check --workspace --all-targets --locked
+--offline` and `cargo test --workspace --all-targets --locked --offline` both
+passed there with all four foundation tests green.
+
+This proves only that the dependency-free Cargo workspace builds and tests from
+the archived source bytes. The archive is not a release artifact, and this
+local proof does not replace a supported Gentoo install/uninstall lifecycle.
+
+## Gentoo ebuild ownership
+
+The live product ebuild requires Gentoo Rust 1.96 or newer and uses
+`cargo.eclass` to generate an isolated offline Cargo configuration. Because the
+current lockfile has no external packages, the ebuild creates an empty vendor
+source and never invokes live Cargo dependency acquisition. Cargo owns one
+locked, offline workspace build and one all-target test run. CMake continues to
+own the installed C++/Qt product and documentation; no Rust artifact is
+installed until a production Rust service or binary has an accepted install
+contract. This prevents a recursive or duplicate Cargo build and avoids
+installing a library-only migration probe as public product surface.
+
+The ebuild contract is host-testable, but the Portage package checkpoint remains
+open until the exact package lifecycle is explicitly authorized and exercised
+in the designated Gentoo environment.
