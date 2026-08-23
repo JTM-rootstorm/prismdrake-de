@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "record_kind": "prismdrake_validation_record",
+  "source": {
+    "revision": "1111111111111111111111111111111111111111",
+    "dirty": false
+  },
+  "selection": {
+    "tier": "T1",
+    "selector": "evidence-record-tests",
+    "command": "python-unittest-evidence-records"
+  },
+  "artifacts": [
+    {
+      "name": "synthetic-record-fixture",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  ],
+  "environment": {
+    "identity": "synthetic-test-environment",
+    "toolchains": [
+      { "name": "python", "version": "3.14-test" }
+    ]
+  },
+  "result": {
+    "status": "pass",
+    "reason_code": null,
+    "log": null
+  },
+  "identities": {
+    "product": {
+      "name": "prismdrake-synthetic-product",
+      "version": "test",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "collector": {
+      "name": "prismdrake-synthetic-collector",
+      "version": "1",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "schema": {
+      "name": "prismdrake-validation-record-schema",
+      "version": "1",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "validator": {
+      "name": "prismdrake-validation-record-validator",
+      "version": "1",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    }
+  },
+  "custody": {
+    "writer_authority": "synthetic-fixture-writer",
+    "retention_class": "tracked-public-test-fixture",
+    "authorized_location": "tracked-test-fixtures",
+    "authorized_audience": ["public"],
+    "disclosure_classification": "public-test-fixture",
+    "owner": "prismdrake-maintainers",
+    "mode": "0644",
+    "expires_at": null,
+    "durable_retention_justification": "Tracked synthetic fixture contains no collected runtime data",
+    "review_deletion_owner": "prismdrake-maintainers",
+    "final_disposition": "retain"
+  },
+  "integrity_anchor": {
+    "type": "append-only-custody",
+    "algorithm": "sha256",
+    "root_sha256": "838a51242559e08d7abd8634eca72ae3276ff25304cd579108d1255536e27c2a",
+    "authority": "synthetic-fixture-custodian",
+    "location": "custody:synthetic-public-fixture-v1",
+    "created_at": "2026-08-23T00:00:00Z",
+    "verification_procedure": "verify-synthetic-custody-assertion"
+  }
+}

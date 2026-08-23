@@ -70,6 +70,7 @@ production-ready desktop release or stable public interfaces.
 ## Testing
 
 - [Validation tiers and selectors](build/validation-tiers.md)
+- [Validation-record evidence envelope](build/evidence-records.md)
 - [Build and test commands](build/testing.md)
 - [PD1 X11 development harness](development/pd1-x11-harness.md)
 - [PD2 installed multi-output demonstration harness](development/pd2-installed-demonstration.md)
@@ -88,6 +89,7 @@ production-ready desktop release or stable public interfaces.
 - [Notification-history schema](../schemas/prismdrake-notification-history.schema.json)
 - [Notification-state schema](../schemas/prismdrake-notification-state.schema.json)
 - [Dependency-manifest schema](../schemas/prismdrake-dependency-manifest.schema.json)
+- [Validation-record envelope schema](../schemas/prismdrake-validation-record.schema.json)
 - [Foundation dependency manifest](../manifests/dependencies/prismdrake-foundation.json)
 - [Settings service dependency manifest](../manifests/dependencies/prismdrake-settingsd.json)
 - [Session dependency manifest](../manifests/dependencies/prismdrake-session.json)

@@ -294,6 +294,7 @@ REQUIRED_FILES = (
     "schemas/prismdrake-runtime-snapshot.schema.json",
     "schemas/prismdrake-capabilities.schema.json",
     "schemas/prismdrake-dependency-manifest.schema.json",
+    "schemas/prismdrake-validation-record.schema.json",
     "manifests/dependencies/prismdrake-foundation.json",
     "manifests/dependencies/prismdrake-notifyd.json",
     "manifests/dependencies/prismdrake-session.json",
@@ -302,6 +303,7 @@ REQUIRED_FILES = (
     "manifests/dependencies/prismdrake-shellctl.json",
     "manifests/dependencies/prismdrake-x11.json",
     "docs/build/dependencies.md",
+    "docs/build/evidence-records.md",
     "docs/build/validation-tiers.md",
     "docs/research/pd1-x11-connection-evidence.md",
     "themes/base.tokens.json",
@@ -309,7 +311,10 @@ REQUIRED_FILES = (
     "themes/forge.tokens.json",
     "themes/accessibility.tokens.json",
     "tools/validate.py",
+    "tools/validate_evidence_record.py",
     "tools/validation_tiers.py",
+    "tests/validation/fixtures/validation-record-v1.json",
+    "tests/validation/test_evidence_record.py",
     "tests/validation/test_validation_tiers.py",
 )
 

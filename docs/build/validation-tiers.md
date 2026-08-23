@@ -2,13 +2,14 @@
 
 Prismdrake separates fast local feedback from package and live-environment
 work. The project-owned front end lists exact commands, runs only fixed
-shell-free T0-T2 entries, and refuses implicit T3 or T4 escalation.
+shell-free T0-T1 Python entries, and refuses T2, T3, or T4 execution until the
+corresponding trust and authorization boundary exists.
 
 | Tier | Scope | Local selector behavior |
 | --- | --- | --- |
 | T0 | Contracts and other immediate static feedback | May run a named fixed command. |
 | T1 | Unit, pure-model, parser, validator, and saved-evidence tests | May run a named fixed command. |
-| T2 | Component, D-Bus, Qt/QML, X11, accessibility-adapter, and mixed-language contracts | May run a named fixed command against an already configured build. |
+| T2 | Component, D-Bus, Qt/QML, X11, accessibility-adapter, and mixed-language contracts | Listed as blocked until a committed tier manifest and exact build identity are established. |
 | T3 | Package, install, and installed-runtime checkpoints | Listed as blocked; never run by this front end. |
 | T4 | Explicitly authorized hardware or final live-environment evidence | Listed as blocked; never run by this front end. |
 
@@ -28,12 +29,23 @@ python3 tools/validation_tiers.py --selector contracts --tier T0 --run
 ```
 
 The optional tier assertion fails closed when it does not match the named
-selector. Commands are fixed project entries rather than user-supplied command
-fragments, and the runner never invokes a shell. A selector preserves the
-documented direct Python, CMake, and CTest commands as the debugging primitive;
-it does not hide configuration prerequisites or silently collect new evidence.
+selector. Runnable commands use the resolved absolute active Python executable
+with isolated interpreter flags and fixed project-owned arguments; the runner
+never invokes a shell. Each runnable selector receives a minimal constructed
+environment with no inherited `PATH`, Python injection, loader, credential,
+agent, proxy, service, or display variables. Its private home, temporary, cache,
+configuration, data, state, and runtime paths are non-symlink directories below
+ignored `build/validation-state/`. Child input and output streams are discarded;
+each child has a fixed five-minute timeout, and the front end prints only the
+selector identity and a bounded final status.
 
-T3 and T4 names are boundary markers, not runnable commands. Their eventual
-project-owned workflows require the plan's exact authorization, environment,
-lease, artifact, privacy, and evidence checks. This front end has no override
-that can turn a local test request into package or live work.
+Stored evidence uses the separate
+[validation-record envelope](evidence-records.md). Revalidating that envelope
+does not execute the recorded command or recollect evidence.
+
+T2, T3, and T4 names are boundary markers, not runnable commands. T2 requires a
+committed tier manifest plus source, configuration, and build identity before a
+CMake or CTest entry can be enabled. T3 and T4 workflows additionally require
+the plan's exact authorization, environment, lease, artifact, privacy, and
+evidence checks. This front end has no override that can turn a local request
+into compiled, package, installed-runtime, hardware, or live-environment work.
