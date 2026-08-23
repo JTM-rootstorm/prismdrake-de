@@ -4,6 +4,7 @@
 - **Date:** 2026-07-16
 - **Compatibility floor amended:** 2026-07-18
 - **Milestone wording amended:** 2026-07-31
+- **Language ownership amended by ADR 0010:** 2026-08-23
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -16,7 +17,7 @@ architecture.
 ## Decision drivers
 
 - Composited rendering, translucency, and controlled animation.
-- Typed C++ models and separation of UI from policy.
+- Typed models and separation of UI from policy.
 - Keyboard and assistive-technology accessibility.
 - X11, HiDPI, multi-output, input, and test practicality.
 - Dependency, licensing, and Gentoo packaging reviewability.
@@ -33,10 +34,12 @@ accessibility and input ownership for the current scope.
 
 ## Decision
 
-Use Qt 6.11 Quick or newer for visible `prismdrake-shell` surfaces and modern
-C++ for models, services, and integration. Keep persistent policy, parsing,
-system integration, and authoritative models outside QML. Use QML for layout,
-visual state, bindings, accessibility metadata, and brief interruptible
+Use Qt 6.11 Quick or newer for visible `prismdrake-shell` surfaces. Under
+[ADR 0010](0010-rust-first-transition.md), Rust is the default language for
+toolkit-neutral models, services, policy, and parsing. C++ remains permitted for
+Qt-bound presentation and justified native integration. Keep persistent policy,
+parsing, system integration, and authoritative models outside QML. Use QML for
+layout, visual state, bindings, accessibility metadata, and brief interruptible
 animation.
 
 Require Qt 6.11 or newer for the visible shell and its Qt-bound presentation
@@ -46,8 +49,9 @@ constrain implementation or validation.
 
 Keep non-visual services toolkit-neutral where practical. This decision does
 not select Qt for every component or make Qt and GTK jointly mandatory. The
-build and language baseline is governed separately by
-[ADR 0008](0008-build-language-and-testing-baseline.md).
+retained-C++ build baseline is governed by
+[ADR 0008](0008-build-language-and-testing-baseline.md); ADR 0010 governs the
+Rust-first language transition.
 
 ## Consequences
 
@@ -82,3 +86,4 @@ on the weighted criteria.
 - [Toolkit evaluation](../research/toolkit-evaluation.md)
 - [Dependency policy](../architecture/dependency-policy.md)
 - [Project specification section 12](../PRISMDRAKE_PROJECT_SPECIFICATION.md#12-technology-and-dependency-policy)
+- [ADR 0010: Rust-first implementation transition](0010-rust-first-transition.md)

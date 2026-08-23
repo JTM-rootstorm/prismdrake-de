@@ -31,3 +31,4 @@ markers.
 | [0007](0007-licensing-and-original-assets.md) | Accepted | Licensing and original assets |
 | [0008](0008-build-language-and-testing-baseline.md) | Accepted | Build, language, and testing baseline |
 | [0009](0009-pd2-state-and-control-contracts.md) | Accepted | PD2 state ownership and control contracts |
+| [0010](0010-rust-first-transition.md) | Accepted | Rust-first implementation transition |

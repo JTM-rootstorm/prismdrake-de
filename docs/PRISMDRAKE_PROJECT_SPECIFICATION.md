@@ -4,11 +4,11 @@
 | Field | Value |
 |---|---|
 | Document ID | `PD-SPEC` |
-| Version | `0.2.0` |
+| Version | `0.3.0` |
 | Status | Project-wide baseline specification |
-| Date | 2026-07-16 |
+| Date | 2026-08-23 |
 | Canonical repository | `https://github.com/JTM-rootstorm/prismdrake-de` |
-| Repository baseline inspected | `main` at `73075e8be78233ea24ebdbd70c9b7fee42df890e` |
+| Repository baseline originally inspected | `main` at `73075e8be78233ea24ebdbd70c9b7fee42df890e` |
 | Repository license | GNU General Public License, Version 3 |
 | Intended readers | Maintainers, Codex, contributors, reviewers, designers, testers, and packagers |
 | Scope | The entire Prismdrake project, from foundation through 1.0 and subsequent maintenance |
@@ -396,16 +396,21 @@ Shutdown and logout MUST:
 
 ## 12. Technology and dependency policy
 
-### 12.1 Accepted PD1 implementation architecture
+### 12.1 Accepted implementation architecture
 
-The following direction is Accepted for PD1 through ADRs 0003, 0004, 0006, and
-0008. It does not make every dependency mandatory for every component or
+The following direction is Accepted through ADRs 0003, 0004, 0006, 0008, and
+0010. It does not make every dependency mandatory for every component or
 stabilize public implementation interfaces:
 
 - Visible shell surfaces: Qt 6.11 Quick or newer.
-- Shell models and integration: modern C++.
-- Non-visual core services: modern C++ with D-Bus and X11/XCB interfaces as appropriate.
-- Build system: CMake.
+- Toolkit-neutral policy, models, parsers, services, and validation semantics:
+  Rust by default.
+- Qt-bound presentation and justified native integration: retained C++20 where
+  it remains the clearest correct boundary.
+- Process boundaries: versioned D-Bus contracts; no FFI bridge across an
+  existing service boundary.
+- Build ownership: Cargo plus a tracked `Cargo.lock` for Rust; CMake/CTest for
+  retained Qt, C++, QML, translations, and native integration.
 - User configuration: versioned TOML.
 - Theme contracts: versioned JSON with schemas.
 - Capability contracts: versioned JSON documents that remain subject to the
@@ -423,7 +428,9 @@ For the Accepted Qt 6.11-or-newer Quick visible-shell direction:
 - Qt 6.11 is the minimum supported toolkit version for Qt-bound Prismdrake
   components; Qt 6.4 compatibility is not a project target.
 - QML SHOULD contain layout, visual state, and animation.
-- Persistent policy, parsing, D-Bus access, window models, and settings logic SHOULD remain in C++ or service interfaces.
+- Persistent policy, parsing, D-Bus access, window models, and settings logic
+  SHOULD remain in Rust or service interfaces. Qt-bound C++ adapters MUST remain
+  narrow and MUST NOT become duplicate policy authorities.
 - QML MUST NOT become the sole source of security or authorization decisions.
 - The shell SHOULD provide deterministic rendering paths for visual tests.
 - Qt Widgets MAY be used for narrowly justified utilities, but mixed UI technologies require consistency review.
@@ -1047,8 +1054,10 @@ The project SHOULD maintain:
 
 The repository MUST provide canonical commands through its build and validation
 documentation. `make validate` remains the contract validator. Under Accepted
-ADR 0008, production C++ targets use CMake and compiled tests use CTest; the two
-paths MUST NOT silently omit one another's required checks.
+ADRs 0008 and 0010, Rust targets use Cargo and a tracked lockfile while retained
+Qt/C++ targets use CMake and CTest. Project/package entry points MUST select all
+applicable paths explicitly and MUST NOT silently omit one another's required
+checks.
 
 Agents and contributors MUST inspect the repository rather than assume commands that are not yet present.
 
@@ -1394,7 +1403,7 @@ Prismdrake 1.0 is ready only when all applicable mandatory requirements have evi
 
 ## Appendix B. Initial decision register
 
-| Decision | Status at specification version 0.2.0 |
+| Decision | Status at specification version 0.3.0 |
 |---|---|
 | Product and profile names | Accepted |
 | `prismdrake-*` prefix | Accepted |
@@ -1404,8 +1413,9 @@ Prismdrake 1.0 is ready only when all applicable mandatory requirements have evi
 | GPL-3.0 repository license | Accepted |
 | Component and process model | Accepted |
 | Qt 6.11-or-newer Quick visible shell | Accepted for visible shell surfaces |
-| Modern C++ core | Accepted for PD1 models, services, and integration |
-| CMake, CTest, C++20, and system GoogleTest baseline | Accepted |
+| Rust-first toolkit-neutral core | Accepted through ADR 0010 |
+| Retained C++20 Qt/native integration | Accepted where justified by ADRs 0003, 0008, and 0010 |
+| Cargo/locked Rust plus CMake/CTest retained-native baseline | Accepted |
 | TOML user configuration and immutable snapshot model | Accepted |
 | JSON theme schemas and data-only token model | Accepted |
 | JSON capability schemas | Proposed pending native-integration decisions |

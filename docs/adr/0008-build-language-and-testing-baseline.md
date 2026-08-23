@@ -4,6 +4,7 @@
 - **Date:** 2026-07-16
 - **Hosted-CI policy amended:** 2026-07-18
 - **Validation policy amended:** 2026-07-19
+- **Rust build ownership amended by ADR 0010:** 2026-08-23
 - **Owners:** Prismdrake maintainers
 
 ## Context
@@ -56,10 +57,17 @@ work to the repository.
 
 ## Decision
 
-Use CMake as the build generator and CTest as the canonical compiled-test
-runner. Retain `make validate` as the contract-validation entry point and expose
-an equivalent CMake/CTest path once compiled targets exist; neither path may
-silently omit the other's required checks.
+Use CMake as the build generator for retained Qt, C++, QML, translations, and
+native integration, with CTest as their canonical compiled-test runner. Retain
+`make validate` as the contract-validation entry point; no path may silently
+omit another applicable required check.
+
+Under [ADR 0010](0010-rust-first-transition.md), Cargo owns Rust compilation,
+dependency resolution, and Rust tests through a tracked `Cargo.lock`. Rust
+targets use project-pinned format, check, test, and strict Clippy entry points.
+Cargo and CMake must not recursively rebuild one another's targets or create
+duplicate dependency authority. Authoritative distribution builds use reviewed
+immutable inputs and run offline after controlled preparation.
 
 Use C++20 for Prismdrake C++ targets. Set `CXX_STANDARD 20`,
 `CXX_STANDARD_REQUIRED YES`, and `CXX_EXTENSIONS NO` on a project-owned interface
@@ -140,12 +148,17 @@ not emit exceptions across those boundaries.
 
 ## Consequences
 
-The project gains one canonical compiled build and test path, explicit compiler
+The project has explicit language-specific build and test paths, compiler
 semantics, distribution-friendly dependency discovery, and opt-in quality
-tooling. Supporting two compiler families and maintaining formatter, analyzer,
-and sanitizer paths adds validation work. System-packaged GoogleTest adds a
-test-only dependency but keeps third-party source and updates outside the
-Prismdrake tree.
+tooling. Supporting two C++ compiler families and maintaining formatter,
+analyzer, sanitizer, and Rust tool paths adds validation work. System-packaged
+GoogleTest adds a test-only dependency for retained C++ but keeps third-party
+source and updates outside the Prismdrake tree.
+
+The Rust transition adds a second language-specific build owner. Project and
+package entry points must select Cargo and CMake deliberately, retain direct
+debuggable commands for each, and bind their outputs to one source and
+dependency identity.
 
 The Gentoo reference environment is authoritative for Qt-bound GCC, Clang,
 formatting, QML lint, and integration evidence. Hosted automation may be added
@@ -190,6 +203,11 @@ about the isolated spike:
 - installing into a staged `DESTDIR` and inspecting the result; and
 - building from a source archive without Git metadata.
 
+Once Rust targets exist, the corresponding contract also includes locked and
+offline Cargo builds, Rust formatting, `cargo check`, tests, strict Clippy,
+applicable sanitizer/Miri evidence, and package ownership of every installed
+Rust artifact.
+
 Record exact tool and package versions, commands, results, and every unsupported
 or skipped path. Contract validation must remain green throughout.
 
@@ -209,4 +227,5 @@ policy before installing public C++ headers or promising binary compatibility.
 - [Project specification testing requirements](../PRISMDRAKE_PROJECT_SPECIFICATION.md#25-testing-and-continuous-integration)
 - [Dependency policy](../architecture/dependency-policy.md)
 - [ADR 0003: Visible shell toolkit and language direction](0003-shell-toolkit.md)
+- [ADR 0010: Rust-first implementation transition](0010-rust-first-transition.md)
 - [PD1 milestone tracker](../roadmap/pd1.md)

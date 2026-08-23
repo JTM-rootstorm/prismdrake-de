@@ -233,11 +233,16 @@ Rules:
 
 ### Technology choices
 
-The following choices are Accepted through ADRs 0003, 0004, 0006, and 0008:
+The following choices are Accepted through ADRs 0003, 0004, 0006, 0008, and
+0010:
 
 - Qt 6.11 Quick or newer for visible shell surfaces.
-- Modern C++20 for models, services, and integration.
-- CMake and CTest for builds and tests.
+- Rust by default for toolkit-neutral policy, models, parsers, services, and
+  validation semantics.
+- Modern C++20 for retained Qt-bound presentation and justified native
+  integration.
+- Cargo with a tracked lockfile for Rust; CMake and CTest for retained
+  Qt/C++/QML and native targets.
 - TOML for user configuration.
 - JSON schemas for themes and normalized snapshots.
 - Versioned Experimental D-Bus XML under `org.prismdrake.*`.
@@ -425,6 +430,24 @@ Follow the repository's Accepted language, build, formatting, and linting decisi
 - Use monotonic clocks for durations and timeouts.
 - Avoid busy polling. Prefer event-driven operation.
 - Do not add a dependency to avoid writing a small, testable utility without justification.
+
+### Conditional Rust rules
+
+When Rust is present, follow the Accepted Rust-first transition decision:
+
+- Keep pure domain crates free of unsafe code.
+- Allow unsafe code only in reviewed boundary modules with local safety
+  rationale and focused malformed-boundary tests.
+- Do not let a panic or unwind cross C, C++, Qt, D-Bus, process, X11, or other
+  foreign boundaries.
+- Use explicit domain types, checked conversions, bounded collections, and
+  cancellation-aware APIs at untrusted boundaries.
+- Keep Cargo dependency and feature selection explicit, locked, reviewed, and
+  compatible with authoritative offline distribution builds.
+- Run project-pinned formatting, check, test, and strict Clippy gates for
+  affected crates once those entry points exist.
+- Do not use the workspace Wyrmroot Rust fork as a Prismdrake toolchain or
+  dependency without a separately accepted concrete requirement.
 
 ### Conditional C++ rules
 

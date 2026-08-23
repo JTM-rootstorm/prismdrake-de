@@ -10,6 +10,7 @@ production-ready desktop release or stable public interfaces.
 
 - [Project-wide product and technical specification](PRISMDRAKE_PROJECT_SPECIFICATION.md)
 - [Architecture Decision Records](adr/README.md)
+- [Rust-first transition decision](adr/0010-rust-first-transition.md)
 - [Milestones and current status](roadmap/milestones.md)
 - [Active PD2 milestone tracker](roadmap/pd2.md)
 - [Completed PD1 milestone tracker](roadmap/pd1.md)
@@ -30,6 +31,7 @@ production-ready desktop release or stable public interfaces.
 - [Component model](architecture/component-model.md)
 - [Process model](architecture/process-model.md)
 - [Dependency policy](architecture/dependency-policy.md)
+- [Rust-first transition baseline](architecture/rust-first-transition-baseline.md)
 - [Dependency manifests](build/dependencies.md)
 - [Foundation utilities](build/foundation-utilities.md)
 - [Configuration version 2](architecture/configuration.md)
