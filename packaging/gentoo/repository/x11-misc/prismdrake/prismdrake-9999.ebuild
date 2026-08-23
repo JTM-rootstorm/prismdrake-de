@@ -9,6 +9,7 @@ CRATES=""
 CRATE_PATHS_OVERRIDE=""
 CARGO_BOOTSTRAP=""
 CARGO_OPTIONAL=""
+RUST_OPTIONAL=""
 declare -A GIT_CRATES=()
 
 inherit cargo cmake git-r3 python-any-r1

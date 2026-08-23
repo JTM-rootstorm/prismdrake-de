@@ -84,6 +84,7 @@ class ProductEbuildContractTests(unittest.TestCase):
             'CRATE_PATHS_OVERRIDE=""',
             'CARGO_BOOTSTRAP=""',
             'CARGO_OPTIONAL=""',
+            'RUST_OPTIONAL=""',
             "declare -A GIT_CRATES=()",
         ):
             with self.subTest(assignment=assignment):
