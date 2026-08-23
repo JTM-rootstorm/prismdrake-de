@@ -33,6 +33,7 @@ production-ready desktop release or stable public interfaces.
 - [Dependency policy](architecture/dependency-policy.md)
 - [Rust-first transition baseline](architecture/rust-first-transition-baseline.md)
 - [Dependency manifests](build/dependencies.md)
+- [Rust toolchain and workspace proof](build/rust-toolchain.md)
 - [Foundation utilities](build/foundation-utilities.md)
 - [Configuration version 2](architecture/configuration.md)
 - [PD2 state ownership](architecture/pd2-state-ownership.md)

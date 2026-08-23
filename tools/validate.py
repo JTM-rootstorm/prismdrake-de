@@ -231,6 +231,8 @@ VM_AUTHORITY_QUARANTINE_NOT_DESIGNATED = (
 REQUIRED_FILES = (
     ".editorconfig",
     ".gitignore",
+    "Cargo.lock",
+    "Cargo.toml",
     "AGENTS.md",
     "CONTRIBUTING.md",
     "docs/PRISMDRAKE_PROJECT_SPECIFICATION.md",
@@ -304,6 +306,7 @@ REQUIRED_FILES = (
     "manifests/dependencies/prismdrake-x11.json",
     "docs/build/dependencies.md",
     "docs/build/evidence-records.md",
+    "docs/build/rust-toolchain.md",
     "docs/build/validation-tiers.md",
     "docs/research/pd1-x11-connection-evidence.md",
     "themes/base.tokens.json",
@@ -316,6 +319,8 @@ REQUIRED_FILES = (
     "tests/validation/fixtures/validation-record-v1.json",
     "tests/validation/test_evidence_record.py",
     "tests/validation/test_validation_tiers.py",
+    "crates/prismdrake-foundation/Cargo.toml",
+    "crates/prismdrake-foundation/src/lib.rs",
 )
 
 ADR_SECTIONS = (
@@ -555,6 +560,91 @@ def validate_schema(
 def validate_required_files(validation: Validation) -> None:
     for relative in REQUIRED_FILES:
         validation.require((ROOT / relative).is_file(), relative, "required repository file is missing")
+
+
+def validate_rust_workspace(validation: Validation) -> None:
+    workspace = load_toml(ROOT / "Cargo.toml", validation)
+    crate = load_toml(ROOT / "crates/prismdrake-foundation/Cargo.toml", validation)
+    lockfile = load_toml(ROOT / "Cargo.lock", validation)
+    if not all(isinstance(document, dict) for document in (workspace, crate, lockfile)):
+        return
+
+    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    workspace_table = workspace.get("workspace", {})
+    workspace_package = workspace_table.get("package", {})
+    validation.require(
+        workspace_table.get("members") == ["crates/prismdrake-foundation"],
+        "Cargo.toml",
+        "workspace members must be the reviewed P2 crate set",
+    )
+    validation.require(
+        workspace_table.get("resolver") == "3",
+        "Cargo.toml",
+        "workspace resolver must be exactly version 3",
+    )
+    validation.require(
+        workspace_package
+        == {
+            "version": version,
+            "edition": "2024",
+            "rust-version": "1.96",
+            "license": "GPL-3.0-or-later",
+        },
+        "Cargo.toml",
+        "workspace package metadata must match VERSION and the accepted Rust policy",
+    )
+    validation.require(
+        workspace_table.get("lints", {}).get("rust", {}).get("unsafe_code") == "forbid",
+        "Cargo.toml",
+        "workspace Rust lints must forbid unsafe code",
+    )
+    validation.require(
+        workspace_table.get("lints", {}).get("clippy")
+        == {"all": "deny", "pedantic": "deny"},
+        "Cargo.toml",
+        "workspace Clippy policy must deny all and pedantic findings",
+    )
+
+    package = crate.get("package", {})
+    validation.require(
+        package
+        == {
+            "name": "prismdrake-foundation",
+            "version": {"workspace": True},
+            "edition": {"workspace": True},
+            "rust-version": {"workspace": True},
+            "license": {"workspace": True},
+            "publish": False,
+        },
+        "crates/prismdrake-foundation/Cargo.toml",
+        "foundation crate package metadata must inherit the reviewed workspace policy",
+    )
+    validation.require(
+        crate.get("lib") == {"path": "src/lib.rs"}
+        and crate.get("lints") == {"workspace": True},
+        "crates/prismdrake-foundation/Cargo.toml",
+        "foundation crate target and lint ownership must remain explicit",
+    )
+    validation.require(
+        not any(key in crate for key in ("dependencies", "dev-dependencies", "build-dependencies")),
+        "crates/prismdrake-foundation/Cargo.toml",
+        "the P2 foundation proof must remain dependency-free",
+    )
+
+    validation.require(
+        lockfile.get("version") == 4
+        and lockfile.get("package")
+        == [{"name": "prismdrake-foundation", "version": version}],
+        "Cargo.lock",
+        "the P2 lockfile must contain only the exact first-party foundation crate",
+    )
+    source = (ROOT / "crates/prismdrake-foundation/src/lib.rs").read_text(encoding="utf-8")
+    validation.require(
+        source.startswith("// SPDX-License-Identifier: GPL-3.0-or-later\n")
+        and "#![forbid(unsafe_code)]" in source,
+        "crates/prismdrake-foundation/src/lib.rs",
+        "Rust foundation source must retain its SPDX identity and unsafe-code prohibition",
+    )
 
 
 def dependency_identity_candidates(dependency: dict[str, Any]) -> set[str]:
@@ -2235,6 +2325,7 @@ def main() -> int:
 
     validation = Validation()
     validate_required_files(validation)
+    validate_rust_workspace(validation)
     schemas = validate_contracts(validation)
     validate_xml(validation)
     validate_markdown_links(validation)
@@ -2253,6 +2344,7 @@ def main() -> int:
     print("  required files: present")
     print("  JSON/TOML/XML/SVG: parsed and structurally validated")
     print("  profiles/themes/fallbacks: consistent")
+    print("  Rust workspace/lockfile/license/unsafe policy: consistent")
     print("  ADRs/namespaces/local links/assets: consistent")
     print(f"  negative self-tests: {negative_self_test_count} rejection paths passed")
     return 0

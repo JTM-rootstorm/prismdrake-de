@@ -5,6 +5,11 @@ and system-packaged dependencies. Configure and build operations do not fetch
 or vendor third-party source. GCC and Clang are the supported Linux compiler
 families.
 
+The accepted Rust-first transition adds a Cargo workspace for toolkit-neutral
+Rust crates while CMake retains Qt, C++, QML, and their tests. The initial
+[Rust toolchain proof](rust-toolchain.md) is dependency-free and offline; it
+does not yet change an installed target or package owner.
+
 The configuration target requires the system toml++ package discovered through
 its CMake package configuration. On Gentoo this is `dev-cpp/tomlplusplus`; the
 build never downloads or vendors a parser.

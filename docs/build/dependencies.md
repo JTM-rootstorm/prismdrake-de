@@ -40,6 +40,15 @@ carry a verified or observed version.
 
 ## Current boundary
 
+- `prismdrake-foundation` now also names a dependency-free, non-published Rust
+  crate containing the first ported generation, error/exit-status, and
+  cancellation contracts. Its tracked lockfile contains no third-party package,
+  build script, procedural macro, native code, or transitive dependency. This
+  P2 toolchain proof does not yet replace the installed C++ foundation target.
+  The component manifest records the observed Gentoo `dev-lang/rust-bin`
+  `rustc`, Cargo, rustfmt, and Clippy tools at 1.96.1; installed Rust/Cargo,
+  rustfmt, and Clippy notices retain their Apache-2.0 and MIT licensing boundary.
+  Rust 1.96 is declared but is not yet a verified minimum.
 - `prismdrake-foundation` is an implemented internal C++ library. Its manifest
   records repository and build/test tooling, including system GoogleTest 1.17.0
   used by the foundation tests and the observed GCC 15.3.0 and Clang 22.1.8
