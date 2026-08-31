@@ -36,7 +36,7 @@ plan's consolidation record.
 
 | Slice | Current behavior and authority | Boundary and contract | Current parity anchors | Security and failure anchors | Rust cutover gate and outstanding evidence |
 |---|---|---|---|---|---|
-| Configuration, theme, and settings | `prismdrake-settingsd` owns validated configuration, profile resolution, immutable generations, and runtime snapshots. | Executable plus `Settings1`; TOML configuration and config/theme/runtime JSON schemas. | `src/config`, `src/theme`, `src/settings`, `src/settingsd`; unit, settings D-Bus, restart, schema, theme, and shell-consumer tests. | Bounded parsing, path/permission checks, atomic writes, same-user control, owner epochs, typed redacted errors. | P3 ports the complete authority and positive/negative/restart consumers before removing the C++ service. Installed activation, rollback after new-state writes, and final lifecycle remain unevidenced. |
+| Configuration, theme, and settings | `prismdrake-settingsd` owns validated configuration, profile resolution, immutable generations, and runtime snapshots. The dependency-free Rust foundation now contains the first settings-publication state slice, but it is not an authority cutover. | Executable plus `Settings1`; TOML configuration and config/theme/runtime JSON schemas. | `src/config`, `src/theme`, `src/settings`, `src/settingsd`; unit, settings D-Bus, restart, schema, theme, and shell-consumer tests; Rust publication-state unit tests. | Bounded parsing, path/permission checks, atomic writes, same-user control, owner epochs, typed redacted errors. | P3 still ports the complete authority and positive/negative/restart consumers before removing the C++ service. Installed activation, rollback after new-state writes, and final lifecycle remain unevidenced. |
 | Session supervision | `prismdrake-session` owns exact-child startup, readiness, restart/backoff, safe mode, logout, and bounded teardown. | Executable plus `Session1`; child environment and process lifecycle. | `src/session`; supervisor unit tests, child fixture, D-Bus/control, restart, logout, exact-environment, and integration lanes. | Shell-free exact argv/environment, monotonic time, exact-child cleanup, bounded signals, same-user control. | P4 ports after Rust settingsd is authoritative. Package checkpoint B, interruption rollback, and final installed lifecycle remain outstanding. |
 | Launcher and application identity | Toolkit-neutral discovery, visibility, identity, ranking, generations, cancellation, provenance, and launch planning feed Qt presentation. | Desktop Entry/XDG inputs and in-process Qt adapters; no separate daemon. | `src/launcher`, application-identity, launcher-controller, launcher-QML, detached-application, and provenance fixtures. | Untrusted desktop entries, field-code bounds, literal argv, no implicit shell, path/provenance validation, cancellation and stale-generation rejection. | P5 ports policy/model cores while retaining narrow Qt presentation. Fixture parity, package ownership, and installed demonstrations remain required. |
 | Notifications | `prismdrake-notifyd` owns freedesktop notifications, history, IDs, replacement/action policy, DND override, and notification-center generations. | Executable; freedesktop Notifications plus private `NotificationCenter1`; history/state schemas; Qt client/presentation. | `src/notifications`, `src/notifyd`, shell notification modules; model, D-Bus, sender-lifecycle, replacement, QML, history, and negative fixtures. | Bounded untrusted text/hints, sender unique-name lifetime, retention/clearing, typed actions, private state permissions, owner epochs. | P5 ports policy/model cores without broadening the freedesktop contract. Member-level authorization/signal matrix, rollback after writes, and installed lifecycle remain outstanding. |
@@ -72,7 +72,7 @@ The seven dependency manifests are also current transition inputs:
 
 | Manifest | SHA-256 |
 |---|---|
-| `prismdrake-foundation.json` | `5b80097b1798210883d07d11cd5ef78b6765305063488e62674dc6fca9315cae` |
+| `prismdrake-foundation.json` | `ed5222628ccf671ceb48a94a95189520def94c91d1447af0a63546e2631a2008` |
 | `prismdrake-notifyd.json` | `567e939dbf86e5103a83a5c2551bf5d23a335e0a826592d6e884a9c730ba49ca` |
 | `prismdrake-session.json` | `92ad2d806974667e8e3dd13027d4de4aad9a8b0ac686024f7ac75988f84053ce` |
 | `prismdrake-settingsd.json` | `9cc5f17e09a017273793aee5066f153399db8c90967b5c857fbb86d0aceae680` |
@@ -111,8 +111,9 @@ change to this split.
 
 - ADR 0010 is Accepted. Rust is the default toolkit-neutral language while Qt
   6.11 Quick/QML and justified Qt/native C++ boundaries remain.
-- The historical Gentoo VM document is quarantined; no listed VM, SSH, Portage,
-  package, or transfer operation is currently authorized.
+- `prismdrake-vm` on `qemu:///system` is the designated Prismdrake build and
+  test environment. Its recorded SSH/transfer state still requires preflight,
+  and package mutation remains separately scoped to the active task.
 - Full current-head GCC/Clang, sanitizer, QML-lint, 838-test, package, live
   accessibility, performance, and installed-lifecycle results have not been
   produced by this inventory.

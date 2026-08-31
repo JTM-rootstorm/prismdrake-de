@@ -492,6 +492,34 @@ class ValidationTierTests(unittest.TestCase):
 
             source.write_bytes((ROOT / relative).read_bytes())
             expected[relative] = hashlib.sha256(source.read_bytes()).hexdigest()
+            settings_source = (
+                workspace
+                / "crates"
+                / "prismdrake-foundation"
+                / "src"
+                / "settings.rs"
+            )
+            settings_source.write_text(
+                settings_source.read_text(encoding="utf-8")
+                + '\nextern "C" fn unreviewed_module_boundary() {}\n',
+                encoding="utf-8",
+            )
+            settings_relative = (
+                "crates/prismdrake-foundation/src/settings.rs"
+            )
+            expected[settings_relative] = hashlib.sha256(
+                settings_source.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(
+                validation_tiers.BoundaryError,
+                "unreviewed_unsafe_or_native_surface",
+            ):
+                validation_tiers._validate_rust_workspace(workspace, expected)
+
+            settings_source.write_bytes((ROOT / settings_relative).read_bytes())
+            expected[settings_relative] = hashlib.sha256(
+                settings_source.read_bytes()
+            ).hexdigest()
             crate_manifest = workspace / "crates" / "prismdrake-foundation" / "Cargo.toml"
             crate_manifest.write_text(
                 crate_manifest.read_text(encoding="utf-8").replace(

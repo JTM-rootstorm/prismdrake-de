@@ -1,11 +1,14 @@
 # Gentoo reference VM
 
-> **Authority quarantine:** No domain, SSH endpoint, package operation, or
-> command in this document is currently authorized for use. The historical
-> `prismdrake-vm` environment is not a designated project VM under the
-> workspace `AGENTS.md`. Reuse requires Mike to explicitly authorize the exact
-> target and state-changing effects in the active conversation; until then,
-> treat every operational procedure below as historical reference only.
+> **Current execution boundary:** On 2026-08-30, Mike designated
+> `prismdrake-vm` on `qemu:///system` as Prismdrake's build and test
+> environment. Compilation, formatting, linting, test execution, package work,
+> and live/runtime validation belong in that guest rather than on the source
+> host. The source host is limited to repository work and lightweight static
+> checks. The recorded SSH, transfer, mount, and guest-state details below must
+> still be preflighted before reuse; this designation does not independently
+> authorize Portage changes or other guest mutation beyond the exact active
+> task.
 
 The Gentoo VM is Prismdrake's maintained reference environment for dependency
 resolution, toolkit evidence, X11 integration, installed PD2 validation, and
@@ -19,9 +22,9 @@ This document implements the environment-facing parts of `PD-DOC-001`,
 guest Portage configuration and packages after an explicit `--apply`; it never
 changes host libvirt, QEMU, networking, storage, or package state.
 
-## Maintainer-provided host boundary
+## Designated VM boundary
 
-The current test domain is:
+The designated test domain and recorded access path are:
 
 | Setting | Value |
 |---|---|

@@ -6,16 +6,20 @@ uses resolver version 3, Rust edition 2024, a tracked `Cargo.lock`, and
 1.96. This is the declared initial floor, not a broadly verified lower bound.
 
 The first crate, `prismdrake-foundation`, is a dependency-free port of the
-current toolkit-neutral generation, error/exit-status, and cancellation
-contracts. It forbids unsafe code and is not published. No crates.io, Git,
-vendored, build-script, procedural-macro, native, or transitive dependency is
-present in this checkpoint, so `Cargo.lock` contains only the first-party
-package.
+current toolkit-neutral generation, error/exit-status, cancellation, and
+settings-publication contracts. The settings checkpoint includes the closed
+wire identifiers, immutable current/previous snapshot state, bounded
+pre-publication serialization, deterministic changed-domain reporting, and
+failure-safe generation handling. It does not yet make Rust settingsd
+authoritative. The crate forbids unsafe code and is not published. No
+crates.io, Git, vendored, build-script, procedural-macro, native, or transitive
+dependency is present in this checkpoint, so `Cargo.lock` contains only the
+first-party package.
 
-## Current reviewed host toolchain
+## Current pinned validation toolchain
 
 The validation selectors are currently pinned to the Gentoo system binary
-toolchain re-observed on 2026-08-30:
+toolchain re-observed during the 2026-08-30 re-pin:
 
 | Tool | Identity | Resolved executable SHA-256 |
 | --- | --- | --- |
@@ -24,9 +28,11 @@ toolchain re-observed on 2026-08-30:
 | `rustfmt` | 1.9.0-stable, commit `8bab26f4f6`, 2026-07-14 | `30de9e1efcd8f8fe7750e00d0c45ff8f4c480608ef1be5baf9ab6f1b4556e8f8` |
 | `clippy` | 0.1.97, commit `8bab26f4f6`, 2026-07-14 | `a0a3808dddb32f525601e608740ee7c1c5df86db4a7183ea945449f60d29509d` (`cargo-clippy`) |
 
-The executables resolve beneath `/opt/rust-bin-1.97.1/bin/`; the workspace
-Wyrmroot compiler fork at `../rust/` is not a Prismdrake input. These observed
-host hashes identify this probe only and are not portable package requirements.
+The pinned executables resolve beneath `/opt/rust-bin-1.97.1/bin/`; the
+workspace Wyrmroot compiler fork at `../rust/` is not a Prismdrake input. These
+observed hashes identify this validation-toolchain installation only and are
+not portable package requirements or permission to execute the selectors on
+the source host.
 The earlier 2026-08-23 Rust/Cargo 1.96.1 identities remain historical evidence
 for revision `78d33653738c42e3851f5f6b7027b56a92fd313a`; they are no longer the
 current executable pin. The workspace `rust-version = "1.96"` floor is unchanged.
@@ -54,11 +60,13 @@ caches, Cargo state, and target output below ignored
 discarded, execution is shell-free and time-bounded, and Cargo is forced offline.
 
 The selectors are valid only for the exact reviewed dependency-free workspace
-file set. A source or manifest identity change, extra workspace file, ambient or
-isolated Cargo configuration or registry state, dependency, build script, proc
-macro, native link surface, or unsafe source surface fails closed pending review.
-These selectors do not invoke or authorize a package, VM, hardware, live-service,
-or network lane.
+file set. A source or manifest identity change, extra workspace file, ambient
+or isolated Cargo configuration or registry state, dependency, build script,
+proc macro, native link surface, or unsafe source surface fails closed pending
+review. Prismdrake compilation, formatting, linting, tests, packaging, and live
+execution belong in the designated Prismdrake VM; the source host is limited to
+repository work and lightweight static checks. These selectors do not by
+themselves authorize package mutation, networking, or a live-service lane.
 
 The next dependency-bearing change must add the complete direct and material
 transitive review required by ADR 0010 and the active plan before its lockfile

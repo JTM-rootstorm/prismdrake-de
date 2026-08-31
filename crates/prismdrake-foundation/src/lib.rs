@@ -4,6 +4,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod settings;
+
 use std::num::NonZeroU64;
 use std::sync::{
     Arc,

@@ -208,7 +208,7 @@
   "unresolved": [
     {
       "area": "rust_toolchain_minimum",
-      "reason": "Rust 1.96 is the declared workspace floor, while only the observed 1.96.1 Gentoo binary toolchain is currently verified."
+      "reason": "Rust 1.96 is the declared workspace floor, while only the observed 1.97.1 Gentoo binary toolchain is currently verified."
     },
     {
       "area": "minimum_tool_versions",

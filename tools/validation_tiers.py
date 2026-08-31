@@ -68,7 +68,10 @@ RUST_WORKSPACE_FILES: Mapping[str, str] = {
         "b0f59163857f60fb7f5d541c8c53f1ca011117a895f051b9c833585e978c72f7"
     ),
     "crates/prismdrake-foundation/src/lib.rs": (
-        "2ecc285729f15220ba202ffcccafc1852bbbd5bc587c3a5ccad14a30e6132ce2"
+        "1b55932d228c0b3b0fabd816a186cb47bab808c17788680911a0f6f6f403a118"
+    ),
+    "crates/prismdrake-foundation/src/settings.rs": (
+        "3fccd2e51a237922d4ff03ffd4958120a018e3cbab090d91964a436a5ba70612"
     ),
 }
 RUST_SELECTOR_NAMES = frozenset({"rust-format", "rust-check", "rust-clippy", "rust-test"})
@@ -559,13 +562,25 @@ def _validate_rust_workspace(
         raise BoundaryError("workspace_lock_identity_changed")
 
     try:
-        source = contents["crates/prismdrake-foundation/src/lib.rs"].decode("utf-8")
+        policy_source = contents[
+            "crates/prismdrake-foundation/src/lib.rs"
+        ].decode("utf-8")
+        rust_sources = "\n".join(
+            data.decode("utf-8")
+            for relative, data in contents.items()
+            if relative.endswith(".rs")
+        )
     except UnicodeError as error:
         raise BoundaryError("crate_source_invalid") from error
-    if "#![forbid(unsafe_code)]" not in source:
+    if "#![forbid(unsafe_code)]" not in policy_source:
         raise BoundaryError("crate_unsafe_policy_missing")
-    source_without_policy = source.replace("#![forbid(unsafe_code)]", "", 1)
-    if any(pattern.search(source_without_policy) for pattern in FORBIDDEN_RUST_SOURCE):
+    rust_sources_without_policy = rust_sources.replace(
+        "#![forbid(unsafe_code)]", "", 1
+    )
+    if any(
+        pattern.search(rust_sources_without_policy)
+        for pattern in FORBIDDEN_RUST_SOURCE
+    ):
         raise BoundaryError("crate_unreviewed_unsafe_or_native_surface_detected")
 
 
