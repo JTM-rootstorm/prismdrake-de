@@ -46,8 +46,9 @@ carry a verified or observed version.
   build script, procedural macro, native code, or transitive dependency. This
   P2 toolchain proof does not yet replace the installed C++ foundation target.
   The component manifest records the observed Gentoo `dev-lang/rust-bin`
-  `rustc`, Cargo, rustfmt, and Clippy tools at 1.96.1; installed Rust/Cargo,
-  rustfmt, and Clippy notices retain their Apache-2.0 and MIT licensing boundary.
+  `rustc` and Cargo 1.97.1, rustfmt 1.9.0-stable, and Clippy 0.1.97;
+  installed Rust/Cargo, rustfmt, and Clippy notices retain their Apache-2.0 and
+  MIT licensing boundary.
   Rust 1.96 is declared but is not yet a verified minimum.
 - `prismdrake-foundation` is an implemented internal C++ library. Its manifest
   records repository and build/test tooling, including system GoogleTest 1.17.0

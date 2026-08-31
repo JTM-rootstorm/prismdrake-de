@@ -124,7 +124,7 @@
       "version": {
         "declared_minimum": "1.96",
         "verified_minimum": null,
-        "observed": "1.96.1",
+        "observed": "1.97.1",
         "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
@@ -142,7 +142,7 @@
       "version": {
         "declared_minimum": "1.96",
         "verified_minimum": null,
-        "observed": "1.96.1",
+        "observed": "1.97.1",
         "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
@@ -160,7 +160,7 @@
       "version": {
         "declared_minimum": "1.96",
         "verified_minimum": null,
-        "observed": "1.96.1",
+        "observed": "1.9.0-stable",
         "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
@@ -178,7 +178,7 @@
       "version": {
         "declared_minimum": "1.96",
         "verified_minimum": null,
-        "observed": "1.96.1",
+        "observed": "0.1.97",
         "evidence": "verified_component"
       },
       "packaging_status": "observed_gentoo",
