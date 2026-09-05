@@ -24,37 +24,37 @@ PYTHON_EXECUTABLE_INPUT = sys.executable
 PYTHON_EXECUTABLE = str(Path(sys.executable).resolve(strict=False))
 RUNNABLE_TIERS = frozenset({"T0", "T1"})
 SELECTOR_TIMEOUT_SECONDS = 300
-RUST_TOOL_DIRECTORY = Path("/opt/rust-bin-1.97.1/bin")
+RUST_TOOL_DIRECTORY = Path("/opt/rust-bin-1.98.1/bin")
 RUST_LINKER = Path("/usr/x86_64-pc-linux-gnu/gcc-bin/15/x86_64-pc-linux-gnu-gcc")
 CARGO_EXECUTABLE = str(RUST_TOOL_DIRECTORY / "cargo")
 RUST_TOOL_SPECS: Mapping[str, tuple[Path, str]] = {
     "cargo": (
         RUST_TOOL_DIRECTORY / "cargo",
-        "828980723df339d62434390e9fb8ef8831036583343ae2316b7ab5646b5c1953",
+        "da77c8b33849312255ccde3179198ada4c8deb370488d050286146b1d1b27e14",
     ),
     "rustc": (
         RUST_TOOL_DIRECTORY / "rustc",
-        "d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea",
+        "859254978c0a0402c32f949f6de0d99aee73be8d15f45aac00ae1448aac51e74",
     ),
     "rustdoc": (
         RUST_TOOL_DIRECTORY / "rustdoc",
-        "3b0c7aef20e0dfdfe2dd19ddb0b40d3b744f76318a44031813f501e1912934df",
+        "3ff7fed6d1064d8d75d24ae8beff9fe1d68031d3d819966481d22c3c9002b709",
     ),
     "rustfmt": (
         RUST_TOOL_DIRECTORY / "rustfmt",
-        "30de9e1efcd8f8fe7750e00d0c45ff8f4c480608ef1be5baf9ab6f1b4556e8f8",
+        "99e625e0640b50d773a0f54b93a7e66a0e89afd5351a4de9a17abe7087c11ac4",
     ),
     "cargo-fmt": (
         RUST_TOOL_DIRECTORY / "cargo-fmt",
-        "07ce638a5be73e97defbf0864f32a64ed40a0b7682b85625e68790f9e68d19e9",
+        "565dd9620e543887d4b955f6985a903a9ef30ef85b9efeac6c233ccf7aee9b6c",
     ),
     "cargo-clippy": (
         RUST_TOOL_DIRECTORY / "cargo-clippy",
-        "a0a3808dddb32f525601e608740ee7c1c5df86db4a7183ea945449f60d29509d",
+        "56478e37c2bc0a09b7442cb975bad0f00cd16a9c80463daca022756a12ef1b93",
     ),
     "clippy-driver": (
         RUST_TOOL_DIRECTORY / "clippy-driver",
-        "e8fa6ad666c353e4c9248fc67074cf160ff2a5dbd97debd20416b81d7f917373",
+        "ac4a71be2cb2df0f3947419e757a76dabb6110ce4196e1b0bde43296f702287b",
     ),
     "linker": (
         RUST_LINKER,

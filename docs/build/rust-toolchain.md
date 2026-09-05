@@ -19,23 +19,27 @@ first-party package.
 ## Current pinned validation toolchain
 
 The validation selectors are currently pinned to the Gentoo system binary
-toolchain re-observed during the 2026-08-30 re-pin:
+toolchain re-observed during the 2026-09-05 re-pin:
 
 | Tool | Identity | Resolved executable SHA-256 |
 | --- | --- | --- |
-| `rustc` | 1.97.1, commit `8bab26f4f68e0e26f0bb7960be334d5b520ea452`, 2026-07-14, `x86_64-unknown-linux-gnu`, LLVM 22.1.6 | `d3a664c970a9fd8361b64194861bebc1ae37b9054e5ee3400dc1c9e691797eea` |
-| `cargo` | 1.97.1, commit `c980f4866141969fab6254a680546a277789d6f0`, 2026-06-30 | `828980723df339d62434390e9fb8ef8831036583343ae2316b7ab5646b5c1953` |
-| `rustfmt` | 1.9.0-stable, commit `8bab26f4f6`, 2026-07-14 | `30de9e1efcd8f8fe7750e00d0c45ff8f4c480608ef1be5baf9ab6f1b4556e8f8` |
-| `clippy` | 0.1.97, commit `8bab26f4f6`, 2026-07-14 | `a0a3808dddb32f525601e608740ee7c1c5df86db4a7183ea945449f60d29509d` (`cargo-clippy`) |
+| `rustc` | 1.98.1, commit `48a229ceaefd4985c50990b14116b6d856af0985`, 2026-09-01, `x86_64-unknown-linux-gnu`, LLVM 22.1.8 | `859254978c0a0402c32f949f6de0d99aee73be8d15f45aac00ae1448aac51e74` |
+| `cargo` | 1.98.1, commit `797e8a9bca276c1c9f9f738d2a20f484fa4eea9d`, 2026-08-05 | `da77c8b33849312255ccde3179198ada4c8deb370488d050286146b1d1b27e14` |
+| `rustfmt` | 1.9.0-stable, commit `48a229ceae`, 2026-09-01 | `99e625e0640b50d773a0f54b93a7e66a0e89afd5351a4de9a17abe7087c11ac4` |
+| `clippy` | 0.1.98, commit `48a229ceae`, 2026-09-01 | `56478e37c2bc0a09b7442cb975bad0f00cd16a9c80463daca022756a12ef1b93` (`cargo-clippy`) |
 
-The pinned executables resolve beneath `/opt/rust-bin-1.97.1/bin/`; the
+The pinned executables resolve beneath `/opt/rust-bin-1.98.1/bin/`; the
 workspace Wyrmroot compiler fork at `../rust/` is not a Prismdrake input. These
 observed hashes identify this validation-toolchain installation only and are
 not portable package requirements or permission to execute the selectors on
 the source host.
-The earlier 2026-08-23 Rust/Cargo 1.96.1 identities remain historical evidence
-for revision `78d33653738c42e3851f5f6b7027b56a92fd313a`; they are no longer the
-current executable pin. The workspace `rust-version = "1.96"` floor is unchanged.
+The 2026-09-05 source-host observation was limited to executable paths,
+regular-file metadata, versions, hashes, and the fail-closed identity check. No
+Cargo selector or product test ran there; component validation of this 1.98.1
+installation remains pending exact preflight in the designated Prismdrake VM.
+The earlier Rust/Cargo 1.96.1 and 1.97.1 identities remain historical evidence
+for the revisions that recorded them; they are no longer the current executable
+pin. The workspace `rust-version = "1.96"` floor is unchanged.
 
 ## Validation boundary
 

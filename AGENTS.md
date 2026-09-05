@@ -1,243 +1,289 @@
 # Prismdrake Agent Instructions
 
-The workspace root `../AGENTS.md` applies here and owns coordination, worker topology, model allocation, external-write/VM boundaries, Git/commit/push policy, licensing selection, and general validation/security discipline. This file contains only Prismdrake-specific technical/product doctrine.
-
-## 1. Identity and authority
-
-Canonical names:
-
-- Product: **Prismdrake Desktop Environment**
-- Short name: **Prismdrake**
-- Profiles: **Prismdrake Lustre** (`lustre`) and **Prismdrake Forge** (`forge`)
-- Package/executable prefix: `prismdrake-*`
-- D-Bus namespace: `org.prismdrake.*`
-- Glasswyrm-native interface family: generic `GW_*`
-- Repository: `JTM-rootstorm/prismdrake-de`
-
-Do not introduce alternate product/profile/interface names without an intentional Accepted decision. Do not use Microsoft product/theme names as Prismdrake component, profile, theme, or feature names.
-
-Read, when present and relevant:
-
-1. `docs/PRISMDRAKE_PROJECT_SPECIFICATION.md`
-2. `docs/index.md` and durable README setup/overview material
-3. Accepted ADRs under `docs/adr/`
-4. relevant architecture/security/design/schema/interface documents
-5. current milestone/roadmap/issue acceptance criteria
-6. older active phase plans, then Proposed ADRs/research notes
-
-Conflict precedence inside Prismdrake:
-
-1. Mike's current task instruction
-2. latest committed project specification
-3. newer Accepted ADRs that explicitly update/supersede affected specification text
-4. other Accepted contracts/schemas/interfaces
-5. current milestone/issue criteria
-6. Proposed ADRs, research, mockups, and older attachments
-
-Do not silently resolve authoritative contradictions. Preserve the higher-precedence decision, implement non-conflicting work, and report the conflict.
-
-Milestone discipline remains binding: no later-phase feature creep, no production claim from a prototype, no milestone closure without its documented gate, and no stale status left behind when the project advances.
-
-## 2. Ownership boundaries
-
-Prismdrake owns desktop session/startup/recovery, shell surfaces, profile/appearance/settings UX, notification policy/history, toolkit settings propagation/adapters, desktop-specific portal integration, effect/capability requests, fallbacks, and user-visible diagnostics.
-
-Glasswyrm owns X11 server behavior, window-management policy and authoritative window state, focus/stacking/workspaces, move/resize/minimize/maximize/fullscreen, composition/output authority, backdrop blur execution, compositor shadows/effects, scene capture/window thumbnails, input/output policy, and accepted native `GW_*` interfaces.
-
-Prismdrake may request an effect and provide intent/geometry. It must not reimplement compositor behavior or simulate native backdrop blur by capturing/blurring desktop screenshots.
-
-Audio, networking, Bluetooth, power, device management, authorization, and login/session services remain authoritative external domains. Prismdrake presents them through typed adapters rather than embedding replacement implementations.
-
-State/fault rules:
-
-- Every state domain has one authoritative owner; UI models are mirrors/caches.
-- Window state comes from the active WM/accepted interface, never process-name heuristics.
-- Settings/theme publication uses validated generation-tagged snapshots; never expose half-applied generations.
-- Shell/decorator/settings-service failure must not destroy WM state, permanently break windows, or corrupt configuration.
-- Missing optional services degrade only their feature; restarts use bounded backoff and safe-mode behavior.
-
-## 3. Working component model
-
-Follow Accepted ADRs when present. Until superseded:
-
-| Component | Responsibility |
-|---|---|
-| `prismdrake-session` | session environment, startup, supervision, safe mode, logout/recovery |
-| `prismdrake-shell` | panel, launcher, desktop, task UI, quick settings, status, notifications, OSDs |
-| `prismdrake-settingsd` | validated settings, XSettings, profile switching, snapshots/broadcasts |
-| `prismdrake-notifyd` | notification service, policy, history/routing |
-| `prismdrake-decor` | optional server-side decorations from authoritative WM state |
-| `prismdrake-control` | settings application |
-| `prismdrake-portal` | desktop portal backend integration |
-| `prismdrake-polkit-agent` | isolated authorization prompts |
-| `prismdrake-lock` | secure lock coordination only after accepted threat model/platform support |
-| `prismdrake-themes` | data-only visual assets/tokens |
-| toolkit adapters | optional Qt/GTK integration packages |
-
-Panel/launcher/desktop/task/quick-settings/notification/OSD surfaces remain logical modules of `prismdrake-shell` unless an Accepted ADR justifies another process boundary. A new daemon needs concrete fault-isolation, security, dependency, or performance justification.
-
-## 4. Standards and native integration
-
-Use a standards-first baseline with optional Glasswyrm enhancements. Prefer XDG base directories, Desktop Entry/Icon Theme/MIME/default-app standards, ICCCM/EWMH, D-Bus, XSettings, Freedesktop notifications, StatusNotifierItem, portals, and standard autostart contracts where applicable.
-
-Native Glasswyrm rules:
-
-- `GW_*` proposals are generic, versioned, optional, and capability-negotiated.
-- Candidate names remain draft until Glasswyrm accepts them separately.
-- Every native enhancement has a standards/reduced-feature fallback.
-- Never infer support from executable/process names.
-- Do not claim implementation from an interface sketch alone.
-- Scene capture/window thumbnails require privacy/authorization review.
-- When blur is unavailable, use ordinary alpha/opaque materials rather than imitation capture blur.
-
-## 5. Decision and technology discipline
-
-ADR states mean exactly: Proposed = non-authoritative, Accepted = authoritative, Rejected = intentionally not selected, Superseded = replaced, Deprecated = temporary/legacy.
-
-- Do not mark a Proposed ADR Accepted because code exists or change an Accepted architecture decision in an unrelated patch.
-- Material architecture changes require an ADR plus affected specification updates.
-- Accepted ADRs contain no unresolved `TODO`, `TBD`, or `???` markers.
-- Record alternatives/consequences and define validation where evidence is incomplete.
-- Never invent package sizes, dependency counts, performance figures, or compatibility results.
-
-Accepted technology direction currently includes Qt 6.11 Quick+ for visible shell surfaces; Rust by default for toolkit-neutral policy/models/parsers/services/validation; modern C++20 for retained Qt-bound presentation/justified native integration; Cargo+lockfile for Rust; CMake/CTest for retained Qt/C++/QML/native targets; TOML user configuration; JSON schemas for themes/normalized snapshots; and versioned Experimental D-Bus XML under `org.prismdrake.*`.
-
-Public `GW_*` payloads/interface stability remain Proposed/Experimental until explicitly accepted. Do not add a new production technology stack without an Accepted decision.
-
-## 6. Dependency boundaries
-
-Mandatory core runtime dependencies must not include GNOME Shell, Mutter, `gnome-settings-daemon`, `gnome-control-center`, or libadwaita. GTK itself is not forbidden, and Qt need not be linked into every component.
-
-- Keep GTK/Qt adapters optional and isolated where practical.
-- Core startup must not require both toolkit stacks.
-- Non-visual services avoid GUI toolkit dependencies where practical.
-- Do not make systemd the only supported session supervisor.
-- Keep build-only tools out of runtime metadata.
-- Prefer system libraries over hidden vendored copies.
-- Justify new mandatory runtime dependencies; feature detection must be explicit and reproducible.
-- Missing optional dependencies disable only their related feature.
-
-## 7. Originality, assets, and licensing
-
-Follow the workspace licensing policy and existing committed declarations. Prismdrake's current project license must not be changed incidentally; any intentional relicensing must be explicit and coordinated with root policy.
-
-Use original Prismdrake geometry, iconography, mockups, sounds, wallpapers, and visual language. Do not commit Microsoft/proprietary icons, logos, sounds, wallpapers, fonts, copied UI artwork, or pixel-for-pixel proprietary geometry. Record source/author/license/modifications/attribution for third-party assets.
-
-Themes are data-only for 1.0 unless an Accepted security design says otherwise. Do not load arbitrary executable scripts from theme packages.
-
-## 8. Security and privacy specifics
-Treat configuration, themes, desktop entries, notification data, D-Bus messages, window metadata, portal responses, and native capability payloads as untrusted.
-
-- Validate types, ranges, sizes, versions, and paths; reject traversal and unsupported versions.
-- Never execute Desktop Entry commands through an implicit shell.
-- Do not expose unrestricted arbitrary-key mutation over D-Bus.
-- Keep privileged prompts minimal and isolated; do not store secrets in ordinary config.
-- Do not log notification bodies, window titles, private paths, credentials, tokens, or keys by default.
-- Developer overrides are off in production by default.
-- Notification history needs explicit retention/clear controls.
-- Capture/thumbnails require privacy, lock-state, and authorization handling.
-- Do not claim secure locking until the full threat model/implementation is reviewed; a fullscreen overlay is not a secure lock screen.
-- Prefer fail-closed authorization and fail-soft optional visuals.
-
-Security-sensitive parsers/interfaces need focused negative tests and fuzzable boundaries where practical. Workspace Daybreak rules still govern substantive security review.
-
-## 9. Accessibility and visual system
-
-Accessibility is functional correctness. Primary workflows must be keyboard-operable with deterministic visible focus and correct accessible names/roles/states. Color cannot be the sole signal.
-
-Both Lustre and Forge must support high contrast, reduced motion, text scaling, and disabled transparency. Accessibility overrides survive profile switches and remain independent from profile defaults. Minimum target sizes belong in shared design tokens/tests. Animation must not block input or essential actions, and accessibility regressions block release.
-
-Lustre and Forge share one semantic token/component system; do not create separate shell implementations. Use primitive, semantic, component, and accessibility token layers, with every required semantic token defined in both profiles and every blur material having a non-blur fallback. Focus, pressed, active, urgent, disabled, and error states stay explicit.
-
-Profile direction:
-
-- **Lustre:** translucent/layered/prismatic but readable; compositor-provided blur when available; restrained highlights/shadows; brief purposeful motion; designed opaque/reduced-transparency fallbacks.
-- **Forge:** mostly opaque/tactile/crisp/compact; stronger borders/separation; sharper geometry/shorter motion; clear active/pressed/urgent states.
-
-Profile switching publishes one validated generation atomically. Mockups are labeled as such. Visual baseline changes are intentional, never mass-updated merely to hide regressions.
-
-For UI changes, consider keyboard, screen-reader, contrast, motion, target size, wallpaper/fallback material, touch/hover assumptions, and text scaling.
-
-## 10. Configuration, schemas, and interfaces
-
-- Follow XDG directory semantics; never hard-code a home directory.
-- Config/token documents carry explicit schema versions; unsupported versions fail safely.
-- Writes are atomic, preserve permissions, retain previous valid config during migration, and leave packaged defaults available for recovery.
-- Profile switching never publishes mixed generations.
-- Interface/schema/implementation/docs changes land coherently.
-
-JSON uses UTF-8, stable machine identifiers, deterministic formatting, and versioned strict-enough schemas. TOML uses lowercase `snake_case` keys unless an Accepted schema says otherwise, explicit types, and documented units.
-
-D-Bus XML must parse. Prismdrake interfaces begin `org.prismdrake.`; draft/stable status is explicit; methods/signals stay narrow and typed; timeout/cancellation/error/ownership/version semantics are documented; no ABI stability is implied before acceptance.
-
-## 11. Implementation boundaries
-
-General implementation favors explicit ownership, small modules/public APIs, actionable errors, bounded queues/work, explicit cancellation/shutdown, monotonic clocks for durations, event-driven behavior, and no blocking I/O on UI or D-Bus dispatch threads.
-
-### Rust
-
-Rust is the default for toolkit-neutral policy, models, parsers, services, and validation semantics.
-
-- Pure domain crates forbid unsafe code; boundary modules isolate reviewed unsafe with local rationale and malformed-boundary tests.
-- Panics/unwinds do not cross C/C++/Qt/D-Bus/process/X11/other foreign boundaries.
-- Use checked conversions, explicit domain types, bounded collections, and cancellation-aware APIs at untrusted boundaries.
-- Keep Cargo dependencies/features explicit, locked, reviewed, and compatible with authoritative offline distribution builds.
-- Do not use the workspace Wyrmroot Rust fork as a Prismdrake toolchain/dependency without a separately Accepted requirement.
-
-### C++ / Qt / QML
-
-Retained C++ uses C++20, namespace `prismdrake`, and local formatting/tooling conventions. Prefer value semantics/RAII and `std::unique_ptr`; use shared ownership only when lifetime truly requires it. Avoid owning raw pointers/manual `new`/`delete`; keep headers self-contained and toolkit-neutral service APIs free of Qt types unless intentionally Qt-bound. Exceptions must not cross C, Rust, Qt, D-Bus, process, or other foreign boundaries.
-
-Qt Quick/QML owns layout, visual state, bindings, and animation, not persistent policy, parsing, D-Bus integration, or authoritative models. Avoid JavaScript business-logic islands, context-property sprawl, undocumented global singletons, GUI-thread I/O, and hard-coded profile values. Expose narrow typed models/commands and deterministic/disable-able animation for tests.
-
-### X11 and D-Bus
-
-Treat X11 properties/window metadata and all D-Bus input as untrusted. Respect ICCCM/EWMH where used; never assume XIDs survive async work; remove stale state promptly; use the documented application-identity fallback chain rather than one field; route state-changing window requests through the authoritative WM path.
-
-D-Bus handlers validate callers/arguments, use typed stable errors, avoid long synchronous work, define authorization expectations, handle service disappearance/name reacquisition, and use bounded state-aware retries. Internal implementation objects are not accidental public API.
-
-### Build and generated-file hygiene
-
-Inspect actual build files/presets before choosing commands. Do not introduce a second build system without an Accepted decision. Keep build directories, caches, binaries, IDE/machine state, and other generated outputs untracked unless a repository contract explicitly requires generated source. Required generated source must be deterministic, document its generator, and not be hand-edited.
-
-Preserve local/user changes and avoid unrelated formatting churn. Follow `.editorconfig` and repository formatters where present.
-
-## 12. Performance and internationalization
-
-Performance rules are functional guardrails, not permission for premature micro-optimization:
-
-- common input actions should acknowledge within 100 ms under normal load;
-- keep UI-thread work bounded and launcher search incremental/cancellable;
-- avoid continuous timers when events suffice;
-- render at output refresh cadence when capacity permits;
-- measure before claiming performance improvements; release budgets need a documented reference machine/method.
-
-User-facing strings are translatable. Avoid fragile concatenated fragments/fixed English widths; allow text expansion; use locale-aware formatting; account for RTL layout; search localized desktop-entry fields. Substantial UI work should exercise long-string and RTL cases when infrastructure exists.
-
-## 13. Validation
-
-Use the narrowest relevant validation first, then documented repository-wide gates. Discover actual commands from the checked-out build files/docs rather than inventing them.
-
-Typical contract work may expose `make validate`; CMake work may use configure/build/CTest once those interfaces actually exist.
-
-Test posture:
-
-- behavior changes get tests; parsers/schemas get negative tests;
-- prefer deterministic display-free model/service tests;
-- use Xvfb/Xephyr for X11 integration and isolated D-Bus sessions where appropriate;
-- cover service disappearance, invalid input, stale windows, output hotplug/mixed scaling, and fallback paths;
-- cover Lustre, Forge, high contrast, reduced motion, disabled transparency, and missing blur where the affected UI makes them relevant;
-- hardware/GPU tests remain opt-in when the environment cannot guarantee them;
-- never silently skip or claim an unrun test.
-
-Visual tests control fonts, animation time, scale, locale, profile, capability set, and output size; baseline changes are reviewed intentionally.
-
-Security-sensitive changes should exercise relevant malformed/oversized input, version rejection, traversal, D-Bus validation, Desktop Entry shell-injection avoidance, notification/theme parsing, capture authorization, and lock-state restrictions.
-
-## 14. Repository-specific completion
-
-Before claiming Prismdrake work complete, verify the requested scope only, canonical names, component ownership, Accepted-vs-Proposed status, fallbacks/failure behavior, accessibility/security/privacy impact, dependency boundaries, relevant docs/contracts, and focused tests.
-
-Do not overstate toolkit coherence, protocol support, lock security, compatibility, measurements, or validation. Report exact environmental blockers and remaining owner decisions.
-
-Git/commit/branch/push/reporting mechanics come exclusively from the root `AGENTS.md`; this file does not override them.
+The workspace `../AGENTS.md` governs coordination, delegation, external/VM
+effects, Git and commits, licensing selection, security-review identity, and
+general validation. This file only narrows it for Prismdrake.
+
+## 1. Authority, scope, and identity
+
+Read when relevant: `docs/PRISMDRAKE_PROJECT_SPECIFICATION.md`; `docs/index.md`
+and durable README setup/overview material; Accepted ADRs under `docs/adr/`; relevant
+architecture, security, design, schema, and interface documents; current
+milestone, roadmap, and issue criteria; then older active-phase plans,
+Proposed ADRs, research, mockups, and older attachments.
+
+Conflict precedence is: Mike's current instruction; the latest committed
+project specification; newer Accepted ADRs that explicitly amend it; other
+Accepted contracts/schemas/interfaces; current milestone/issue criteria; then
+Proposed ADRs, research, mockups, and older attachments. Preserve the higher-
+precedence decision, implement only non-conflicting work, and report
+contradictions instead of silently choosing.
+
+Milestone discipline remains binding: no later-phase feature creep, no
+production claim from a prototype, no closure without the documented gate,
+and no stale status when the project advances. Preserve Accepted/Proposed
+status and explicit implementation/evidence limits.
+
+Canonical names are **Prismdrake Desktop Environment** (**Prismdrake**),
+**Prismdrake Lustre** (`lustre`), and **Prismdrake Forge** (`forge`). Packages
+and executables use `prismdrake-*`, D-Bus uses `org.prismdrake.*`, Glasswyrm
+interfaces use generic `GW_*`, and the repository is
+`JTM-rootstorm/prismdrake-de`. Do not introduce alternate product, profile, or
+interface names without an intentional Accepted decision. Do not use Microsoft
+product/theme names for Prismdrake components, profiles, themes, or features.
+
+Prismdrake owns desktop session/startup/recovery, shell surfaces,
+profile/appearance/settings UX, notification policy/history, toolkit settings
+propagation/adapters, desktop portal integration, effect/capability requests,
+fallbacks, and user diagnostics. Glasswyrm owns X11 server behavior,
+window-management policy and authoritative window state,
+focus/stacking/workspaces, move/resize/minimize/maximize/fullscreen,
+composition/output authority, backdrop-blur execution, compositor
+shadows/effects, scene capture/window thumbnails, input/output policy, and
+accepted `GW_*` interfaces. Prismdrake may provide effect intent/geometry but must not
+reimplement compositor behavior or imitate native blur through screenshot
+capture. Audio, networking, Bluetooth, power, device management,
+authorization, and login/session services remain external authorities exposed
+through typed adapters rather than embedded replacement implementations.
+
+Each state domain has one authority; UI state is a mirror/cache. Window state
+comes from the active WM or accepted interface, never process-name heuristics.
+Settings/theme publication uses complete validated generation-tagged snapshots
+and never exposes half-applied generations. Shell, decorator, or settings
+failure must not destroy WM state, permanently break or strand windows, or
+corrupt configuration. Optional-service failure degrades only its feature;
+restart uses bounded backoff and safe mode.
+
+## 2. Components and integration
+
+Accepted process roles are:
+
+- `prismdrake-session`: environment, startup, supervision, safe mode,
+  logout/recovery;
+- `prismdrake-shell`: panel, launcher, desktop, task UI, quick settings,
+  notifications, status, and OSDs;
+- `prismdrake-settingsd`: validated settings, XSettings, profile switching,
+  snapshots/broadcasts;
+- `prismdrake-notifyd`: notification service, policy, history, routing;
+- `prismdrake-decor`: optional decorations from authoritative WM state;
+- `prismdrake-control`: settings application;
+- `prismdrake-portal`: desktop portal integration;
+- `prismdrake-polkit-agent`: isolated authorization prompts;
+- `prismdrake-lock`: secure lock coordination only after Accepted platform
+  support and threat model;
+- `prismdrake-themes`: data-only visual assets/tokens; and
+- optional toolkit adapters for Qt/GTK integration.
+
+Shell surfaces remain modules of one shell process unless an Accepted ADR
+justifies another daemon for fault, security, dependency, or measured
+performance isolation.
+
+Use standards-first XDG base directories, Desktop Entry, Icon Theme, MIME and
+default-app standards, ICCCM/EWMH, D-Bus, XSettings, Freedesktop notifications,
+StatusNotifierItem, portals, and autostart where applicable. `GW_*`
+enhancements remain generic, versioned, optional, capability-negotiated, and
+separately accepted; candidate names remain draft until Glasswyrm accepts them.
+Every enhancement has a standards/reduced-feature fallback, and support is
+never inferred from executable/process names. Do not claim implementation from an
+interface sketch. Blur belongs to the compositor, never screenshot capture;
+when unavailable, use ordinary alpha/opaque materials. Capture/thumbnails
+require privacy and authorization review.
+
+ADR states are exact: Proposed is non-authoritative; Accepted is authoritative;
+Rejected was intentionally not selected; Superseded was replaced; Deprecated
+is temporary/legacy. Code existence does not accept a Proposed ADR, and an
+unrelated patch must not alter an Accepted decision. Material architecture
+changes require an ADR plus affected specification updates. Accepted ADRs have
+no unresolved `TODO`, `TBD`, or `???`; record alternatives/consequences and
+define validation where evidence is incomplete. Never invent package sizes,
+dependency counts, performance figures, or compatibility results.
+
+## 3. Technology and dependencies
+
+Accepted direction is Qt 6.11 Quick+ for visible shell surfaces; Rust by
+default for toolkit-neutral policy, models, parsers, services, and validation;
+retained C++20 for Qt-bound presentation or justified native integration;
+Cargo plus tracked lockfile for Rust; CMake/CTest for retained Qt/C++/QML and
+native targets; versioned TOML user configuration; versioned JSON schemas for
+themes/normalized snapshots; and Experimental versioned D-Bus XML. Public
+`GW_*` payloads/interface stability remain
+Proposed/Experimental until explicitly accepted. A new production stack needs
+an Accepted decision.
+
+Core runtime must not require GNOME Shell, Mutter, `gnome-settings-daemon`,
+`gnome-control-center`, or libadwaita. GTK/Qt adapters stay optional and
+isolated where practical; GTK itself is not forbidden, Qt need not be linked into every
+component, and core startup must not require both stacks. Keep GUI toolkits out
+of nonvisual services where practical, do not require systemd exclusively,
+keep build tools out of runtime metadata, prefer system libraries over hidden
+vendored copies, and
+explicitly justify mandatory dependencies with reproducible feature detection.
+Missing optional dependencies disable only their feature.
+
+Follow workspace licensing and existing declarations. Do not incidentally
+change Prismdrake's declared license; intentional relicensing is explicit and
+coordinated under root policy. Use original Prismdrake geometry, iconography,
+mockups, sounds, wallpapers, and visual language, plus one semantic
+token/component system for Lustre and Forge. Record source, author, license,
+modifications, and attribution for third-party assets. Never commit Microsoft
+or other proprietary icons, logos, sounds, wallpapers, fonts, copied UI artwork,
+or pixel-for-pixel geometry. Themes are data-only for 1.0 unless an
+Accepted security design says otherwise; never load arbitrary executable theme
+scripts.
+
+## 4. Security, privacy, accessibility, and data
+
+Treat config, themes, desktop entries, notification content, D-Bus,
+window metadata, portal results, and native capability payloads as untrusted. Validate
+types, ranges, sizes, versions, and paths; reject traversal and unsupported
+versions.
+Never execute Desktop Entry commands through an implicit shell or expose
+unrestricted arbitrary-key mutation over D-Bus. Privileged prompts stay
+minimal and isolated; do not store secrets in ordinary configuration. Prefer
+fail-closed authorization and fail-soft optional visuals.
+
+Do not log notification bodies, window titles, private paths, credentials,
+tokens, or keys by default. Production developer overrides are off.
+Notification history needs explicit retention/clear controls. Capture/thumbnails respect
+privacy, authorization, and lock state. Do not claim secure locking until the
+full threat model and implementation are reviewed; a fullscreen overlay is not
+a secure lock. Security-sensitive parsers/interfaces need focused negative tests and
+fuzzable boundaries where practical. Workspace Daybreak rules still govern
+substantive security review.
+
+Accessibility is functional correctness. Primary workflows must be keyboard-operable with
+deterministic visible focus and correct accessible names, roles, and states;
+color cannot be the sole signal. Both profiles must support high contrast, reduced
+motion, text scaling, disabled transparency, and non-blur fallbacks. These
+overrides survive profile switches and remain independent from profile
+defaults. Minimum target sizes live in shared design tokens/tests; animation
+must not block input or essential actions, and accessibility regressions block
+release.
+
+Lustre and Forge share primitive, semantic, component, and accessibility token
+layers; every required semantic token exists in both profiles, every blur
+material has a non-blur fallback, and focus/pressed/active/urgent/disabled/error
+states remain explicit. Lustre is translucent, layered, and prismatic but
+readable, with compositor blur, restrained highlights/shadows, brief purposeful
+motion, and designed opaque/reduced-transparency fallbacks. Forge is mostly
+opaque, tactile, crisp, and compact, with stronger borders/separation, sharper
+geometry, shorter motion, and clear active/pressed/urgent states. Do not create
+separate shell implementations.
+
+Review UI changes for keyboard, screen reader, contrast, motion, target size,
+text scaling, wallpaper/fallback material, touch/hover assumptions, and text expansion/RTL. Label mockups
+as mockups; change visual baselines intentionally, never en masse merely to hide
+regressions.
+
+Follow XDG paths; never hard-code a home. Config/token documents carry explicit
+schema versions, and unsupported versions fail safely. Writes are atomic,
+permission-preserving, recoverable, retain prior valid data during migration,
+and keep packaged defaults available for recovery. Profile switching atomically
+publishes one complete validated generation. JSON uses UTF-8, stable machine identifiers,
+deterministic formatting, and versioned strict-enough schemas. TOML uses
+lowercase `snake_case` keys unless an Accepted schema says otherwise, explicit
+types, and documented units. D-Bus XML must parse; Prismdrake interfaces begin
+`org.prismdrake.`, have explicit draft/stable status, remain narrow and typed,
+and document timeout, cancellation, error, ownership, version, and stability
+semantics. No ABI stability is implied before acceptance.
+Interface/schema/implementation/docs changes land coherently.
+
+## 5. Implementation and build boundaries
+
+Prefer explicit ownership, small APIs/modules, actionable errors,
+bounded work/queues/retries, cancellation and shutdown, monotonic duration
+clocks, and event-driven behavior. No blocking I/O belongs on UI or D-Bus
+dispatch threads.
+
+- Pure Rust domain crates forbid unsafe. Isolate reviewed unsafe/FFI with local
+  rationale and malformed-boundary tests; no panic/unwind crosses C/C++/Qt,
+  D-Bus, process, X11, or another foreign boundary.
+  Use checked conversions, domain types, bounded collections, explicit
+  cancellation, and explicit locked reviewed dependencies/features compatible
+  with authoritative offline distribution builds. APIs at untrusted boundaries
+  are cancellation-aware.
+  Do not use the workspace Wyrmroot Rust fork as a Prismdrake
+  toolchain/dependency without a separately Accepted requirement.
+- C++ uses C++20, namespace `prismdrake`, RAII/value semantics, and
+  `std::unique_ptr` by default; shared ownership is only for genuinely shared
+  lifetimes. Avoid owning raw pointers and manual `new`/`delete`, keep headers
+  self-contained, and keep toolkit-neutral service APIs free of Qt types unless
+  intentionally Qt-bound. Follow local formatting/tooling conventions;
+  exceptions do not cross C, Rust, Qt, D-Bus, process, or other foreign
+  boundaries.
+- QML owns layout, visual state, bindings, and
+  deterministic disable-able animation—not persistence, parsing, D-Bus,
+  authoritative models, JavaScript business-logic islands, context-property
+  sprawl, undocumented global singletons, GUI-thread I/O, or hard-coded profile
+  values. Use narrow typed models/commands/adapters.
+- X11/D-Bus input is untrusted. Respect ICCCM/EWMH where used; never assume
+  XIDs survive async work, remove stale state promptly, use the documented
+  application-identity fallback rather than one field, and never bypass the WM
+  for state changes. D-Bus handlers validate caller, arguments, and state; use
+  stable typed errors; avoid long synchronous work; define authorization
+  expectations; handle service disappearance/name reacquisition; and use
+  bounded state-aware retries. Internal objects are not accidental public API.
+
+Inspect actual build files/presets before choosing commands. Do not add a second build
+system without an Accepted decision. Keep build trees, caches, binaries, IDE
+or machine state, and generated outputs untracked unless a contract requires deterministic
+generated source. Required generated source documents its deterministic
+generator and is never hand-edited. Preserve local/user changes, avoid unrelated
+formatting churn, and follow `.editorconfig` and repository formatters where
+present.
+
+## 6. Performance and internationalization
+
+Performance guardrails are functional, not permission for premature
+micro-optimization. Common input actions should acknowledge within 100 ms
+under normal load; keep UI-thread work bounded and launcher search incremental
+and cancellable; avoid continuous timers where events suffice; and render at
+output refresh cadence when capacity permits. Measure before claiming an
+improvement, and give release budgets a documented reference machine/method.
+
+User-facing strings are translatable. Avoid fragile concatenation and fixed
+English widths, allow text expansion, use locale-aware formatting, account for
+RTL layout, and search localized Desktop Entry fields. Exercise long-string
+and RTL cases for substantial UI work when infrastructure exists.
+
+## 7. Validation and completion
+
+The separate `prismdrake-vm` domain on `qemu:///system` is Prismdrake's required
+build/test environment, but it is not covered by root's standing `OS-Project`
+VM exception and gains no authority here. Compilation, formatting, linting,
+tests, packaging, and runtime validation run there only with Mike's exact active
+authorization for that domain and operation, under root-coordinator ownership.
+Workers must not access VM/control/data endpoints. The source host is limited
+to repository edits, inspection, and lightweight static checks. Historical VM
+paths, packages, state, or evidence require live preflight and do not transfer
+acceptance.
+
+Discover actual commands from checked-out build files/docs rather than
+inventing them. Use the narrowest relevant validation first, then documented
+repository-wide gates. `make validate` or CMake configure/build/CTest apply only once the
+checked-out repository actually exposes those interfaces. Never silently skip
+or report an unrun test.
+
+Behavior changes get tests; parsers and schemas get negative cases. Prefer
+deterministic display-free tests, Xvfb/Xephyr for X11 integration, and isolated
+D-Bus sessions where appropriate. Relevant coverage includes service loss,
+invalid input, stale windows/generations, output hotplug/mixed scaling,
+fallbacks, both profiles, high contrast, reduced motion, disabled transparency,
+and missing blur when affected. Hardware/GPU tests remain opt-in when the
+environment cannot guarantee them.
+
+Visual tests control fonts, animation time, scale, locale, profile, capability
+set, and output size; review baseline changes intentionally. Security-sensitive
+changes should exercise relevant malformed/oversized input, version rejection,
+traversal, D-Bus validation, Desktop Entry shell-injection avoidance,
+notification/theme parsing, capture authorization, and lock-state restrictions.
+
+Before claiming completion, verify the requested scope only, canonical names,
+component ownership, Accepted/Proposed status, fallbacks/failure behavior,
+accessibility/security/privacy impact, dependency boundaries, relevant
+docs/contracts, and focused tests/evidence. Do not overstate
+toolkit coherence, protocol support, lock security, compatibility, measurements,
+or validation. Report exact environmental blockers and remaining owner
+decisions. Git,
+commit, branch, push, and reporting mechanics come only from `../AGENTS.md`.
+This file does not override them.

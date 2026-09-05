@@ -47,7 +47,7 @@ carry a verified or observed version.
   or transitive dependency. The settings checkpoint does not yet replace the
   C++ settings engine or make Rust settingsd authoritative.
   The component manifest records the observed Gentoo `dev-lang/rust-bin`
-  `rustc` and Cargo 1.97.1, rustfmt 1.9.0-stable, and Clippy 0.1.97;
+  `rustc` and Cargo 1.98.1, rustfmt 1.9.0-stable, and Clippy 0.1.98;
   installed Rust/Cargo, rustfmt, and Clippy notices retain their Apache-2.0 and
   MIT licensing boundary.
   Rust 1.96 is declared but is not yet a verified minimum. Compiled validation

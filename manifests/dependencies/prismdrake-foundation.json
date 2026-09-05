@@ -124,8 +124,8 @@
       "version": {
         "declared_minimum": "1.96",
         "verified_minimum": null,
-        "observed": "1.97.1",
-        "evidence": "verified_component"
+        "observed": "1.98.1",
+        "evidence": "observed_reference"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
@@ -142,8 +142,8 @@
       "version": {
         "declared_minimum": "1.96",
         "verified_minimum": null,
-        "observed": "1.97.1",
-        "evidence": "verified_component"
+        "observed": "1.98.1",
+        "evidence": "observed_reference"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
@@ -161,7 +161,7 @@
         "declared_minimum": "1.96",
         "verified_minimum": null,
         "observed": "1.9.0-stable",
-        "evidence": "verified_component"
+        "evidence": "observed_reference"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
@@ -178,8 +178,8 @@
       "version": {
         "declared_minimum": "1.96",
         "verified_minimum": null,
-        "observed": "0.1.97",
-        "evidence": "verified_component"
+        "observed": "0.1.98",
+        "evidence": "observed_reference"
       },
       "packaging_status": "observed_gentoo",
       "license_review": "reviewed",
@@ -208,7 +208,7 @@
   "unresolved": [
     {
       "area": "rust_toolchain_minimum",
-      "reason": "Rust 1.96 is the declared workspace floor, while only the observed 1.97.1 Gentoo binary toolchain is currently verified."
+      "reason": "Rust 1.96 is the declared workspace floor, while 1.98.1 is only an observed reference toolchain pending component validation in the designated Prismdrake VM."
     },
     {
       "area": "minimum_tool_versions",

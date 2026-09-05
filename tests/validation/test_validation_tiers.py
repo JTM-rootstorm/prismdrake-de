@@ -395,6 +395,10 @@ class ValidationTierTests(unittest.TestCase):
 
     def test_reviewed_rust_toolchain_resolves_with_rustc_compatible_basename(self) -> None:
         tools = validation_tiers._trusted_rust_toolchain()
+        self.assertEqual(
+            validation_tiers.RUST_TOOL_DIRECTORY,
+            Path("/opt/rust-bin-1.98.1/bin"),
+        )
         self.assertEqual(tools["rustc"].name, "rustc")
         self.assertEqual(tools["cargo"].parent, tools["cargo-clippy"].parent)
         self.assertEqual(tools["cargo"].parent, tools["cargo-fmt"].parent)
