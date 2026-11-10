@@ -1,7 +1,7 @@
 # Prismdrake Agent Instructions
 
-The workspace `../AGENTS.md` governs coordination, delegation, external/VM
-effects, Git and commits, licensing selection, security-review identity, and
+The workspace `../CLAUDE.md` governs coordination, delegation, external/VM
+effects, Git and commits, licensing selection, security-review recording, and
 general validation. This file only narrows it for Prismdrake.
 
 ## 1. Authority, scope, and identity
@@ -148,7 +148,7 @@ Notification history needs explicit retention/clear controls. Capture/thumbnails
 privacy, authorization, and lock state. Do not claim secure locking until the
 full threat model and implementation are reviewed; a fullscreen overlay is not
 a secure lock. Security-sensitive parsers/interfaces need focused negative tests and
-fuzzable boundaries where practical. Workspace Daybreak rules still govern
+fuzzable boundaries where practical. Workspace `../CLAUDE.md` §1 still governs
 substantive security review.
 
 Accessibility is functional correctness. Primary workflows must be keyboard-operable with
@@ -285,5 +285,5 @@ docs/contracts, and focused tests/evidence. Do not overstate
 toolkit coherence, protocol support, lock security, compatibility, measurements,
 or validation. Report exact environmental blockers and remaining owner
 decisions. Git,
-commit, branch, push, and reporting mechanics come only from `../AGENTS.md`.
+commit, branch, push, and reporting mechanics come only from `../CLAUDE.md`.
 This file does not override them.
